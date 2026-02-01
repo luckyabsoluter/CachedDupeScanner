@@ -233,7 +233,14 @@ fun ResultsScreen(
                             selected = pendingSortKey.value == ResultSortKey.TotalSize,
                             onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
                         )
-                        Text("Size")
+                        Text("Total size")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = pendingSortKey.value == ResultSortKey.PerFileSize,
+                            onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
+                        )
+                        Text("Per-file size")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(

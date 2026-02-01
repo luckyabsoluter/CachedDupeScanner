@@ -37,6 +37,7 @@ object ScanResultViewFilter {
         val sorted = when (key) {
             ResultSortKey.Count -> groups.sortedBy { it.files.size }
             ResultSortKey.TotalSize -> groups.sortedBy { it.files.sumOf { f -> f.sizeBytes } }
+            ResultSortKey.PerFileSize -> groups.sortedBy { it.files.firstOrNull()?.sizeBytes ?: 0L }
             ResultSortKey.Name -> groups.sortedBy { it.files.firstOrNull()?.normalizedPath ?: "" }
         }
         return if (direction == SortDirection.Desc) sorted.reversed() else sorted
