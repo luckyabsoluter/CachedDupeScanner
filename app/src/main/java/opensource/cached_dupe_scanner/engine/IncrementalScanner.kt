@@ -44,12 +44,14 @@ class IncrementalScanner(
             )
         }
 
-        val bySize = scanned.groupBy { it.sizeBytes }
+        val uniqueScanned = scanned.distinctBy { it.normalizedPath }
+
+        val bySize = uniqueScanned.groupBy { it.sizeBytes }
         val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
-        val total = scanned.size
+        val total = uniqueScanned.size
         var scannedCount = 0
 
-        scanned.forEach { current ->
+        uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
                 return ScanResult(
                     scannedAtMillis = scannedAtMillis,

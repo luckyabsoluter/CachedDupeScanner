@@ -107,6 +107,21 @@ class IncrementalScannerTest {
         assertEquals(PathNormalizer.normalize(file.path), cached.first().normalizedPath)
     }
 
+    @Test
+    fun duplicatePathsDoNotTriggerHashingAcrossScans() {
+        val file = File(tempDir, "dup.txt").apply {
+            writeText("hello")
+        }
+        val hasher = CountingHasher()
+        val walker = DuplicateFileWalker(file)
+        val scanner = IncrementalScanner(store, hasher, walker)
+
+        scanner.scan(tempDir)
+        scanner.scan(tempDir)
+
+        assertEquals(0, hasher.callsFor(file))
+    }
+
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 
@@ -120,6 +135,19 @@ class IncrementalScannerTest {
         fun callsFor(file: File): Int {
             val normalized = PathNormalizer.normalize(file.path)
             return counts[normalized] ?: 0
+        }
+    }
+
+    private class DuplicateFileWalker(private val file: File) : FileWalker() {
+        override fun walk(
+            root: File,
+            ignore: (File) -> Boolean,
+            onFile: (File) -> Unit,
+            shouldContinue: () -> Boolean
+        ): List<File> {
+            onFile(file)
+            onFile(file)
+            return listOf(file, file)
         }
     }
 }

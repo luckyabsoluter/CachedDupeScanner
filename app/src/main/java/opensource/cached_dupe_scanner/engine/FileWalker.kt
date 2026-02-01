@@ -2,8 +2,8 @@ package opensource.cached_dupe_scanner.engine
 
 import java.io.File
 
-class FileWalker {
-    fun walk(
+open class FileWalker {
+    open fun walk(
         root: File,
         ignore: (File) -> Boolean = { false },
         onFile: (File) -> Unit = {},
