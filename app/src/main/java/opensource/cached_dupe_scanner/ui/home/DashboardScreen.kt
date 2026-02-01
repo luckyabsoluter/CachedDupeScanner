@@ -25,6 +25,7 @@ fun DashboardScreen(
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenReports: () -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
@@ -69,6 +70,13 @@ fun DashboardScreen(
             description = "Configure scan behavior.",
             actionLabel = "Open settings",
             onAction = onOpenSettings
+        )
+
+        DashboardCard(
+            title = "Scan reports",
+            description = "Review past scan reports.",
+            actionLabel = "Open reports",
+            onAction = onOpenReports
         )
     }
 }

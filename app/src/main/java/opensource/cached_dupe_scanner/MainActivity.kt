@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
+import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
@@ -30,6 +31,7 @@ import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanResultStore
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.ScanReportStore
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
@@ -50,6 +52,7 @@ class MainActivity : ComponentActivity() {
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
+                    val reportStore = remember { ScanReportStore(context) }
                     val scope = rememberCoroutineScope()
                     val dashboardScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val permissionScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
@@ -128,6 +131,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenScanCommand = { screen.value = Screen.ScanCommand },
                                 onOpenResults = { screen.value = Screen.Results },
                                 onOpenSettings = { screen.value = Screen.Settings },
+                                onOpenReports = { screen.value = Screen.Reports },
                                 scrollState = dashboardScroll,
                                 modifier = contentModifier
                             )
@@ -153,6 +157,7 @@ class MainActivity : ComponentActivity() {
                                     pendingScan.value = it
                                 },
                                 onScanCancelled = restoreLastResult,
+                                reportStore = reportStore,
                                 settingsStore = settingsStore,
                                 onBack = { screen.value = Screen.Dashboard },
                                 scrollState = scanCommandScroll,
@@ -180,6 +185,14 @@ class MainActivity : ComponentActivity() {
                                 modifier = contentModifier
                             )
                         }
+                        Screen.Reports -> {
+                            ReportsScreen(
+                                reportStore = reportStore,
+                                onBack = { screen.value = Screen.Dashboard },
+                                scrollState = resultsScroll,
+                                modifier = contentModifier
+                            )
+                        }
                     }
                 }
             }
@@ -193,5 +206,6 @@ private enum class Screen {
     Targets,
     ScanCommand,
     Results,
-    Settings
+    Settings,
+    Reports
 }
