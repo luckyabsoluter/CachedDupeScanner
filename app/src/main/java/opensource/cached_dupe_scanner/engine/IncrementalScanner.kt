@@ -15,7 +15,9 @@ class IncrementalScanner(
     fun scan(
         root: File,
         ignore: (File) -> Boolean = { false },
-        skipZeroSizeInDb: Boolean = false
+        skipZeroSizeInDb: Boolean = false,
+        onProgress: (scanned: Int, total: Int, current: FileMetadata) -> Unit = { _, _, _ -> },
+        shouldContinue: () -> Boolean = { true }
     ): ScanResult {
         val scannedAtMillis = System.currentTimeMillis()
         val files = mutableListOf<FileMetadata>()
@@ -26,8 +28,17 @@ class IncrementalScanner(
 
         val bySize = scanned.groupBy { it.sizeBytes }
         val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
+        val total = scanned.size
+        var scannedCount = 0
 
         scanned.forEach { current ->
+            if (!shouldContinue()) {
+                return ScanResult(
+                    scannedAtMillis = scannedAtMillis,
+                    files = files,
+                    duplicateGroups = emptyList()
+                )
+            }
             val finalMetadata = if (needsHash.contains(current)) {
                 val cached = cacheStore.lookup(current)
                 val hashHex = when (cached.status) {
@@ -44,6 +55,8 @@ class IncrementalScanner(
                 cacheStore.upsert(finalMetadata)
             }
             files.add(finalMetadata)
+            scannedCount += 1
+            onProgress(scannedCount, total, finalMetadata)
         }
 
         val duplicateGroups = files
