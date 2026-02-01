@@ -36,6 +36,7 @@ import java.io.File
 fun ScanScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanUiState.Success) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -101,6 +102,9 @@ fun ScanScreen(
             }
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan now")
+        }
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Back")
         }
     }
 }

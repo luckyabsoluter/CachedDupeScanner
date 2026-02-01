@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
                         Screen.Permission -> {
                             PermissionScreen(
                                 onNext = { screen.value = Screen.Scan },
+                                onBack = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
                             )
                         }
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
                                     exportText.value = null
                                     screen.value = Screen.Results
                                 },
+                                onBack = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
                             )
                         }
@@ -64,6 +66,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 exportText = exportText,
                                 onBackToScan = { screen.value = Screen.Scan },
+                                onBackToDashboard = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
                             )
                         }
