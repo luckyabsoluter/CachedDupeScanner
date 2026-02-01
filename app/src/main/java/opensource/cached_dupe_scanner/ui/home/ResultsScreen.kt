@@ -64,8 +64,17 @@ fun ResultsScreen(
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
-    val sortKey = remember { mutableStateOf(ResultSortKey.Count) }
-    val sortDirection = remember { mutableStateOf(SortDirection.Desc) }
+    val settingsSnapshot = remember { settingsStore.load() }
+    val sortKey = remember {
+        val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
+            .getOrDefault(ResultSortKey.Count)
+        mutableStateOf(key)
+    }
+    val sortDirection = remember {
+        val dir = runCatching { SortDirection.valueOf(settingsSnapshot.resultSortDirection) }
+            .getOrDefault(SortDirection.Desc)
+        mutableStateOf(dir)
+    }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
@@ -275,6 +284,8 @@ fun ResultsScreen(
                 OutlinedButton(onClick = {
                     sortKey.value = pendingSortKey.value
                     sortDirection.value = pendingSortDirection.value
+                    settingsStore.setResultSortKey(sortKey.value.name)
+                    settingsStore.setResultSortDirection(sortDirection.value.name)
                     sortDialogOpen.value = false
                 }) {
                     Text("Apply")

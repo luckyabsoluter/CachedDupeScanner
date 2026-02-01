@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,6 +20,8 @@ class AppSettingsStoreTest {
 
         assertFalse(settings.skipZeroSizeInDb)
         assertFalse(settings.hideZeroSizeInResults)
+        assertEquals("Count", settings.resultSortKey)
+        assertEquals("Desc", settings.resultSortDirection)
     }
 
     @Test
@@ -31,5 +34,11 @@ class AppSettingsStoreTest {
 
         store.setHideZeroSizeInResults(true)
         assertTrue(store.load().hideZeroSizeInResults)
+
+        store.setResultSortKey("Name")
+        store.setResultSortDirection("Asc")
+        val loaded = store.load()
+        assertEquals("Name", loaded.resultSortKey)
+        assertEquals("Asc", loaded.resultSortDirection)
     }
 }
