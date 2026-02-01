@@ -22,6 +22,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.hideZeroSizeInResults)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
+        assertFalse(settings.showFullPaths)
     }
 
     @Test
@@ -40,5 +41,8 @@ class AppSettingsStoreTest {
         val loaded = store.load()
         assertEquals("Name", loaded.resultSortKey)
         assertEquals("Asc", loaded.resultSortDirection)
+
+        store.setShowFullPaths(true)
+        assertTrue(store.load().showFullPaths)
     }
 }
