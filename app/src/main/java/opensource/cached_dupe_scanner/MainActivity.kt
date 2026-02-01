@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,10 @@ class MainActivity : ComponentActivity() {
                     val exportText = remember { mutableStateOf<String?>(null) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
+
+                    BackHandler(enabled = screen.value != Screen.Dashboard) {
+                        screen.value = Screen.Dashboard
+                    }
 
                     LaunchedEffect(Unit) {
                         if (state.value is ScanUiState.Idle) {
