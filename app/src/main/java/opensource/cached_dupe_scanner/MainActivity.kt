@@ -45,9 +45,9 @@ class MainActivity : ComponentActivity() {
                     val resultStore = remember { ScanResultStore(context) }
                     val historyRepo = remember {
                         val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-                            .addMigrations(CacheMigrations.MIGRATION_1_2)
+                            .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
                             .build()
-                        ScanHistoryRepository(db.scanHistoryDao())
+                        ScanHistoryRepository(db.fileCacheDao())
                     }
 
                     BackHandler(enabled = screen.value != Screen.Dashboard) {

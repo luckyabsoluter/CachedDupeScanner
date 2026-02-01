@@ -10,8 +10,14 @@ interface FileCacheDao {
     @Query("SELECT * FROM cached_files WHERE normalizedPath = :normalizedPath LIMIT 1")
     fun getByNormalizedPath(normalizedPath: String): CachedFileEntity?
 
+    @Query("SELECT * FROM cached_files")
+    fun getAll(): List<CachedFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(entity: CachedFileEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertAll(entities: List<CachedFileEntity>)
 
     @Query("DELETE FROM cached_files")
     fun clear()

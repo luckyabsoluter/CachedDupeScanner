@@ -1,43 +1,39 @@
 package opensource.cached_dupe_scanner.storage
 
-import opensource.cached_dupe_scanner.cache.ScanFileEntity
-import opensource.cached_dupe_scanner.cache.ScanHistoryDao
-import opensource.cached_dupe_scanner.cache.ScanSessionEntity
+import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 
-class ScanHistoryRepository(private val dao: ScanHistoryDao) {
+class ScanHistoryRepository(private val dao: FileCacheDao) {
     fun recordScan(result: ScanResult) {
-        val session = ScanSessionEntity(scannedAtMillis = result.scannedAtMillis)
         val files = result.files.map { file ->
-            ScanFileEntity(
-                scanSessionId = 0,
-                path = file.path,
+            CachedFileEntity(
                 normalizedPath = file.normalizedPath,
+                path = file.path,
                 sizeBytes = file.sizeBytes,
                 lastModifiedMillis = file.lastModifiedMillis,
                 hashHex = file.hashHex
             )
         }
-        dao.insertScan(session, files)
+        dao.upsertAll(files)
     }
 
     fun loadMergedHistory(): ScanResult? {
-        if (dao.countSessions() == 0) {
+        val files = dao.getAll().map { it.toMetadata() }
+        if (files.isEmpty()) {
             return null
         }
-        val files = dao.getAllFiles().map { it.toMetadata() }
         return ScanResultMerger.fromFiles(System.currentTimeMillis(), files)
     }
 
     fun clearAll() {
-        dao.clearFiles()
-        dao.clearSessions()
+        dao.clear()
     }
 }
 
-private fun ScanFileEntity.toMetadata(): FileMetadata {
+private fun CachedFileEntity.toMetadata(): FileMetadata {
     return FileMetadata(
         path = path,
         normalizedPath = normalizedPath,
