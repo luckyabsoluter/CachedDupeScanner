@@ -32,6 +32,7 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,6 +48,7 @@ fun ResultsScreen(
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val selectedGroup = remember { mutableStateOf<DuplicateGroup?>(null) }
+    val showFullPaths = remember { mutableStateOf(false) }
     BackHandler(enabled = selectedGroup.value != null) {
         selectedGroup.value = null
     }
@@ -80,6 +82,21 @@ fun ResultsScreen(
                                 onClearResults()
                             }
                         )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (showFullPaths.value) {
+                                        "Show file names"
+                                    } else {
+                                        "Show full paths"
+                                    }
+                                )
+                            },
+                            onClick = {
+                                showFullPaths.value = !showFullPaths.value
+                                menuExpanded.value = false
+                            }
+                        )
                     }
                 }
             }
@@ -96,7 +113,7 @@ fun ResultsScreen(
                     hideZeroSizeInResults = settings.hideZeroSizeInResults
                 )
                 selectedGroup.value?.let { group ->
-                    GroupDetailContent(group = group)
+                    GroupDetailContent(group = group, showFullPaths = showFullPaths.value)
                     return@Column
                 }
                 Text("Files scanned: ${result.files.size}")
@@ -128,7 +145,7 @@ fun ResultsScreen(
                                 group.files.sortedBy { it.normalizedPath }.forEach { file ->
                                     val date = formatDate(file.lastModifiedMillis)
                                     Text(
-                                        text = "${file.normalizedPath} · ${date}",
+                                        text = "${formatPath(file.normalizedPath, showFullPaths.value)} · ${date}",
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -146,7 +163,7 @@ fun ResultsScreen(
 }
 
 @Composable
-private fun GroupDetailContent(group: DuplicateGroup) {
+private fun GroupDetailContent(group: DuplicateGroup, showFullPaths: Boolean) {
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
@@ -162,11 +179,20 @@ private fun GroupDetailContent(group: DuplicateGroup) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = file.normalizedPath,
+                    text = formatPath(file.normalizedPath, showFullPaths),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (showFullPaths) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = file.normalizedPath,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "${formatBytes(file.sizeBytes)} · ${date}",
@@ -195,4 +221,12 @@ private fun formatBytes(bytes: Long): String {
 private fun formatDate(millis: Long): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
     return formatter.format(Date(millis))
+}
+
+private fun formatPath(path: String, showFullPath: Boolean): String {
+    return if (showFullPath) {
+        path
+    } else {
+        File(path).name.ifBlank { path }
+    }
 }
