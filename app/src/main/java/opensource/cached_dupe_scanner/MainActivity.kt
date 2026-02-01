@@ -68,8 +68,10 @@ class MainActivity : ComponentActivity() {
                     val targetsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val scanCommandScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val resultsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
+                    val resultsDetailScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val settingsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val reportsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
+                    val reportsDetailScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val historyRepo = remember {
                         val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                             .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
@@ -231,7 +233,7 @@ class MainActivity : ComponentActivity() {
                                     clearRequested.value = true
                                 },
                                 settingsStore = settingsStore,
-                                scrollState = resultsScroll,
+                                scrollState = resultsDetailScroll,
                                 selectedGroupIndex = index,
                                 modifier = screenModifier
                             )
@@ -265,7 +267,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() },
                                 onOpenReport = null,
                                 selectedReportId = id,
-                                scrollState = reportsScroll,
+                                scrollState = reportsDetailScroll,
                                 modifier = screenModifier
                             )
                         }
