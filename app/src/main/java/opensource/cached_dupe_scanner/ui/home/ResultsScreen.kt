@@ -185,11 +185,11 @@ fun ResultsScreen(
                                 }
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Text(
-                                        text = "${groupCount} files · ${formatBytes(groupSize)}",
+                                        text = "${groupCount} files · Total ${formatBytes(groupSize)}",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Text(
-                                        text = "File size: ${fileSize}",
+                                        text = "Per-file ${fileSize}",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -300,8 +300,8 @@ private fun GroupDetailContent(group: DuplicateGroup) {
         )
         Spacer(modifier = Modifier.height(8.dp))
     }
-    Text("${groupCount} files · ${formatBytes(groupSize)}")
-    Text("File size: ${fileSize}")
+    Text("${groupCount} files · Total ${formatBytes(groupSize)}")
+    Text("Per-file ${fileSize}")
     Spacer(modifier = Modifier.height(8.dp))
 
     group.files.sortedBy { it.normalizedPath }.forEach { file ->
