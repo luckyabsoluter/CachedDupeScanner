@@ -52,7 +52,7 @@ fun ScanCommandScreen(
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-            .addMigrations(CacheMigrations.MIGRATION_1_2)
+            .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
             .build()
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
