@@ -19,6 +19,12 @@ interface ScanHistoryDao {
     @Query("SELECT COUNT(*) FROM scan_sessions")
     fun countSessions(): Int
 
+    @Query("DELETE FROM scan_files")
+    fun clearFiles()
+
+    @Query("DELETE FROM scan_sessions")
+    fun clearSessions()
+
     @Transaction
     fun insertScan(session: ScanSessionEntity, files: List<ScanFileEntity>) {
         val sessionId = insertSession(session)

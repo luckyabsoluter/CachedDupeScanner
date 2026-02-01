@@ -13,7 +13,11 @@ import opensource.cached_dupe_scanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppTopBar(title: String, onBack: (() -> Unit)? = null) {
+fun AppTopBar(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    actions: (@Composable () -> Unit)? = null
+) {
     CenterAlignedTopAppBar(
         title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
         navigationIcon = {
@@ -25,6 +29,9 @@ fun AppTopBar(title: String, onBack: (() -> Unit)? = null) {
                     )
                 }
             }
+        },
+        actions = {
+            actions?.invoke()
         },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors()
     )
