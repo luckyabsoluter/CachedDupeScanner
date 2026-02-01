@@ -79,10 +79,6 @@ fun ResultsScreen(
                     result.duplicateGroups.forEach { group ->
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "Hash: ${group.hashHex}",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
                                 group.files.sortedBy { it.normalizedPath }.forEach { file ->
                                     Text(
                                         text = file.normalizedPath,
