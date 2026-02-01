@@ -16,12 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.Spacing
 
 @Composable
 fun PermissionScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
-    Column(modifier = modifier.padding(4.dp)) {
+    Column(modifier = modifier.padding(Spacing.screenPadding)) {
         AppTopBar(title = "Permission", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
