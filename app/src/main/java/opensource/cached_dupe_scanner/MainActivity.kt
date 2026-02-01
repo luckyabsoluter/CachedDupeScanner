@@ -27,6 +27,7 @@ import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
+import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
                     val screen = remember { mutableStateOf(Screen.Dashboard) }
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                     val exportText = remember { mutableStateOf<String?>(null) }
+                    val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val historyRepo = remember {
@@ -62,6 +64,18 @@ class MainActivity : ComponentActivity() {
                                 state.value = ScanUiState.Success(stored)
                             }
                         }
+                    }
+
+                    LaunchedEffect(pendingScan.value) {
+                        val scan = pendingScan.value ?: return@LaunchedEffect
+                        val merged = withContext(Dispatchers.IO) {
+                            historyRepo.recordScan(scan)
+                            historyRepo.loadMergedHistory() ?: scan
+                        }
+                        state.value = ScanUiState.Success(merged)
+                        resultStore.save(merged)
+                        screen.value = Screen.Results
+                        pendingScan.value = null
                     }
 
                     val contentModifier = Modifier
@@ -95,11 +109,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onScanComplete = {
                                     exportText.value = null
-                                    historyRepo.recordScan(it)
-                                    val merged = historyRepo.loadMergedHistory() ?: it
-                                    state.value = ScanUiState.Success(merged)
-                                    resultStore.save(merged)
-                                    screen.value = Screen.Results
+                                    pendingScan.value = it
                                 },
                                 onBack = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
