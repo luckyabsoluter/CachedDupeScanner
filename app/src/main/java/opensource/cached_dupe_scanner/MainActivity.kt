@@ -21,6 +21,10 @@ import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanResultStore
+import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
+import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.CacheMigrations
+import androidx.room.Room
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
 class MainActivity : ComponentActivity() {
@@ -35,6 +39,12 @@ class MainActivity : ComponentActivity() {
                     val exportText = remember { mutableStateOf<String?>(null) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
+                    val historyRepo = remember {
+                        val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
+                            .addMigrations(CacheMigrations.MIGRATION_1_2)
+                            .build()
+                        ScanHistoryRepository(db.scanHistoryDao())
+                    }
 
                     BackHandler(enabled = screen.value != Screen.Dashboard) {
                         screen.value = Screen.Dashboard
@@ -42,7 +52,8 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(Unit) {
                         if (state.value is ScanUiState.Idle) {
-                            val stored = resultStore.load()
+                            val stored = historyRepo.loadMergedHistory()
+                                ?: resultStore.load()
                             if (stored != null) {
                                 state.value = ScanUiState.Success(stored)
                             }
@@ -80,7 +91,10 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onScanComplete = {
                                     exportText.value = null
-                                    resultStore.save(it.result)
+                                    historyRepo.recordScan(it)
+                                    val merged = historyRepo.loadMergedHistory() ?: it
+                                    state.value = ScanUiState.Success(merged)
+                                    resultStore.save(merged)
                                     screen.value = Screen.Results
                                 },
                                 onBack = { screen.value = Screen.Dashboard },
