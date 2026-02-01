@@ -21,7 +21,8 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 @Composable
 fun DashboardScreen(
     onOpenPermission: () -> Unit,
-    onOpenScan: () -> Unit,
+    onOpenTargets: () -> Unit,
+    onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -42,9 +43,16 @@ fun DashboardScreen(
 
         DashboardCard(
             title = "Scan target",
-            description = "Choose the folder path and start a scan.",
+            description = "Manage target folders for scanning.",
+            actionLabel = "Open targets",
+            onAction = onOpenTargets
+        )
+
+        DashboardCard(
+            title = "Scan command",
+            description = "Run a scan for a selected target.",
             actionLabel = "Open scan",
-            onAction = onOpenScan
+            onAction = onOpenScanCommand
         )
 
         DashboardCard(
