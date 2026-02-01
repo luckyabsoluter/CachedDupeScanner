@@ -90,18 +90,24 @@ fun ResultsScreen(
                     result.duplicateGroups.forEach { group ->
                         val groupCount = group.files.size
                         val groupSize = group.files.sumOf { it.sizeBytes }
+                        val groupSizes = group.files
+                            .map { formatBytes(it.sizeBytes) }
+                            .joinToString(", ")
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
                                     text = "${groupCount} files · ${formatBytes(groupSize)}",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
+                                Text(
+                                    text = "Sizes: ${groupSizes}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 group.files.sortedBy { it.normalizedPath }.forEach { file ->
                                     val date = formatDate(file.lastModifiedMillis)
-                                    val size = formatBytes(file.sizeBytes)
                                     Text(
-                                        text = "${file.normalizedPath} · ${size} · ${date}",
+                                        text = "${file.normalizedPath} · ${date}",
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
