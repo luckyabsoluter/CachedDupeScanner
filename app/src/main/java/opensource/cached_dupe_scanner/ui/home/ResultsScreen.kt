@@ -17,8 +17,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -66,7 +65,9 @@ fun ResultsScreen(
     val showFullPaths = remember { mutableStateOf(false) }
     val sortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val sortDirection = remember { mutableStateOf(SortDirection.Desc) }
-    val sortMenuExpanded = remember { mutableStateOf(false) }
+    val sortDialogOpen = remember { mutableStateOf(false) }
+    val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
+    val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
     BackHandler(enabled = selectedGroup.value != null) {
         selectedGroup.value = null
     }
@@ -89,18 +90,18 @@ fun ResultsScreen(
                     IconButton(onClick = { menuExpanded.value = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                     }
-                    DropdownMenu(
+                    androidx.compose.material3.DropdownMenu(
                         expanded = menuExpanded.value,
                         onDismissRequest = { menuExpanded.value = false }
                     ) {
-                        DropdownMenuItem(
+                        androidx.compose.material3.DropdownMenuItem(
                             text = { Text("Clear all results") },
                             onClick = {
                                 menuExpanded.value = false
                                 onClearResults()
                             }
                         )
-                        DropdownMenuItem(
+                        androidx.compose.material3.DropdownMenuItem(
                             text = { Text("Show full paths") },
                             leadingIcon = {
                                 Checkbox(
@@ -143,63 +144,12 @@ fun ResultsScreen(
                         Text("Files scanned: ${result.files.size}")
                         Text("Duplicate groups: ${result.duplicateGroups.size}")
                     }
-                    OutlinedButton(onClick = { sortMenuExpanded.value = true }) {
+                    OutlinedButton(onClick = {
+                        pendingSortKey.value = sortKey.value
+                        pendingSortDirection.value = sortDirection.value
+                        sortDialogOpen.value = true
+                    }) {
                         Text("Sort")
-                    }
-                    DropdownMenu(
-                        expanded = sortMenuExpanded.value,
-                        onDismissRequest = { sortMenuExpanded.value = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Count") },
-                            leadingIcon = {
-                                Checkbox(
-                                    checked = sortKey.value == ResultSortKey.Count,
-                                    onCheckedChange = null
-                                )
-                            },
-                            onClick = { sortKey.value = ResultSortKey.Count }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Size") },
-                            leadingIcon = {
-                                Checkbox(
-                                    checked = sortKey.value == ResultSortKey.TotalSize,
-                                    onCheckedChange = null
-                                )
-                            },
-                            onClick = { sortKey.value = ResultSortKey.TotalSize }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Name") },
-                            leadingIcon = {
-                                Checkbox(
-                                    checked = sortKey.value == ResultSortKey.Name,
-                                    onCheckedChange = null
-                                )
-                            },
-                            onClick = { sortKey.value = ResultSortKey.Name }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Ascending") },
-                            leadingIcon = {
-                                Checkbox(
-                                    checked = sortDirection.value == SortDirection.Asc,
-                                    onCheckedChange = null
-                                )
-                            },
-                            onClick = { sortDirection.value = SortDirection.Asc }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Descending") },
-                            leadingIcon = {
-                                Checkbox(
-                                    checked = sortDirection.value == SortDirection.Desc,
-                                    onCheckedChange = null
-                                )
-                            },
-                            onClick = { sortDirection.value = SortDirection.Desc }
-                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -261,6 +211,70 @@ fun ResultsScreen(
             }
         }
 
+    }
+
+    if (sortDialogOpen.value) {
+        AlertDialog(
+            onDismissRequest = { sortDialogOpen.value = false },
+            title = { Text("Sort options") },
+            text = {
+                Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    Text("Sort by")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = pendingSortKey.value == ResultSortKey.Count,
+                            onCheckedChange = { pendingSortKey.value = ResultSortKey.Count }
+                        )
+                        Text("Count")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = pendingSortKey.value == ResultSortKey.TotalSize,
+                            onCheckedChange = { pendingSortKey.value = ResultSortKey.TotalSize }
+                        )
+                        Text("Size")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = pendingSortKey.value == ResultSortKey.Name,
+                            onCheckedChange = { pendingSortKey.value = ResultSortKey.Name }
+                        )
+                        Text("Name")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Order")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = pendingSortDirection.value == SortDirection.Asc,
+                            onCheckedChange = { pendingSortDirection.value = SortDirection.Asc }
+                        )
+                        Text("Ascending")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = pendingSortDirection.value == SortDirection.Desc,
+                            onCheckedChange = { pendingSortDirection.value = SortDirection.Desc }
+                        )
+                        Text("Descending")
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(onClick = {
+                    sortKey.value = pendingSortKey.value
+                    sortDirection.value = pendingSortDirection.value
+                    sortDialogOpen.value = false
+                }) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { sortDialogOpen.value = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
