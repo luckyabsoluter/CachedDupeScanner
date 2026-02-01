@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -168,191 +169,195 @@ fun ResultsScreen(
                     .coerceAtMost(totalGroups)
             }
     }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.padding(Spacing.screenPadding)
-    ) {
-        item {
-            AppTopBar(
-                title = "Results",
-                onBack = {
-                    onBackToDashboard()
-                },
-                actions = {
-                    loadIndicatorText.value?.let { indicator ->
-                        Text(
-                            text = indicator,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                    }
-                    if (selectedGroupIndex == null) {
-                        IconButton(onClick = { menuExpanded.value = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                        }
-                        androidx.compose.material3.DropdownMenu(
-                            expanded = menuExpanded.value,
-                            onDismissRequest = { menuExpanded.value = false }
-                        ) {
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Clear all results") },
-                                onClick = {
-                                    menuExpanded.value = false
-                                    onClearResults()
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Show full paths") },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = showFullPaths.value,
-                                        onCheckedChange = null
-                                    )
-                                },
-                                onClick = {
-                                    showFullPaths.value = !showFullPaths.value
-                                    settingsStore.setShowFullPaths(showFullPaths.value)
-                                    menuExpanded.value = false
-                                }
-                            )
-                        }
-                    }
-                }
-            )
-        }
-        item { Spacer(modifier = Modifier.height(8.dp)) }
-        when (val current = state.value) {
-            ScanUiState.Idle -> item { Text("No results yet.") }
-            is ScanUiState.Scanning -> item { Text("Scanning…") }
-            is ScanUiState.Error -> item { Text("Error: ${current.message}") }
-            is ScanUiState.Success -> {
-                val resultValue = result ?: return@LazyColumn
-                if (selectedGroupIndex != null) {
-                    val group = resultValue.duplicateGroups.getOrNull(selectedGroupIndex)
-                    item {
-                        if (group != null) {
-                            GroupDetailContent(
-                                group = group,
-                                deletedPaths = deletedPaths,
-                                imageLoader = imageLoader,
-                                onFileDeleted = { file ->
-                                    onDeleteFile?.invoke(file)
-                                }
-                            )
-                        } else {
-                            Text("Group not found.")
-                        }
-                    }
-                } else {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Files scanned: ${result.files.size}")
-                                Text("Duplicate groups: ${result.duplicateGroups.size}")
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.padding(Spacing.screenPadding)
+        ) {
+            item {
+                AppTopBar(
+                    title = "Results",
+                    onBack = {
+                        onBackToDashboard()
+                    },
+                    actions = {
+                        if (selectedGroupIndex == null) {
+                            IconButton(onClick = { menuExpanded.value = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                             }
-                            OutlinedButton(onClick = {
-                                pendingSortKey.value = sortKey.value
-                                pendingSortDirection.value = sortDirection.value
-                                sortDialogOpen.value = true
-                            }) {
-                                Text("Sort")
-                            }
-                        }
-                    }
-                    item { Spacer(modifier = Modifier.height(8.dp)) }
-                    if (resultValue.duplicateGroups.isEmpty()) {
-                        item { Text("No duplicates found.") }
-                    } else {
-                        val groupsToShow = resultValue.duplicateGroups.take(visibleCount.value)
-                        itemsIndexed(
-                            items = groupsToShow,
-                            key = { _, group -> group.hashHex }
-                        ) { _, group ->
-                            val groupCount = group.files.size
-                            val groupSize = group.files.sumOf { it.sizeBytes }
-                            val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
-                            val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
-                            val groupDeleted = group.files.any { deletedPaths.contains(it.normalizedPath) }
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        val index = resultValue.duplicateGroups.indexOf(group)
-                                        if (onOpenGroup != null && index >= 0) {
-                                            onOpenGroup(index)
-                                        }
-                                    }
-                                ,
-                                colors = if (groupDeleted) {
-                                    CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                                    )
-                                } else {
-                                    CardDefaults.cardColors()
-                                }
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = menuExpanded.value,
+                                onDismissRequest = { menuExpanded.value = false }
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (preview != null) {
-                                        AsyncImage(
-                                            model = ImageRequest.Builder(context)
-                                                .data(File(preview.normalizedPath))
-                                                .build(),
-                                            imageLoader = imageLoader,
-                                            contentDescription = "Thumbnail",
-                                            modifier = Modifier.size(72.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Clear all results") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        onClearResults()
                                     }
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = "${groupCount} files · Total ${formatBytes(groupSize)}",
-                                            style = MaterialTheme.typography.bodyMedium
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Show full paths") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = showFullPaths.value,
+                                            onCheckedChange = null
                                         )
-                                        Text(
-                                            text = "Per-file ${fileSize}",
-                                            style = MaterialTheme.typography.bodySmall
+                                    },
+                                    onClick = {
+                                        showFullPaths.value = !showFullPaths.value
+                                        settingsStore.setShowFullPaths(showFullPaths.value)
+                                        menuExpanded.value = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                )
+            }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+            when (val current = state.value) {
+                ScanUiState.Idle -> item { Text("No results yet.") }
+                is ScanUiState.Scanning -> item { Text("Scanning…") }
+                is ScanUiState.Error -> item { Text("Error: ${current.message}") }
+                is ScanUiState.Success -> {
+                    val resultValue = result ?: return@LazyColumn
+                    if (selectedGroupIndex != null) {
+                        val group = resultValue.duplicateGroups.getOrNull(selectedGroupIndex)
+                        item {
+                            if (group != null) {
+                                GroupDetailContent(
+                                    group = group,
+                                    deletedPaths = deletedPaths,
+                                    imageLoader = imageLoader,
+                                    onFileDeleted = { file ->
+                                        onDeleteFile?.invoke(file)
+                                    }
+                                )
+                            } else {
+                                Text("Group not found.")
+                            }
+                        }
+                    } else {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("Files scanned: ${result.files.size}")
+                                    Text("Duplicate groups: ${result.duplicateGroups.size}")
+                                }
+                                OutlinedButton(onClick = {
+                                    pendingSortKey.value = sortKey.value
+                                    pendingSortDirection.value = sortDirection.value
+                                    sortDialogOpen.value = true
+                                }) {
+                                    Text("Sort")
+                                }
+                            }
+                        }
+                        item { Spacer(modifier = Modifier.height(8.dp)) }
+                        if (resultValue.duplicateGroups.isEmpty()) {
+                            item { Text("No duplicates found.") }
+                        } else {
+                            val groupsToShow = resultValue.duplicateGroups.take(visibleCount.value)
+                            itemsIndexed(
+                                items = groupsToShow,
+                                key = { _, group -> group.hashHex }
+                            ) { _, group ->
+                                val groupCount = group.files.size
+                                val groupSize = group.files.sumOf { it.sizeBytes }
+                                val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
+                                val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
+                                val groupDeleted = group.files.any { deletedPaths.contains(it.normalizedPath) }
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val index = resultValue.duplicateGroups.indexOf(group)
+                                            if (onOpenGroup != null && index >= 0) {
+                                                onOpenGroup(index)
+                                            }
+                                        }
+                                    ,
+                                    colors = if (groupDeleted) {
+                                        CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer
                                         )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        group.files.sortedBy { it.normalizedPath }.forEach { file ->
-                                            val date = formatDate(file.lastModifiedMillis)
-                                            Text(
-                                                text = "${formatPath(file.normalizedPath, showFullPaths.value)} · ${date}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                    } else {
+                                        CardDefaults.cardColors()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(12.dp)
+                                            .fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (preview != null) {
+                                            AsyncImage(
+                                                model = ImageRequest.Builder(context)
+                                                    .data(File(preview.normalizedPath))
+                                                    .build(),
+                                                imageLoader = imageLoader,
+                                                contentDescription = "Thumbnail",
+                                                modifier = Modifier.size(72.dp)
                                             )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = "${groupCount} files · Total ${formatBytes(groupSize)}",
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = "Per-file ${fileSize}",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            group.files.sortedBy { it.normalizedPath }.forEach { file ->
+                                                val date = formatDate(file.lastModifiedMillis)
+                                                Text(
+                                                    text = "${formatPath(file.normalizedPath, showFullPaths.value)} · ${date}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                        if (resultValue.duplicateGroups.size > visibleCount.value) {
-                            item {
-                                OutlinedButton(
-                                    onClick = {
-                                        visibleCount.value = (visibleCount.value + pageSize)
-                                            .coerceAtMost(resultValue.duplicateGroups.size)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Load more")
+                            if (resultValue.duplicateGroups.size > visibleCount.value) {
+                                item {
+                                    OutlinedButton(
+                                        onClick = {
+                                            visibleCount.value = (visibleCount.value + pageSize)
+                                                .coerceAtMost(resultValue.duplicateGroups.size)
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Load more")
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+        loadIndicatorText.value?.let { indicator ->
+            Text(
+                text = indicator,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 12.dp, top = 12.dp)
+            )
         }
     }
 
