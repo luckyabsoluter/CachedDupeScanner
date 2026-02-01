@@ -19,9 +19,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +66,7 @@ fun ResultsScreen(
     val showFullPaths = remember { mutableStateOf(false) }
     val sortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val sortDirection = remember { mutableStateOf(SortDirection.Desc) }
+    val sortMenuExpanded = remember { mutableStateOf(false) }
     BackHandler(enabled = selectedGroup.value != null) {
         selectedGroup.value = null
     }
@@ -142,35 +143,62 @@ fun ResultsScreen(
                         Text("Files scanned: ${result.files.size}")
                         Text("Duplicate groups: ${result.duplicateGroups.size}")
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(
-                            selected = sortKey.value == ResultSortKey.Count,
-                            onClick = { sortKey.value = ResultSortKey.Count },
-                            label = { Text("Count") }
+                    OutlinedButton(onClick = { sortMenuExpanded.value = true }) {
+                        Text("Sort")
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuExpanded.value,
+                        onDismissRequest = { sortMenuExpanded.value = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Count") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = sortKey.value == ResultSortKey.Count,
+                                    onCheckedChange = null
+                                )
+                            },
+                            onClick = { sortKey.value = ResultSortKey.Count }
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        FilterChip(
-                            selected = sortKey.value == ResultSortKey.TotalSize,
-                            onClick = { sortKey.value = ResultSortKey.TotalSize },
-                            label = { Text("Size") }
+                        DropdownMenuItem(
+                            text = { Text("Size") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = sortKey.value == ResultSortKey.TotalSize,
+                                    onCheckedChange = null
+                                )
+                            },
+                            onClick = { sortKey.value = ResultSortKey.TotalSize }
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        FilterChip(
-                            selected = sortKey.value == ResultSortKey.Name,
-                            onClick = { sortKey.value = ResultSortKey.Name },
-                            label = { Text("Name") }
+                        DropdownMenuItem(
+                            text = { Text("Name") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = sortKey.value == ResultSortKey.Name,
+                                    onCheckedChange = null
+                                )
+                            },
+                            onClick = { sortKey.value = ResultSortKey.Name }
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        FilterChip(
-                            selected = sortDirection.value == SortDirection.Asc,
-                            onClick = { sortDirection.value = SortDirection.Asc },
-                            label = { Text("Asc") }
+                        DropdownMenuItem(
+                            text = { Text("Ascending") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = sortDirection.value == SortDirection.Asc,
+                                    onCheckedChange = null
+                                )
+                            },
+                            onClick = { sortDirection.value = SortDirection.Asc }
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        FilterChip(
-                            selected = sortDirection.value == SortDirection.Desc,
-                            onClick = { sortDirection.value = SortDirection.Desc },
-                            label = { Text("Desc") }
+                        DropdownMenuItem(
+                            text = { Text("Descending") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = sortDirection.value == SortDirection.Desc,
+                                    onCheckedChange = null
+                                )
+                            },
+                            onClick = { sortDirection.value = SortDirection.Desc }
                         )
                     }
                 }
