@@ -153,9 +153,17 @@ fun ResultsScreen(
                     sortDirection = sortDirection.value
                 )
                 val pageSize = 50
+                val prefetchThreshold = 10
                 val visibleCount = remember { mutableStateOf(pageSize) }
                 LaunchedEffect(result.duplicateGroups.size) {
                     visibleCount.value = pageSize
+                }
+                LaunchedEffect(visibleCount.value, result.duplicateGroups.size) {
+                    val remaining = result.duplicateGroups.size - visibleCount.value
+                    if (remaining in 1..prefetchThreshold) {
+                        visibleCount.value = (visibleCount.value + pageSize)
+                            .coerceAtMost(result.duplicateGroups.size)
+                    }
                 }
                 if (selectedGroupIndex != null) {
                     val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
