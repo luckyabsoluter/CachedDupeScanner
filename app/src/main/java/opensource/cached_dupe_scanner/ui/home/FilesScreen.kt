@@ -90,6 +90,7 @@ fun FilesScreen(
     val pendingSortKey = remember { mutableStateOf(FileSortKey.Name) }
     val pendingSortDirection = remember { mutableStateOf(FileSortDirection.Asc) }
     val filesState = remember { mutableStateOf<List<FileMetadata>?>(null) }
+    val isLoading = remember { mutableStateOf(true) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val topVisibleIndex = remember { mutableStateOf(0) }
     val imageLoader = remember {
@@ -99,22 +100,27 @@ fun FilesScreen(
     }
 
     LaunchedEffect(Unit) {
+        isLoading.value = true
         val result = withContext(Dispatchers.IO) {
             historyRepo.loadMergedHistory()
         }
         filesState.value = result?.files ?: emptyList()
+        isLoading.value = false
     }
 
     LaunchedEffect(refreshVersion) {
+        isLoading.value = true
         val result = withContext(Dispatchers.IO) {
             historyRepo.loadMergedHistory()
         }
         filesState.value = result?.files ?: emptyList()
+        isLoading.value = false
     }
 
     LaunchedEffect(clearVersion) {
         filesState.value = emptyList()
         selectedFile.value = null
+        isLoading.value = false
     }
 
     val sortedFiles = remember(filesState.value, sortKey.value, sortDirection.value) {
@@ -194,7 +200,7 @@ fun FilesScreen(
                 )
             }
             item { Spacer(modifier = Modifier.height(8.dp)) }
-            if (filesState.value == null) {
+            if (isLoading.value) {
                 item { Text("Loading files...") }
             } else if (sortedFiles.isEmpty()) {
                 item { Text("No files in history.") }
