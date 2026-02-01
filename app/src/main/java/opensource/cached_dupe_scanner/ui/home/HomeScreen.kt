@@ -14,12 +14,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,10 +31,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
+import opensource.cached_dupe_scanner.engine.DocumentScanner
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.export.ExportFormat
 import opensource.cached_dupe_scanner.export.ScanExporter
 import opensource.cached_dupe_scanner.sample.SampleData
+import opensource.cached_dupe_scanner.storage.TreeUriStore
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 
@@ -50,7 +53,22 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
     val scanner = remember { IncrementalScanner(cacheStore) }
+    val documentScanner = remember { DocumentScanner(cacheStore, context) }
+    val treeUriStore = remember { TreeUriStore(context) }
+    val selectedTreeUri = remember { mutableStateOf(treeUriStore.load()) }
     val rootDir = remember { File(context.filesDir, "scans") }
+
+    val treePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            treeUriStore.save(uri)
+            selectedTreeUri.value = uri
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (!rootDir.exists()) {
@@ -64,12 +82,25 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
-            text = "Scan app-local files and reuse cached hashes for faster re-scans.",
+            text = "Pick a folder or scan app-local files with cached hashes for faster re-scans.",
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        selectedTreeUri.value?.let { uri ->
+            Text(
+                text = "Selected folder: ${uri}",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         ActionButtons(
+            onPickFolder = {
+                treePicker.launch(null)
+            },
             onCreateSamples = {
                 scope.launch {
                     withContext(Dispatchers.IO) {
@@ -83,7 +114,12 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     state.value = ScanUiState.Scanning(scanned = 0, total = null)
                     exportText.value = null
                     val result = withContext(Dispatchers.IO) {
-                        scanner.scan(rootDir)
+                        val treeUri = selectedTreeUri.value
+                        if (treeUri != null) {
+                            documentScanner.scan(treeUri)
+                        } else {
+                            scanner.scan(rootDir)
+                        }
                     }
                     state.value = ScanUiState.Success(result)
                 }
@@ -120,12 +156,16 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ActionButtons(
+    onPickFolder: () -> Unit,
     onCreateSamples: () -> Unit,
     onScan: () -> Unit,
     onExportJson: () -> Unit,
     onExportCsv: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = onPickFolder, modifier = Modifier.fillMaxWidth()) {
+            Text("Pick folder")
+        }
         Button(onClick = onCreateSamples, modifier = Modifier.fillMaxWidth()) {
             Text("Create sample files")
         }
