@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,7 +30,11 @@ fun ResultsScreen(
     onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.padding(Spacing.screenPadding)) {
+    Column(
+        modifier = modifier
+            .padding(Spacing.screenPadding)
+            .verticalScroll(rememberScrollState())
+    ) {
         AppTopBar(title = "Results", onBack = onBackToDashboard)
         Spacer(modifier = Modifier.height(8.dp))
         when (val current = state.value) {
@@ -58,26 +62,24 @@ fun ResultsScreen(
                 if (result.duplicateGroups.isEmpty()) {
                     Text("No duplicates found.")
                 } else {
-                    LazyColumn {
-                        items(result.duplicateGroups) { group ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                    result.duplicateGroups.forEach { group ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Hash: ${group.hashHex}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                group.files.sortedBy { it.normalizedPath }.forEach { file ->
                                     Text(
-                                        text = "Hash: ${group.hashHex}",
-                                        style = MaterialTheme.typography.bodyMedium
+                                        text = file.normalizedPath,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    group.files.sortedBy { it.normalizedPath }.forEach { file ->
-                                        Text(
-                                            text = file.normalizedPath,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
