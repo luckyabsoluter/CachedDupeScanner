@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
                     val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                     val displayResult = remember { mutableStateOf<ScanResult?>(null) }
                     val sortSettingsVersion = remember { mutableStateOf(0) }
+                    val filesClearVersion = remember { mutableStateOf(0) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity() {
                         state.value = ScanUiState.Idle
                         deletedPaths.value = emptySet()
                         displayResult.value = null
+                        filesClearVersion.value += 1
                         clearRequested.value = false
                     }
 
@@ -185,6 +187,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.Files -> FilesScreen(
                                 historyRepo = historyRepo,
+                                clearVersion = filesClearVersion.value,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )

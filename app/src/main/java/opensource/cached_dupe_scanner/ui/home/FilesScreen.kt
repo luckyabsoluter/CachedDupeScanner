@@ -59,6 +59,7 @@ private enum class FileSortDirection {
 @Composable
 fun FilesScreen(
     historyRepo: ScanHistoryRepository,
+    clearVersion: Int,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -94,6 +95,11 @@ fun FilesScreen(
             historyRepo.loadMergedHistory()
         }
         filesState.value = result?.files ?: emptyList()
+    }
+
+    LaunchedEffect(clearVersion) {
+        filesState.value = emptyList()
+        selectedFile.value = null
     }
 
     val sortedFiles = remember(filesState.value, sortKey.value, sortDirection.value) {
