@@ -14,7 +14,8 @@ class IncrementalScanner(
 ) {
     fun scan(
         root: File,
-        ignore: (File) -> Boolean = { false }
+        ignore: (File) -> Boolean = { false },
+        skipZeroSizeInDb: Boolean = false
     ): ScanResult {
         val scannedAtMillis = System.currentTimeMillis()
         val files = mutableListOf<FileMetadata>()
@@ -29,7 +30,9 @@ class IncrementalScanner(
             }
 
             val finalMetadata = current.copy(hashHex = hashHex)
-            cacheStore.upsert(finalMetadata)
+            if (!skipZeroSizeInDb || finalMetadata.sizeBytes > 0) {
+                cacheStore.upsert(finalMetadata)
+            }
             files.add(finalMetadata)
         }
 
