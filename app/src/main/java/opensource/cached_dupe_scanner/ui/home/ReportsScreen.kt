@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -30,9 +30,9 @@ fun ReportsScreen(
     onBack: () -> Unit,
     onOpenReport: ((String) -> Unit)? = null,
     selectedReportId: String? = null,
-    scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
+    val scrollState = rememberScrollState()
     val reports = remember { mutableStateOf(reportStore.loadAll()) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
     val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }

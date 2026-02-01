@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -38,9 +38,9 @@ import java.io.File
 @Composable
 fun TargetsScreen(
     onBack: () -> Unit,
-    scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
+    val scrollState = rememberScrollState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { ScanTargetStore(context) }
