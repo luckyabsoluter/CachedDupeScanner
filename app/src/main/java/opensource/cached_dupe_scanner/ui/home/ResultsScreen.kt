@@ -151,7 +151,7 @@ fun ResultsScreen(
                                             .data(File(preview.normalizedPath))
                                             .build(),
                                         contentDescription = "Thumbnail",
-                                        modifier = Modifier.size(56.dp)
+                                        modifier = Modifier.size(72.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
