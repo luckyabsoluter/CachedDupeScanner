@@ -145,10 +145,10 @@ fun ScanCommandScreen(
                     Text("Progress", style = MaterialTheme.typography.titleSmall)
                     val targetText = progressTarget.value ?: "-"
                     val currentText = progressCurrent.value ?: "-"
-                    val phaseText = if (progressPhase.value == ScanPhase.Collecting) {
-                        "Collecting files"
-                    } else {
-                        "Hashing"
+                    val phaseText = when (progressPhase.value) {
+                        ScanPhase.Collecting -> "Collecting files"
+                        ScanPhase.Detecting -> "Detecting hash candidates"
+                        ScanPhase.Hashing -> "Hashing"
                     }
                     Text("Target: $targetText")
                     Text("Phase: $phaseText")
