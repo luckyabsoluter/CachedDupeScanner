@@ -155,7 +155,13 @@ fun ScanCommandScreen(
                     Text("Current: $currentText")
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = { currentJob.value?.cancel() },
+                        onClick = {
+                            currentJob.value?.cancel()
+                            state.value = ScanUiState.Idle
+                            progressTarget.value = null
+                            progressCurrent.value = null
+                            progressSize.value = null
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Stop scan")
@@ -215,7 +221,10 @@ private fun runScanForTarget(
             )
         }
         if (job?.isActive == false && result.files.isEmpty()) {
-            state.value = ScanUiState.Error("Scan cancelled")
+            state.value = ScanUiState.Idle
+            progressTarget.value = null
+            progressCurrent.value = null
+            progressSize.value = null
             return@launch
         }
         onScanComplete(result)
@@ -265,7 +274,10 @@ private fun runScanForAllTargets(
                 )
             }
             if (job?.isActive == false && result.files.isEmpty()) {
-                state.value = ScanUiState.Error("Scan cancelled")
+                state.value = ScanUiState.Idle
+                progressTarget.value = null
+                progressCurrent.value = null
+                progressSize.value = null
                 return@launch
             }
             results.add(result)
