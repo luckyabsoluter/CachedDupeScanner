@@ -29,6 +29,7 @@ import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.sample.SampleData
 import opensource.cached_dupe_scanner.storage.PathStore
+import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 
@@ -59,7 +60,7 @@ fun ScanScreen(
     }
 
     Column(modifier = modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = "2) Scan", style = MaterialTheme.typography.headlineSmall)
+        AppTopBar(title = "Scan", onBack = onBack)
         TextField(
             value = targetPath.value,
             onValueChange = { value ->

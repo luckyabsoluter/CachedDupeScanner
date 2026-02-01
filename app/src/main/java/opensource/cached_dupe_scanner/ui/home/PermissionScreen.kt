@@ -15,13 +15,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import opensource.cached_dupe_scanner.ui.components.AppTopBar
 
 @Composable
 fun PermissionScreen(onNext: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     Column(modifier = modifier.padding(16.dp)) {
-        Text(text = "1) Permission", style = MaterialTheme.typography.headlineSmall)
+        AppTopBar(title = "Permission", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = if (Environment.isExternalStorageManager()) {
