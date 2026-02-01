@@ -122,6 +122,23 @@ class IncrementalScannerTest {
         assertEquals(0, hasher.callsFor(file))
     }
 
+    @Test
+    fun cancelledScanDoesNotPersistPartialCache() {
+        val fileA = File(tempDir, "a.txt").apply { writeText("aa") }
+        val walker = DuplicateFileWalker(fileA)
+        val scanner = IncrementalScanner(store, Sha256FileHasher(), walker)
+        var allow = true
+
+        val result = scanner.scan(
+            tempDir,
+            onProgress = { _, _, _, _ -> allow = false },
+            shouldContinue = { allow }
+        )
+
+        assertEquals(0, result.files.size)
+        assertEquals(0, database.fileCacheDao().getAll().size)
+    }
+
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 

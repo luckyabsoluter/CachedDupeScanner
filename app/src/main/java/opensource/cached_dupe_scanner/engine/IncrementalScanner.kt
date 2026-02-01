@@ -50,6 +50,7 @@ class IncrementalScanner(
         val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
         val total = uniqueScanned.size
         var scannedCount = 0
+        val pending = mutableListOf<FileMetadata>()
 
         uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
@@ -71,13 +72,26 @@ class IncrementalScanner(
                 current.copy(hashHex = null)
             }
 
-            if (!skipZeroSizeInDb || finalMetadata.sizeBytes > 0) {
-                cacheStore.upsert(finalMetadata)
-            }
             files.add(finalMetadata)
+            pending.add(finalMetadata)
             scannedCount += 1
             onProgress(scannedCount, total, finalMetadata, ScanPhase.Hashing)
         }
+
+        if (!shouldContinue()) {
+            return ScanResult(
+                scannedAtMillis = scannedAtMillis,
+                files = emptyList(),
+                duplicateGroups = emptyList()
+            )
+        }
+
+        val toStore = if (skipZeroSizeInDb) {
+            pending.filter { it.sizeBytes > 0 }
+        } else {
+            pending
+        }
+        cacheStore.upsertAll(toStore)
 
         val duplicateGroups = files
             .filter { it.hashHex != null }
