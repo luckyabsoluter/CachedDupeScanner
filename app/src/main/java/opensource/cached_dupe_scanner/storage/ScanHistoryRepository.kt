@@ -11,7 +11,10 @@ class ScanHistoryRepository(
     private val settingsStore: AppSettingsStore
 ) {
     fun recordScan(result: ScanResult) {
-        val files = result.files.map { file ->
+        val settings = settingsStore.load()
+        val files = result.files
+            .filter { file -> !settings.skipZeroSizeInDb || file.sizeBytes > 0 }
+            .map { file ->
             CachedFileEntity(
                 normalizedPath = file.normalizedPath,
                 path = file.path,

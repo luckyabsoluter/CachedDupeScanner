@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import opensource.cached_dupe_scanner.core.ScanResultViewFilter
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
@@ -33,6 +35,7 @@ fun ResultsScreen(
     state: MutableState<ScanUiState>,
     onBackToDashboard: () -> Unit,
     onClearResults: () -> Unit,
+    settingsStore: AppSettingsStore,
     modifier: Modifier = Modifier
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
@@ -68,7 +71,12 @@ fun ResultsScreen(
             is ScanUiState.Scanning -> Text("Scanning…")
             is ScanUiState.Error -> Text("Error: ${current.message}")
             is ScanUiState.Success -> {
-                val result = current.result
+                val settings = settingsStore.load()
+                val result = ScanResultViewFilter.filterForDisplay(
+                    result = current.result,
+                    hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                    excludeZeroSizeDuplicates = settings.excludeZeroSizeDuplicates
+                )
                 Text("Files scanned: ${result.files.size}")
                 Text("Duplicate groups: ${result.duplicateGroups.size}")
                 Spacer(modifier = Modifier.height(8.dp))

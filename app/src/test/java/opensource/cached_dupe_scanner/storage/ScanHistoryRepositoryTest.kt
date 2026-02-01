@@ -40,8 +40,18 @@ class ScanHistoryRepositoryTest {
                 duplicateGroups = emptyList()
             )
 
+            settings.setSkipZeroSizeInDb(true)
+            val rZero = ScanResult(
+                scannedAtMillis = 2,
+                files = listOf(
+                    FileMetadata("/zero", "/zero", 0, 1, "h3")
+                ),
+                duplicateGroups = emptyList()
+            )
+
             repo.recordScan(r1)
             repo.recordScan(r2)
+            repo.recordScan(rZero)
 
             // Record same path again with updated size/hash
             val r3 = ScanResult(
