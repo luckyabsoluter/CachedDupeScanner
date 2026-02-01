@@ -85,12 +85,14 @@ fun ScanCommandScreen(
                 TargetScanRow(
                     target = target,
                     onScan = {
+                        val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
                         runScanForTarget(
                             scope,
                             scanner,
                             state,
                             target,
-                            onScanComplete
+                            onScanComplete,
+                            skipZeroSizeInDb
                         )
                     }
                 )
@@ -99,12 +101,14 @@ fun ScanCommandScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = {
+            val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
             runScanForAllTargets(
                 scope,
                 scanner,
                 state,
                 targets.value,
-                onScanComplete
+                onScanComplete,
+                skipZeroSizeInDb
             )
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan all targets")
@@ -130,7 +134,8 @@ private fun runScanForTarget(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
-    onScanComplete: (ScanResult) -> Unit
+    onScanComplete: (ScanResult) -> Unit,
+    skipZeroSizeInDb: Boolean
 ) {
     scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
@@ -140,7 +145,7 @@ private fun runScanForTarget(
             return@launch
         }
         val result = withContext(Dispatchers.IO) {
-            scanner.scan(targetFile)
+            scanner.scan(targetFile, skipZeroSizeInDb = skipZeroSizeInDb)
         }
         onScanComplete(result)
     }
@@ -151,7 +156,8 @@ private fun runScanForAllTargets(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
-    onScanComplete: (ScanResult) -> Unit
+    onScanComplete: (ScanResult) -> Unit,
+    skipZeroSizeInDb: Boolean
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
@@ -167,7 +173,7 @@ private fun runScanForAllTargets(
                 continue
             }
             val result = withContext(Dispatchers.IO) {
-                scanner.scan(targetFile)
+                scanner.scan(targetFile, skipZeroSizeInDb = skipZeroSizeInDb)
             }
             results.add(result)
         }

@@ -68,6 +68,23 @@ class IncrementalScannerTest {
         assertEquals(2, hasher.callsFor(file))
     }
 
+    @Test
+    fun scanSkipsZeroSizeFilesInDbWhenConfigured() {
+        val emptyFile = File(tempDir, "empty.txt").apply {
+            writeText("")
+        }
+        val file = File(tempDir, "filled.txt").apply {
+            writeText("data")
+        }
+        val scanner = IncrementalScanner(store, Sha256FileHasher(), FileWalker())
+
+        scanner.scan(tempDir, skipZeroSizeInDb = true)
+
+        val cached = database.fileCacheDao().getAll()
+        assertEquals(1, cached.size)
+        assertEquals(PathNormalizer.normalize(file.path), cached.first().normalizedPath)
+    }
+
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 
