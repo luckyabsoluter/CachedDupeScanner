@@ -503,11 +503,15 @@ private fun formatPath(path: String, showFullPath: Boolean): String {
 private fun openFile(context: android.content.Context, path: String) {
     val file = File(path)
     if (!file.exists()) return
-    val uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        file
-    )
+    val uri = try {
+        FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+    } catch (e: IllegalArgumentException) {
+        return
+    }
     val mime = getMimeType(uri, path)
     val intent = Intent(Intent.ACTION_VIEW)
         .setDataAndType(uri, mime)
