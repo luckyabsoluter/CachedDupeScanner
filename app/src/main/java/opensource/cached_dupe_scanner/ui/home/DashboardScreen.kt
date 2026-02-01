@@ -24,6 +24,7 @@ fun DashboardScreen(
     onOpenTargets: () -> Unit,
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -60,6 +61,13 @@ fun DashboardScreen(
             description = "View duplicates and export results.",
             actionLabel = "Open results",
             onAction = onOpenResults
+        )
+
+        DashboardCard(
+            title = "Settings",
+            description = "Configure scan behavior.",
+            actionLabel = "Open settings",
+            onAction = onOpenSettings
         )
     }
 }
