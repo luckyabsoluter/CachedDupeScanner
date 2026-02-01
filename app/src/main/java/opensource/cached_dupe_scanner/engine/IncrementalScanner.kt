@@ -46,10 +46,26 @@ class IncrementalScanner(
 
         val uniqueScanned = scanned.distinctBy { it.normalizedPath }
 
-        val bySize = uniqueScanned.groupBy { it.sizeBytes }
-        val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
-        val total = uniqueScanned.size
-        var scannedCount = 0
+        val totalDetect = uniqueScanned.size
+        var detectCount = 0
+        val sizeCounts = mutableMapOf<Long, Int>()
+
+        uniqueScanned.forEach { current ->
+            if (!shouldContinue()) {
+                return ScanResult(
+                    scannedAtMillis = scannedAtMillis,
+                    files = emptyList(),
+                    duplicateGroups = emptyList()
+                )
+            }
+            sizeCounts[current.sizeBytes] = (sizeCounts[current.sizeBytes] ?: 0) + 1
+            detectCount += 1
+            onProgress(detectCount, totalDetect, current, ScanPhase.Detecting)
+        }
+
+        val needsHash = uniqueScanned.filter { (sizeCounts[it.sizeBytes] ?: 0) > 1 }.toSet()
+        val totalHash = needsHash.size
+        var hashCount = 0
         val pending = mutableListOf<FileMetadata>()
 
         uniqueScanned.forEach { current ->
@@ -74,8 +90,10 @@ class IncrementalScanner(
 
             files.add(finalMetadata)
             pending.add(finalMetadata)
-            scannedCount += 1
-            onProgress(scannedCount, total, finalMetadata, ScanPhase.Hashing)
+            if (needsHash.contains(current)) {
+                hashCount += 1
+                onProgress(hashCount, totalHash, finalMetadata, ScanPhase.Hashing)
+            }
         }
 
         if (!shouldContinue()) {
