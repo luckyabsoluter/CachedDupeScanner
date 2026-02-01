@@ -8,7 +8,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -19,7 +22,7 @@ fun AppTopBar(
     actions: (@Composable () -> Unit)? = null
 ) {
     CenterAlignedTopAppBar(
-        title = { Text(text = title, style = MaterialTheme.typography.titleLarge) },
+        title = { Text(text = title, style = MaterialTheme.typography.titleMedium) },
         navigationIcon = {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
@@ -33,6 +36,7 @@ fun AppTopBar(
         actions = {
             actions?.invoke()
         },
+        modifier = Modifier.height(48.dp),
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors()
     )
 }
