@@ -29,6 +29,9 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ResultsScreen(
@@ -85,11 +88,20 @@ fun ResultsScreen(
                     Text("No duplicates found.")
                 } else {
                     result.duplicateGroups.forEach { group ->
+                        val groupCount = group.files.size
+                        val groupSize = group.files.sumOf { it.sizeBytes }
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "${groupCount} files · ${formatBytes(groupSize)}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
                                 group.files.sortedBy { it.normalizedPath }.forEach { file ->
+                                    val date = formatDate(file.lastModifiedMillis)
+                                    val size = formatBytes(file.sizeBytes)
                                     Text(
-                                        text = file.normalizedPath,
+                                        text = "${file.normalizedPath} · ${size} · ${date}",
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -104,4 +116,21 @@ fun ResultsScreen(
         }
 
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "${bytes} B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.lastIndex) {
+        value /= 1024
+        unitIndex++
+    }
+    return String.format(Locale.getDefault(), "%.1f %s", value, units[unitIndex])
+}
+
+private fun formatDate(millis: Long): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    return formatter.format(Date(millis))
 }
