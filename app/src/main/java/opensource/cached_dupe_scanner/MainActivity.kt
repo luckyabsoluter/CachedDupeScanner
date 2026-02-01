@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
+import opensource.cached_dupe_scanner.ui.home.FilesScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
 import opensource.cached_dupe_scanner.ui.home.ReportsScreen
@@ -169,6 +170,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenTargets = { navigateTo(backStack, screenCache, Screen.Targets) },
                                 onOpenScanCommand = { navigateTo(backStack, screenCache, Screen.ScanCommand) },
                                 onOpenResults = { navigateTo(backStack, screenCache, Screen.Results) },
+                                onOpenFiles = { navigateTo(backStack, screenCache, Screen.Files) },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
                                 modifier = screenModifier
@@ -178,6 +180,11 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
                             Screen.Targets -> TargetsScreen(
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.Files -> FilesScreen(
+                                historyRepo = historyRepo,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -324,6 +331,7 @@ private sealed class Screen {
     data object Dashboard : Screen()
     data object Permission : Screen()
     data object Targets : Screen()
+    data object Files : Screen()
     data object ScanCommand : Screen()
     data object Results : Screen()
     data class ResultsDetail(val index: Int) : Screen()

@@ -20,9 +20,6 @@ import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ReportsScreen(
@@ -107,7 +104,3 @@ private fun ReportDetail(report: ScanReport) {
     Text("Hashing: ${report.durations.hashingMillis} ms")
 }
 
-private fun formatDate(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-    return formatter.format(Date(millis))
-}
