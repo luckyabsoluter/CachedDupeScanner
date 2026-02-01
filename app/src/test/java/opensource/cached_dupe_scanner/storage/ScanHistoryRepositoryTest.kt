@@ -77,4 +77,35 @@ class ScanHistoryRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun deleteByNormalizedPathRemovesEntry() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+
+            val r1 = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata("/a", "/a", 1, 1, "h1"),
+                    FileMetadata("/b", "/b", 1, 1, "h2")
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(r1)
+
+            repo.deleteByNormalizedPath("/a")
+
+            val merged = repo.loadMergedHistory()
+            assertNotNull(merged)
+            assertEquals(1, merged?.files?.size)
+            assertEquals("/b", merged?.files?.first()?.normalizedPath)
+        } finally {
+            database.close()
+        }
+    }
 }

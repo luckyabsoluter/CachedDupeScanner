@@ -187,6 +187,13 @@ class MainActivity : ComponentActivity() {
                                 onOpenGroup = { index ->
                                     navController.navigate("results/detail/$index")
                                 },
+                                onDeleteFile = { file ->
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                                        }
+                                    }
+                                },
                                 onClearResults = {
                                     pendingScan.value = null
                                     clearRequested.value = true
@@ -205,6 +212,13 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onBackToDashboard = { navController.popBackStack() },
                                 onOpenGroup = null,
+                                onDeleteFile = { file ->
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                                        }
+                                    }
+                                },
                                 onClearResults = {
                                     pendingScan.value = null
                                     clearRequested.value = true
