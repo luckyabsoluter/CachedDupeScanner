@@ -139,36 +139,41 @@ fun ResultsScreen(
                                 .fillMaxWidth()
                                 .clickable { selectedGroup.value = group }
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 if (preview != null) {
                                     AsyncImage(
                                         model = ImageRequest.Builder(LocalContext.current)
                                             .data(File(preview.normalizedPath))
                                             .build(),
                                         contentDescription = "Thumbnail",
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(140.dp)
+                                        modifier = Modifier.size(56.dp)
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Text(
-                                    text = "${groupCount} files · ${formatBytes(groupSize)}",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "File size: ${fileSize}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                group.files.sortedBy { it.normalizedPath }.forEach { file ->
-                                    val date = formatDate(file.lastModifiedMillis)
+                                Column(modifier = Modifier.fillMaxWidth()) {
                                     Text(
-                                        text = "${formatPath(file.normalizedPath, showFullPaths.value)} · ${date}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        text = "${groupCount} files · ${formatBytes(groupSize)}",
+                                        style = MaterialTheme.typography.bodyMedium
                                     )
+                                    Text(
+                                        text = "File size: ${fileSize}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    group.files.sortedBy { it.normalizedPath }.forEach { file ->
+                                        val date = formatDate(file.lastModifiedMillis)
+                                        Text(
+                                            text = "${formatPath(file.normalizedPath, showFullPaths.value)} · ${date}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
