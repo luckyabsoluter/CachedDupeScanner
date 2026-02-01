@@ -25,6 +25,14 @@ fun formatBytes(bytes: Long): String {
     }
 }
 
+fun formatBytesExact(bytes: Long): String {
+    return String.format(Locale.getDefault(), "%,d", bytes)
+}
+
+fun formatBytesWithExact(bytes: Long): String {
+    return "${formatBytes(bytes)} (${formatBytesExact(bytes)} B)"
+}
+
 fun formatDate(millis: Long): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return formatter.format(Date(millis))
