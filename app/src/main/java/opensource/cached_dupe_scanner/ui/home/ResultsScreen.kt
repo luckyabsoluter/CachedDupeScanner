@@ -1,6 +1,6 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,7 +60,6 @@ fun ResultsScreen(
     onBackToDashboard: () -> Unit,
     onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
-    scrollState: ScrollState,
     displayResult: ScanResult? = null,
     deletedPaths: Set<String> = emptySet(),
     onDeleteFile: ((FileMetadata) -> Unit)? = null,
@@ -69,6 +68,7 @@ fun ResultsScreen(
     selectedGroupIndex: Int? = null,
     modifier: Modifier = Modifier
 ) {
+    val scrollState = rememberScrollState()
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
     val settingsSnapshot = remember { settingsStore.load() }

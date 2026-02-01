@@ -6,15 +6,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,15 +67,7 @@ class MainActivity : ComponentActivity() {
                     val reportStore = remember { ScanReportStore(context) }
                     val scope = rememberCoroutineScope()
                     val navController = rememberNavController()
-                    val dashboardScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val permissionScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val targetsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val scanCommandScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val resultsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val resultsDetailScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val settingsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val reportsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
-                    val reportsDetailScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
+                    val stateHolder = rememberSaveableStateHolder()
                     val historyRepo = remember {
                         val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                             .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
@@ -179,134 +170,145 @@ class MainActivity : ComponentActivity() {
                         popExitTransition = { fadeOut(animationSpec = tween(100)) }
                     ) {
                         composable(AppRoutes.Dashboard) {
-                            DashboardScreen(
-                                onOpenPermission = { navController.navigate(AppRoutes.Permission) },
-                                onOpenTargets = { navController.navigate(AppRoutes.Targets) },
-                                onOpenScanCommand = { navController.navigate(AppRoutes.ScanCommand) },
-                                onOpenResults = { navController.navigate(AppRoutes.Results) },
-                                onOpenSettings = { navController.navigate(AppRoutes.Settings) },
-                                onOpenReports = { navController.navigate(AppRoutes.Reports) },
-                                scrollState = dashboardScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.Dashboard) {
+                                DashboardScreen(
+                                    onOpenPermission = { navController.navigate(AppRoutes.Permission) },
+                                    onOpenTargets = { navController.navigate(AppRoutes.Targets) },
+                                    onOpenScanCommand = { navController.navigate(AppRoutes.ScanCommand) },
+                                    onOpenResults = { navController.navigate(AppRoutes.Results) },
+                                    onOpenSettings = { navController.navigate(AppRoutes.Settings) },
+                                    onOpenReports = { navController.navigate(AppRoutes.Reports) },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.Permission) {
-                            PermissionScreen(
-                                onBack = { navController.popBackStack() },
-                                scrollState = permissionScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.Permission) {
+                                PermissionScreen(
+                                    onBack = { navController.popBackStack() },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.Targets) {
-                            TargetsScreen(
-                                onBack = { navController.popBackStack() },
-                                scrollState = targetsScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.Targets) {
+                                TargetsScreen(
+                                    onBack = { navController.popBackStack() },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.ScanCommand) {
-                            ScanCommandScreen(
-                                state = state,
-                                onScanComplete = { pendingScan.value = it },
-                                onScanCancelled = restoreLastResult,
-                                reportStore = reportStore,
-                                settingsStore = settingsStore,
-                                onBack = { navController.popBackStack() },
-                                scrollState = scanCommandScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.ScanCommand) {
+                                ScanCommandScreen(
+                                    state = state,
+                                    onScanComplete = { pendingScan.value = it },
+                                    onScanCancelled = restoreLastResult,
+                                    reportStore = reportStore,
+                                    settingsStore = settingsStore,
+                                    onBack = { navController.popBackStack() },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.Results) {
-                            ResultsScreen(
-                                state = state,
-                                displayResult = displayResult.value,
-                                onBackToDashboard = {
-                                    navController.popBackStack(AppRoutes.Dashboard, false)
-                                },
-                                onOpenGroup = { index ->
-                                    navController.navigate("results/detail/$index")
-                                },
-                                deletedPaths = deletedPaths.value,
-                                onDeleteFile = { file ->
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                            stateHolder.SaveableStateProvider(AppRoutes.Results) {
+                                ResultsScreen(
+                                    state = state,
+                                    displayResult = displayResult.value,
+                                    onBackToDashboard = {
+                                        navController.popBackStack(AppRoutes.Dashboard, false)
+                                    },
+                                    onOpenGroup = { index ->
+                                        navController.navigate("results/detail/$index")
+                                    },
+                                    deletedPaths = deletedPaths.value,
+                                    onDeleteFile = { file ->
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                                            }
                                         }
-                                    }
-                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                },
-                                onSortChanged = { sortSettingsVersion.value++ },
-                                onClearResults = {
-                                    pendingScan.value = null
-                                    clearRequested.value = true
-                                },
-                                settingsStore = settingsStore,
-                                scrollState = resultsScroll,
-                                modifier = screenModifier
-                            )
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    },
+                                    onSortChanged = { sortSettingsVersion.value++ },
+                                    onClearResults = {
+                                        pendingScan.value = null
+                                        clearRequested.value = true
+                                    },
+                                    settingsStore = settingsStore,
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(
                             route = AppRoutes.ResultsDetail,
                             arguments = listOf(navArgument("index") { type = NavType.IntType })
                         ) { backStackEntry ->
                             val index = backStackEntry.arguments?.getInt("index") ?: 0
-                            ResultsScreen(
-                                state = state,
-                                displayResult = displayResult.value,
-                                onBackToDashboard = { navController.popBackStack() },
-                                onOpenGroup = null,
-                                deletedPaths = deletedPaths.value,
-                                onDeleteFile = { file ->
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                            val key = "${AppRoutes.ResultsDetail}:$index"
+                            stateHolder.SaveableStateProvider(key) {
+                                ResultsScreen(
+                                    state = state,
+                                    displayResult = displayResult.value,
+                                    onBackToDashboard = { navController.popBackStack() },
+                                    onOpenGroup = null,
+                                    deletedPaths = deletedPaths.value,
+                                    onDeleteFile = { file ->
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                historyRepo.deleteByNormalizedPath(file.normalizedPath)
+                                            }
                                         }
-                                    }
-                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                },
-                                onSortChanged = { sortSettingsVersion.value++ },
-                                onClearResults = {
-                                    pendingScan.value = null
-                                    clearRequested.value = true
-                                },
-                                settingsStore = settingsStore,
-                                scrollState = resultsDetailScroll,
-                                selectedGroupIndex = index,
-                                modifier = screenModifier
-                            )
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    },
+                                    onSortChanged = { sortSettingsVersion.value++ },
+                                    onClearResults = {
+                                        pendingScan.value = null
+                                        clearRequested.value = true
+                                    },
+                                    settingsStore = settingsStore,
+                                    selectedGroupIndex = index,
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.Settings) {
-                            SettingsScreen(
-                                settingsStore = settingsStore,
-                                onBack = { navController.popBackStack() },
-                                scrollState = settingsScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.Settings) {
+                                SettingsScreen(
+                                    settingsStore = settingsStore,
+                                    onBack = { navController.popBackStack() },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(AppRoutes.Reports) {
-                            ReportsScreen(
-                                reportStore = reportStore,
-                                onBack = { navController.popBackStack() },
-                                onOpenReport = { id ->
-                                    navController.navigate("reports/detail/${Uri.encode(id)}")
-                                },
-                                scrollState = reportsScroll,
-                                modifier = screenModifier
-                            )
+                            stateHolder.SaveableStateProvider(AppRoutes.Reports) {
+                                ReportsScreen(
+                                    reportStore = reportStore,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenReport = { id ->
+                                        navController.navigate("reports/detail/${Uri.encode(id)}")
+                                    },
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                         composable(
                             route = AppRoutes.ReportDetail,
                             arguments = listOf(navArgument("id") { type = NavType.StringType })
                         ) { backStackEntry ->
                             val id = backStackEntry.arguments?.getString("id") ?: ""
-                            ReportsScreen(
-                                reportStore = reportStore,
-                                onBack = { navController.popBackStack() },
-                                onOpenReport = null,
-                                selectedReportId = id,
-                                scrollState = reportsDetailScroll,
-                                modifier = screenModifier
-                            )
+                            val key = "${AppRoutes.ReportDetail}:$id"
+                            stateHolder.SaveableStateProvider(key) {
+                                ReportsScreen(
+                                    reportStore = reportStore,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenReport = null,
+                                    selectedReportId = id,
+                                    modifier = screenModifier
+                                )
+                            }
                         }
                     }
                 }
