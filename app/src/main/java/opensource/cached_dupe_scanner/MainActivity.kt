@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
 
                     val contentModifier = Modifier
                         .fillMaxSize()
+                        .systemBarsPadding()
                         .padding(innerPadding)
 
                     when (screen.value) {
