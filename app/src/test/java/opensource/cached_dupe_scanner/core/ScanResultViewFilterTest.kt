@@ -13,7 +13,8 @@ class ScanResultViewFilterTest {
         val filtered = ScanResultViewFilter.filterForDisplay(
             result,
             hideZeroSizeInResults = true,
-            sortOption = ResultSortOption.CountDesc
+            sortKey = ResultSortKey.Count,
+            sortDirection = SortDirection.Desc
         )
 
         assertEquals(1, filtered.files.size)

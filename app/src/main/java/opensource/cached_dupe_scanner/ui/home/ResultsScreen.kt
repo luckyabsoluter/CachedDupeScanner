@@ -40,7 +40,8 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import opensource.cached_dupe_scanner.core.DuplicateGroup
-import opensource.cached_dupe_scanner.core.ResultSortOption
+import opensource.cached_dupe_scanner.core.ResultSortKey
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -63,7 +64,8 @@ fun ResultsScreen(
     val menuExpanded = remember { mutableStateOf(false) }
     val selectedGroup = remember { mutableStateOf<DuplicateGroup?>(null) }
     val showFullPaths = remember { mutableStateOf(false) }
-    val sortOption = remember { mutableStateOf(ResultSortOption.CountDesc) }
+    val sortKey = remember { mutableStateOf(ResultSortKey.Count) }
+    val sortDirection = remember { mutableStateOf(SortDirection.Desc) }
     BackHandler(enabled = selectedGroup.value != null) {
         selectedGroup.value = null
     }
@@ -124,7 +126,8 @@ fun ResultsScreen(
                 val result = ScanResultViewFilter.filterForDisplay(
                     result = current.result,
                     hideZeroSizeInResults = settings.hideZeroSizeInResults,
-                    sortOption = sortOption.value
+                    sortKey = sortKey.value,
+                    sortDirection = sortDirection.value
                 )
                 selectedGroup.value?.let { group ->
                     GroupDetailContent(group = group)
@@ -141,21 +144,33 @@ fun ResultsScreen(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         FilterChip(
-                            selected = sortOption.value == ResultSortOption.CountDesc,
-                            onClick = { sortOption.value = ResultSortOption.CountDesc },
+                            selected = sortKey.value == ResultSortKey.Count,
+                            onClick = { sortKey.value = ResultSortKey.Count },
                             label = { Text("Count") }
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         FilterChip(
-                            selected = sortOption.value == ResultSortOption.TotalSizeDesc,
-                            onClick = { sortOption.value = ResultSortOption.TotalSizeDesc },
+                            selected = sortKey.value == ResultSortKey.TotalSize,
+                            onClick = { sortKey.value = ResultSortKey.TotalSize },
                             label = { Text("Size") }
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         FilterChip(
-                            selected = sortOption.value == ResultSortOption.NameAsc,
-                            onClick = { sortOption.value = ResultSortOption.NameAsc },
+                            selected = sortKey.value == ResultSortKey.Name,
+                            onClick = { sortKey.value = ResultSortKey.Name },
                             label = { Text("Name") }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        FilterChip(
+                            selected = sortDirection.value == SortDirection.Asc,
+                            onClick = { sortDirection.value = SortDirection.Asc },
+                            label = { Text("Asc") }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        FilterChip(
+                            selected = sortDirection.value == SortDirection.Desc,
+                            onClick = { sortDirection.value = SortDirection.Desc },
+                            label = { Text("Desc") }
                         )
                     }
                 }
