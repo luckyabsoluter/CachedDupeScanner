@@ -14,8 +14,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -26,17 +25,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
-import opensource.cached_dupe_scanner.engine.DocumentScanner
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.export.ExportFormat
 import opensource.cached_dupe_scanner.export.ScanExporter
 import opensource.cached_dupe_scanner.sample.SampleData
-import opensource.cached_dupe_scanner.storage.TreeUriStore
+import opensource.cached_dupe_scanner.storage.PathStore
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 
@@ -53,22 +54,9 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
     val scanner = remember { IncrementalScanner(cacheStore) }
-    val documentScanner = remember { DocumentScanner(cacheStore, context) }
-    val treeUriStore = remember { TreeUriStore(context) }
-    val selectedTreeUri = remember { mutableStateOf(treeUriStore.load()) }
+    val pathStore = remember { PathStore(context) }
+    val targetPath = remember { mutableStateOf(pathStore.load() ?: defaultRootPath()) }
     val rootDir = remember { File(context.filesDir, "scans") }
-
-    val treePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-            treeUriStore.save(uri)
-            selectedTreeUri.value = uri
-        }
-    }
 
     LaunchedEffect(Unit) {
         if (!rootDir.exists()) {
@@ -82,24 +70,42 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
-            text = "Pick a folder or scan app-local files with cached hashes for faster re-scans.",
+            text = "Grant all-files access to scan any folder path you choose.",
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        selectedTreeUri.value?.let { uri ->
-            Text(
-                text = "Selected folder: ${uri}",
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
+        Text(
+            text = if (Environment.isExternalStorageManager()) {
+                "All-files access: granted"
+            } else {
+                "All-files access: not granted"
+            },
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        TextField(
+            value = targetPath.value,
+            onValueChange = { value ->
+                targetPath.value = value
+                pathStore.save(value)
+            },
+            label = { Text("Target folder path") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
 
         ActionButtons(
-            onPickFolder = {
-                treePicker.launch(null)
+            onRequestAllFiles = {
+                val uri = Uri.parse("package:${context.packageName}")
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+                context.startActivity(intent)
+            },
+            onUseDefaultPath = {
+                val path = defaultRootPath()
+                targetPath.value = path
+                pathStore.save(path)
             },
             onCreateSamples = {
                 scope.launch {
@@ -114,9 +120,9 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     state.value = ScanUiState.Scanning(scanned = 0, total = null)
                     exportText.value = null
                     val result = withContext(Dispatchers.IO) {
-                        val treeUri = selectedTreeUri.value
-                        if (treeUri != null) {
-                            documentScanner.scan(treeUri)
+                        val target = File(targetPath.value)
+                        if (target.exists()) {
+                            scanner.scan(target)
                         } else {
                             scanner.scan(rootDir)
                         }
@@ -156,15 +162,19 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ActionButtons(
-    onPickFolder: () -> Unit,
+    onRequestAllFiles: () -> Unit,
+    onUseDefaultPath: () -> Unit,
     onCreateSamples: () -> Unit,
     onScan: () -> Unit,
     onExportJson: () -> Unit,
     onExportCsv: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onPickFolder, modifier = Modifier.fillMaxWidth()) {
-            Text("Pick folder")
+        Button(onClick = onRequestAllFiles, modifier = Modifier.fillMaxWidth()) {
+            Text("Grant all-files access")
+        }
+        Button(onClick = onUseDefaultPath, modifier = Modifier.fillMaxWidth()) {
+            Text("Use device storage root")
         }
         Button(onClick = onCreateSamples, modifier = Modifier.fillMaxWidth()) {
             Text("Create sample files")
@@ -179,6 +189,10 @@ private fun ActionButtons(
             Text("Export CSV")
         }
     }
+}
+
+private fun defaultRootPath(): String {
+    return Environment.getExternalStorageDirectory().absolutePath
 }
 
 @Composable
