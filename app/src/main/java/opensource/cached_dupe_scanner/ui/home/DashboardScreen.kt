@@ -22,7 +22,7 @@ fun DashboardScreen(
     onOpenResults: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         AppTopBar(title = "CachedDupeScanner")
 
         DashboardCard(
