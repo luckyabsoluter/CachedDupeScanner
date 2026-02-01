@@ -18,8 +18,9 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -134,10 +135,10 @@ class MainActivity : ComponentActivity() {
                         navController = navController,
                         startDestination = AppRoutes.Dashboard,
                         modifier = navModifier,
-                        enterTransition = { EnterTransition.None },
-                        exitTransition = { ExitTransition.None },
-                        popEnterTransition = { EnterTransition.None },
-                        popExitTransition = { ExitTransition.None }
+                        enterTransition = { fadeIn(animationSpec = tween(100)) },
+                        exitTransition = { fadeOut(animationSpec = tween(100)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(100)) },
+                        popExitTransition = { fadeOut(animationSpec = tween(100)) }
                     ) {
                         composable(AppRoutes.Dashboard) {
                             DashboardScreen(
