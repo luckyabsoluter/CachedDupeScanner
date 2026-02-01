@@ -75,6 +75,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        Text(text = "1) Permission", style = MaterialTheme.typography.titleMedium)
         Text(
             text = if (Environment.isExternalStorageManager()) {
                 "All-files access: granted"
@@ -84,6 +85,17 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall
         )
         Spacer(modifier = Modifier.height(8.dp))
+
+        Button(onClick = {
+            val uri = Uri.parse("package:${context.packageName}")
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+            context.startActivity(intent)
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text("Grant all-files access")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(text = "2) Scan", style = MaterialTheme.typography.titleMedium)
 
         TextField(
             value = targetPath.value,
@@ -97,11 +109,6 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(8.dp))
 
         ActionButtons(
-            onRequestAllFiles = {
-                val uri = Uri.parse("package:${context.packageName}")
-                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
-                context.startActivity(intent)
-            },
             onUseDefaultPath = {
                 val path = defaultRootPath()
                 targetPath.value = path
@@ -141,6 +148,7 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         )
 
         Spacer(modifier = Modifier.height(16.dp))
+        Text(text = "3) Results", style = MaterialTheme.typography.titleMedium)
         StateSection(state = state)
 
         exportText.value?.let { text ->
@@ -162,7 +170,6 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ActionButtons(
-    onRequestAllFiles: () -> Unit,
     onUseDefaultPath: () -> Unit,
     onCreateSamples: () -> Unit,
     onScan: () -> Unit,
@@ -170,9 +177,6 @@ private fun ActionButtons(
     onExportCsv: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onRequestAllFiles, modifier = Modifier.fillMaxWidth()) {
-            Text("Grant all-files access")
-        }
         Button(onClick = onUseDefaultPath, modifier = Modifier.fillMaxWidth()) {
             Text("Use device storage root")
         }
