@@ -40,6 +40,7 @@ import coil.decode.VideoFrameDecoder
 import android.content.Intent
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -502,7 +503,10 @@ private fun formatPath(path: String, showFullPath: Boolean): String {
 
 private fun openFile(context: android.content.Context, path: String) {
     val file = File(path)
-    if (!file.exists()) return
+    if (!file.exists()) {
+        Toast.makeText(context, "File not found", Toast.LENGTH_SHORT).show()
+        return
+    }
     val uri = try {
         FileProvider.getUriForFile(
             context,
@@ -510,14 +514,17 @@ private fun openFile(context: android.content.Context, path: String) {
             file
         )
     } catch (e: IllegalArgumentException) {
+        Toast.makeText(context, "Unable to open file location", Toast.LENGTH_SHORT).show()
         return
     }
     val mime = getMimeType(uri, path)
     val intent = Intent(Intent.ACTION_VIEW)
         .setDataAndType(uri, mime)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    intent.resolveActivity(context.packageManager)?.let {
+    if (intent.resolveActivity(context.packageManager) != null) {
         context.startActivity(intent)
+    } else {
+        Toast.makeText(context, "No app can open this file", Toast.LENGTH_SHORT).show()
     }
 }
 
