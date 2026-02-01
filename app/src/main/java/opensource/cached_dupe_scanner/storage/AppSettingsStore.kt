@@ -5,7 +5,9 @@ import android.content.SharedPreferences
 
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
-    val hideZeroSizeInResults: Boolean
+    val hideZeroSizeInResults: Boolean,
+    val resultSortKey: String,
+    val resultSortDirection: String
 )
 
 class AppSettingsStore(context: Context) {
@@ -14,7 +16,9 @@ class AppSettingsStore(context: Context) {
     fun load(): AppSettings {
         return AppSettings(
             skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, false),
-            hideZeroSizeInResults = prefs.getBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false)
+            hideZeroSizeInResults = prefs.getBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
+            resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, "Count") ?: "Count",
+            resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, "Desc") ?: "Desc"
         )
     }
 
@@ -26,9 +30,19 @@ class AppSettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, enabled).apply()
     }
 
+    fun setResultSortKey(value: String) {
+        prefs.edit().putString(KEY_RESULT_SORT_KEY, value).apply()
+    }
+
+    fun setResultSortDirection(value: String) {
+        prefs.edit().putString(KEY_RESULT_SORT_DIR, value).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
+        private const val KEY_RESULT_SORT_KEY = "result_sort_key"
+        private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
     }
 }
