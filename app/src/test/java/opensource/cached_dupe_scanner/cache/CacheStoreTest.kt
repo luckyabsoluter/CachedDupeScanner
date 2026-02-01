@@ -54,8 +54,8 @@ class CacheStoreTest {
 
         val cached = dao.getByNormalizedPath(updated.normalizedPath)
         assertNotNull(cached)
-        assertEquals(20, cached?.sizeBytes)
-        assertEquals(200, cached?.lastModifiedMillis)
+        assertEquals(20L, cached?.sizeBytes)
+        assertEquals(200L, cached?.lastModifiedMillis)
         assertEquals("hash-b", cached?.hashHex)
     }
 

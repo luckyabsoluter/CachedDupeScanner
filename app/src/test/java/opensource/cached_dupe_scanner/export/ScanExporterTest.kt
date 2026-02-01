@@ -16,8 +16,8 @@ class ScanExporterTest {
         val expected = "{" +
             "\"scannedAtMillis\":1700000000000," +
             "\"files\":[" +
-            "{\"path\":\"root/b.txt\",\"normalizedPath\":\"root/b.txt\",\"sizeBytes\":2,\"lastModifiedMillis\":20,\"hashHex\":\"hash-1\"}," +
             "{\"path\":\"root/a.txt\",\"normalizedPath\":\"root/a.txt\",\"sizeBytes\":1,\"lastModifiedMillis\":10,\"hashHex\":\"hash-1\"}," +
+            "{\"path\":\"root/b.txt\",\"normalizedPath\":\"root/b.txt\",\"sizeBytes\":2,\"lastModifiedMillis\":20,\"hashHex\":\"hash-1\"}," +
             "{\"path\":\"root/c.txt\",\"normalizedPath\":\"root/c.txt\",\"sizeBytes\":3,\"lastModifiedMillis\":30,\"hashHex\":\"hash-2\"}" +
             "]," +
             "\"duplicateGroups\":[" +
