@@ -155,11 +155,22 @@ private fun GroupDetailContent(group: DuplicateGroup) {
 
     group.files.sortedBy { it.normalizedPath }.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
-        Text(
-            text = "${file.normalizedPath}\n${formatBytes(file.sizeBytes)} · ${date}",
-            style = MaterialTheme.typography.bodySmall
-        )
-        Spacer(modifier = Modifier.height(6.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                Text(
+                    text = file.normalizedPath,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "${formatBytes(file.sizeBytes)} · ${date}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 private fun formatBytes(bytes: Long): String {
