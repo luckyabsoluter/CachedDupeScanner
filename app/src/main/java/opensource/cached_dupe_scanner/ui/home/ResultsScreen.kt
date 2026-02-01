@@ -34,6 +34,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import android.content.Intent
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -188,6 +192,7 @@ fun ResultsScreen(
 
 @Composable
 private fun GroupDetailContent(group: DuplicateGroup) {
+    val context = LocalContext.current
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
@@ -213,7 +218,11 @@ private fun GroupDetailContent(group: DuplicateGroup) {
 
     group.files.sortedBy { it.normalizedPath }.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { openFile(context, file.normalizedPath) }
+        ) {
             Row(
                 modifier = Modifier
                     .padding(10.dp)
@@ -264,6 +273,33 @@ private fun formatPath(path: String, showFullPath: Boolean): String {
     } else {
         File(path).name.ifBlank { path }
     }
+}
+
+private fun openFile(context: android.content.Context, path: String) {
+    val file = File(path)
+    if (!file.exists()) return
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file
+    )
+    val mime = getMimeType(uri, path)
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, mime)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    intent.resolveActivity(context.packageManager)?.let {
+        context.startActivity(intent)
+    }
+}
+
+private fun getMimeType(uri: Uri, path: String): String {
+    val ext = MimeTypeMap.getFileExtensionFromUrl(path)
+    val mime = if (!ext.isNullOrBlank()) {
+        MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase(Locale.getDefault()))
+    } else {
+        null
+    }
+    return mime ?: "*/*"
 }
 
 private fun isMediaFile(path: String): Boolean {
