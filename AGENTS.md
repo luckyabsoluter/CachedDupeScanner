@@ -56,9 +56,10 @@ Agents must not:
 - `test(scope): ...`
 - `docs(scope): ...`
 - ~~`chore(scope): ...`~~ Do not use chore
+- `config(scope): ...`
 - `refactor(scope): ...`
+- `style(scope): ...` Should result in identical machine code. (Use `design` for UI changes)
+- `design(scope): ...` User Interface (UI) and visual changes.
 - `perf(scope): ...`
 - `ci(scope): ...`
 - `build(scope): ...`
-- `style(scope): ...`
-- `config(scope): ...`
