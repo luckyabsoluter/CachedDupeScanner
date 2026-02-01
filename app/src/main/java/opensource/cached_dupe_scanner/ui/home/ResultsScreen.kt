@@ -72,7 +72,6 @@ fun ResultsScreen(
 ) {
     val scrollState = rememberScrollState()
     val menuExpanded = remember { mutableStateOf(false) }
-    val showFullPaths = remember { mutableStateOf(false) }
     val context = LocalContext.current
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -80,6 +79,7 @@ fun ResultsScreen(
             .build()
     }
     val settingsSnapshot = remember { settingsStore.load() }
+        val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
             .getOrDefault(ResultSortKey.Count)
@@ -129,6 +129,7 @@ fun ResultsScreen(
                             },
                             onClick = {
                                 showFullPaths.value = !showFullPaths.value
+                                    settingsStore.setShowFullPaths(showFullPaths.value)
                                 menuExpanded.value = false
                             }
                         )
