@@ -90,9 +90,7 @@ fun ResultsScreen(
                     result.duplicateGroups.forEach { group ->
                         val groupCount = group.files.size
                         val groupSize = group.files.sumOf { it.sizeBytes }
-                        val groupSizes = group.files
-                            .map { formatBytes(it.sizeBytes) }
-                            .joinToString(", ")
+                        val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
@@ -100,7 +98,7 @@ fun ResultsScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Text(
-                                    text = "Sizes: ${groupSizes}",
+                                    text = "File size: ${fileSize}",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
