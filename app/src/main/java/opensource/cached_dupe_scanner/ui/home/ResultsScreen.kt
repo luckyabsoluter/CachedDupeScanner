@@ -50,6 +50,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.RadioButton
 
 @Composable
 fun ResultsScreen(
@@ -221,23 +222,23 @@ fun ResultsScreen(
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = pendingSortKey.value == ResultSortKey.Count,
-                            onCheckedChange = { pendingSortKey.value = ResultSortKey.Count }
+                        RadioButton(
+                            selected = pendingSortKey.value == ResultSortKey.Count,
+                            onClick = { pendingSortKey.value = ResultSortKey.Count }
                         )
                         Text("Count")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = pendingSortKey.value == ResultSortKey.TotalSize,
-                            onCheckedChange = { pendingSortKey.value = ResultSortKey.TotalSize }
+                        RadioButton(
+                            selected = pendingSortKey.value == ResultSortKey.TotalSize,
+                            onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
                         )
                         Text("Size")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = pendingSortKey.value == ResultSortKey.Name,
-                            onCheckedChange = { pendingSortKey.value = ResultSortKey.Name }
+                        RadioButton(
+                            selected = pendingSortKey.value == ResultSortKey.Name,
+                            onClick = { pendingSortKey.value = ResultSortKey.Name }
                         )
                         Text("Name")
                     }
@@ -245,16 +246,16 @@ fun ResultsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Order")
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = pendingSortDirection.value == SortDirection.Asc,
-                            onCheckedChange = { pendingSortDirection.value = SortDirection.Asc }
+                        RadioButton(
+                            selected = pendingSortDirection.value == SortDirection.Asc,
+                            onClick = { pendingSortDirection.value = SortDirection.Asc }
                         )
                         Text("Ascending")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = pendingSortDirection.value == SortDirection.Desc,
-                            onCheckedChange = { pendingSortDirection.value = SortDirection.Desc }
+                        RadioButton(
+                            selected = pendingSortDirection.value == SortDirection.Desc,
+                            onClick = { pendingSortDirection.value = SortDirection.Desc }
                         )
                         Text("Descending")
                     }
