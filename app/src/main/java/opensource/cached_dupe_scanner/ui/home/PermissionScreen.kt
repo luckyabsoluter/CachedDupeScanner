@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,7 +24,11 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 fun PermissionScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
-    Column(modifier = modifier.padding(Spacing.screenPadding)) {
+    Column(
+        modifier = modifier
+            .padding(Spacing.screenPadding)
+            .verticalScroll(rememberScrollState())
+    ) {
         AppTopBar(title = "Permission", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
