@@ -1,23 +1,14 @@
 package opensource.cached_dupe_scanner.core
 
 object ScanResultMerger {
-    fun merge(
-        scannedAtMillis: Long,
-        results: List<ScanResult>,
-        excludeZeroSizeDuplicates: Boolean = false
-    ): ScanResult {
+    fun merge(scannedAtMillis: Long, results: List<ScanResult>): ScanResult {
         val files = results.flatMap { it.files }
-        return fromFiles(scannedAtMillis, files, excludeZeroSizeDuplicates)
+        return fromFiles(scannedAtMillis, files)
     }
 
-    fun fromFiles(
-        scannedAtMillis: Long,
-        files: List<FileMetadata>,
-        excludeZeroSizeDuplicates: Boolean = false
-    ): ScanResult {
+    fun fromFiles(scannedAtMillis: Long, files: List<FileMetadata>): ScanResult {
         val duplicateGroups = files
             .filter { it.hashHex != null }
-            .filter { file -> !excludeZeroSizeDuplicates || file.sizeBytes > 0 }
             .groupBy { it.hashHex!! }
             .filterValues { it.size > 1 }
             .map { (hash, groupFiles) ->

@@ -41,25 +41,6 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Exclude zero-size duplicates")
-                Text("Do not count files with size 0 as duplicates")
-            }
-            Switch(
-                checked = settings.value.excludeZeroSizeDuplicates,
-                onCheckedChange = { enabled ->
-                    settingsStore.setExcludeZeroSizeDuplicates(enabled)
-                    settings.value = settings.value.copy(excludeZeroSizeDuplicates = enabled)
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
                 Text("Skip zero-size in DB")
                 Text("Do not store size 0 files in the database")
             }

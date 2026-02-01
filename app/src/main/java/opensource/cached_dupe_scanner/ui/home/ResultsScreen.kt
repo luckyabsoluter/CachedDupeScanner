@@ -74,8 +74,7 @@ fun ResultsScreen(
                 val settings = settingsStore.load()
                 val result = ScanResultViewFilter.filterForDisplay(
                     result = current.result,
-                    hideZeroSizeInResults = settings.hideZeroSizeInResults,
-                    excludeZeroSizeDuplicates = settings.excludeZeroSizeDuplicates
+                    hideZeroSizeInResults = settings.hideZeroSizeInResults
                 )
                 Text("Files scanned: ${result.files.size}")
                 Text("Duplicate groups: ${result.duplicateGroups.size}")

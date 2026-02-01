@@ -21,14 +21,4 @@ class ScanResultMergerTest {
         assertEquals(2, merged.duplicateGroups.first().files.size)
     }
 
-    @Test
-    fun excludesZeroSizeDuplicatesWhenEnabled() {
-        val a = FileMetadata("/a", "/a", 0, 1, "h1")
-        val b = FileMetadata("/b", "/b", 0, 1, "h1")
-
-        val merged = ScanResultMerger.fromFiles(1, listOf(a, b), excludeZeroSizeDuplicates = true)
-
-        assertEquals(2, merged.files.size)
-        assertEquals(0, merged.duplicateGroups.size)
-    }
 }

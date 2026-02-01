@@ -12,8 +12,7 @@ class ScanResultViewFilterTest {
 
         val filtered = ScanResultViewFilter.filterForDisplay(
             result,
-            hideZeroSizeInResults = true,
-            excludeZeroSizeDuplicates = false
+            hideZeroSizeInResults = true
         )
 
         assertEquals(1, filtered.files.size)

@@ -31,12 +31,7 @@ class ScanHistoryRepository(
         if (files.isEmpty()) {
             return null
         }
-        val settings = settingsStore.load()
-        return ScanResultMerger.fromFiles(
-            System.currentTimeMillis(),
-            files,
-            excludeZeroSizeDuplicates = settings.excludeZeroSizeDuplicates
-        )
+        return ScanResultMerger.fromFiles(System.currentTimeMillis(), files)
     }
 
     fun clearAll() {
