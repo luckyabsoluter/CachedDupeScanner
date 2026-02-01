@@ -19,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -109,17 +110,6 @@ fun ResultsScreen(
                                 menuExpanded.value = false
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Sort: ${sortOption.value.label}") },
-                            onClick = {
-                                sortOption.value = when (sortOption.value) {
-                                    ResultSortOption.CountDesc -> ResultSortOption.TotalSizeDesc
-                                    ResultSortOption.TotalSizeDesc -> ResultSortOption.NameAsc
-                                    ResultSortOption.NameAsc -> ResultSortOption.CountDesc
-                                }
-                                menuExpanded.value = false
-                            }
-                        )
                     }
                 }
             }
@@ -140,8 +130,35 @@ fun ResultsScreen(
                     GroupDetailContent(group = group)
                     return@Column
                 }
-                Text("Files scanned: ${result.files.size}")
-                Text("Duplicate groups: ${result.duplicateGroups.size}")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Files scanned: ${result.files.size}")
+                        Text("Duplicate groups: ${result.duplicateGroups.size}")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(
+                            selected = sortOption.value == ResultSortOption.CountDesc,
+                            onClick = { sortOption.value = ResultSortOption.CountDesc },
+                            label = { Text("Count") }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        FilterChip(
+                            selected = sortOption.value == ResultSortOption.TotalSizeDesc,
+                            onClick = { sortOption.value = ResultSortOption.TotalSizeDesc },
+                            label = { Text("Size") }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        FilterChip(
+                            selected = sortOption.value == ResultSortOption.NameAsc,
+                            onClick = { sortOption.value = ResultSortOption.NameAsc },
+                            label = { Text("Name") }
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (result.duplicateGroups.isEmpty()) {
