@@ -3,26 +3,38 @@ package opensource.cached_dupe_scanner.engine
 import java.io.File
 
 class FileWalker {
-    fun walk(root: File, ignore: (File) -> Boolean = { false }): List<File> {
+    fun walk(
+        root: File,
+        ignore: (File) -> Boolean = { false },
+        onFile: (File) -> Unit = {},
+        shouldContinue: () -> Boolean = { true }
+    ): List<File> {
         if (!root.exists()) {
             return emptyList()
         }
 
         val files = mutableListOf<File>()
 
-        fun visit(file: File) {
+        fun visit(file: File): Boolean {
+            if (!shouldContinue()) {
+                return false
+            }
             if (ignore(file)) {
-                return
+                return true
             }
 
             if (file.isFile) {
                 files.add(file)
-                return
+                onFile(file)
+                return true
             }
 
             file.listFiles()?.forEach { child ->
-                visit(child)
+                if (!visit(child)) {
+                    return false
+                }
             }
+            return true
         }
 
         visit(root)

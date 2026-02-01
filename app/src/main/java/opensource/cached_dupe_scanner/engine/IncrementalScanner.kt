@@ -16,15 +16,33 @@ class IncrementalScanner(
         root: File,
         ignore: (File) -> Boolean = { false },
         skipZeroSizeInDb: Boolean = false,
-        onProgress: (scanned: Int, total: Int, current: FileMetadata) -> Unit = { _, _, _ -> },
+        onProgress: (scanned: Int, total: Int?, current: FileMetadata, phase: ScanPhase) -> Unit = { _, _, _, _ -> },
         shouldContinue: () -> Boolean = { true }
     ): ScanResult {
         val scannedAtMillis = System.currentTimeMillis()
         val files = mutableListOf<FileMetadata>()
 
-        val scanned = fileWalker.walk(root, ignore)
-            .map { FileMetadata.fromFile(it) }
-            .toList()
+        val scanned = mutableListOf<FileMetadata>()
+        var discovered = 0
+        fileWalker.walk(
+            root,
+            ignore,
+            onFile = { file ->
+                val metadata = FileMetadata.fromFile(file)
+                scanned.add(metadata)
+                discovered += 1
+                onProgress(discovered, null, metadata, ScanPhase.Collecting)
+            },
+            shouldContinue = shouldContinue
+        )
+
+        if (!shouldContinue()) {
+            return ScanResult(
+                scannedAtMillis = scannedAtMillis,
+                files = emptyList(),
+                duplicateGroups = emptyList()
+            )
+        }
 
         val bySize = scanned.groupBy { it.sizeBytes }
         val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
@@ -56,7 +74,7 @@ class IncrementalScanner(
             }
             files.add(finalMetadata)
             scannedCount += 1
-            onProgress(scannedCount, total, finalMetadata)
+            onProgress(scannedCount, total, finalMetadata, ScanPhase.Hashing)
         }
 
         val duplicateGroups = files

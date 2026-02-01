@@ -32,6 +32,7 @@ import opensource.cached_dupe_scanner.cache.CacheMigrations
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
+import opensource.cached_dupe_scanner.engine.ScanPhase
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -57,6 +58,7 @@ fun ScanCommandScreen(
     val progressTarget = remember { mutableStateOf<String?>(null) }
     val progressCurrent = remember { mutableStateOf<String?>(null) }
     val progressSize = remember { mutableStateOf<Long?>(null) }
+    val progressPhase = remember { mutableStateOf(ScanPhase.Collecting) }
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
@@ -102,7 +104,8 @@ fun ScanCommandScreen(
                             currentJob,
                             progressTarget,
                             progressCurrent,
-                            progressSize
+                            progressSize,
+                            progressPhase
                         )
                     }
                 )
@@ -122,7 +125,8 @@ fun ScanCommandScreen(
                 currentJob,
                 progressTarget,
                 progressCurrent,
-                progressSize
+                progressSize,
+                progressPhase
             )
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan all targets")
@@ -135,7 +139,13 @@ fun ScanCommandScreen(
                     Text("Progress", style = MaterialTheme.typography.titleSmall)
                     val targetText = progressTarget.value ?: "-"
                     val currentText = progressCurrent.value ?: "-"
+                    val phaseText = if (progressPhase.value == ScanPhase.Collecting) {
+                        "Collecting files"
+                    } else {
+                        "Hashing"
+                    }
                     Text("Target: $targetText")
+                    Text("Phase: $phaseText")
                     val progress = state.value as ScanUiState.Scanning
                     val totalText = progress.total?.toString() ?: "?"
                     Text("Scanned: ${progress.scanned} / $totalText")
@@ -179,7 +189,8 @@ private fun runScanForTarget(
     currentJob: MutableState<Job?>,
     progressTarget: MutableState<String?>,
     progressCurrent: MutableState<String?>,
-    progressSize: MutableState<Long?>
+    progressSize: MutableState<Long?>,
+    progressPhase: MutableState<ScanPhase>
 ) {
     var job: Job? = null
     job = scope.launch {
@@ -194,10 +205,11 @@ private fun runScanForTarget(
             scanner.scan(
                 targetFile,
                 skipZeroSizeInDb = skipZeroSizeInDb,
-                onProgress = { scanned, total, current ->
+                onProgress = { scanned, total, current, phase ->
                     state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                     progressCurrent.value = current.normalizedPath
                     progressSize.value = current.sizeBytes
+                    progressPhase.value = phase
                 },
                 shouldContinue = { job?.isActive == true }
             )
@@ -221,7 +233,8 @@ private fun runScanForAllTargets(
     currentJob: MutableState<Job?>,
     progressTarget: MutableState<String?>,
     progressCurrent: MutableState<String?>,
-    progressSize: MutableState<Long?>
+    progressSize: MutableState<Long?>,
+    progressPhase: MutableState<ScanPhase>
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
@@ -242,10 +255,11 @@ private fun runScanForAllTargets(
                 scanner.scan(
                     targetFile,
                     skipZeroSizeInDb = skipZeroSizeInDb,
-                    onProgress = { scanned, total, current ->
+                    onProgress = { scanned, total, current, phase ->
                         state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                         progressCurrent.value = current.normalizedPath
                         progressSize.value = current.sizeBytes
+                        progressPhase.value = phase
                     },
                     shouldContinue = { job?.isActive == true }
                 )
