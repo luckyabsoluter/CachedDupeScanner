@@ -36,16 +36,22 @@ import opensource.cached_dupe_scanner.engine.ScanPhase
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.ScanReport
+import opensource.cached_dupe_scanner.storage.ScanReportDurations
+import opensource.cached_dupe_scanner.storage.ScanReportStore
+import opensource.cached_dupe_scanner.storage.ScanReportTotals
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
+import java.util.UUID
 
 @Composable
 fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
+    reportStore: ScanReportStore,
     settingsStore: AppSettingsStore,
     onBack: () -> Unit,
     scrollState: ScrollState,
@@ -103,6 +109,7 @@ fun ScanCommandScreen(
                             target,
                             onScanComplete,
                             onScanCancelled,
+                            reportStore,
                             skipZeroSizeInDb,
                             currentJob,
                             cancelRequested,
@@ -126,6 +133,7 @@ fun ScanCommandScreen(
                 targets.value,
                 onScanComplete,
                 onScanCancelled,
+                reportStore,
                 skipZeroSizeInDb,
                 currentJob,
                 cancelRequested,
@@ -199,6 +207,7 @@ private fun runScanForTarget(
     target: ScanTarget,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
+    reportStore: ScanReportStore,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -211,6 +220,16 @@ private fun runScanForTarget(
     job = scope.launch {
         cancelRequested.value = false
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
+        val startedAt = System.currentTimeMillis()
+        var collectingStart = startedAt
+        var detectingStart = 0L
+        var hashingStart = 0L
+        var collectingEnd = 0L
+        var detectingEnd = 0L
+        var hashingEnd = 0L
+        var detectedCount = 0
+        var hashCandidates = 0
+        var hashesComputed = 0
         val targetFile = File(target.path)
         if (!targetFile.exists()) {
             state.value = ScanUiState.Error("Target path not found")
@@ -227,10 +246,51 @@ private fun runScanForTarget(
                     progressCurrent.value = current.normalizedPath
                     progressSize.value = current.sizeBytes
                     progressPhase.value = phase
+                    when (phase) {
+                        ScanPhase.Collecting -> {
+                            if (collectingStart == 0L) collectingStart = System.currentTimeMillis()
+                        }
+                        ScanPhase.Detecting -> {
+                            if (collectingEnd == 0L) collectingEnd = System.currentTimeMillis()
+                            if (detectingStart == 0L) detectingStart = System.currentTimeMillis()
+                            detectedCount = scanned
+                            hashCandidates = total ?: 0
+                        }
+                        ScanPhase.Hashing -> {
+                            if (detectingEnd == 0L) detectingEnd = System.currentTimeMillis()
+                            if (hashingStart == 0L) hashingStart = System.currentTimeMillis()
+                            hashesComputed = scanned
+                            hashCandidates = total ?: hashCandidates
+                        }
+                    }
                 },
                 shouldContinue = { job?.isActive == true }
             )
         }
+        hashingEnd = if (hashingStart > 0) System.currentTimeMillis() else hashingEnd
+        detectingEnd = if (detectingStart > 0 && detectingEnd == 0L) System.currentTimeMillis() else detectingEnd
+        collectingEnd = if (collectingEnd == 0L) System.currentTimeMillis() else collectingEnd
+        val finishedAt = System.currentTimeMillis()
+        val report = ScanReport(
+            id = UUID.randomUUID().toString(),
+            startedAtMillis = startedAt,
+            finishedAtMillis = finishedAt,
+            targets = listOf(target.path),
+            mode = "single",
+            cancelled = cancelRequested.value || (job?.isActive == false && result.files.isEmpty()),
+            totals = ScanReportTotals(
+                collectedCount = detectedCount,
+                detectedCount = detectedCount,
+                hashCandidates = hashCandidates,
+                hashesComputed = hashesComputed
+            ),
+            durations = ScanReportDurations(
+                collectingMillis = collectingEnd - collectingStart,
+                detectingMillis = if (detectingStart == 0L) 0L else detectingEnd - detectingStart,
+                hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
+            )
+        )
+        reportStore.add(report)
         if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
             progressTarget.value = null
             progressCurrent.value = null
@@ -250,6 +310,7 @@ private fun runScanForAllTargets(
     targets: List<ScanTarget>,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
+    reportStore: ScanReportStore,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -267,6 +328,16 @@ private fun runScanForAllTargets(
     job = scope.launch {
         cancelRequested.value = false
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
+        val startedAt = System.currentTimeMillis()
+        var collectingStart = startedAt
+        var detectingStart = 0L
+        var hashingStart = 0L
+        var collectingEnd = 0L
+        var detectingEnd = 0L
+        var hashingEnd = 0L
+        var detectedCount = 0
+        var hashCandidates = 0
+        var hashesComputed = 0
         val results = mutableListOf<ScanResult>()
         for (target in targets) {
             val targetFile = File(target.path)
@@ -284,6 +355,23 @@ private fun runScanForAllTargets(
                         progressCurrent.value = current.normalizedPath
                         progressSize.value = current.sizeBytes
                         progressPhase.value = phase
+                        when (phase) {
+                            ScanPhase.Collecting -> {
+                                if (collectingStart == 0L) collectingStart = System.currentTimeMillis()
+                            }
+                            ScanPhase.Detecting -> {
+                                if (collectingEnd == 0L) collectingEnd = System.currentTimeMillis()
+                                if (detectingStart == 0L) detectingStart = System.currentTimeMillis()
+                                detectedCount = scanned
+                                hashCandidates = total ?: hashCandidates
+                            }
+                            ScanPhase.Hashing -> {
+                                if (detectingEnd == 0L) detectingEnd = System.currentTimeMillis()
+                                if (hashingStart == 0L) hashingStart = System.currentTimeMillis()
+                                hashesComputed = scanned
+                                hashCandidates = total ?: hashCandidates
+                            }
+                        }
                     },
                     shouldContinue = { job?.isActive == true }
                 )
@@ -292,6 +380,27 @@ private fun runScanForAllTargets(
                 progressTarget.value = null
                 progressCurrent.value = null
                 progressSize.value = null
+                val finishedAt = System.currentTimeMillis()
+                val report = ScanReport(
+                    id = UUID.randomUUID().toString(),
+                    startedAtMillis = startedAt,
+                    finishedAtMillis = finishedAt,
+                    targets = targets.map { it.path },
+                    mode = "all",
+                    cancelled = true,
+                    totals = ScanReportTotals(
+                        collectedCount = detectedCount,
+                        detectedCount = detectedCount,
+                        hashCandidates = hashCandidates,
+                        hashesComputed = hashesComputed
+                    ),
+                    durations = ScanReportDurations(
+                        collectingMillis = collectingEnd - collectingStart,
+                        detectingMillis = if (detectingStart == 0L) 0L else detectingEnd - detectingStart,
+                        hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
+                    )
+                )
+                reportStore.add(report)
                 onScanCancelled()
                 return@launch
             }
@@ -307,6 +416,30 @@ private fun runScanForAllTargets(
             System.currentTimeMillis(),
             results
         )
+        hashingEnd = if (hashingStart > 0) System.currentTimeMillis() else hashingEnd
+        detectingEnd = if (detectingStart > 0 && detectingEnd == 0L) System.currentTimeMillis() else detectingEnd
+        collectingEnd = if (collectingEnd == 0L) System.currentTimeMillis() else collectingEnd
+        val finishedAt = System.currentTimeMillis()
+        val report = ScanReport(
+            id = UUID.randomUUID().toString(),
+            startedAtMillis = startedAt,
+            finishedAtMillis = finishedAt,
+            targets = targets.map { it.path },
+            mode = "all",
+            cancelled = false,
+            totals = ScanReportTotals(
+                collectedCount = detectedCount,
+                detectedCount = detectedCount,
+                hashCandidates = hashCandidates,
+                hashesComputed = hashesComputed
+            ),
+            durations = ScanReportDurations(
+                collectingMillis = collectingEnd - collectingStart,
+                detectingMillis = if (detectingStart == 0L) 0L else detectingEnd - detectingStart,
+                hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
+            )
+        )
+        reportStore.add(report)
         onScanComplete(merged)
     }
     currentJob.value = job
