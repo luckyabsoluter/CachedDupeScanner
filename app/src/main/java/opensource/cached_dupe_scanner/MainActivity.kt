@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                     val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
                     val clearRequested = remember { mutableStateOf(false) }
+                    val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
@@ -96,6 +97,7 @@ class MainActivity : ComponentActivity() {
                         }
                         state.value = ScanUiState.Success(merged)
                         resultStore.save(merged)
+                        deletedPaths.value = emptySet()
                         navController.navigate(AppRoutes.Results) {
                             launchSingleTop = true
                         }
@@ -109,6 +111,7 @@ class MainActivity : ComponentActivity() {
                         }
                         resultStore.clear()
                         state.value = ScanUiState.Idle
+                        deletedPaths.value = emptySet()
                         clearRequested.value = false
                     }
 
@@ -187,12 +190,14 @@ class MainActivity : ComponentActivity() {
                                 onOpenGroup = { index ->
                                     navController.navigate("results/detail/$index")
                                 },
+                                deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             historyRepo.deleteByNormalizedPath(file.normalizedPath)
                                         }
                                     }
+                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
                                 onClearResults = {
                                     pendingScan.value = null
@@ -212,12 +217,14 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onBackToDashboard = { navController.popBackStack() },
                                 onOpenGroup = null,
+                                deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             historyRepo.deleteByNormalizedPath(file.normalizedPath)
                                         }
                                     }
+                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
                                 onClearResults = {
                                     pendingScan.value = null
