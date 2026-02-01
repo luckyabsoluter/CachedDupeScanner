@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
@@ -13,19 +14,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.ui.layout.layout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import androidx.navigation.NavType
-import android.net.Uri
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
@@ -46,7 +41,6 @@ import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
-import opensource.cached_dupe_scanner.ui.navigation.AppRoutes
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,8 +60,8 @@ class MainActivity : ComponentActivity() {
                     val settingsStore = remember { AppSettingsStore(context) }
                     val reportStore = remember { ScanReportStore(context) }
                     val scope = rememberCoroutineScope()
-                    val navController = rememberNavController()
-                    val stateHolder = rememberSaveableStateHolder()
+                    val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
+                    val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                     val historyRepo = remember {
                         val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                             .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
@@ -96,9 +90,7 @@ class MainActivity : ComponentActivity() {
                         state.value = ScanUiState.Success(merged)
                         resultStore.save(merged)
                         deletedPaths.value = emptySet()
-                        navController.navigate(AppRoutes.Results) {
-                            launchSingleTop = true
-                        }
+                        navigateTo(backStack, screenCache, Screen.Results)
                         pendingScan.value = null
                     }
 
@@ -157,159 +149,176 @@ class MainActivity : ComponentActivity() {
                         Unit
                     }
 
-                    NavHost(
-                        navController = navController,
-                        startDestination = AppRoutes.Dashboard,
-                        modifier = navModifier,
-                        enterTransition = { fadeIn(animationSpec = tween(100)) },
-                        exitTransition = { fadeOut(animationSpec = tween(100)) },
-                        popEnterTransition = { fadeIn(animationSpec = tween(100)) },
-                        popExitTransition = { fadeOut(animationSpec = tween(100)) }
-                    ) {
-                        composable(AppRoutes.Dashboard) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Dashboard) {
-                                DashboardScreen(
-                                    onOpenPermission = { navController.navigate(AppRoutes.Permission) },
-                                    onOpenTargets = { navController.navigate(AppRoutes.Targets) },
-                                    onOpenScanCommand = { navController.navigate(AppRoutes.ScanCommand) },
-                                    onOpenResults = { navController.navigate(AppRoutes.Results) },
-                                    onOpenSettings = { navController.navigate(AppRoutes.Settings) },
-                                    onOpenReports = { navController.navigate(AppRoutes.Reports) },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.Permission) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Permission) {
-                                PermissionScreen(
-                                    onBack = { navController.popBackStack() },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.Targets) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Targets) {
-                                TargetsScreen(
-                                    onBack = { navController.popBackStack() },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.ScanCommand) {
-                            stateHolder.SaveableStateProvider(AppRoutes.ScanCommand) {
-                                ScanCommandScreen(
-                                    state = state,
-                                    onScanComplete = { pendingScan.value = it },
-                                    onScanCancelled = restoreLastResult,
-                                    reportStore = reportStore,
-                                    settingsStore = settingsStore,
-                                    onBack = { navController.popBackStack() },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.Results) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Results) {
-                                ResultsScreen(
-                                    state = state,
-                                    displayResult = displayResult.value,
-                                    onBackToDashboard = {
-                                        navController.popBackStack(AppRoutes.Dashboard, false)
-                                    },
-                                    onOpenGroup = { index ->
-                                        navController.navigate("results/detail/$index")
-                                    },
-                                    deletedPaths = deletedPaths.value,
-                                    onDeleteFile = { file ->
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) {
-                                                historyRepo.deleteByNormalizedPath(file.normalizedPath)
-                                            }
+                    ScreenStack(
+                        screens = screenCache,
+                        current = backStack.last(),
+                        modifier = navModifier
+                    ) { screen ->
+                        when (screen) {
+                            Screen.Dashboard -> DashboardScreen(
+                                onOpenPermission = { navigateTo(backStack, screenCache, Screen.Permission) },
+                                onOpenTargets = { navigateTo(backStack, screenCache, Screen.Targets) },
+                                onOpenScanCommand = { navigateTo(backStack, screenCache, Screen.ScanCommand) },
+                                onOpenResults = { navigateTo(backStack, screenCache, Screen.Results) },
+                                onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
+                                onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
+                                modifier = screenModifier
+                            )
+                            Screen.Permission -> PermissionScreen(
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.Targets -> TargetsScreen(
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.ScanCommand -> ScanCommandScreen(
+                                state = state,
+                                onScanComplete = { pendingScan.value = it },
+                                onScanCancelled = restoreLastResult,
+                                reportStore = reportStore,
+                                settingsStore = settingsStore,
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.Results -> ResultsScreen(
+                                state = state,
+                                displayResult = displayResult.value,
+                                onBackToDashboard = { goDashboard(backStack, screenCache) },
+                                onOpenGroup = { index ->
+                                    navigateTo(backStack, screenCache, Screen.ResultsDetail(index))
+                                },
+                                deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
                                         }
-                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                    },
-                                    onSortChanged = { sortSettingsVersion.value++ },
-                                    onClearResults = {
-                                        pendingScan.value = null
-                                        clearRequested.value = true
-                                    },
-                                    settingsStore = settingsStore,
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(
-                            route = AppRoutes.ResultsDetail,
-                            arguments = listOf(navArgument("index") { type = NavType.IntType })
-                        ) { backStackEntry ->
-                            val index = backStackEntry.arguments?.getInt("index") ?: 0
-                            val key = "${AppRoutes.ResultsDetail}:$index"
-                            stateHolder.SaveableStateProvider(key) {
-                                ResultsScreen(
-                                    state = state,
-                                    displayResult = displayResult.value,
-                                    onBackToDashboard = { navController.popBackStack() },
-                                    onOpenGroup = null,
-                                    deletedPaths = deletedPaths.value,
-                                    onDeleteFile = { file ->
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) {
-                                                historyRepo.deleteByNormalizedPath(file.normalizedPath)
-                                            }
+                                    }
+                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                },
+                                onSortChanged = { sortSettingsVersion.value++ },
+                                onClearResults = {
+                                    pendingScan.value = null
+                                    clearRequested.value = true
+                                },
+                                settingsStore = settingsStore,
+                                modifier = screenModifier
+                            )
+                            is Screen.ResultsDetail -> ResultsScreen(
+                                state = state,
+                                displayResult = displayResult.value,
+                                onBackToDashboard = { pop(backStack) },
+                                onOpenGroup = null,
+                                deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
                                         }
-                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                    },
-                                    onSortChanged = { sortSettingsVersion.value++ },
-                                    onClearResults = {
-                                        pendingScan.value = null
-                                        clearRequested.value = true
-                                    },
-                                    settingsStore = settingsStore,
-                                    selectedGroupIndex = index,
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.Settings) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Settings) {
-                                SettingsScreen(
-                                    settingsStore = settingsStore,
-                                    onBack = { navController.popBackStack() },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(AppRoutes.Reports) {
-                            stateHolder.SaveableStateProvider(AppRoutes.Reports) {
-                                ReportsScreen(
-                                    reportStore = reportStore,
-                                    onBack = { navController.popBackStack() },
-                                    onOpenReport = { id ->
-                                        navController.navigate("reports/detail/${Uri.encode(id)}")
-                                    },
-                                    modifier = screenModifier
-                                )
-                            }
-                        }
-                        composable(
-                            route = AppRoutes.ReportDetail,
-                            arguments = listOf(navArgument("id") { type = NavType.StringType })
-                        ) { backStackEntry ->
-                            val id = backStackEntry.arguments?.getString("id") ?: ""
-                            val key = "${AppRoutes.ReportDetail}:$id"
-                            stateHolder.SaveableStateProvider(key) {
-                                ReportsScreen(
-                                    reportStore = reportStore,
-                                    onBack = { navController.popBackStack() },
-                                    onOpenReport = null,
-                                    selectedReportId = id,
-                                    modifier = screenModifier
-                                )
-                            }
+                                    }
+                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                },
+                                onSortChanged = { sortSettingsVersion.value++ },
+                                onClearResults = {
+                                    pendingScan.value = null
+                                    clearRequested.value = true
+                                },
+                                settingsStore = settingsStore,
+                                selectedGroupIndex = screen.index,
+                                modifier = screenModifier
+                            )
+                            Screen.Settings -> SettingsScreen(
+                                settingsStore = settingsStore,
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.Reports -> ReportsScreen(
+                                reportStore = reportStore,
+                                onBack = { pop(backStack) },
+                                onOpenReport = { id ->
+                                    navigateTo(backStack, screenCache, Screen.ReportDetail(id))
+                                },
+                                modifier = screenModifier
+                            )
+                            is Screen.ReportDetail -> ReportsScreen(
+                                reportStore = reportStore,
+                                onBack = { pop(backStack) },
+                                onOpenReport = null,
+                                selectedReportId = screen.id,
+                                modifier = screenModifier
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ScreenStack(
+    screens: List<Screen>,
+    current: Screen,
+    modifier: Modifier = Modifier,
+    content: @Composable (Screen) -> Unit
+) {
+    Box(modifier = modifier) {
+        screens.forEach { screen ->
+            val visible = screen == current
+            key(screen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            if (visible) {
+                                layout(placeable.width, placeable.height) {
+                                    placeable.place(0, 0)
+                                }
+                            } else {
+                                layout(0, 0) {}
+                            }
+                        }
+                ) {
+                    content(screen)
+                }
+            }
+        }
+    }
+}
+
+private fun navigateTo(stack: MutableList<Screen>, cache: MutableList<Screen>, screen: Screen) {
+    if (cache.none { it == screen }) {
+        cache.add(screen)
+    }
+    if (stack.lastOrNull() != screen) {
+        stack.add(screen)
+    }
+}
+
+private fun pop(stack: MutableList<Screen>) {
+    if (stack.size > 1) {
+        stack.removeLast()
+    }
+}
+
+private fun goDashboard(stack: MutableList<Screen>, cache: MutableList<Screen>) {
+    if (cache.none { it == Screen.Dashboard }) {
+        cache.add(Screen.Dashboard)
+    }
+    stack.clear()
+    stack.add(Screen.Dashboard)
+}
+
+private sealed class Screen {
+    data object Dashboard : Screen()
+    data object Permission : Screen()
+    data object Targets : Screen()
+    data object ScanCommand : Screen()
+    data object Results : Screen()
+    data class ResultsDetail(val index: Int) : Screen()
+    data object Settings : Screen()
+    data object Reports : Screen()
+    data class ReportDetail(val id: String) : Screen()
 }
