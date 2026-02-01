@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -46,6 +47,9 @@ fun ResultsScreen(
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val selectedGroup = remember { mutableStateOf<DuplicateGroup?>(null) }
+    BackHandler(enabled = selectedGroup.value != null) {
+        selectedGroup.value = null
+    }
     Column(
         modifier = modifier
             .padding(Spacing.screenPadding)
