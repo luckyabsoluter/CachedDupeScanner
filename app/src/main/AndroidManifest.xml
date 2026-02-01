@@ -12,7 +12,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CachedDupeScanner">
         <activity
-            android:name=".MainActivity"
+            android:name="opensource.cached_dupe_scanner.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.CachedDupeScanner">
