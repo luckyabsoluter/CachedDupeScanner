@@ -23,6 +23,8 @@ class AppSettingsStoreTest {
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertFalse(settings.showFullPaths)
+        assertEquals("Name", settings.filesSortKey)
+        assertEquals("Asc", settings.filesSortDirection)
     }
 
     @Test
@@ -44,5 +46,11 @@ class AppSettingsStoreTest {
 
         store.setShowFullPaths(true)
         assertTrue(store.load().showFullPaths)
+
+        store.setFilesSortKey("Size")
+        store.setFilesSortDirection("Desc")
+        val fileSortSettings = store.load()
+        assertEquals("Size", fileSortSettings.filesSortKey)
+        assertEquals("Desc", fileSortSettings.filesSortDirection)
     }
 }

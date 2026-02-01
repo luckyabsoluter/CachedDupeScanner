@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,11 +29,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.ImageLoader
+import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import androidx.compose.material.icons.Icons
@@ -45,6 +51,11 @@ private enum class FileSortKey {
     Modified
 }
 
+private enum class FileSortDirection {
+    Asc,
+    Desc
+}
+
 @Composable
 fun FilesScreen(
     historyRepo: ScanHistoryRepository,
@@ -52,16 +63,31 @@ fun FilesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val settingsStore = remember { AppSettingsStore(context) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
-    val sortKey = remember { mutableStateOf(FileSortKey.Name) }
-    val sortDirectionAsc = remember { mutableStateOf(true) }
+    val settingsSnapshot = remember { settingsStore.load() }
+    val sortKey = remember {
+        val key = runCatching { FileSortKey.valueOf(settingsSnapshot.filesSortKey) }
+            .getOrDefault(FileSortKey.Name)
+        mutableStateOf(key)
+    }
+    val sortDirection = remember {
+        val dir = runCatching { FileSortDirection.valueOf(settingsSnapshot.filesSortDirection) }
+            .getOrDefault(FileSortDirection.Asc)
+        mutableStateOf(dir)
+    }
     val pendingSortKey = remember { mutableStateOf(FileSortKey.Name) }
-    val pendingSortDirectionAsc = remember { mutableStateOf(true) }
-    val filesState = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
+    val pendingSortDirection = remember { mutableStateOf(FileSortDirection.Asc) }
+    val filesState = remember { mutableStateOf<List<FileMetadata>?>(null) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
 
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) {
@@ -70,13 +96,14 @@ fun FilesScreen(
         filesState.value = result?.files ?: emptyList()
     }
 
-    val sortedFiles = remember(filesState.value, sortKey.value, sortDirectionAsc.value) {
+    val sortedFiles = remember(filesState.value, sortKey.value, sortDirection.value) {
+        val base = filesState.value ?: emptyList()
         val sorted = when (sortKey.value) {
-            FileSortKey.Name -> filesState.value.sortedBy { it.normalizedPath.lowercase() }
-            FileSortKey.Size -> filesState.value.sortedBy { it.sizeBytes }
-            FileSortKey.Modified -> filesState.value.sortedBy { it.lastModifiedMillis }
+            FileSortKey.Name -> base.sortedBy { it.normalizedPath.lowercase() }
+            FileSortKey.Size -> base.sortedBy { it.sizeBytes }
+            FileSortKey.Modified -> base.sortedBy { it.lastModifiedMillis }
         }
-        if (sortDirectionAsc.value) sorted else sorted.reversed()
+        if (sortDirection.value == FileSortDirection.Asc) sorted else sorted.reversed()
     }
 
     LazyColumn(
@@ -100,7 +127,7 @@ fun FilesScreen(
                             onClick = {
                                 menuExpanded.value = false
                                 pendingSortKey.value = sortKey.value
-                                pendingSortDirectionAsc.value = sortDirectionAsc.value
+                                pendingSortDirection.value = sortDirection.value
                                 sortDialogOpen.value = true
                             }
                         )
@@ -109,7 +136,9 @@ fun FilesScreen(
             )
         }
         item { Spacer(modifier = Modifier.height(8.dp)) }
-        if (sortedFiles.isEmpty()) {
+        if (filesState.value == null) {
+            item { Text("Loading files...") }
+        } else if (sortedFiles.isEmpty()) {
             item { Text("No files in history.") }
         } else {
             items(sortedFiles, key = { it.normalizedPath }) { file ->
@@ -118,27 +147,45 @@ fun FilesScreen(
                         .fillMaxWidth()
                         .clickable { selectedFile.value = file }
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = formatPath(file.normalizedPath, showFullPath = false),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = file.normalizedPath,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${formatBytes(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isMediaFile(file.normalizedPath)) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(java.io.File(file.normalizedPath))
+                                    .build(),
+                                imageLoader = imageLoader,
+                                contentDescription = "Thumbnail",
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = formatPath(file.normalizedPath, showFullPath = false),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = file.normalizedPath,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -154,7 +201,7 @@ fun FilesScreen(
                 Column {
                     Text("Name: ${formatPath(file.normalizedPath, showFullPath = false)}")
                     Text("Path: ${file.normalizedPath}")
-                    Text("Size: ${formatBytes(file.sizeBytes)}")
+                    Text("Size: ${formatBytesWithExact(file.sizeBytes)}")
                     Text("Modified: ${formatDate(file.lastModifiedMillis)}")
                 }
             },
@@ -173,7 +220,8 @@ fun FilesScreen(
                         val deleted = java.io.File(toDelete).delete()
                         if (deleted) {
                             selectedFile.value = null
-                            filesState.value = filesState.value.filterNot { it.normalizedPath == toDelete }
+                            filesState.value = (filesState.value ?: emptyList())
+                                .filterNot { it.normalizedPath == toDelete }
                             scope.launch(Dispatchers.IO) {
                                 historyRepo.deleteByNormalizedPath(toDelete)
                             }
@@ -222,15 +270,15 @@ fun FilesScreen(
                     Text("Order")
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
-                            selected = pendingSortDirectionAsc.value,
-                            onClick = { pendingSortDirectionAsc.value = true }
+                            selected = pendingSortDirection.value == FileSortDirection.Asc,
+                            onClick = { pendingSortDirection.value = FileSortDirection.Asc }
                         )
                         Text("Ascending")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
-                            selected = !pendingSortDirectionAsc.value,
-                            onClick = { pendingSortDirectionAsc.value = false }
+                            selected = pendingSortDirection.value == FileSortDirection.Desc,
+                            onClick = { pendingSortDirection.value = FileSortDirection.Desc }
                         )
                         Text("Descending")
                     }
@@ -239,7 +287,9 @@ fun FilesScreen(
             confirmButton = {
                 OutlinedButton(onClick = {
                     sortKey.value = pendingSortKey.value
-                    sortDirectionAsc.value = pendingSortDirectionAsc.value
+                    sortDirection.value = pendingSortDirection.value
+                    settingsStore.setFilesSortKey(sortKey.value.name)
+                    settingsStore.setFilesSortDirection(sortDirection.value.name)
                     sortDialogOpen.value = false
                 }) {
                     Text("Apply")
