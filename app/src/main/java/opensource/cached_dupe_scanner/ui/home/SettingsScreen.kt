@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -24,6 +24,7 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 fun SettingsScreen(
     settingsStore: AppSettingsStore,
     onBack: () -> Unit,
+    scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
     val settings = remember { mutableStateOf(settingsStore.load()) }
@@ -31,7 +32,7 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .padding(Spacing.screenPadding)
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
     ) {
         AppTopBar(title = "Settings", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
