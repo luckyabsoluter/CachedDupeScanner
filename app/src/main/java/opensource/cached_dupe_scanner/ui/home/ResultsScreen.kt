@@ -470,7 +470,7 @@ private fun formatBytes(bytes: Long): String {
 }
 
 private fun formatDate(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return formatter.format(Date(millis))
 }
 

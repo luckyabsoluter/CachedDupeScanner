@@ -108,6 +108,6 @@ private fun ReportDetail(report: ScanReport) {
 }
 
 private fun formatDate(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     return formatter.format(Date(millis))
 }
