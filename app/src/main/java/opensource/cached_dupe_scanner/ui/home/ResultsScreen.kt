@@ -14,6 +14,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -83,13 +84,11 @@ fun ResultsScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (showFullPaths.value) {
-                                        "Show file names"
-                                    } else {
-                                        "Show full paths"
-                                    }
+                            text = { Text("Show full paths") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = showFullPaths.value,
+                                    onCheckedChange = null
                                 )
                             },
                             onClick = {
@@ -113,7 +112,7 @@ fun ResultsScreen(
                     hideZeroSizeInResults = settings.hideZeroSizeInResults
                 )
                 selectedGroup.value?.let { group ->
-                    GroupDetailContent(group = group, showFullPaths = showFullPaths.value)
+                    GroupDetailContent(group = group)
                     return@Column
                 }
                 Text("Files scanned: ${result.files.size}")
@@ -163,7 +162,7 @@ fun ResultsScreen(
 }
 
 @Composable
-private fun GroupDetailContent(group: DuplicateGroup, showFullPaths: Boolean) {
+private fun GroupDetailContent(group: DuplicateGroup) {
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
@@ -179,20 +178,11 @@ private fun GroupDetailContent(group: DuplicateGroup, showFullPaths: Boolean) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = formatPath(file.normalizedPath, showFullPaths),
+                    text = file.normalizedPath,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (showFullPaths) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = file.normalizedPath,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "${formatBytes(file.sizeBytes)} · ${date}",
