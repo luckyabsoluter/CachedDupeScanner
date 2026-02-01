@@ -22,7 +22,7 @@ fun PermissionScreen(onNext: () -> Unit, onBack: () -> Unit, modifier: Modifier 
     val context = LocalContext.current
 
     Column(modifier = modifier.padding(16.dp)) {
-        AppTopBar(title = "Permission", onBack = onBack)
+        AppTopBar(title = "Permission")
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = if (Environment.isExternalStorageManager()) {
