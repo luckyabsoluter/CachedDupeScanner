@@ -113,6 +113,53 @@ class CacheStoreTest {
         assertEquals(CacheStatus.STALE, result.status)
     }
 
+    @Test
+    fun upsertUpdatesSamePathVariants() {
+        val base = metadata(
+            path = "root/file.txt",
+            sizeBytes = 10,
+            lastModifiedMillis = 100,
+            hashHex = "hash-a"
+        )
+        store.upsert(base)
+
+        val variants = listOf(
+            metadata(
+                path = "root/file.txt",
+                sizeBytes = 10,
+                lastModifiedMillis = 110,
+                hashHex = "hash-a"
+            ),
+            metadata(
+                path = "root/file.txt",
+                sizeBytes = 20,
+                lastModifiedMillis = 120,
+                hashHex = "hash-a"
+            ),
+            metadata(
+                path = "root/file.txt",
+                sizeBytes = 10,
+                lastModifiedMillis = 130,
+                hashHex = "hash-b"
+            ),
+            metadata(
+                path = "root/file.txt",
+                sizeBytes = 30,
+                lastModifiedMillis = 140,
+                hashHex = "hash-c"
+            )
+        )
+
+        variants.forEach { variant ->
+            store.upsert(variant)
+            val cached = dao.getByNormalizedPath(variant.normalizedPath)
+            assertNotNull(cached)
+            assertEquals(variant.sizeBytes, cached?.sizeBytes)
+            assertEquals(variant.lastModifiedMillis, cached?.lastModifiedMillis)
+            assertEquals(variant.hashHex, cached?.hashHex)
+        }
+    }
+
     private fun metadata(
         path: String,
         sizeBytes: Long,
