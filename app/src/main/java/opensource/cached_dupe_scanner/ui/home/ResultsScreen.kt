@@ -119,15 +119,18 @@ fun ResultsScreen(
 }
 
 private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "${bytes} B"
-    val units = arrayOf("KB", "MB", "GB", "TB")
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
     var value = bytes.toDouble()
     var unitIndex = 0
     while (value >= 1024 && unitIndex < units.lastIndex) {
         value /= 1024
         unitIndex++
     }
-    return String.format(Locale.getDefault(), "%.1f %s", value, units[unitIndex])
+    return if (unitIndex == 0) {
+        String.format(Locale.getDefault(), "%.0f %s", value, units[unitIndex])
+    } else {
+        String.format(Locale.getDefault(), "%.1f %s", value, units[unitIndex])
+    }
 }
 
 private fun formatDate(millis: Long): String {
