@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val screen = remember { mutableStateOf(Screen.Dashboard) }
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
-                    val exportText = remember { mutableStateOf<String?>(null) }
                     val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
@@ -108,7 +107,6 @@ class MainActivity : ComponentActivity() {
                             ScanCommandScreen(
                                 state = state,
                                 onScanComplete = {
-                                    exportText.value = null
                                     pendingScan.value = it
                                 },
                                 onBack = { screen.value = Screen.Dashboard },
@@ -118,7 +116,6 @@ class MainActivity : ComponentActivity() {
                         Screen.Results -> {
                             ResultsScreen(
                                 state = state,
-                                exportText = exportText,
                                 onBackToDashboard = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
                             )

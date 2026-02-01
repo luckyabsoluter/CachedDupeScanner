@@ -9,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,8 +16,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import opensource.cached_dupe_scanner.export.ExportFormat
-import opensource.cached_dupe_scanner.export.ScanExporter
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
@@ -26,7 +23,6 @@ import opensource.cached_dupe_scanner.ui.results.ScanUiState
 @Composable
 fun ResultsScreen(
     state: MutableState<ScanUiState>,
-    exportText: MutableState<String?>,
     onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -47,18 +43,6 @@ fun ResultsScreen(
                 Text("Duplicate groups: ${result.duplicateGroups.size}")
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Button(onClick = {
-                    exportText.value = ScanExporter.export(result, ExportFormat.JSON)
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Export JSON")
-                }
-                Button(onClick = {
-                    exportText.value = ScanExporter.export(result, ExportFormat.CSV)
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Export CSV")
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
                 if (result.duplicateGroups.isEmpty()) {
                     Text("No duplicates found.")
                 } else {
@@ -85,19 +69,5 @@ fun ResultsScreen(
             }
         }
 
-        exportText.value?.let { text ->
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = "Export", style = MaterialTheme.typography.titleMedium)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Text(
-                    text = text,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
     }
 }
