@@ -26,6 +26,7 @@ fun ResultsScreen(
     state: MutableState<ScanUiState>,
     exportText: MutableState<String?>,
     onBackToScan: () -> Unit,
+    onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.padding(16.dp)) {
@@ -43,6 +44,9 @@ fun ResultsScreen(
 
                 Button(onClick = onBackToScan, modifier = Modifier.fillMaxWidth()) {
                     Text("Back to scan")
+                }
+                Button(onClick = onBackToDashboard, modifier = Modifier.fillMaxWidth()) {
+                    Text("Back to dashboard")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 

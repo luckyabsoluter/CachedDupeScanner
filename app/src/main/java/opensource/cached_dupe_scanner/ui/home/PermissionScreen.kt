@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun PermissionScreen(onNext: () -> Unit, modifier: Modifier = Modifier) {
+fun PermissionScreen(onNext: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     Column(modifier = modifier.padding(16.dp)) {
@@ -45,6 +45,10 @@ fun PermissionScreen(onNext: () -> Unit, modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
             Text("Continue to scan")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Back")
         }
     }
 }
