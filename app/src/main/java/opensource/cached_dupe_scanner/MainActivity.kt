@@ -51,7 +51,6 @@ class MainActivity : ComponentActivity() {
                     val contentModifier = Modifier
                         .fillMaxSize()
                         .systemBarsPadding()
-                        .padding(innerPadding)
 
                     when (screen.value) {
                         Screen.Dashboard -> {
