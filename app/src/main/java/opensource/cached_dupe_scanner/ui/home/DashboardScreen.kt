@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import opensource.cached_dupe_scanner.ui.components.AppTopBar
 
 @Composable
 fun DashboardScreen(
@@ -22,7 +23,7 @@ fun DashboardScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "CachedDupeScanner", style = MaterialTheme.typography.headlineSmall)
+        AppTopBar(title = "CachedDupeScanner")
 
         DashboardCard(
             title = "Permission",

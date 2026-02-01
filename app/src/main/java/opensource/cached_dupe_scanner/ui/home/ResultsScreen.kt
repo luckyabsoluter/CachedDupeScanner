@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.export.ExportFormat
 import opensource.cached_dupe_scanner.export.ScanExporter
+import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 
 @Composable
@@ -30,7 +31,7 @@ fun ResultsScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.padding(16.dp)) {
-        Text(text = "3) Results", style = MaterialTheme.typography.headlineSmall)
+        AppTopBar(title = "Results", onBack = onBackToDashboard)
         Spacer(modifier = Modifier.height(8.dp))
         when (val current = state.value) {
             ScanUiState.Idle -> Text("No results yet.")
