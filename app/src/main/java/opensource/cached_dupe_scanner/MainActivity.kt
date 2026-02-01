@@ -17,7 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
-import opensource.cached_dupe_scanner.ui.home.ScanScreen
+import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
+import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanResultStore
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
@@ -56,7 +57,8 @@ class MainActivity : ComponentActivity() {
                         Screen.Dashboard -> {
                             DashboardScreen(
                                 onOpenPermission = { screen.value = Screen.Permission },
-                                onOpenScan = { screen.value = Screen.Scan },
+                                onOpenTargets = { screen.value = Screen.Targets },
+                                onOpenScanCommand = { screen.value = Screen.ScanCommand },
                                 onOpenResults = { screen.value = Screen.Results },
                                 modifier = contentModifier
                             )
@@ -67,8 +69,14 @@ class MainActivity : ComponentActivity() {
                                 modifier = contentModifier
                             )
                         }
-                        Screen.Scan -> {
-                            ScanScreen(
+                        Screen.Targets -> {
+                            TargetsScreen(
+                                onBack = { screen.value = Screen.Dashboard },
+                                modifier = contentModifier
+                            )
+                        }
+                        Screen.ScanCommand -> {
+                            ScanCommandScreen(
                                 state = state,
                                 onScanComplete = {
                                     exportText.value = null
@@ -97,6 +105,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen {
     Dashboard,
     Permission,
-    Scan,
+    Targets,
+    ScanCommand,
     Results
 }
