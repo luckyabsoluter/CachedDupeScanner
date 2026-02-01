@@ -42,6 +42,7 @@ import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
+import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -65,6 +66,7 @@ fun ResultsScreen(
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
+    val removedPaths = remember { mutableStateOf(setOf<String>()) }
     val settingsSnapshot = remember { settingsStore.load() }
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
@@ -129,8 +131,16 @@ fun ResultsScreen(
             is ScanUiState.Error -> Text("Error: ${current.message}")
             is ScanUiState.Success -> {
                 val settings = settingsStore.load()
+                val filteredFiles = current.result.files.filter {
+                    !removedPaths.value.contains(it.normalizedPath)
+                }
+                val base = ScanResult(
+                    scannedAtMillis = current.result.scannedAtMillis,
+                    files = filteredFiles,
+                    duplicateGroups = emptyList()
+                )
                 val result = ScanResultViewFilter.filterForDisplay(
-                    result = current.result,
+                    result = base,
                     hideZeroSizeInResults = settings.hideZeroSizeInResults,
                     sortKey = sortKey.value,
                     sortDirection = sortDirection.value
@@ -138,7 +148,12 @@ fun ResultsScreen(
                 if (selectedGroupIndex != null) {
                     val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
                     if (group != null) {
-                        GroupDetailContent(group = group)
+                        GroupDetailContent(
+                            group = group,
+                            onFileDeleted = { file ->
+                                removedPaths.value = removedPaths.value + file.normalizedPath
+                            }
+                        )
                     } else {
                         Text("Group not found.")
                     }
@@ -302,7 +317,10 @@ fun ResultsScreen(
 }
 
 @Composable
-private fun GroupDetailContent(group: DuplicateGroup) {
+private fun GroupDetailContent(
+    group: DuplicateGroup,
+    onFileDeleted: (FileMetadata) -> Unit
+) {
     val context = LocalContext.current
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val groupCount = group.files.size
@@ -382,6 +400,7 @@ private fun GroupDetailContent(group: DuplicateGroup) {
                 Row {
                     OutlinedButton(onClick = {
                         File(file.normalizedPath).delete()
+                        onFileDeleted(file)
                         selectedFile.value = null
                     }) {
                         Text("Delete")
