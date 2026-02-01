@@ -6,7 +6,10 @@ import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 
-class ScanHistoryRepository(private val dao: FileCacheDao) {
+class ScanHistoryRepository(
+    private val dao: FileCacheDao,
+    private val settingsStore: AppSettingsStore
+) {
     fun recordScan(result: ScanResult) {
         val files = result.files.map { file ->
             CachedFileEntity(
@@ -25,7 +28,12 @@ class ScanHistoryRepository(private val dao: FileCacheDao) {
         if (files.isEmpty()) {
             return null
         }
-        return ScanResultMerger.fromFiles(System.currentTimeMillis(), files)
+        val settings = settingsStore.load()
+        return ScanResultMerger.fromFiles(
+            System.currentTimeMillis(),
+            files,
+            excludeZeroSizeDuplicates = settings.excludeZeroSizeDuplicates
+        )
     }
 
     fun clearAll() {

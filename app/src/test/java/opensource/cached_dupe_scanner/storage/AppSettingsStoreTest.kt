@@ -1,0 +1,34 @@
+package opensource.cached_dupe_scanner.storage
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+@RunWith(RobolectricTestRunner::class)
+class AppSettingsStoreTest {
+    @Test
+    fun defaultsToExcludeZeroSizeDuplicates() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        val settings = store.load()
+
+        assertTrue(settings.excludeZeroSizeDuplicates)
+    }
+
+    @Test
+    fun canToggleExcludeZeroSizeDuplicates() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setExcludeZeroSizeDuplicates(false)
+        assertFalse(store.load().excludeZeroSizeDuplicates)
+
+        store.setExcludeZeroSizeDuplicates(true)
+        assertTrue(store.load().excludeZeroSizeDuplicates)
+    }
+}

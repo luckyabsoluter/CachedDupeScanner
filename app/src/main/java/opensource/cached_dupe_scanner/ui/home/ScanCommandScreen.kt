@@ -33,6 +33,7 @@ import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
@@ -42,6 +43,7 @@ import java.io.File
 fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanResult) -> Unit,
+    settingsStore: AppSettingsStore,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -57,6 +59,7 @@ fun ScanCommandScreen(
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
     val scanner = remember { IncrementalScanner(cacheStore) }
+    val settings = remember { settingsStore.load() }
 
     LaunchedEffect(Unit) {
         targets.value = store.loadTargets()
@@ -82,14 +85,30 @@ fun ScanCommandScreen(
             targets.value.forEach { target ->
                 TargetScanRow(
                     target = target,
-                    onScan = { runScanForTarget(scope, scanner, state, target, onScanComplete) }
+                    onScan = {
+                        runScanForTarget(
+                            scope,
+                            scanner,
+                            state,
+                            target,
+                            onScanComplete,
+                            settings.excludeZeroSizeDuplicates
+                        )
+                    }
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = {
-            runScanForAllTargets(scope, scanner, state, targets.value, onScanComplete)
+            runScanForAllTargets(
+                scope,
+                scanner,
+                state,
+                targets.value,
+                onScanComplete,
+                settings.excludeZeroSizeDuplicates
+            )
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan all targets")
         }
@@ -114,7 +133,8 @@ private fun runScanForTarget(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
-    onScanComplete: (ScanResult) -> Unit
+    onScanComplete: (ScanResult) -> Unit,
+    excludeZeroSizeDuplicates: Boolean
 ) {
     scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
@@ -124,7 +144,7 @@ private fun runScanForTarget(
             return@launch
         }
         val result = withContext(Dispatchers.IO) {
-            scanner.scan(targetFile)
+            scanner.scan(targetFile, excludeZeroSizeDuplicates = excludeZeroSizeDuplicates)
         }
         onScanComplete(result)
     }
@@ -135,7 +155,8 @@ private fun runScanForAllTargets(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
-    onScanComplete: (ScanResult) -> Unit
+    onScanComplete: (ScanResult) -> Unit,
+    excludeZeroSizeDuplicates: Boolean
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
@@ -151,7 +172,7 @@ private fun runScanForAllTargets(
                 continue
             }
             val result = withContext(Dispatchers.IO) {
-                scanner.scan(targetFile)
+                scanner.scan(targetFile, excludeZeroSizeDuplicates = excludeZeroSizeDuplicates)
             }
             results.add(result)
         }
@@ -161,7 +182,11 @@ private fun runScanForAllTargets(
             return@launch
         }
 
-        val merged = ScanResultMerger.merge(System.currentTimeMillis(), results)
+        val merged = ScanResultMerger.merge(
+            System.currentTimeMillis(),
+            results,
+            excludeZeroSizeDuplicates = excludeZeroSizeDuplicates
+        )
         onScanComplete(merged)
     }
 }

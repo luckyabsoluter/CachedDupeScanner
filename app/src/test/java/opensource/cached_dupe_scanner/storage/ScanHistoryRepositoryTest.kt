@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanResult
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -21,7 +22,8 @@ class ScanHistoryRepositoryTest {
             .allowMainThreadQueries()
             .build()
         try {
-            val repo = ScanHistoryRepository(database.fileCacheDao())
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
 
             val r1 = ScanResult(
                 scannedAtMillis = 1,
