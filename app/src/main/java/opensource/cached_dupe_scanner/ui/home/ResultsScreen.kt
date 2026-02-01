@@ -443,7 +443,7 @@ private fun GroupDetailContent(
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
-    val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
+    val fileSize = formatBytesWithExact(group.files.firstOrNull()?.sizeBytes ?: 0)
     val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
 
     Text("Group detail")
@@ -501,7 +501,7 @@ private fun GroupDetailContent(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${formatBytes(file.sizeBytes)} · ${date}",
+                        text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (isDeleted) {
                             MaterialTheme.colorScheme.onSecondaryContainer
@@ -522,7 +522,7 @@ private fun GroupDetailContent(
             text = {
                 Column {
                     Text("Path: ${file.normalizedPath}")
-                    Text("Size: ${formatBytes(file.sizeBytes)}")
+                    Text("Size: ${formatBytesWithExact(file.sizeBytes)}")
                     Text("Modified: ${formatDate(file.lastModifiedMillis)}")
                 }
             },
