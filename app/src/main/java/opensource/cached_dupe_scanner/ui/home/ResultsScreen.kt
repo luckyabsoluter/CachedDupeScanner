@@ -149,8 +149,9 @@ fun ResultsScreen(
         } else {
             val loaded = visibleCount.value.coerceAtMost(totalGroups)
             val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
-            val suffix = if (loaded < totalGroups) "+" else ""
-            "$loaded/$totalGroups · $current$suffix"
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / totalGroups.toDouble()) * 100).toInt()
+            "$current/$loaded/$totalGroups (${currentPercent}%/${loadedPercent}%)"
         }
     }
     LaunchedEffect(totalGroups) {
