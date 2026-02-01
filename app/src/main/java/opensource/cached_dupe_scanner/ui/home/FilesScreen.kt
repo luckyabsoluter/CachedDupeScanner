@@ -66,6 +66,7 @@ private enum class FileSortDirection {
 fun FilesScreen(
     historyRepo: ScanHistoryRepository,
     clearVersion: Int,
+    refreshVersion: Int,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -98,6 +99,13 @@ fun FilesScreen(
     }
 
     LaunchedEffect(Unit) {
+        val result = withContext(Dispatchers.IO) {
+            historyRepo.loadMergedHistory()
+        }
+        filesState.value = result?.files ?: emptyList()
+    }
+
+    LaunchedEffect(refreshVersion) {
         val result = withContext(Dispatchers.IO) {
             historyRepo.loadMergedHistory()
         }
