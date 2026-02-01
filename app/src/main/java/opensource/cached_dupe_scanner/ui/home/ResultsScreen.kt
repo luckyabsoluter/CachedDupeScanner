@@ -38,6 +38,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import opensource.cached_dupe_scanner.core.DuplicateGroup
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
@@ -303,6 +304,7 @@ fun ResultsScreen(
 @Composable
 private fun GroupDetailContent(group: DuplicateGroup) {
     val context = LocalContext.current
+    val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
@@ -331,7 +333,7 @@ private fun GroupDetailContent(group: DuplicateGroup) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { openFile(context, file.normalizedPath) }
+                .clickable { selectedFile.value = file }
         ) {
             Row(
                 modifier = Modifier
@@ -355,6 +357,42 @@ private fun GroupDetailContent(group: DuplicateGroup) {
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    selectedFile.value?.let { file ->
+        AlertDialog(
+            onDismissRequest = { selectedFile.value = null },
+            title = { Text("File details") },
+            text = {
+                Column {
+                    Text("Path: ${file.normalizedPath}")
+                    Text("Size: ${formatBytes(file.sizeBytes)}")
+                    Text("Modified: ${formatDate(file.lastModifiedMillis)}")
+                }
+            },
+            confirmButton = {
+                OutlinedButton(onClick = {
+                    openFile(context, file.normalizedPath)
+                    selectedFile.value = null
+                }) {
+                    Text("Open")
+                }
+            },
+            dismissButton = {
+                Row {
+                    OutlinedButton(onClick = {
+                        File(file.normalizedPath).delete()
+                        selectedFile.value = null
+                    }) {
+                        Text("Delete")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedButton(onClick = { selectedFile.value = null }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
     }
 }
 private fun formatBytes(bytes: Long): String {
