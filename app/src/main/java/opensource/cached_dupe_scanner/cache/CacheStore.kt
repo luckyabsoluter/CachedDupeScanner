@@ -20,8 +20,7 @@ class CacheStore(
 
         val cachedMetadata = cachedEntity.toMetadata()
         val isFresh = cachedEntity.sizeBytes == current.sizeBytes &&
-            cachedEntity.lastModifiedMillis == current.lastModifiedMillis &&
-            !cachedEntity.hashHex.isNullOrBlank()
+            cachedEntity.lastModifiedMillis == current.lastModifiedMillis
 
         return if (isFresh) {
             CacheLookupResult(CacheStatus.FRESH, cachedMetadata)
