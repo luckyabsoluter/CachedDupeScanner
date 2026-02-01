@@ -4,7 +4,8 @@ object ScanResultViewFilter {
     fun filterForDisplay(
         result: ScanResult,
         hideZeroSizeInResults: Boolean,
-        sortOption: ResultSortOption
+        sortKey: ResultSortKey,
+        sortDirection: SortDirection
     ): ScanResult {
         val files = if (hideZeroSizeInResults) {
             result.files.filter { it.sizeBytes > 0 }
@@ -17,7 +18,8 @@ object ScanResultViewFilter {
                 scannedAtMillis = result.scannedAtMillis,
                 files = files
             ).duplicateGroups,
-            sortOption
+            sortKey,
+            sortDirection
         )
 
         return ScanResult(
@@ -29,12 +31,14 @@ object ScanResultViewFilter {
 
     private fun sortGroups(
         groups: List<DuplicateGroup>,
-        option: ResultSortOption
+        key: ResultSortKey,
+        direction: SortDirection
     ): List<DuplicateGroup> {
-        return when (option) {
-            ResultSortOption.CountDesc -> groups.sortedByDescending { it.files.size }
-            ResultSortOption.TotalSizeDesc -> groups.sortedByDescending { it.files.sumOf { f -> f.sizeBytes } }
-            ResultSortOption.NameAsc -> groups.sortedBy { it.files.firstOrNull()?.normalizedPath ?: "" }
+        val sorted = when (key) {
+            ResultSortKey.Count -> groups.sortedBy { it.files.size }
+            ResultSortKey.TotalSize -> groups.sortedBy { it.files.sumOf { f -> f.sizeBytes } }
+            ResultSortKey.Name -> groups.sortedBy { it.files.firstOrNull()?.normalizedPath ?: "" }
         }
+        return if (direction == SortDirection.Desc) sorted.reversed() else sorted
     }
 }
