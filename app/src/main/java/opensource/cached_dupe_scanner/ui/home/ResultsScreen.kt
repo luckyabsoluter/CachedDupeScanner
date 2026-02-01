@@ -153,14 +153,15 @@ fun ResultsScreen(
                     sortDirection = sortDirection.value
                 )
                 val pageSize = 50
-                val prefetchThreshold = 10
+                val prefetchPx = 600
                 val visibleCount = remember { mutableStateOf(pageSize) }
                 LaunchedEffect(result.duplicateGroups.size) {
                     visibleCount.value = pageSize
                 }
-                LaunchedEffect(visibleCount.value, result.duplicateGroups.size) {
+                LaunchedEffect(scrollState.value, result.duplicateGroups.size, visibleCount.value) {
                     val remaining = result.duplicateGroups.size - visibleCount.value
-                    if (remaining in 1..prefetchThreshold) {
+                    val nearBottom = scrollState.value >= (scrollState.maxValue - prefetchPx)
+                    if (nearBottom && remaining > 0) {
                         visibleCount.value = (visibleCount.value + pageSize)
                             .coerceAtMost(result.duplicateGroups.size)
                     }
