@@ -21,7 +21,7 @@ import opensource.cached_dupe_scanner.ui.components.AppTopBar
 fun PermissionScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
-    Column(modifier = modifier.padding(16.dp)) {
+    Column(modifier = modifier.padding(10.dp)) {
         AppTopBar(title = "Permission", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
         Text(

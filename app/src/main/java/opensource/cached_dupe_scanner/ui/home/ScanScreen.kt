@@ -59,7 +59,7 @@ fun ScanScreen(
         }
     }
 
-    Column(modifier = modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AppTopBar(title = "Scan", onBack = onBack)
         TextField(
             value = targetPath.value,
