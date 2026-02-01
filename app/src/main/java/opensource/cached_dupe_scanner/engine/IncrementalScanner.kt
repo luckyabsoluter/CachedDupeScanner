@@ -14,8 +14,7 @@ class IncrementalScanner(
 ) {
     fun scan(
         root: File,
-        ignore: (File) -> Boolean = { false },
-        excludeZeroSizeDuplicates: Boolean = false
+        ignore: (File) -> Boolean = { false }
     ): ScanResult {
         val scannedAtMillis = System.currentTimeMillis()
         val files = mutableListOf<FileMetadata>()
@@ -36,7 +35,6 @@ class IncrementalScanner(
 
         val duplicateGroups = files
             .filter { it.hashHex != null }
-            .filter { file -> !excludeZeroSizeDuplicates || file.sizeBytes > 0 }
             .groupBy { it.hashHex!! }
             .filterValues { it.size > 1 }
             .map { (hash, groupFiles) ->

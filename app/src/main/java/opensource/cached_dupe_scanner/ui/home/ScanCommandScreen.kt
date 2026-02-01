@@ -59,7 +59,6 @@ fun ScanCommandScreen(
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
     val scanner = remember { IncrementalScanner(cacheStore) }
-    val settings = remember { settingsStore.load() }
 
     LaunchedEffect(Unit) {
         targets.value = store.loadTargets()
@@ -91,8 +90,7 @@ fun ScanCommandScreen(
                             scanner,
                             state,
                             target,
-                            onScanComplete,
-                            settings.excludeZeroSizeDuplicates
+                            onScanComplete
                         )
                     }
                 )
@@ -106,8 +104,7 @@ fun ScanCommandScreen(
                 scanner,
                 state,
                 targets.value,
-                onScanComplete,
-                settings.excludeZeroSizeDuplicates
+                onScanComplete
             )
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan all targets")
@@ -133,8 +130,7 @@ private fun runScanForTarget(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
-    onScanComplete: (ScanResult) -> Unit,
-    excludeZeroSizeDuplicates: Boolean
+    onScanComplete: (ScanResult) -> Unit
 ) {
     scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
@@ -144,7 +140,7 @@ private fun runScanForTarget(
             return@launch
         }
         val result = withContext(Dispatchers.IO) {
-            scanner.scan(targetFile, excludeZeroSizeDuplicates = excludeZeroSizeDuplicates)
+            scanner.scan(targetFile)
         }
         onScanComplete(result)
     }
@@ -155,8 +151,7 @@ private fun runScanForAllTargets(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
-    onScanComplete: (ScanResult) -> Unit,
-    excludeZeroSizeDuplicates: Boolean
+    onScanComplete: (ScanResult) -> Unit
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
@@ -172,7 +167,7 @@ private fun runScanForAllTargets(
                 continue
             }
             val result = withContext(Dispatchers.IO) {
-                scanner.scan(targetFile, excludeZeroSizeDuplicates = excludeZeroSizeDuplicates)
+                scanner.scan(targetFile)
             }
             results.add(result)
         }
@@ -184,8 +179,7 @@ private fun runScanForAllTargets(
 
         val merged = ScanResultMerger.merge(
             System.currentTimeMillis(),
-            results,
-            excludeZeroSizeDuplicates = excludeZeroSizeDuplicates
+            results
         )
         onScanComplete(merged)
     }

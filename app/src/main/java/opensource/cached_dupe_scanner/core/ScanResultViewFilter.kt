@@ -3,8 +3,7 @@ package opensource.cached_dupe_scanner.core
 object ScanResultViewFilter {
     fun filterForDisplay(
         result: ScanResult,
-        hideZeroSizeInResults: Boolean,
-        excludeZeroSizeDuplicates: Boolean
+        hideZeroSizeInResults: Boolean
     ): ScanResult {
         val files = if (hideZeroSizeInResults) {
             result.files.filter { it.sizeBytes > 0 }
@@ -14,8 +13,7 @@ object ScanResultViewFilter {
 
         return ScanResultMerger.fromFiles(
             scannedAtMillis = result.scannedAtMillis,
-            files = files,
-            excludeZeroSizeDuplicates = excludeZeroSizeDuplicates
+            files = files
         )
     }
 }

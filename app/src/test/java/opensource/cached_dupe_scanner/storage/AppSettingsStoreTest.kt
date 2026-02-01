@@ -17,7 +17,6 @@ class AppSettingsStoreTest {
 
         val settings = store.load()
 
-        assertTrue(settings.excludeZeroSizeDuplicates)
         assertFalse(settings.skipZeroSizeInDb)
         assertFalse(settings.hideZeroSizeInResults)
     }
@@ -26,12 +25,6 @@ class AppSettingsStoreTest {
     fun canToggleExcludeZeroSizeDuplicates() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = AppSettingsStore(context)
-
-        store.setExcludeZeroSizeDuplicates(false)
-        assertFalse(store.load().excludeZeroSizeDuplicates)
-
-        store.setExcludeZeroSizeDuplicates(true)
-        assertTrue(store.load().excludeZeroSizeDuplicates)
 
         store.setSkipZeroSizeInDb(true)
         assertTrue(store.load().skipZeroSizeInDb)
