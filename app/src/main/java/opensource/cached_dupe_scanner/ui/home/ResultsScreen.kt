@@ -34,6 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.ImageLoader
+import coil.decode.VideoFrameDecoder
 import android.content.Intent
 import android.net.Uri
 import android.webkit.MimeTypeMap
@@ -71,6 +73,12 @@ fun ResultsScreen(
     val scrollState = rememberScrollState()
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
     val settingsSnapshot = remember { settingsStore.load() }
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
@@ -147,6 +155,7 @@ fun ResultsScreen(
                         GroupDetailContent(
                             group = group,
                             deletedPaths = deletedPaths,
+                            imageLoader = imageLoader,
                             onFileDeleted = { file ->
                                 onDeleteFile?.invoke(file)
                             }
@@ -210,9 +219,10 @@ fun ResultsScreen(
                             ) {
                                 if (preview != null) {
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
+                                        model = ImageRequest.Builder(context)
                                             .data(File(preview.normalizedPath))
                                             .build(),
+                                        imageLoader = imageLoader,
                                         contentDescription = "Thumbnail",
                                         modifier = Modifier.size(72.dp)
                                     )
@@ -327,6 +337,7 @@ fun ResultsScreen(
 private fun GroupDetailContent(
     group: DuplicateGroup,
     deletedPaths: Set<String>,
+    imageLoader: ImageLoader,
     onFileDeleted: (FileMetadata) -> Unit
 ) {
     val context = LocalContext.current
@@ -340,9 +351,10 @@ private fun GroupDetailContent(
     Spacer(modifier = Modifier.height(8.dp))
     if (preview != null) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(File(preview.normalizedPath))
                 .build(),
+            imageLoader = imageLoader,
             contentDescription = "Thumbnail",
             modifier = Modifier
                 .fillMaxWidth()
