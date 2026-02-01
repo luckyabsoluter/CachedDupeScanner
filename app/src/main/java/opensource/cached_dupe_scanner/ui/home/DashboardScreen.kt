@@ -24,6 +24,7 @@ fun DashboardScreen(
     onOpenTargets: () -> Unit,
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
+    onOpenFiles: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
     modifier: Modifier = Modifier
@@ -63,6 +64,13 @@ fun DashboardScreen(
             description = "View duplicates and export results.",
             actionLabel = "Open results",
             onAction = onOpenResults
+        )
+
+        DashboardCard(
+            title = "File browser",
+            description = "Browse cached files with sort and actions.",
+            actionLabel = "Open files",
+            onAction = onOpenFiles
         )
 
         DashboardCard(
