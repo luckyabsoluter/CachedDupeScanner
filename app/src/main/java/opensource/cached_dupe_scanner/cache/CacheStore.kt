@@ -9,6 +9,11 @@ class CacheStore(
         dao.upsert(metadata.toEntity())
     }
 
+    fun upsertAll(metadata: List<FileMetadata>) {
+        if (metadata.isEmpty()) return
+        dao.upsertAll(metadata.map { it.toEntity() })
+    }
+
     fun lookup(current: FileMetadata): CacheLookupResult {
         val cachedEntity = dao.getByNormalizedPath(current.normalizedPath)
             ?: return CacheLookupResult(CacheStatus.MISS)

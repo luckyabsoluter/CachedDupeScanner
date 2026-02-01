@@ -55,6 +55,7 @@ fun ScanCommandScreen(
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
     val currentJob = remember { mutableStateOf<Job?>(null) }
+    val cancelRequested = remember { mutableStateOf(false) }
     val progressTarget = remember { mutableStateOf<String?>(null) }
     val progressCurrent = remember { mutableStateOf<String?>(null) }
     val progressSize = remember { mutableStateOf<Long?>(null) }
@@ -102,6 +103,7 @@ fun ScanCommandScreen(
                             onScanComplete,
                             skipZeroSizeInDb,
                             currentJob,
+                            cancelRequested,
                             progressTarget,
                             progressCurrent,
                             progressSize,
@@ -123,6 +125,7 @@ fun ScanCommandScreen(
                 onScanComplete,
                 skipZeroSizeInDb,
                 currentJob,
+                cancelRequested,
                 progressTarget,
                 progressCurrent,
                 progressSize,
@@ -156,6 +159,7 @@ fun ScanCommandScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
+                            cancelRequested.value = true
                             currentJob.value?.cancel()
                             state.value = ScanUiState.Idle
                             progressTarget.value = null
@@ -193,6 +197,7 @@ private fun runScanForTarget(
     onScanComplete: (ScanResult) -> Unit,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
+    cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
     progressCurrent: MutableState<String?>,
     progressSize: MutableState<Long?>,
@@ -200,6 +205,7 @@ private fun runScanForTarget(
 ) {
     var job: Job? = null
     job = scope.launch {
+        cancelRequested.value = false
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val targetFile = File(target.path)
         if (!targetFile.exists()) {
@@ -212,6 +218,7 @@ private fun runScanForTarget(
                 targetFile,
                 skipZeroSizeInDb = skipZeroSizeInDb,
                 onProgress = { scanned, total, current, phase ->
+                    if (cancelRequested.value) return@scan
                     state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                     progressCurrent.value = current.normalizedPath
                     progressSize.value = current.sizeBytes
@@ -220,7 +227,7 @@ private fun runScanForTarget(
                 shouldContinue = { job?.isActive == true }
             )
         }
-        if (job?.isActive == false && result.files.isEmpty()) {
+        if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
             state.value = ScanUiState.Idle
             progressTarget.value = null
             progressCurrent.value = null
@@ -240,6 +247,7 @@ private fun runScanForAllTargets(
     onScanComplete: (ScanResult) -> Unit,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
+    cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
     progressCurrent: MutableState<String?>,
     progressSize: MutableState<Long?>,
@@ -252,6 +260,7 @@ private fun runScanForAllTargets(
 
     var job: Job? = null
     job = scope.launch {
+        cancelRequested.value = false
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val results = mutableListOf<ScanResult>()
         for (target in targets) {
@@ -265,6 +274,7 @@ private fun runScanForAllTargets(
                     targetFile,
                     skipZeroSizeInDb = skipZeroSizeInDb,
                     onProgress = { scanned, total, current, phase ->
+                        if (cancelRequested.value) return@scan
                         state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                         progressCurrent.value = current.normalizedPath
                         progressSize.value = current.sizeBytes
@@ -273,7 +283,7 @@ private fun runScanForAllTargets(
                     shouldContinue = { job?.isActive == true }
                 )
             }
-            if (job?.isActive == false && result.files.isEmpty()) {
+            if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
                 state.value = ScanUiState.Idle
                 progressTarget.value = null
                 progressCurrent.value = null
