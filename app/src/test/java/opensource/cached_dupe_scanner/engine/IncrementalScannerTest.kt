@@ -38,7 +38,7 @@ class IncrementalScannerTest {
     }
 
     @Test
-    fun incrementalScanSkipsUnchangedFiles() {
+    fun scanDefersHashWhenNoSizeCollision() {
         val file = File(tempDir, "sample.txt").apply {
             writeText("hello")
         }
@@ -48,24 +48,46 @@ class IncrementalScannerTest {
         scanner.scan(tempDir)
         scanner.scan(tempDir)
 
-        assertEquals(1, hasher.callsFor(file))
+        assertEquals(0, hasher.callsFor(file))
     }
 
     @Test
-    fun incrementalScanRehashesModifiedFiles() {
-        val file = File(tempDir, "sample.txt").apply {
-            writeText("hello")
+    fun hashesOnlyOnSizeCollisionAndReusesWhenUnchanged() {
+        val fileA = File(tempDir, "a.txt").apply {
+            writeText("aa")
+        }
+        val fileB = File(tempDir, "b.txt").apply {
+            writeText("bb")
+        }
+        val hasher = CountingHasher()
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        scanner.scan(tempDir)
+        scanner.scan(tempDir)
+
+        assertEquals(1, hasher.callsFor(fileA))
+        assertEquals(1, hasher.callsFor(fileB))
+    }
+
+    @Test
+    fun rehashesModifiedFileWhenSizeStillCollides() {
+        val fileA = File(tempDir, "a.txt").apply {
+            writeText("aa")
+        }
+        val fileB = File(tempDir, "b.txt").apply {
+            writeText("bb")
         }
         val hasher = CountingHasher()
         val scanner = IncrementalScanner(store, hasher, FileWalker())
 
         scanner.scan(tempDir)
 
-        file.writeText("hello-updated")
-        file.setLastModified(System.currentTimeMillis() + 5000)
+        fileA.writeText("cc")
+        fileA.setLastModified(System.currentTimeMillis() + 5000)
         scanner.scan(tempDir)
 
-        assertEquals(2, hasher.callsFor(file))
+        assertEquals(2, hasher.callsFor(fileA))
+        assertEquals(1, hasher.callsFor(fileB))
     }
 
     @Test
