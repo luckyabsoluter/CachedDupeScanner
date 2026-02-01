@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -25,12 +25,13 @@ fun DashboardScreen(
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
     onOpenSettings: () -> Unit,
+    scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .padding(Spacing.screenPadding)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         AppTopBar(title = "CachedDupeScanner")
