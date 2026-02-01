@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +39,9 @@ import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.collect
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -84,6 +90,7 @@ fun FilesScreen(
     val pendingSortDirection = remember { mutableStateOf(FileSortDirection.Asc) }
     val filesState = remember { mutableStateOf<List<FileMetadata>?>(null) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val topVisibleIndex = remember { mutableStateOf(0) }
     val imageLoader = remember {
         ImageLoader.Builder(context)
             .components { add(VideoFrameDecoder.Factory()) }
@@ -112,90 +119,138 @@ fun FilesScreen(
         if (sortDirection.value == FileSortDirection.Asc) sorted else sorted.reversed()
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier.padding(Spacing.screenPadding)
-    ) {
-        item {
-            AppTopBar(
-                title = "Files",
-                onBack = onBack,
-                actions = {
-                    IconButton(onClick = { menuExpanded.value = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                    }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = menuExpanded.value,
-                        onDismissRequest = { menuExpanded.value = false }
-                    ) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("Sort") },
-                            onClick = {
-                                menuExpanded.value = false
-                                pendingSortKey.value = sortKey.value
-                                pendingSortDirection.value = sortDirection.value
-                                sortDialogOpen.value = true
-                            }
-                        )
-                    }
-                }
-            )
+    val fileIndexByPath = remember(sortedFiles) {
+        sortedFiles.mapIndexed { index, file -> file.normalizedPath to index }.toMap()
+    }
+
+    LaunchedEffect(sortedFiles.size) {
+        if (sortedFiles.isNotEmpty()) {
+            topVisibleIndex.value = 0
         }
-        item { Spacer(modifier = Modifier.height(8.dp)) }
-        if (filesState.value == null) {
-            item { Text("Loading files...") }
-        } else if (sortedFiles.isEmpty()) {
-            item { Text("No files in history.") }
+    }
+
+    LaunchedEffect(sortedFiles.size) {
+        if (sortedFiles.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key is String }
+                ?.key as? String
+        }
+            .distinctUntilChanged()
+            .filter { it != null }
+            .collect { key ->
+                val index = fileIndexByPath[key] ?: 0
+                topVisibleIndex.value = index
+            }
+    }
+
+    val overlayText = derivedStateOf {
+        val total = sortedFiles.size
+        if (total == 0) {
+            null
         } else {
-            items(sortedFiles, key = { it.normalizedPath }) { file ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedFile.value = file }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isMediaFile(file.normalizedPath)) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(java.io.File(file.normalizedPath))
-                                    .build(),
-                                imageLoader = imageLoader,
-                                contentDescription = "Thumbnail",
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val percent = ((current.toDouble() / total.toDouble()) * 100).toInt()
+            "$current/$total (${percent}%)"
+        }
+    }
+
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.padding(Spacing.screenPadding)
+        ) {
+            item {
+                AppTopBar(
+                    title = "Files",
+                    onBack = onBack,
+                    actions = {
+                        IconButton(onClick = { menuExpanded.value = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                         }
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = formatPath(file.normalizedPath, showFullPath = false),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = file.normalizedPath,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = menuExpanded.value,
+                            onDismissRequest = { menuExpanded.value = false }
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Sort") },
+                                onClick = {
+                                    menuExpanded.value = false
+                                    pendingSortKey.value = sortKey.value
+                                    pendingSortDirection.value = sortDirection.value
+                                    sortDialogOpen.value = true
+                                }
                             )
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+                )
             }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+            if (filesState.value == null) {
+                item { Text("Loading files...") }
+            } else if (sortedFiles.isEmpty()) {
+                item { Text("No files in history.") }
+            } else {
+                items(sortedFiles, key = { it.normalizedPath }) { file ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedFile.value = file }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isMediaFile(file.normalizedPath)) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(java.io.File(file.normalizedPath))
+                                        .build(),
+                                    imageLoader = imageLoader,
+                                    contentDescription = "Thumbnail",
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = formatPath(file.normalizedPath, showFullPath = false),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = file.normalizedPath,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+        overlayText.value?.let { indicator ->
+            Text(
+                text = indicator,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 12.dp, top = 12.dp)
+            )
         }
     }
 
