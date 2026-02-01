@@ -30,6 +30,11 @@ class ScanHistoryRepository(private val dao: ScanHistoryDao) {
         val files = dao.getAllFiles().map { it.toMetadata() }
         return ScanResultMerger.fromFiles(System.currentTimeMillis(), files)
     }
+
+    fun clearAll() {
+        dao.clearFiles()
+        dao.clearSessions()
+    }
 }
 
 private fun ScanFileEntity.toMetadata(): FileMetadata {

@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
                     val screen = remember { mutableStateOf(Screen.Dashboard) }
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                     val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
+                    val clearRequested = remember { mutableStateOf(false) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val historyRepo = remember {
@@ -75,6 +76,16 @@ class MainActivity : ComponentActivity() {
                         resultStore.save(merged)
                         screen.value = Screen.Results
                         pendingScan.value = null
+                    }
+
+                    LaunchedEffect(clearRequested.value) {
+                        if (!clearRequested.value) return@LaunchedEffect
+                        withContext(Dispatchers.IO) {
+                            historyRepo.clearAll()
+                        }
+                        resultStore.clear()
+                        state.value = ScanUiState.Idle
+                        clearRequested.value = false
                     }
 
                     val contentModifier = Modifier
@@ -117,6 +128,10 @@ class MainActivity : ComponentActivity() {
                             ResultsScreen(
                                 state = state,
                                 onBackToDashboard = { screen.value = Screen.Dashboard },
+                                onClearResults = {
+                                    pendingScan.value = null
+                                    clearRequested.value = true
+                                },
                                 modifier = contentModifier
                             )
                         }

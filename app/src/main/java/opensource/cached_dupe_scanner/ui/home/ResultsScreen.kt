@@ -9,10 +9,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,14 +32,36 @@ import opensource.cached_dupe_scanner.ui.results.ScanUiState
 fun ResultsScreen(
     state: MutableState<ScanUiState>,
     onBackToDashboard: () -> Unit,
+    onClearResults: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val menuExpanded = remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .padding(Spacing.screenPadding)
             .verticalScroll(rememberScrollState())
     ) {
-        AppTopBar(title = "Results", onBack = onBackToDashboard)
+        AppTopBar(
+            title = "Results",
+            onBack = onBackToDashboard,
+            actions = {
+                IconButton(onClick = { menuExpanded.value = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded.value,
+                    onDismissRequest = { menuExpanded.value = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Clear all results") },
+                        onClick = {
+                            menuExpanded.value = false
+                            onClearResults()
+                        }
+                    )
+                }
+            }
+        )
         Spacer(modifier = Modifier.height(8.dp))
         when (val current = state.value) {
             ScanUiState.Idle -> Text("No results yet.")
