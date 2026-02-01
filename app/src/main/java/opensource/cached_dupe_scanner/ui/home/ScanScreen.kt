@@ -30,6 +30,7 @@ import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.sample.SampleData
 import opensource.cached_dupe_scanner.storage.PathStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 
@@ -59,7 +60,7 @@ fun ScanScreen(
         }
     }
 
-    Column(modifier = modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier.padding(Spacing.screenPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AppTopBar(title = "Scan", onBack = onBack)
         TextField(
             value = targetPath.value,
