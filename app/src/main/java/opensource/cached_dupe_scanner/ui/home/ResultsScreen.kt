@@ -1,6 +1,5 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -59,19 +58,17 @@ fun ResultsScreen(
     onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
     scrollState: ScrollState,
+    onOpenGroup: ((Int) -> Unit)? = null,
+    selectedGroupIndex: Int? = null,
     modifier: Modifier = Modifier
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
-    val selectedGroup = remember { mutableStateOf<DuplicateGroup?>(null) }
     val showFullPaths = remember { mutableStateOf(false) }
     val sortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val sortDirection = remember { mutableStateOf(SortDirection.Desc) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
-    BackHandler(enabled = selectedGroup.value != null) {
-        selectedGroup.value = null
-    }
     Column(
         modifier = modifier
             .padding(Spacing.screenPadding)
@@ -80,14 +77,10 @@ fun ResultsScreen(
         AppTopBar(
             title = "Results",
             onBack = {
-                if (selectedGroup.value != null) {
-                    selectedGroup.value = null
-                } else {
-                    onBackToDashboard()
-                }
+                onBackToDashboard()
             },
             actions = {
-                if (selectedGroup.value == null) {
+                if (selectedGroupIndex == null) {
                     IconButton(onClick = { menuExpanded.value = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                     }
@@ -132,8 +125,13 @@ fun ResultsScreen(
                     sortKey = sortKey.value,
                     sortDirection = sortDirection.value
                 )
-                selectedGroup.value?.let { group ->
-                    GroupDetailContent(group = group)
+                if (selectedGroupIndex != null) {
+                    val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
+                    if (group != null) {
+                        GroupDetailContent(group = group)
+                    } else {
+                        Text("Group not found.")
+                    }
                     return@Column
                 }
                 Row(
@@ -166,7 +164,12 @@ fun ResultsScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedGroup.value = group }
+                                .clickable {
+                                    val index = result.duplicateGroups.indexOf(group)
+                                    if (onOpenGroup != null && index >= 0) {
+                                        onOpenGroup(index)
+                                    }
+                                }
                         ) {
                             Row(
                                 modifier = Modifier
