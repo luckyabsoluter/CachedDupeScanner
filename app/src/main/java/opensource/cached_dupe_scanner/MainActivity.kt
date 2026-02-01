@@ -11,11 +11,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
 import opensource.cached_dupe_scanner.ui.home.ScanScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
+import opensource.cached_dupe_scanner.storage.ScanResultStore
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,6 +31,17 @@ class MainActivity : ComponentActivity() {
                     val screen = remember { mutableStateOf(Screen.Dashboard) }
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                     val exportText = remember { mutableStateOf<String?>(null) }
+                    val context = LocalContext.current
+                    val resultStore = remember { ScanResultStore(context) }
+
+                    LaunchedEffect(Unit) {
+                        if (state.value is ScanUiState.Idle) {
+                            val stored = resultStore.load()
+                            if (stored != null) {
+                                state.value = ScanUiState.Success(stored)
+                            }
+                        }
+                    }
 
                     val contentModifier = Modifier
                         .fillMaxSize()
@@ -54,6 +68,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onScanComplete = {
                                     exportText.value = null
+                                    resultStore.save(it.result)
                                     screen.value = Screen.Results
                                 },
                                 onBack = { screen.value = Screen.Dashboard },
