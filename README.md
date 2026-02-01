@@ -15,6 +15,19 @@ This repository is optimized for AI vibe coding workflows: the README is the sin
 
 Each scan stores file metadata (path, size, timestamp, hashes) and directory state. Later scans compare changes and only re-hash files that are new or modified.
 
+## Cache Policy (Current)
+
+The cache is designed to **delay hashing as long as possible** and only compute hashes when needed.
+
+1. **Always store size first**
+	- File path + size + mtime are recorded for every scanned file.
+2. **Hash only on collisions**
+	- Hash is computed **only when there is a size collision** (same size appears more than once in the candidate set).
+3. **Incremental re-hash**
+	- If size/mtime changes, the file is treated as stale and re-hashed only when needed by step 2.
+
+This keeps CPU and I/O costs low for large scans while still ensuring reliable duplicate detection.
+
 ## Project Status
 
 This repository currently contains the Android app shell. The scan engine, cache storage layer, and test suite will be built step-by-step using the milestones defined below.

@@ -20,16 +20,26 @@ class IncrementalScanner(
         val scannedAtMillis = System.currentTimeMillis()
         val files = mutableListOf<FileMetadata>()
 
-        fileWalker.walk(root, ignore).forEach { file ->
-            val current = FileMetadata.fromFile(file)
-            val cached = cacheStore.lookup(current)
-            val hashHex = when (cached.status) {
-                CacheStatus.FRESH -> cached.cached?.hashHex ?: fileHasher.hash(file)
-                CacheStatus.STALE -> fileHasher.hash(file)
-                CacheStatus.MISS -> fileHasher.hash(file)
+        val scanned = fileWalker.walk(root, ignore)
+            .map { FileMetadata.fromFile(it) }
+            .toList()
+
+        val bySize = scanned.groupBy { it.sizeBytes }
+        val needsHash = bySize.filterValues { it.size > 1 }.values.flatten().toSet()
+
+        scanned.forEach { current ->
+            val finalMetadata = if (needsHash.contains(current)) {
+                val cached = cacheStore.lookup(current)
+                val hashHex = when (cached.status) {
+                    CacheStatus.FRESH -> cached.cached?.hashHex ?: fileHasher.hash(File(current.path))
+                    CacheStatus.STALE -> fileHasher.hash(File(current.path))
+                    CacheStatus.MISS -> fileHasher.hash(File(current.path))
+                }
+                current.copy(hashHex = hashHex)
+            } else {
+                current.copy(hashHex = null)
             }
 
-            val finalMetadata = current.copy(hashHex = hashHex)
             if (!skipZeroSizeInDb || finalMetadata.sizeBytes > 0) {
                 cacheStore.upsert(finalMetadata)
             }
