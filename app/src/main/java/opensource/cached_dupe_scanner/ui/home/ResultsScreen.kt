@@ -61,9 +61,11 @@ fun ResultsScreen(
     onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
     scrollState: ScrollState,
+    displayResult: ScanResult? = null,
     deletedPaths: Set<String> = emptySet(),
     onDeleteFile: ((FileMetadata) -> Unit)? = null,
     onOpenGroup: ((Int) -> Unit)? = null,
+    onSortChanged: (() -> Unit)? = null,
     selectedGroupIndex: Int? = null,
     modifier: Modifier = Modifier
 ) {
@@ -133,7 +135,7 @@ fun ResultsScreen(
             is ScanUiState.Error -> Text("Error: ${current.message}")
             is ScanUiState.Success -> {
                 val settings = settingsStore.load()
-                val result = ScanResultViewFilter.filterForDisplay(
+                val result = displayResult ?: ScanResultViewFilter.filterForDisplay(
                     result = current.result,
                     hideZeroSizeInResults = settings.hideZeroSizeInResults,
                     sortKey = sortKey.value,
@@ -306,6 +308,7 @@ fun ResultsScreen(
                     sortDirection.value = pendingSortDirection.value
                     settingsStore.setResultSortKey(sortKey.value.name)
                     settingsStore.setResultSortDirection(sortDirection.value.name)
+                    onSortChanged?.invoke()
                     sortDialogOpen.value = false
                 }) {
                     Text("Apply")
