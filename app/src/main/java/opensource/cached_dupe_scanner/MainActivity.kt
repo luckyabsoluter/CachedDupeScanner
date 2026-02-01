@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
                         clearRequested.value = false
                     }
 
-                    LaunchedEffect(state.value, deletedPaths.value, sortSettingsVersion.value) {
+                    LaunchedEffect(state.value, sortSettingsVersion.value) {
                         val current = state.value
                         if (current is ScanUiState.Success) {
                             val settings = settingsStore.load()
@@ -122,12 +122,9 @@ class MainActivity : ComponentActivity() {
                                 .getOrDefault(ResultSortKey.Count)
                             val sortDir = runCatching { SortDirection.valueOf(settings.resultSortDirection) }
                                 .getOrDefault(SortDirection.Desc)
-                            val filtered = current.result.files.filterNot {
-                                deletedPaths.value.contains(it.normalizedPath)
-                            }
                             val base = ScanResult(
                                 scannedAtMillis = current.result.scannedAtMillis,
-                                files = filtered,
+                                files = current.result.files,
                                 duplicateGroups = emptyList()
                             )
                             displayResult.value = ScanResultViewFilter.filterForDisplay(
