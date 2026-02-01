@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -33,6 +34,9 @@ fun ReportsScreen(
 ) {
     val reports = remember { mutableStateOf(reportStore.loadAll()) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
+    BackHandler(enabled = selected.value != null) {
+        selected.value = null
+    }
 
     Column(
         modifier = modifier
