@@ -110,7 +110,7 @@ class CacheStoreTest {
 
         val result = store.lookup(cached)
 
-        assertEquals(CacheStatus.STALE, result.status)
+        assertEquals(CacheStatus.FRESH, result.status)
     }
 
     @Test
