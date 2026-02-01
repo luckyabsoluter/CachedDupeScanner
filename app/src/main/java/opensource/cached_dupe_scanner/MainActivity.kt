@@ -11,6 +11,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
 import opensource.cached_dupe_scanner.ui.home.ScanScreen
@@ -24,7 +25,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             CachedDupeScannerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val screen = remember { mutableStateOf(Screen.Permission) }
+                    val screen = remember { mutableStateOf(Screen.Dashboard) }
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                     val exportText = remember { mutableStateOf<String?>(null) }
 
@@ -34,6 +35,14 @@ class MainActivity : ComponentActivity() {
                         .padding(innerPadding)
 
                     when (screen.value) {
+                        Screen.Dashboard -> {
+                            DashboardScreen(
+                                onOpenPermission = { screen.value = Screen.Permission },
+                                onOpenScan = { screen.value = Screen.Scan },
+                                onOpenResults = { screen.value = Screen.Results },
+                                modifier = contentModifier
+                            )
+                        }
                         Screen.Permission -> {
                             PermissionScreen(
                                 onNext = { screen.value = Screen.Scan },
@@ -66,6 +75,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen {
+    Dashboard,
     Permission,
     Scan,
     Results
