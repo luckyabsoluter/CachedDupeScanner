@@ -43,6 +43,9 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
 import opensource.cached_dupe_scanner.core.ScanResult
+import opensource.cached_dupe_scanner.core.ScanResultViewFilter
+import opensource.cached_dupe_scanner.core.ResultSortKey
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 import opensource.cached_dupe_scanner.ui.navigation.AppRoutes
 
@@ -57,6 +60,8 @@ class MainActivity : ComponentActivity() {
                     val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
                     val clearRequested = remember { mutableStateOf(false) }
                     val deletedPaths = remember { mutableStateOf(setOf<String>()) }
+                    val displayResult = remember { mutableStateOf<ScanResult?>(null) }
+                    val sortSettingsVersion = remember { mutableStateOf(0) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
@@ -114,7 +119,35 @@ class MainActivity : ComponentActivity() {
                         resultStore.clear()
                         state.value = ScanUiState.Idle
                         deletedPaths.value = emptySet()
+                        displayResult.value = null
                         clearRequested.value = false
+                    }
+
+                    LaunchedEffect(state.value, deletedPaths.value, sortSettingsVersion.value) {
+                        val current = state.value
+                        if (current is ScanUiState.Success) {
+                            val settings = settingsStore.load()
+                            val sortKey = runCatching { ResultSortKey.valueOf(settings.resultSortKey) }
+                                .getOrDefault(ResultSortKey.Count)
+                            val sortDir = runCatching { SortDirection.valueOf(settings.resultSortDirection) }
+                                .getOrDefault(SortDirection.Desc)
+                            val filtered = current.result.files.filterNot {
+                                deletedPaths.value.contains(it.normalizedPath)
+                            }
+                            val base = ScanResult(
+                                scannedAtMillis = current.result.scannedAtMillis,
+                                files = filtered,
+                                duplicateGroups = emptyList()
+                            )
+                            displayResult.value = ScanResultViewFilter.filterForDisplay(
+                                result = base,
+                                hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                                sortKey = sortKey,
+                                sortDirection = sortDir
+                            )
+                        } else {
+                            displayResult.value = null
+                        }
                     }
 
                     val navModifier = Modifier
@@ -186,6 +219,7 @@ class MainActivity : ComponentActivity() {
                         composable(AppRoutes.Results) {
                             ResultsScreen(
                                 state = state,
+                                displayResult = displayResult.value,
                                 onBackToDashboard = {
                                     navController.popBackStack(AppRoutes.Dashboard, false)
                                 },
@@ -201,6 +235,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
+                                onSortChanged = { sortSettingsVersion.value++ },
                                 onClearResults = {
                                     pendingScan.value = null
                                     clearRequested.value = true
@@ -217,6 +252,7 @@ class MainActivity : ComponentActivity() {
                             val index = backStackEntry.arguments?.getInt("index") ?: 0
                             ResultsScreen(
                                 state = state,
+                                displayResult = displayResult.value,
                                 onBackToDashboard = { navController.popBackStack() },
                                 onOpenGroup = null,
                                 deletedPaths = deletedPaths.value,
@@ -228,6 +264,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
+                                onSortChanged = { sortSettingsVersion.value++ },
                                 onClearResults = {
                                     pendingScan.value = null
                                     clearRequested.value = true
