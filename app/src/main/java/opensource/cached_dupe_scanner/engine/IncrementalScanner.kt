@@ -63,8 +63,14 @@ class IncrementalScanner(
             onProgress(detectCount, totalDetect, current, ScanPhase.Detecting)
         }
 
-        val needsHash = uniqueScanned.filter { (sizeCounts[it.sizeBytes] ?: 0) > 1 }.toSet()
-        val totalHash = needsHash.size
+        val candidates = uniqueScanned.filter { (sizeCounts[it.sizeBytes] ?: 0) > 1 }
+        val candidatePaths = candidates.map { it.normalizedPath }.toSet()
+        val lookupByPath = candidates.associateBy({ it.normalizedPath }) { cacheStore.lookup(it) }
+        val hashTargets = candidates.filter {
+            val cached = lookupByPath[it.normalizedPath]
+            cached == null || cached.status != CacheStatus.FRESH
+        }.toSet()
+        val totalHash = hashTargets.size
         var hashCount = 0
         val pending = mutableListOf<FileMetadata>()
 
@@ -76,12 +82,16 @@ class IncrementalScanner(
                     duplicateGroups = emptyList()
                 )
             }
-            val finalMetadata = if (needsHash.contains(current)) {
-                val cached = cacheStore.lookup(current)
-                val hashHex = when (cached.status) {
-                    CacheStatus.FRESH -> cached.cached?.hashHex ?: fileHasher.hash(File(current.path))
-                    CacheStatus.STALE -> fileHasher.hash(File(current.path))
-                    CacheStatus.MISS -> fileHasher.hash(File(current.path))
+            val finalMetadata = if (candidatePaths.contains(current.normalizedPath)) {
+                val cached = lookupByPath[current.normalizedPath]
+                val hashHex = when (cached?.status) {
+                    CacheStatus.FRESH -> cached.cached?.hashHex
+                    CacheStatus.STALE, CacheStatus.MISS, null -> {
+                        hashCount += 1
+                        val computed = fileHasher.hash(File(current.path))
+                        onProgress(hashCount, totalHash, current, ScanPhase.Hashing)
+                        computed
+                    }
                 }
                 current.copy(hashHex = hashHex)
             } else {
@@ -90,10 +100,7 @@ class IncrementalScanner(
 
             files.add(finalMetadata)
             pending.add(finalMetadata)
-            if (needsHash.contains(current)) {
-                hashCount += 1
-                onProgress(hashCount, totalHash, finalMetadata, ScanPhase.Hashing)
-            }
+            // progress for hashing is reported only when actual hashing occurs
         }
 
         if (!shouldContinue()) {
