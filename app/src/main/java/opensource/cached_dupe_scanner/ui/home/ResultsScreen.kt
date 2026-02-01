@@ -61,20 +61,22 @@ fun ResultsScreen(
                 }
             },
             actions = {
-                IconButton(onClick = { menuExpanded.value = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                }
-                DropdownMenu(
-                    expanded = menuExpanded.value,
-                    onDismissRequest = { menuExpanded.value = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Clear all results") },
-                        onClick = {
-                            menuExpanded.value = false
-                            onClearResults()
-                        }
-                    )
+                if (selectedGroup.value == null) {
+                    IconButton(onClick = { menuExpanded.value = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded.value,
+                        onDismissRequest = { menuExpanded.value = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Clear all results") },
+                            onClick = {
+                                menuExpanded.value = false
+                                onClearResults()
+                            }
+                        )
+                    }
                 }
             }
         )
