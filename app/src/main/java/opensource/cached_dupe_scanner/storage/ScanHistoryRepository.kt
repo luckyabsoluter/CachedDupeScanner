@@ -37,6 +37,10 @@ class ScanHistoryRepository(
     fun clearAll() {
         dao.clear()
     }
+
+    fun deleteByNormalizedPath(normalizedPath: String) {
+        dao.deleteByNormalizedPath(normalizedPath)
+    }
 }
 
 private fun CachedFileEntity.toMetadata(): FileMetadata {

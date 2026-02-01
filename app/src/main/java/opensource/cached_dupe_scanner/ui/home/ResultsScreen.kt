@@ -22,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -60,13 +61,14 @@ fun ResultsScreen(
     onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
     scrollState: ScrollState,
+    onDeleteFile: ((FileMetadata) -> Unit)? = null,
     onOpenGroup: ((Int) -> Unit)? = null,
     selectedGroupIndex: Int? = null,
     modifier: Modifier = Modifier
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
-    val removedPaths = remember { mutableStateOf(setOf<String>()) }
+    val deletedPaths = remember { mutableStateOf(setOf<String>()) }
     val settingsSnapshot = remember { settingsStore.load() }
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
@@ -131,16 +133,8 @@ fun ResultsScreen(
             is ScanUiState.Error -> Text("Error: ${current.message}")
             is ScanUiState.Success -> {
                 val settings = settingsStore.load()
-                val filteredFiles = current.result.files.filter {
-                    !removedPaths.value.contains(it.normalizedPath)
-                }
-                val base = ScanResult(
-                    scannedAtMillis = current.result.scannedAtMillis,
-                    files = filteredFiles,
-                    duplicateGroups = emptyList()
-                )
                 val result = ScanResultViewFilter.filterForDisplay(
-                    result = base,
+                    result = current.result,
                     hideZeroSizeInResults = settings.hideZeroSizeInResults,
                     sortKey = sortKey.value,
                     sortDirection = sortDirection.value
@@ -150,8 +144,10 @@ fun ResultsScreen(
                     if (group != null) {
                         GroupDetailContent(
                             group = group,
+                            deletedPaths = deletedPaths.value,
                             onFileDeleted = { file ->
-                                removedPaths.value = removedPaths.value + file.normalizedPath
+                                deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                onDeleteFile?.invoke(file)
                             }
                         )
                     } else {
@@ -186,6 +182,7 @@ fun ResultsScreen(
                         val groupSize = group.files.sumOf { it.sizeBytes }
                         val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
                         val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
+                        val groupDeleted = group.files.any { deletedPaths.value.contains(it.normalizedPath) }
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -195,6 +192,14 @@ fun ResultsScreen(
                                         onOpenGroup(index)
                                     }
                                 }
+                            ,
+                            colors = if (groupDeleted) {
+                                CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                )
+                            } else {
+                                CardDefaults.cardColors()
+                            }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -319,6 +324,7 @@ fun ResultsScreen(
 @Composable
 private fun GroupDetailContent(
     group: DuplicateGroup,
+    deletedPaths: Set<String>,
     onFileDeleted: (FileMetadata) -> Unit
 ) {
     val context = LocalContext.current
@@ -348,10 +354,19 @@ private fun GroupDetailContent(
 
     group.files.sortedBy { it.normalizedPath }.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
+        val isDeleted = deletedPaths.contains(file.normalizedPath)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { selectedFile.value = file }
+            ,
+            colors = if (isDeleted) {
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            } else {
+                CardDefaults.cardColors()
+            }
         ) {
             Row(
                 modifier = Modifier
@@ -364,12 +379,22 @@ private fun GroupDetailContent(
                         text = file.normalizedPath,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "${formatBytes(file.sizeBytes)} · ${date}",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
             }

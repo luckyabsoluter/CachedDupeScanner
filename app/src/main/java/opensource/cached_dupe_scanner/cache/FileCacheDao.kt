@@ -19,6 +19,9 @@ interface FileCacheDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertAll(entities: List<CachedFileEntity>)
 
+    @Query("DELETE FROM cached_files WHERE normalizedPath = :normalizedPath")
+    fun deleteByNormalizedPath(normalizedPath: String)
+
     @Query("DELETE FROM cached_files")
     fun clear()
 }
