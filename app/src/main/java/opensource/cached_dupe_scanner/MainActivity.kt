@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.layout.layout
+import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -147,6 +148,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         Unit
+                    }
+
+                    BackHandler {
+                        if (backStack.size > 1) {
+                            pop(backStack)
+                        } else {
+                            finish()
+                        }
                     }
 
                     ScreenStack(
@@ -299,7 +308,7 @@ private fun navigateTo(stack: MutableList<Screen>, cache: MutableList<Screen>, s
 
 private fun pop(stack: MutableList<Screen>) {
     if (stack.size > 1) {
-        stack.removeLast()
+        stack.removeAt(stack.lastIndex)
     }
 }
 
