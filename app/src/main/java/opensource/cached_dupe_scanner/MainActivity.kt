@@ -24,6 +24,7 @@ import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanResultStore
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
@@ -43,11 +44,12 @@ class MainActivity : ComponentActivity() {
                     val clearRequested = remember { mutableStateOf(false) }
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
+                    val settingsStore = remember { AppSettingsStore(context) }
                     val historyRepo = remember {
                         val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                             .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
                             .build()
-                        ScanHistoryRepository(db.fileCacheDao())
+                        ScanHistoryRepository(db.fileCacheDao(), settingsStore)
                     }
 
                     BackHandler(enabled = screen.value != Screen.Dashboard) {
@@ -120,6 +122,7 @@ class MainActivity : ComponentActivity() {
                                 onScanComplete = {
                                     pendingScan.value = it
                                 },
+                                settingsStore = settingsStore,
                                 onBack = { screen.value = Screen.Dashboard },
                                 modifier = contentModifier
                             )
