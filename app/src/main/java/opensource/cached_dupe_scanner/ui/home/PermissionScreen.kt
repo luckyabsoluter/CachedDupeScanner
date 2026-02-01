@@ -22,7 +22,7 @@ fun PermissionScreen(onNext: () -> Unit, onBack: () -> Unit, modifier: Modifier 
     val context = LocalContext.current
 
     Column(modifier = modifier.padding(16.dp)) {
-        AppTopBar(title = "Permission")
+        AppTopBar(title = "Permission", onBack = onBack)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = if (Environment.isExternalStorageManager()) {
@@ -46,10 +46,6 @@ fun PermissionScreen(onNext: () -> Unit, onBack: () -> Unit, modifier: Modifier 
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
             Text("Continue to scan")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Back")
         }
     }
 }
