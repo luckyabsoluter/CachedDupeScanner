@@ -39,6 +39,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import opensource.cached_dupe_scanner.core.DuplicateGroup
+import opensource.cached_dupe_scanner.core.ResultSortOption
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -61,6 +62,7 @@ fun ResultsScreen(
     val menuExpanded = remember { mutableStateOf(false) }
     val selectedGroup = remember { mutableStateOf<DuplicateGroup?>(null) }
     val showFullPaths = remember { mutableStateOf(false) }
+    val sortOption = remember { mutableStateOf(ResultSortOption.CountDesc) }
     BackHandler(enabled = selectedGroup.value != null) {
         selectedGroup.value = null
     }
@@ -107,6 +109,17 @@ fun ResultsScreen(
                                 menuExpanded.value = false
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Sort: ${sortOption.value.label}") },
+                            onClick = {
+                                sortOption.value = when (sortOption.value) {
+                                    ResultSortOption.CountDesc -> ResultSortOption.TotalSizeDesc
+                                    ResultSortOption.TotalSizeDesc -> ResultSortOption.NameAsc
+                                    ResultSortOption.NameAsc -> ResultSortOption.CountDesc
+                                }
+                                menuExpanded.value = false
+                            }
+                        )
                     }
                 }
             }
@@ -120,7 +133,8 @@ fun ResultsScreen(
                 val settings = settingsStore.load()
                 val result = ScanResultViewFilter.filterForDisplay(
                     result = current.result,
-                    hideZeroSizeInResults = settings.hideZeroSizeInResults
+                    hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                    sortOption = sortOption.value
                 )
                 selectedGroup.value?.let { group ->
                     GroupDetailContent(group = group)
