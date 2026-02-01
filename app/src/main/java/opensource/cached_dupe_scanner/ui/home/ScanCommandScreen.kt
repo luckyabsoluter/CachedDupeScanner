@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
+import opensource.cached_dupe_scanner.cache.CacheMigrations
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
@@ -40,7 +41,7 @@ import java.io.File
 @Composable
 fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
-    onScanComplete: (ScanUiState.Success) -> Unit,
+    onScanComplete: (ScanResult) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -51,6 +52,7 @@ fun ScanCommandScreen(
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
+            .addMigrations(CacheMigrations.MIGRATION_1_2)
             .build()
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
@@ -112,7 +114,7 @@ private fun runScanForTarget(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
-    onScanComplete: (ScanUiState.Success) -> Unit
+    onScanComplete: (ScanResult) -> Unit
 ) {
     scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
@@ -124,9 +126,7 @@ private fun runScanForTarget(
         val result = withContext(Dispatchers.IO) {
             scanner.scan(targetFile)
         }
-        val success = ScanUiState.Success(result)
-        state.value = success
-        onScanComplete(success)
+        onScanComplete(result)
     }
 }
 
@@ -135,7 +135,7 @@ private fun runScanForAllTargets(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
-    onScanComplete: (ScanUiState.Success) -> Unit
+    onScanComplete: (ScanResult) -> Unit
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
@@ -162,8 +162,6 @@ private fun runScanForAllTargets(
         }
 
         val merged = ScanResultMerger.merge(System.currentTimeMillis(), results)
-        val success = ScanUiState.Success(merged)
-        state.value = success
-        onScanComplete(success)
+        onScanComplete(merged)
     }
 }
