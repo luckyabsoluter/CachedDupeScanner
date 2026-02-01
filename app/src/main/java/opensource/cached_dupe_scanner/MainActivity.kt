@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
                                     pendingScan.value = null
                                     clearRequested.value = true
                                 },
+                                settingsStore = settingsStore,
                                 modifier = contentModifier
                             )
                         }

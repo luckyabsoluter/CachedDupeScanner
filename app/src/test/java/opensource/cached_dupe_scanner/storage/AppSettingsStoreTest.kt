@@ -18,6 +18,8 @@ class AppSettingsStoreTest {
         val settings = store.load()
 
         assertTrue(settings.excludeZeroSizeDuplicates)
+        assertFalse(settings.skipZeroSizeInDb)
+        assertFalse(settings.hideZeroSizeInResults)
     }
 
     @Test
@@ -30,5 +32,11 @@ class AppSettingsStoreTest {
 
         store.setExcludeZeroSizeDuplicates(true)
         assertTrue(store.load().excludeZeroSizeDuplicates)
+
+        store.setSkipZeroSizeInDb(true)
+        assertTrue(store.load().skipZeroSizeInDb)
+
+        store.setHideZeroSizeInResults(true)
+        assertTrue(store.load().hideZeroSizeInResults)
     }
 }

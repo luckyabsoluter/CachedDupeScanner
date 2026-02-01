@@ -52,5 +52,43 @@ fun SettingsScreen(
                 }
             )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Skip zero-size in DB")
+                Text("Do not store size 0 files in the database")
+            }
+            Switch(
+                checked = settings.value.skipZeroSizeInDb,
+                onCheckedChange = { enabled ->
+                    settingsStore.setSkipZeroSizeInDb(enabled)
+                    settings.value = settings.value.copy(skipZeroSizeInDb = enabled)
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Hide zero-size in results")
+                Text("Do not display size 0 files in results")
+            }
+            Switch(
+                checked = settings.value.hideZeroSizeInResults,
+                onCheckedChange = { enabled ->
+                    settingsStore.setHideZeroSizeInResults(enabled)
+                    settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
+                }
+            )
+        }
     }
 }
