@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -150,6 +151,11 @@ fun ResultsScreen(
                     sortKey = sortKey.value,
                     sortDirection = sortDirection.value
                 )
+                val pageSize = 50
+                val visibleCount = remember { mutableStateOf(pageSize) }
+                LaunchedEffect(result.duplicateGroups.size) {
+                    visibleCount.value = pageSize
+                }
                 if (selectedGroupIndex != null) {
                     val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
                     if (group != null) {
@@ -188,7 +194,8 @@ fun ResultsScreen(
                 if (result.duplicateGroups.isEmpty()) {
                     Text("No duplicates found.")
                 } else {
-                    result.duplicateGroups.forEach { group ->
+                    val groupsToShow = result.duplicateGroups.take(visibleCount.value)
+                    groupsToShow.forEach { group ->
                         val groupCount = group.files.size
                         val groupSize = group.files.sumOf { it.sizeBytes }
                         val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
@@ -252,6 +259,17 @@ fun ResultsScreen(
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    if (result.duplicateGroups.size > visibleCount.value) {
+                        OutlinedButton(
+                            onClick = {
+                                visibleCount.value = (visibleCount.value + pageSize)
+                                    .coerceAtMost(result.duplicateGroups.size)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Load more")
+                        }
                     }
                 }
             }
