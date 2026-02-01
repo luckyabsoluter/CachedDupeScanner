@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -115,9 +116,40 @@ fun ResultsScreen(
     }
     val totalGroups = result?.duplicateGroups?.size ?: 0
     val visibleCount = remember { mutableStateOf(pageSize) }
+    val topVisibleGroupIndex = remember { mutableStateOf(0) }
     LaunchedEffect(totalGroups) {
         if (totalGroups > 0) {
             visibleCount.value = pageSize
+        }
+    }
+    val groupIndexByHash = remember(result?.duplicateGroups) {
+        result?.duplicateGroups
+            ?.mapIndexed { index, group -> group.hashHex to index }
+            ?.toMap()
+            ?: emptyMap()
+    }
+    LaunchedEffect(result?.duplicateGroups?.size, selectedGroupIndex) {
+        if (selectedGroupIndex != null) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key is String }
+                ?.key as? String
+        }
+            .distinctUntilChanged()
+            .filter { it != null }
+            .collect { key ->
+                val index = groupIndexByHash[key] ?: 0
+                topVisibleGroupIndex.value = index
+            }
+    }
+    val loadIndicatorText = derivedStateOf {
+        if (selectedGroupIndex != null || totalGroups == 0) {
+            null
+        } else {
+            val loaded = visibleCount.value.coerceAtMost(totalGroups)
+            val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+            val suffix = if (loaded < totalGroups) "+" else ""
+            "$loaded/$totalGroups · $current$suffix"
         }
     }
     LaunchedEffect(totalGroups) {
@@ -147,6 +179,14 @@ fun ResultsScreen(
                     onBackToDashboard()
                 },
                 actions = {
+                    loadIndicatorText.value?.let { indicator ->
+                        Text(
+                            text = indicator,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
                     if (selectedGroupIndex == null) {
                         IconButton(onClick = { menuExpanded.value = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
