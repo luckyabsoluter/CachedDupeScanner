@@ -14,6 +14,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
@@ -52,8 +54,10 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(Unit) {
                         if (state.value is ScanUiState.Idle) {
-                            val stored = historyRepo.loadMergedHistory()
-                                ?: resultStore.load()
+                            val stored = withContext(Dispatchers.IO) {
+                                historyRepo.loadMergedHistory()
+                                    ?: resultStore.load()
+                            }
                             if (stored != null) {
                                 state.value = ScanUiState.Success(stored)
                             }
