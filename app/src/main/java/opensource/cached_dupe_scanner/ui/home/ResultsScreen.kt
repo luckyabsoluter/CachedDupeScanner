@@ -61,6 +61,7 @@ fun ResultsScreen(
     onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
     scrollState: ScrollState,
+    deletedPaths: Set<String> = emptySet(),
     onDeleteFile: ((FileMetadata) -> Unit)? = null,
     onOpenGroup: ((Int) -> Unit)? = null,
     selectedGroupIndex: Int? = null,
@@ -68,7 +69,6 @@ fun ResultsScreen(
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
     val showFullPaths = remember { mutableStateOf(false) }
-    val deletedPaths = remember { mutableStateOf(setOf<String>()) }
     val settingsSnapshot = remember { settingsStore.load() }
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
@@ -144,9 +144,8 @@ fun ResultsScreen(
                     if (group != null) {
                         GroupDetailContent(
                             group = group,
-                            deletedPaths = deletedPaths.value,
+                            deletedPaths = deletedPaths,
                             onFileDeleted = { file ->
-                                deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 onDeleteFile?.invoke(file)
                             }
                         )
@@ -182,7 +181,7 @@ fun ResultsScreen(
                         val groupSize = group.files.sumOf { it.sizeBytes }
                         val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
                         val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
-                        val groupDeleted = group.files.any { deletedPaths.value.contains(it.normalizedPath) }
+                        val groupDeleted = group.files.any { deletedPaths.contains(it.normalizedPath) }
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
