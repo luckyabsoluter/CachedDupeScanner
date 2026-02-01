@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
@@ -52,6 +53,10 @@ fun ScanCommandScreen(
     val scope = rememberCoroutineScope()
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
+    val currentJob = remember { mutableStateOf<Job?>(null) }
+    val progressTarget = remember { mutableStateOf<String?>(null) }
+    val progressCurrent = remember { mutableStateOf<String?>(null) }
+    val progressSize = remember { mutableStateOf<Long?>(null) }
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
@@ -93,7 +98,11 @@ fun ScanCommandScreen(
                             state,
                             target,
                             onScanComplete,
-                            skipZeroSizeInDb
+                            skipZeroSizeInDb,
+                            currentJob,
+                            progressTarget,
+                            progressCurrent,
+                            progressSize
                         )
                     }
                 )
@@ -109,10 +118,40 @@ fun ScanCommandScreen(
                 state,
                 targets.value,
                 onScanComplete,
-                skipZeroSizeInDb
+                skipZeroSizeInDb,
+                currentJob,
+                progressTarget,
+                progressCurrent,
+                progressSize
             )
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Scan all targets")
+        }
+
+        if (state.value is ScanUiState.Scanning) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("Progress", style = MaterialTheme.typography.titleSmall)
+                    val targetText = progressTarget.value ?: "-"
+                    val currentText = progressCurrent.value ?: "-"
+                    Text("Target: $targetText")
+                    val progress = state.value as ScanUiState.Scanning
+                    val totalText = progress.total?.toString() ?: "?"
+                    Text("Scanned: ${progress.scanned} / $totalText")
+                    progressSize.value?.let { size ->
+                        Text("Size: ${size} bytes")
+                    }
+                    Text("Current: $currentText")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { currentJob.value?.cancel() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Stop scan")
+                    }
+                }
+            }
         }
     }
 }
@@ -136,20 +175,40 @@ private fun runScanForTarget(
     state: MutableState<ScanUiState>,
     target: ScanTarget,
     onScanComplete: (ScanResult) -> Unit,
-    skipZeroSizeInDb: Boolean
+    skipZeroSizeInDb: Boolean,
+    currentJob: MutableState<Job?>,
+    progressTarget: MutableState<String?>,
+    progressCurrent: MutableState<String?>,
+    progressSize: MutableState<Long?>
 ) {
-    scope.launch {
+    var job: Job? = null
+    job = scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val targetFile = File(target.path)
         if (!targetFile.exists()) {
             state.value = ScanUiState.Error("Target path not found")
             return@launch
         }
+        progressTarget.value = target.path
         val result = withContext(Dispatchers.IO) {
-            scanner.scan(targetFile, skipZeroSizeInDb = skipZeroSizeInDb)
+            scanner.scan(
+                targetFile,
+                skipZeroSizeInDb = skipZeroSizeInDb,
+                onProgress = { scanned, total, current ->
+                    state.value = ScanUiState.Scanning(scanned = scanned, total = total)
+                    progressCurrent.value = current.normalizedPath
+                    progressSize.value = current.sizeBytes
+                },
+                shouldContinue = { job?.isActive == true }
+            )
+        }
+        if (job?.isActive == false && result.files.isEmpty()) {
+            state.value = ScanUiState.Error("Scan cancelled")
+            return@launch
         }
         onScanComplete(result)
     }
+    currentJob.value = job
 }
 
 private fun runScanForAllTargets(
@@ -158,14 +217,19 @@ private fun runScanForAllTargets(
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
     onScanComplete: (ScanResult) -> Unit,
-    skipZeroSizeInDb: Boolean
+    skipZeroSizeInDb: Boolean,
+    currentJob: MutableState<Job?>,
+    progressTarget: MutableState<String?>,
+    progressCurrent: MutableState<String?>,
+    progressSize: MutableState<Long?>
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
         return
     }
 
-    scope.launch {
+    var job: Job? = null
+    job = scope.launch {
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val results = mutableListOf<ScanResult>()
         for (target in targets) {
@@ -173,8 +237,22 @@ private fun runScanForAllTargets(
             if (!targetFile.exists()) {
                 continue
             }
+            progressTarget.value = target.path
             val result = withContext(Dispatchers.IO) {
-                scanner.scan(targetFile, skipZeroSizeInDb = skipZeroSizeInDb)
+                scanner.scan(
+                    targetFile,
+                    skipZeroSizeInDb = skipZeroSizeInDb,
+                    onProgress = { scanned, total, current ->
+                        state.value = ScanUiState.Scanning(scanned = scanned, total = total)
+                        progressCurrent.value = current.normalizedPath
+                        progressSize.value = current.sizeBytes
+                    },
+                    shouldContinue = { job?.isActive == true }
+                )
+            }
+            if (job?.isActive == false && result.files.isEmpty()) {
+                state.value = ScanUiState.Error("Scan cancelled")
+                return@launch
             }
             results.add(result)
         }
@@ -190,4 +268,5 @@ private fun runScanForAllTargets(
         )
         onScanComplete(merged)
     }
+    currentJob.value = job
 }
