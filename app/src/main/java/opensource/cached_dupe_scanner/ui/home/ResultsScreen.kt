@@ -28,6 +28,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +58,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.material3.RadioButton
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun ResultsScreen(
@@ -158,13 +162,18 @@ fun ResultsScreen(
                 LaunchedEffect(result.duplicateGroups.size) {
                     visibleCount.value = pageSize
                 }
-                LaunchedEffect(scrollState.value, result.duplicateGroups.size, visibleCount.value) {
-                    val remaining = result.duplicateGroups.size - visibleCount.value
-                    val nearBottom = scrollState.value >= (scrollState.maxValue - prefetchPx)
-                    if (nearBottom && remaining > 0) {
-                        visibleCount.value = (visibleCount.value + pageSize)
-                            .coerceAtMost(result.duplicateGroups.size)
+                LaunchedEffect(result.duplicateGroups.size) {
+                    snapshotFlow {
+                        val remaining = result.duplicateGroups.size - visibleCount.value
+                        val nearBottom = scrollState.value >= (scrollState.maxValue - prefetchPx)
+                        nearBottom && remaining > 0
                     }
+                        .distinctUntilChanged()
+                        .filter { it }
+                        .collect {
+                            visibleCount.value = (visibleCount.value + pageSize)
+                                .coerceAtMost(result.duplicateGroups.size)
+                        }
                 }
                 if (selectedGroupIndex != null) {
                     val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
