@@ -16,7 +16,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.BackHandler
 import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -29,14 +28,14 @@ import java.util.Locale
 fun ReportsScreen(
     reportStore: ScanReportStore,
     onBack: () -> Unit,
+    onOpenReport: ((String) -> Unit)? = null,
+    selectedReportId: String? = null,
     scrollState: ScrollState,
     modifier: Modifier = Modifier
 ) {
     val reports = remember { mutableStateOf(reportStore.loadAll()) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
-    BackHandler(enabled = selected.value != null) {
-        selected.value = null
-    }
+    val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }
 
     Column(
         modifier = modifier
@@ -46,16 +45,12 @@ fun ReportsScreen(
         AppTopBar(
             title = "Scan reports",
             onBack = {
-                if (selected.value != null) {
-                    selected.value = null
-                } else {
-                    onBack()
-                }
+                onBack()
             }
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        selected.value?.let { report ->
+        selectedReport?.let { report ->
             ReportDetail(report)
             return@Column
         }
@@ -69,7 +64,13 @@ fun ReportsScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { selected.value = report }
+                    .clickable {
+                        if (onOpenReport != null) {
+                            onOpenReport(report.id)
+                        } else {
+                            selected.value = report
+                        }
+                    }
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
