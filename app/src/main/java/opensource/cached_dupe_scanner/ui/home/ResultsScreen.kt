@@ -31,7 +31,7 @@ fun ResultsScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.padding(16.dp)) {
-        AppTopBar(title = "Results", onBack = onBackToDashboard)
+        AppTopBar(title = "Results")
         Spacer(modifier = Modifier.height(8.dp))
         when (val current = state.value) {
             ScanUiState.Idle -> Text("No results yet.")

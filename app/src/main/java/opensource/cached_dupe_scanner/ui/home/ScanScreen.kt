@@ -60,7 +60,7 @@ fun ScanScreen(
     }
 
     Column(modifier = modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AppTopBar(title = "Scan", onBack = onBack)
+        AppTopBar(title = "Scan")
         TextField(
             value = targetPath.value,
             onValueChange = { value ->
