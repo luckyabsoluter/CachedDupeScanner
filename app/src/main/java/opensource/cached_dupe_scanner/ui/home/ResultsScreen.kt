@@ -537,8 +537,8 @@ private fun openFile(context: android.content.Context, path: String) {
 }
 
 private fun getMimeType(uri: Uri, path: String): String {
-    val ext = MimeTypeMap.getFileExtensionFromUrl(path)
-    val mime = if (!ext.isNullOrBlank()) {
+    val ext = File(path).extension
+    val mime = if (ext.isNotBlank()) {
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase(Locale.getDefault()))
     } else {
         null
