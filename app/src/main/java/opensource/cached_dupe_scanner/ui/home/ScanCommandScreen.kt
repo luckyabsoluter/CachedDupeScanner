@@ -27,6 +27,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
+import opensource.cached_dupe_scanner.core.ScanResult
+import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
@@ -46,7 +48,6 @@ fun ScanCommandScreen(
     val scope = rememberCoroutineScope()
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
-    val selectedId = remember { mutableStateOf(store.loadSelectedTargetId()) }
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
@@ -57,10 +58,6 @@ fun ScanCommandScreen(
 
     LaunchedEffect(Unit) {
         targets.value = store.loadTargets()
-        if (selectedId.value == null && targets.value.isNotEmpty()) {
-            selectedId.value = targets.value.first().id
-            store.saveSelectedTargetId(selectedId.value)
-        }
     }
 
     Column(
@@ -81,51 +78,92 @@ fun ScanCommandScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             targets.value.forEach { target ->
-                TargetSelectRow(
+                TargetScanRow(
                     target = target,
-                    selected = selectedId.value == target.id,
-                    onSelect = {
-                        selectedId.value = target.id
-                        store.saveSelectedTargetId(target.id)
-                    }
+                    onScan = { runScanForTarget(scope, scanner, state, target, onScanComplete) }
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = {
-            val current = targets.value.firstOrNull { it.id == selectedId.value }
-            if (current != null) {
-                scope.launch {
-                    state.value = ScanUiState.Scanning(scanned = 0, total = null)
-                    val target = File(current.path)
-                    if (!target.exists()) {
-                        state.value = ScanUiState.Error("Target path not found")
-                        return@launch
-                    }
-                    val result = withContext(Dispatchers.IO) {
-                        scanner.scan(target)
-                    }
-                    val success = ScanUiState.Success(result)
-                    state.value = success
-                    onScanComplete(success)
-                }
-            }
+            runScanForAllTargets(scope, scanner, state, targets.value, onScanComplete)
         }, modifier = Modifier.fillMaxWidth()) {
-            Text("Run scan")
+            Text("Scan all targets")
         }
     }
 }
 
 @Composable
-private fun TargetSelectRow(target: ScanTarget, selected: Boolean, onSelect: () -> Unit) {
+private fun TargetScanRow(target: ScanTarget, onScan: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = target.path, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(6.dp))
-            Button(onClick = onSelect, modifier = Modifier.fillMaxWidth()) {
-                Text(if (selected) "Selected" else "Select")
+            Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
+                Text("Scan target")
             }
         }
+    }
+}
+
+private fun runScanForTarget(
+    scope: kotlinx.coroutines.CoroutineScope,
+    scanner: IncrementalScanner,
+    state: MutableState<ScanUiState>,
+    target: ScanTarget,
+    onScanComplete: (ScanUiState.Success) -> Unit
+) {
+    scope.launch {
+        state.value = ScanUiState.Scanning(scanned = 0, total = null)
+        val targetFile = File(target.path)
+        if (!targetFile.exists()) {
+            state.value = ScanUiState.Error("Target path not found")
+            return@launch
+        }
+        val result = withContext(Dispatchers.IO) {
+            scanner.scan(targetFile)
+        }
+        val success = ScanUiState.Success(result)
+        state.value = success
+        onScanComplete(success)
+    }
+}
+
+private fun runScanForAllTargets(
+    scope: kotlinx.coroutines.CoroutineScope,
+    scanner: IncrementalScanner,
+    state: MutableState<ScanUiState>,
+    targets: List<ScanTarget>,
+    onScanComplete: (ScanUiState.Success) -> Unit
+) {
+    if (targets.isEmpty()) {
+        state.value = ScanUiState.Error("No scan targets")
+        return
+    }
+
+    scope.launch {
+        state.value = ScanUiState.Scanning(scanned = 0, total = null)
+        val results = mutableListOf<ScanResult>()
+        for (target in targets) {
+            val targetFile = File(target.path)
+            if (!targetFile.exists()) {
+                continue
+            }
+            val result = withContext(Dispatchers.IO) {
+                scanner.scan(targetFile)
+            }
+            results.add(result)
+        }
+
+        if (results.isEmpty()) {
+            state.value = ScanUiState.Error("No valid targets to scan")
+            return@launch
+        }
+
+        val merged = ScanResultMerger.merge(System.currentTimeMillis(), results)
+        val success = ScanUiState.Success(merged)
+        state.value = success
+        onScanComplete(success)
     }
 }
