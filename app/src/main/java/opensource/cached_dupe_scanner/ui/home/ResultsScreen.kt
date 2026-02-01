@@ -133,12 +133,25 @@ fun ResultsScreen(
                         val groupCount = group.files.size
                         val groupSize = group.files.sumOf { it.sizeBytes }
                         val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
+                        val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { selectedGroup.value = group }
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
+                                if (preview != null) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(File(preview.normalizedPath))
+                                            .build(),
+                                        contentDescription = "Thumbnail",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                                 Text(
                                     text = "${groupCount} files · ${formatBytes(groupSize)}",
                                     style = MaterialTheme.typography.bodyMedium
@@ -173,9 +186,22 @@ private fun GroupDetailContent(group: DuplicateGroup) {
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
+    val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
 
     Text("Group detail")
     Spacer(modifier = Modifier.height(8.dp))
+    if (preview != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(File(preview.normalizedPath))
+                .build(),
+            contentDescription = "Thumbnail",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
     Text("${groupCount} files · ${formatBytes(groupSize)}")
     Text("File size: ${fileSize}")
     Spacer(modifier = Modifier.height(8.dp))
@@ -189,16 +215,6 @@ private fun GroupDetailContent(group: DuplicateGroup) {
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isMediaFile(file.normalizedPath)) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(File(file.normalizedPath))
-                            .build(),
-                        contentDescription = "Thumbnail",
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = file.normalizedPath,
