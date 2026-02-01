@@ -31,7 +31,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -136,18 +135,16 @@ fun ResultsScreen(
                 topVisibleGroupIndex.value = index
             }
     }
-    val loadIndicatorText = derivedStateOf {
-        if (selectedGroupIndex != null || totalGroups == 0) {
-            null
-        } else {
-            val loaded = visibleCount.value.coerceAtMost(totalGroups)
-            val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
-            val safeLoaded = loaded.coerceAtLeast(1)
-            val safeTotal = totalGroups.coerceAtLeast(1)
-            val currentPercent = ((current.toDouble() / safeLoaded.toDouble()) * 100).toInt()
-            val loadedPercent = ((loaded.toDouble() / safeTotal.toDouble()) * 100).toInt()
-            "$current/$loaded/$totalGroups (${currentPercent}%/${loadedPercent}%)"
-        }
+    val loadIndicatorText = if (selectedGroupIndex != null || totalGroups == 0) {
+        null
+    } else {
+        val loaded = visibleCount.value.coerceAtMost(totalGroups)
+        val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+        val safeLoaded = loaded.coerceAtLeast(1)
+        val safeTotal = totalGroups.coerceAtLeast(1)
+        val currentPercent = ((current.toDouble() / safeLoaded.toDouble()) * 100).toInt()
+        val loadedPercent = ((loaded.toDouble() / safeTotal.toDouble()) * 100).toInt()
+        "$current/$loaded/$totalGroups (${currentPercent}%/${loadedPercent}%)"
     }
     LaunchedEffect(totalGroups) {
         if (totalGroups <= 0) return@LaunchedEffect
@@ -345,7 +342,7 @@ fun ResultsScreen(
                 }
             }
         }
-        loadIndicatorText.value?.let { indicator ->
+        loadIndicatorText?.let { indicator ->
             Text(
                 text = indicator,
                 style = MaterialTheme.typography.bodySmall,

@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -158,7 +157,7 @@ fun FilesScreen(
             }
     }
 
-    val overlayText = derivedStateOf {
+    val overlayText = run {
         val total = sortedFiles.size
         if (total == 0) {
             null
@@ -256,7 +255,7 @@ fun FilesScreen(
                 }
             }
         }
-        overlayText.value?.let { indicator ->
+        overlayText?.let { indicator ->
             Text(
                 text = indicator,
                 style = MaterialTheme.typography.bodySmall,
