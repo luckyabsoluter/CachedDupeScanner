@@ -45,6 +45,7 @@ import java.io.File
 fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanResult) -> Unit,
+    onScanCancelled: () -> Unit,
     settingsStore: AppSettingsStore,
     onBack: () -> Unit,
     scrollState: ScrollState,
@@ -101,6 +102,7 @@ fun ScanCommandScreen(
                             state,
                             target,
                             onScanComplete,
+                            onScanCancelled,
                             skipZeroSizeInDb,
                             currentJob,
                             cancelRequested,
@@ -123,6 +125,7 @@ fun ScanCommandScreen(
                 state,
                 targets.value,
                 onScanComplete,
+                onScanCancelled,
                 skipZeroSizeInDb,
                 currentJob,
                 cancelRequested,
@@ -161,10 +164,10 @@ fun ScanCommandScreen(
                         onClick = {
                             cancelRequested.value = true
                             currentJob.value?.cancel()
-                            state.value = ScanUiState.Idle
                             progressTarget.value = null
                             progressCurrent.value = null
                             progressSize.value = null
+                            onScanCancelled()
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -195,6 +198,7 @@ private fun runScanForTarget(
     state: MutableState<ScanUiState>,
     target: ScanTarget,
     onScanComplete: (ScanResult) -> Unit,
+    onScanCancelled: () -> Unit,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -228,10 +232,10 @@ private fun runScanForTarget(
             )
         }
         if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
-            state.value = ScanUiState.Idle
             progressTarget.value = null
             progressCurrent.value = null
             progressSize.value = null
+            onScanCancelled()
             return@launch
         }
         onScanComplete(result)
@@ -245,6 +249,7 @@ private fun runScanForAllTargets(
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
     onScanComplete: (ScanResult) -> Unit,
+    onScanCancelled: () -> Unit,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -284,10 +289,10 @@ private fun runScanForAllTargets(
                 )
             }
             if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
-                state.value = ScanUiState.Idle
                 progressTarget.value = null
                 progressCurrent.value = null
                 progressSize.value = null
+                onScanCancelled()
                 return@launch
             }
             results.add(result)

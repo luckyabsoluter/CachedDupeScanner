@@ -15,8 +15,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
                     val context = LocalContext.current
                     val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
+                    val scope = rememberCoroutineScope()
                     val dashboardScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val permissionScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
                     val targetsScroll = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
@@ -103,6 +106,20 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .systemBarsPadding()
 
+                    val restoreLastResult: () -> Unit = {
+                        scope.launch {
+                            val stored = withContext(Dispatchers.IO) {
+                                historyRepo.loadMergedHistory() ?: resultStore.load()
+                            }
+                            if (stored != null) {
+                                state.value = ScanUiState.Success(stored)
+                            } else {
+                                state.value = ScanUiState.Idle
+                            }
+                        }
+                        Unit
+                    }
+
                     when (screen.value) {
                         Screen.Dashboard -> {
                             DashboardScreen(
@@ -135,6 +152,7 @@ class MainActivity : ComponentActivity() {
                                 onScanComplete = {
                                     pendingScan.value = it
                                 },
+                                onScanCancelled = restoreLastResult,
                                 settingsStore = settingsStore,
                                 onBack = { screen.value = Screen.Dashboard },
                                 scrollState = scanCommandScroll,
