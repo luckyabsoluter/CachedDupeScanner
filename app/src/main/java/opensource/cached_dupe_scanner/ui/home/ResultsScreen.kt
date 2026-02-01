@@ -26,7 +26,6 @@ import opensource.cached_dupe_scanner.ui.results.ScanUiState
 fun ResultsScreen(
     state: MutableState<ScanUiState>,
     exportText: MutableState<String?>,
-    onBackToScan: () -> Unit,
     onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -41,11 +40,6 @@ fun ResultsScreen(
                 val result = current.result
                 Text("Files scanned: ${result.files.size}")
                 Text("Duplicate groups: ${result.duplicateGroups.size}")
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Button(onClick = onBackToScan, modifier = Modifier.fillMaxWidth()) {
-                    Text("Back to scan")
-                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(onClick = {
