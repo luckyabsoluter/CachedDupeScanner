@@ -29,7 +29,7 @@ fun ResultsScreen(
     onBackToDashboard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.padding(10.dp)) {
+    Column(modifier = modifier.padding(4.dp)) {
         AppTopBar(title = "Results", onBack = onBackToDashboard)
         Spacer(modifier = Modifier.height(8.dp))
         when (val current = state.value) {
