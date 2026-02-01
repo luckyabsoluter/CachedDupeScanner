@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
@@ -19,8 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -114,7 +111,7 @@ class MainActivity : ComponentActivity() {
 
                     val contentModifier = Modifier
                         .fillMaxSize()
-                        .systemBarsPadding()
+                        .padding(innerPadding)
 
                     val restoreLastResult: () -> Unit = {
                         scope.launch {
@@ -133,11 +130,7 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = AppRoutes.Dashboard,
-                        modifier = contentModifier,
-                        enterTransition = { EnterTransition.None },
-                        exitTransition = { ExitTransition.None },
-                        popEnterTransition = { EnterTransition.None },
-                        popExitTransition = { ExitTransition.None }
+                        modifier = contentModifier
                     ) {
                         composable(AppRoutes.Dashboard) {
                             DashboardScreen(
@@ -148,21 +141,21 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { navController.navigate(AppRoutes.Settings) },
                                 onOpenReports = { navController.navigate(AppRoutes.Reports) },
                                 scrollState = dashboardScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.Permission) {
                             PermissionScreen(
                                 onBack = { navController.popBackStack() },
                                 scrollState = permissionScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.Targets) {
                             TargetsScreen(
                                 onBack = { navController.popBackStack() },
                                 scrollState = targetsScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.ScanCommand) {
@@ -174,7 +167,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 onBack = { navController.popBackStack() },
                                 scrollState = scanCommandScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.Results) {
@@ -192,7 +185,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 settingsStore = settingsStore,
                                 scrollState = resultsScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(
@@ -211,7 +204,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 scrollState = resultsScroll,
                                 selectedGroupIndex = index,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.Settings) {
@@ -219,7 +212,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 onBack = { navController.popBackStack() },
                                 scrollState = settingsScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(AppRoutes.Reports) {
@@ -230,7 +223,7 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("reports/detail/${Uri.encode(id)}")
                                 },
                                 scrollState = reportsScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                         composable(
@@ -244,7 +237,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenReport = null,
                                 selectedReportId = id,
                                 scrollState = reportsScroll,
-                                modifier = Modifier.fillMaxSize().systemBarsPadding()
+                                modifier = contentModifier
                             )
                         }
                     }
