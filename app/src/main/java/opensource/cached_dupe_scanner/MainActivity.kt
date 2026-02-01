@@ -109,9 +109,10 @@ class MainActivity : ComponentActivity() {
                         clearRequested.value = false
                     }
 
-                    val contentModifier = Modifier
+                    val navModifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
+                    val screenModifier = Modifier.fillMaxSize()
 
                     val restoreLastResult: () -> Unit = {
                         scope.launch {
@@ -130,7 +131,7 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = AppRoutes.Dashboard,
-                        modifier = contentModifier
+                        modifier = navModifier
                     ) {
                         composable(AppRoutes.Dashboard) {
                             DashboardScreen(
@@ -141,21 +142,21 @@ class MainActivity : ComponentActivity() {
                                 onOpenSettings = { navController.navigate(AppRoutes.Settings) },
                                 onOpenReports = { navController.navigate(AppRoutes.Reports) },
                                 scrollState = dashboardScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.Permission) {
                             PermissionScreen(
                                 onBack = { navController.popBackStack() },
                                 scrollState = permissionScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.Targets) {
                             TargetsScreen(
                                 onBack = { navController.popBackStack() },
                                 scrollState = targetsScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.ScanCommand) {
@@ -167,7 +168,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 onBack = { navController.popBackStack() },
                                 scrollState = scanCommandScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.Results) {
@@ -185,7 +186,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 settingsStore = settingsStore,
                                 scrollState = resultsScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(
@@ -204,7 +205,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 scrollState = resultsScroll,
                                 selectedGroupIndex = index,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.Settings) {
@@ -212,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 onBack = { navController.popBackStack() },
                                 scrollState = settingsScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(AppRoutes.Reports) {
@@ -223,7 +224,7 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("reports/detail/${Uri.encode(id)}")
                                 },
                                 scrollState = reportsScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                         composable(
@@ -237,7 +238,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenReport = null,
                                 selectedReportId = id,
                                 scrollState = reportsScroll,
-                                modifier = contentModifier
+                                modifier = screenModifier
                             )
                         }
                     }
