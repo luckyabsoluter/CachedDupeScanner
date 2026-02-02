@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -300,8 +302,12 @@ private fun ScreenStack(
     modifier: Modifier = Modifier,
     content: @Composable (Screen) -> Unit
 ) {
+    val stateHolder: SaveableStateHolder = rememberSaveableStateHolder()
+    val stateKey = remember(current) { current.toString() }
     Box(modifier = modifier) {
-        content(current)
+        stateHolder.SaveableStateProvider(stateKey) {
+            content(current)
+        }
     }
 }
 
