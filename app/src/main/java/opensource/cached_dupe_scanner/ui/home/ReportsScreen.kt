@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ReportsScreen(
     reportRepo: ScanReportRepository,
+    refreshVersion: Int,
     onBack: () -> Unit,
     onOpenReport: ((String) -> Unit)? = null,
     selectedReportId: String? = null,
@@ -41,6 +42,15 @@ fun ReportsScreen(
     val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }
 
     LaunchedEffect(Unit) {
+        isLoading.value = true
+        val loaded = withContext(Dispatchers.IO) {
+            reportRepo.loadAll()
+        }
+        reports.value = loaded
+        isLoading.value = false
+    }
+
+    LaunchedEffect(refreshVersion) {
         isLoading.value = true
         val loaded = withContext(Dispatchers.IO) {
             reportRepo.loadAll()

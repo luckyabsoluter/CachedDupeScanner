@@ -54,6 +54,7 @@ fun ScanCommandScreen(
     reportRepo: ScanReportRepository,
     settingsStore: AppSettingsStore,
     targetsVersion: Int,
+    onReportSaved: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -122,6 +123,7 @@ fun ScanCommandScreen(
                             onScanCancelled,
                             reportRepo,
                             skipZeroSizeInDb,
+                            onReportSaved,
                             currentJob,
                             cancelRequested,
                             progressTarget,
@@ -146,6 +148,7 @@ fun ScanCommandScreen(
                 onScanCancelled,
                 reportRepo,
                 skipZeroSizeInDb,
+                onReportSaved,
                 currentJob,
                 cancelRequested,
                 progressTarget,
@@ -220,6 +223,7 @@ private fun runScanForTarget(
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
+    onReportSaved: () -> Unit,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
@@ -304,6 +308,7 @@ private fun runScanForTarget(
         withContext(Dispatchers.IO) {
             reportRepo.add(report)
         }
+        onReportSaved()
         if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
             progressTarget.value = null
             progressCurrent.value = null
@@ -325,6 +330,7 @@ private fun runScanForAllTargets(
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
+    onReportSaved: () -> Unit,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
@@ -416,6 +422,7 @@ private fun runScanForAllTargets(
                 withContext(Dispatchers.IO) {
                     reportRepo.add(report)
                 }
+                onReportSaved()
                 onScanCancelled()
                 return@launch
             }
@@ -457,6 +464,7 @@ private fun runScanForAllTargets(
         withContext(Dispatchers.IO) {
             reportRepo.add(report)
         }
+        onReportSaved()
         onScanComplete(merged)
     }
     currentJob.value = job
