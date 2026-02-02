@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
                     val sortSettingsVersion = remember { mutableStateOf(0) }
                     val filesClearVersion = remember { mutableStateOf(0) }
                     val filesRefreshVersion = remember { mutableStateOf(0) }
+                    val targetsVersion = remember { mutableStateOf(0) }
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
                     val scope = rememberCoroutineScope()
@@ -186,6 +187,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.Targets -> TargetsScreen(
                                 onBack = { pop(backStack) },
+                                onTargetsChanged = { targetsVersion.value += 1 },
                                 modifier = screenModifier
                             )
                             Screen.Files -> FilesScreen(
@@ -201,6 +203,7 @@ class MainActivity : ComponentActivity() {
                                 onScanCancelled = restoreLastResult,
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
+                                targetsVersion = targetsVersion.value,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )

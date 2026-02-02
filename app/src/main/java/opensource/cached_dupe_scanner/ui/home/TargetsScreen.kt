@@ -38,6 +38,7 @@ import java.io.File
 @Composable
 fun TargetsScreen(
     onBack: () -> Unit,
+    onTargetsChanged: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -77,6 +78,7 @@ fun TargetsScreen(
                 store.addTarget(path)
                 targets.value = store.loadTargets()
                 newPath.value = ""
+                onTargetsChanged()
             }
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Add target")
@@ -86,6 +88,7 @@ fun TargetsScreen(
             val path = Environment.getExternalStorageDirectory().absolutePath
             store.addTarget(path)
             targets.value = store.loadTargets()
+            onTargetsChanged()
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Add device storage root")
         }
@@ -97,6 +100,7 @@ fun TargetsScreen(
                 }
                 store.addTarget(rootDir.absolutePath)
                 targets.value = store.loadTargets()
+                onTargetsChanged()
             }
         }, modifier = Modifier.fillMaxWidth()) {
             Text("Create samples + add target")
@@ -142,6 +146,7 @@ fun TargetsScreen(
                     if (id != null && path.isNotBlank()) {
                         store.updateTarget(id, path)
                         targets.value = store.loadTargets()
+                        onTargetsChanged()
                     }
                     editingId.value = null
                     editingPath.value = ""
@@ -171,6 +176,7 @@ fun TargetsScreen(
                     if (id != null) {
                         store.removeTarget(id)
                         targets.value = store.loadTargets()
+                        onTargetsChanged()
                     }
                     deletingId.value = null
                 }) {
