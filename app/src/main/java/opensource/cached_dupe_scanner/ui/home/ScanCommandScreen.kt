@@ -38,7 +38,7 @@ import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportDurations
-import opensource.cached_dupe_scanner.storage.ScanReportStore
+import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.storage.ScanReportTotals
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -51,7 +51,7 @@ fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
-    reportStore: ScanReportStore,
+    reportRepo: ScanReportRepository,
     settingsStore: AppSettingsStore,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -70,7 +70,11 @@ fun ScanCommandScreen(
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-            .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
+            .addMigrations(
+                CacheMigrations.MIGRATION_1_3,
+                CacheMigrations.MIGRATION_2_3,
+                CacheMigrations.MIGRATION_3_4
+            )
             .build()
     }
     val cacheStore = remember { CacheStore(database.fileCacheDao()) }
@@ -109,7 +113,7 @@ fun ScanCommandScreen(
                             target,
                             onScanComplete,
                             onScanCancelled,
-                            reportStore,
+                            reportRepo,
                             skipZeroSizeInDb,
                             currentJob,
                             cancelRequested,
@@ -133,7 +137,7 @@ fun ScanCommandScreen(
                 targets.value,
                 onScanComplete,
                 onScanCancelled,
-                reportStore,
+                reportRepo,
                 skipZeroSizeInDb,
                 currentJob,
                 cancelRequested,
@@ -207,7 +211,7 @@ private fun runScanForTarget(
     target: ScanTarget,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
-    reportStore: ScanReportStore,
+    reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -290,7 +294,9 @@ private fun runScanForTarget(
                 hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
             )
         )
-        reportStore.add(report)
+        withContext(Dispatchers.IO) {
+            reportRepo.add(report)
+        }
         if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
             progressTarget.value = null
             progressCurrent.value = null
@@ -310,7 +316,7 @@ private fun runScanForAllTargets(
     targets: List<ScanTarget>,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
-    reportStore: ScanReportStore,
+    reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
@@ -400,7 +406,9 @@ private fun runScanForAllTargets(
                         hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
                     )
                 )
-                reportStore.add(report)
+                withContext(Dispatchers.IO) {
+                    reportRepo.add(report)
+                }
                 onScanCancelled()
                 return@launch
             }
@@ -439,7 +447,9 @@ private fun runScanForAllTargets(
                 hashingMillis = if (hashingStart == 0L) 0L else hashingEnd - hashingStart
             )
         )
-        reportStore.add(report)
+        withContext(Dispatchers.IO) {
+            reportRepo.add(report)
+        }
         onScanComplete(merged)
     }
     currentJob.value = job
