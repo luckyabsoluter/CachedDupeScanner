@@ -9,6 +9,7 @@ data class ScanReportEntity(
     val id: String,
     val startedAtMillis: Long,
     val finishedAtMillis: Long,
+    val targetsText: String,
     val mode: String,
     val cancelled: Boolean,
     val collectedCount: Int,

@@ -100,4 +100,11 @@ object CacheMigrations {
             db.execSQL("ALTER TABLE scan_report_targets_new RENAME TO scan_report_targets")
         }
     }
+
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE scan_reports ADD COLUMN targetsText TEXT NOT NULL DEFAULT ''")
+            db.execSQL("DROP TABLE IF EXISTS scan_report_targets")
+        }
+    }
 }
