@@ -9,7 +9,7 @@ import androidx.room.RoomDatabase
         ScanReportEntity::class,
         ScanReportTargetEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class CacheDatabase : RoomDatabase() {
