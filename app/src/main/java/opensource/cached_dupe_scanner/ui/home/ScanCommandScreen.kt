@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.util.Log
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.cache.CacheMigrations
@@ -244,6 +245,7 @@ private fun runScanForTarget(
         var collectingEnd = 0L
         var detectingEnd = 0L
         var hashingEnd = 0L
+        var lastPhase: ScanPhase? = null
         var detectedCount = 0
         var hashCandidates = 0
         var hashesComputed = 0
@@ -259,6 +261,10 @@ private fun runScanForTarget(
                 skipZeroSizeInDb = skipZeroSizeInDb,
                 onProgress = { scanned, total, current, phase ->
                     if (cancelRequested.value) return@scan
+                    if (phase != lastPhase) {
+                        Log.d("ScanCommand", "Phase $phase (scanned=$scanned total=${total ?: "?"})")
+                        lastPhase = phase
+                    }
                     state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                     progressCurrent.value = current.normalizedPath
                     progressSize.value = current.sizeBytes
@@ -359,6 +365,7 @@ private fun runScanForAllTargets(
         var collectingEnd = 0L
         var detectingEnd = 0L
         var hashingEnd = 0L
+        var lastPhase: ScanPhase? = null
         var detectedCount = 0
         var hashCandidates = 0
         var hashesComputed = 0
@@ -375,6 +382,10 @@ private fun runScanForAllTargets(
                     skipZeroSizeInDb = skipZeroSizeInDb,
                     onProgress = { scanned, total, current, phase ->
                         if (cancelRequested.value) return@scan
+                        if (phase != lastPhase) {
+                            Log.d("ScanCommand", "Phase $phase (scanned=$scanned total=${total ?: "?"})")
+                            lastPhase = phase
+                        }
                         state.value = ScanUiState.Scanning(scanned = scanned, total = total)
                         progressCurrent.value = current.normalizedPath
                         progressSize.value = current.sizeBytes
