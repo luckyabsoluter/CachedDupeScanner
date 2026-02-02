@@ -98,7 +98,9 @@ class MainActivity : ComponentActivity() {
                             Log.d("MainActivity", "Persisting scan to DB")
                             historyRepo.recordScan(scan)
                             Log.d("MainActivity", "Reloading merged history")
-                            historyRepo.loadMergedHistory() ?: scan
+                            val mergedOrScan = historyRepo.loadMergedHistory() ?: scan
+                            Log.d("MainActivity", "Merged history loaded")
+                            mergedOrScan
                         }
                         Log.d("MainActivity", "Merged history ready")
                         state.value = ScanUiState.Success(merged)
