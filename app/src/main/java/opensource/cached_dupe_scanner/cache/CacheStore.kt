@@ -33,15 +33,30 @@ class CacheStore(
         }
     }
 
-    fun countBySizes(sizes: Set<Long>, excludePaths: Set<String> = emptySet()): Map<Long, Int> {
+    fun countBySizes(sizes: Set<Long>): Map<Long, Int> {
         if (sizes.isEmpty()) return emptyMap()
-        val sizeList = sizes.toList()
-        val results = if (excludePaths.isEmpty()) {
-            dao.countBySizes(sizeList)
-        } else {
-            dao.countBySizesExcludingPaths(sizeList, excludePaths.toList())
+        val result = mutableMapOf<Long, Int>()
+        sizes.toList().chunked(SQLITE_VARIABLE_LIMIT).forEach { chunk ->
+            dao.countBySizes(chunk).forEach { entry ->
+                result[entry.sizeBytes] = (result[entry.sizeBytes] ?: 0) + entry.count
+            }
         }
-        return results.associate { it.sizeBytes to it.count }
+        return result
+    }
+
+    fun countOverlapSizes(paths: Set<String>): Map<Long, Int> {
+        if (paths.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Long, Int>()
+        paths.toList().chunked(SQLITE_VARIABLE_LIMIT).forEach { chunk ->
+            dao.findSizesByPaths(chunk).forEach { entry ->
+                result[entry.sizeBytes] = (result[entry.sizeBytes] ?: 0) + 1
+            }
+        }
+        return result
+    }
+
+    private companion object {
+        const val SQLITE_VARIABLE_LIMIT = 900
     }
 }
 
