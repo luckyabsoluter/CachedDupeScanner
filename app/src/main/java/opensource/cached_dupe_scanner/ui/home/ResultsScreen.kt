@@ -35,8 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -115,7 +113,7 @@ fun ResultsScreen(
         null
     }
     val totalGroups = result?.duplicateGroups?.size ?: 0
-    val visibleCount = rememberSaveable { mutableIntStateOf(pageSize) }
+    val visibleCount = remember { mutableStateOf(pageSize) }
     val topVisibleGroupIndex = remember { mutableStateOf(0) }
     LaunchedEffect(totalGroups) {
         if (totalGroups > 0) {
