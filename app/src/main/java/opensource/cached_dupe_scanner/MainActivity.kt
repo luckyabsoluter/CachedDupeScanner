@@ -96,7 +96,6 @@ class MainActivity : ComponentActivity() {
                         state.value = ScanUiState.Success(scan)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
-                        navigateTo(backStack, screenCache, Screen.Results)
                         scope.launch {
                             val merged = withContext(Dispatchers.IO) {
                                 Log.d("MainActivity", "Persisting scan to DB")
@@ -109,6 +108,7 @@ class MainActivity : ComponentActivity() {
                             Log.d("MainActivity", "Merged history ready")
                             state.value = ScanUiState.Success(merged)
                         }
+                        navigateTo(backStack, screenCache, Screen.Results)
                     }
 
                     LaunchedEffect(clearRequested.value) {
