@@ -129,12 +129,15 @@ class MainActivity : ComponentActivity() {
                                 files = current.result.files,
                                 duplicateGroups = emptyList()
                             )
-                            displayResult.value = ScanResultViewFilter.filterForDisplay(
-                                result = base,
-                                hideZeroSizeInResults = settings.hideZeroSizeInResults,
-                                sortKey = sortKey,
-                                sortDirection = sortDir
-                            )
+                            val filtered = withContext(Dispatchers.Default) {
+                                ScanResultViewFilter.filterForDisplay(
+                                    result = base,
+                                    hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                                    sortKey = sortKey,
+                                    sortDirection = sortDir
+                                )
+                            }
+                            displayResult.value = filtered
                         } else {
                             displayResult.value = null
                         }
