@@ -1,0 +1,21 @@
+package opensource.cached_dupe_scanner.cache
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "scan_reports")
+data class ScanReportEntity(
+    @PrimaryKey
+    val id: String,
+    val startedAtMillis: Long,
+    val finishedAtMillis: Long,
+    val mode: String,
+    val cancelled: Boolean,
+    val collectedCount: Int,
+    val detectedCount: Int,
+    val hashCandidates: Int,
+    val hashesComputed: Int,
+    val collectingMillis: Long,
+    val detectingMillis: Long,
+    val hashingMillis: Long
+)

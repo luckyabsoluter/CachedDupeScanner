@@ -31,10 +31,9 @@ import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
-import opensource.cached_dupe_scanner.storage.ScanResultStore
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
-import opensource.cached_dupe_scanner.storage.ScanReportStore
+import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
@@ -60,24 +59,26 @@ class MainActivity : ComponentActivity() {
                     val filesClearVersion = remember { mutableStateOf(0) }
                     val filesRefreshVersion = remember { mutableStateOf(0) }
                     val context = LocalContext.current
-                    val resultStore = remember { ScanResultStore(context) }
                     val settingsStore = remember { AppSettingsStore(context) }
-                    val reportStore = remember { ScanReportStore(context) }
                     val scope = rememberCoroutineScope()
                     val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                     val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                    val historyRepo = remember {
-                        val db = Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-                            .addMigrations(CacheMigrations.MIGRATION_1_3, CacheMigrations.MIGRATION_2_3)
+                    val database = remember {
+                        Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
+                            .addMigrations(
+                                CacheMigrations.MIGRATION_1_3,
+                                CacheMigrations.MIGRATION_2_3,
+                                CacheMigrations.MIGRATION_3_4
+                            )
                             .build()
-                        ScanHistoryRepository(db.fileCacheDao(), settingsStore)
                     }
+                    val historyRepo = remember { ScanHistoryRepository(database.fileCacheDao(), settingsStore) }
+                    val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
 
                     LaunchedEffect(Unit) {
                         if (state.value is ScanUiState.Idle) {
                             val stored = withContext(Dispatchers.IO) {
                                 historyRepo.loadMergedHistory()
-                                    ?: resultStore.load()
                             }
                             if (stored != null) {
                                 state.value = ScanUiState.Success(stored)
@@ -92,7 +93,6 @@ class MainActivity : ComponentActivity() {
                             historyRepo.loadMergedHistory() ?: scan
                         }
                         state.value = ScanUiState.Success(merged)
-                        resultStore.save(merged)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
                         navigateTo(backStack, screenCache, Screen.Results)
@@ -104,7 +104,6 @@ class MainActivity : ComponentActivity() {
                         withContext(Dispatchers.IO) {
                             historyRepo.clearAll()
                         }
-                        resultStore.clear()
                         state.value = ScanUiState.Idle
                         deletedPaths.value = emptySet()
                         displayResult.value = null
@@ -144,7 +143,7 @@ class MainActivity : ComponentActivity() {
                     val restoreLastResult: () -> Unit = {
                         scope.launch {
                             val stored = withContext(Dispatchers.IO) {
-                                historyRepo.loadMergedHistory() ?: resultStore.load()
+                                historyRepo.loadMergedHistory()
                             }
                             if (stored != null) {
                                 state.value = ScanUiState.Success(stored)
@@ -198,7 +197,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onScanComplete = { pendingScan.value = it },
                                 onScanCancelled = restoreLastResult,
-                                reportStore = reportStore,
+                                reportRepo = reportRepo,
                                 settingsStore = settingsStore,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
@@ -256,7 +255,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
                             Screen.Reports -> ReportsScreen(
-                                reportStore = reportStore,
+                                reportRepo = reportRepo,
                                 onBack = { pop(backStack) },
                                 onOpenReport = { id ->
                                     navigateTo(backStack, screenCache, Screen.ReportDetail(id))
@@ -264,7 +263,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
                             is Screen.ReportDetail -> ReportsScreen(
-                                reportStore = reportStore,
+                                reportRepo = reportRepo,
                                 onBack = { pop(backStack) },
                                 onOpenReport = null,
                                 selectedReportId = screen.id,

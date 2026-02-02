@@ -11,28 +11,43 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
 import opensource.cached_dupe_scanner.storage.ScanReport
-import opensource.cached_dupe_scanner.storage.ScanReportStore
+import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ReportsScreen(
-    reportStore: ScanReportStore,
+    reportRepo: ScanReportRepository,
     onBack: () -> Unit,
     onOpenReport: ((String) -> Unit)? = null,
     selectedReportId: String? = null,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
-    val reports = remember { mutableStateOf(reportStore.loadAll()) }
+    val reports = remember { mutableStateOf<List<ScanReport>>(emptyList()) }
+    val isLoading = remember { mutableStateOf(true) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
     val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }
+
+    LaunchedEffect(Unit) {
+        isLoading.value = true
+        val loaded = withContext(Dispatchers.IO) {
+            reportRepo.loadAll()
+        }
+        reports.value = loaded
+        isLoading.value = false
+    }
 
     Column(
         modifier = modifier
@@ -49,6 +64,18 @@ fun ReportsScreen(
 
         selectedReport?.let { report ->
             ReportDetail(report)
+            return@Column
+        }
+
+        if (isLoading.value) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Loading reports...")
+            }
             return@Column
         }
 

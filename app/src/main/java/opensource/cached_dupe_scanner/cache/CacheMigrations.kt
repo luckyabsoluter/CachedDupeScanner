@@ -16,4 +16,36 @@ object CacheMigrations {
             db.execSQL("DROP TABLE IF EXISTS scan_sessions")
         }
     }
+
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS scan_reports (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    startedAtMillis INTEGER NOT NULL,
+                    finishedAtMillis INTEGER NOT NULL,
+                    mode TEXT NOT NULL,
+                    cancelled INTEGER NOT NULL,
+                    collectedCount INTEGER NOT NULL,
+                    detectedCount INTEGER NOT NULL,
+                    hashCandidates INTEGER NOT NULL,
+                    hashesComputed INTEGER NOT NULL,
+                    collectingMillis INTEGER NOT NULL,
+                    detectingMillis INTEGER NOT NULL,
+                    hashingMillis INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS scan_report_targets (
+                    reportId TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    PRIMARY KEY(reportId, target)
+                )
+                """.trimIndent()
+            )
+        }
+    }
 }
