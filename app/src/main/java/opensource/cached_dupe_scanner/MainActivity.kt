@@ -40,6 +40,7 @@ import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,11 +92,15 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(pendingScan.value) {
                         val scan = pendingScan.value ?: return@LaunchedEffect
+                        Log.d("MainActivity", "Scan complete callback received")
                         pendingScan.value = null
                         val merged = withContext(Dispatchers.IO) {
+                            Log.d("MainActivity", "Persisting scan to DB")
                             historyRepo.recordScan(scan)
+                            Log.d("MainActivity", "Reloading merged history")
                             historyRepo.loadMergedHistory() ?: scan
                         }
+                        Log.d("MainActivity", "Merged history ready")
                         state.value = ScanUiState.Success(merged)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
