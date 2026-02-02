@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
                     val filesClearVersion = remember { mutableStateOf(0) }
                     val filesRefreshVersion = remember { mutableStateOf(0) }
                     val targetsVersion = remember { mutableStateOf(0) }
+                    val reportsRefreshVersion = remember { mutableStateOf(0) }
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
                     val scope = rememberCoroutineScope()
@@ -204,6 +205,7 @@ class MainActivity : ComponentActivity() {
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
                                 targetsVersion = targetsVersion.value,
+                                onReportSaved = { reportsRefreshVersion.value += 1 },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -261,6 +263,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.Reports -> ReportsScreen(
                                 reportRepo = reportRepo,
+                                refreshVersion = reportsRefreshVersion.value,
                                 onBack = { pop(backStack) },
                                 onOpenReport = { id ->
                                     navigateTo(backStack, screenCache, Screen.ReportDetail(id))
@@ -269,6 +272,7 @@ class MainActivity : ComponentActivity() {
                             )
                             is Screen.ReportDetail -> ReportsScreen(
                                 reportRepo = reportRepo,
+                                refreshVersion = reportsRefreshVersion.value,
                                 onBack = { pop(backStack) },
                                 onOpenReport = null,
                                 selectedReportId = screen.id,
