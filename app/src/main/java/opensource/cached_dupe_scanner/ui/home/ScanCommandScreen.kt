@@ -53,6 +53,7 @@ fun ScanCommandScreen(
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     settingsStore: AppSettingsStore,
+    targetsVersion: Int,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -83,6 +84,10 @@ fun ScanCommandScreen(
     val scanner = remember { IncrementalScanner(cacheStore) }
 
     LaunchedEffect(Unit) {
+        targets.value = store.loadTargets()
+    }
+
+    LaunchedEffect(targetsVersion) {
         targets.value = store.loadTargets()
     }
 
