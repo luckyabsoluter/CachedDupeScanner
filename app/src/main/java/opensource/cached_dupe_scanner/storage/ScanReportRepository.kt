@@ -2,21 +2,12 @@ package opensource.cached_dupe_scanner.storage
 
 import opensource.cached_dupe_scanner.cache.ScanReportDao
 import opensource.cached_dupe_scanner.cache.ScanReportEntity
-import opensource.cached_dupe_scanner.cache.ScanReportTargetEntity
-import opensource.cached_dupe_scanner.cache.ScanReportWithTargets
 
 class ScanReportRepository(
     private val dao: ScanReportDao
 ) {
     suspend fun add(report: ScanReport) {
         dao.upsert(report.toEntity())
-        dao.deleteTargets(report.id)
-        if (report.targets.isNotEmpty()) {
-            val targets = report.targets.mapIndexed { index, path ->
-                ScanReportTargetEntity(reportId = report.id, position = index, target = path)
-            }
-            dao.upsertTargets(targets)
-        }
     }
 
     suspend fun loadAll(): List<ScanReport> {
@@ -37,6 +28,7 @@ private fun ScanReport.toEntity(): ScanReportEntity {
         id = id,
         startedAtMillis = startedAtMillis,
         finishedAtMillis = finishedAtMillis,
+        targetsText = targets.joinToString("\n"),
         mode = mode,
         cancelled = cancelled,
         collectedCount = totals.collectedCount,
@@ -49,25 +41,29 @@ private fun ScanReport.toEntity(): ScanReportEntity {
     )
 }
 
-private fun ScanReportWithTargets.toModel(): ScanReport {
-    val orderedTargets = targets.sortedBy { it.position }
+private fun ScanReportEntity.toModel(): ScanReport {
+    val targets = if (targetsText.isBlank()) {
+        emptyList()
+    } else {
+        targetsText.split("\n")
+    }
     return ScanReport(
-        id = report.id,
-        startedAtMillis = report.startedAtMillis,
-        finishedAtMillis = report.finishedAtMillis,
-        targets = orderedTargets.map { it.target },
-        mode = report.mode,
-        cancelled = report.cancelled,
+        id = id,
+        startedAtMillis = startedAtMillis,
+        finishedAtMillis = finishedAtMillis,
+        targets = targets,
+        mode = mode,
+        cancelled = cancelled,
         totals = ScanReportTotals(
-            collectedCount = report.collectedCount,
-            detectedCount = report.detectedCount,
-            hashCandidates = report.hashCandidates,
-            hashesComputed = report.hashesComputed
+            collectedCount = collectedCount,
+            detectedCount = detectedCount,
+            hashCandidates = hashCandidates,
+            hashesComputed = hashesComputed
         ),
         durations = ScanReportDurations(
-            collectingMillis = report.collectingMillis,
-            detectingMillis = report.detectingMillis,
-            hashingMillis = report.hashingMillis
+            collectingMillis = collectingMillis,
+            detectingMillis = detectingMillis,
+            hashingMillis = hashingMillis
         )
     )
 }

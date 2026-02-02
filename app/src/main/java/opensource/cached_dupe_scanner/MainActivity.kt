@@ -72,7 +72,8 @@ class MainActivity : ComponentActivity() {
                                 CacheMigrations.MIGRATION_2_3,
                                 CacheMigrations.MIGRATION_3_4,
                                 CacheMigrations.MIGRATION_4_5,
-                                CacheMigrations.MIGRATION_5_6
+                                CacheMigrations.MIGRATION_5_6,
+                                CacheMigrations.MIGRATION_6_7
                             )
                             .build()
                     }
