@@ -12,8 +12,8 @@ class ScanReportRepository(
         dao.upsert(report.toEntity())
         dao.deleteTargets(report.id)
         if (report.targets.isNotEmpty()) {
-            val targets = report.targets.map { path ->
-                ScanReportTargetEntity(reportId = report.id, target = path)
+            val targets = report.targets.mapIndexed { index, path ->
+                ScanReportTargetEntity(reportId = report.id, position = index, target = path)
             }
             dao.upsertTargets(targets)
         }
@@ -50,11 +50,12 @@ private fun ScanReport.toEntity(): ScanReportEntity {
 }
 
 private fun ScanReportWithTargets.toModel(): ScanReport {
+    val orderedTargets = targets.sortedBy { it.position }
     return ScanReport(
         id = report.id,
         startedAtMillis = report.startedAtMillis,
         finishedAtMillis = report.finishedAtMillis,
-        targets = targets.map { it.target },
+        targets = orderedTargets.map { it.target },
         mode = report.mode,
         cancelled = report.cancelled,
         totals = ScanReportTotals(

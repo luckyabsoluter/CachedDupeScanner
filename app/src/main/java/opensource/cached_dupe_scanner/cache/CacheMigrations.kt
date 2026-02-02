@@ -54,4 +54,50 @@ object CacheMigrations {
             // No-op: schema hash update only.
         }
     }
+
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            val hasPosition = db.query("PRAGMA table_info('scan_report_targets')").use { cursor ->
+                var found = false
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0 && cursor.getString(nameIndex) == "position") {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS scan_report_targets_new (
+                    reportId TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    target TEXT NOT NULL,
+                    PRIMARY KEY(reportId, position)
+                )
+                """.trimIndent()
+            )
+
+            if (hasPosition) {
+                db.execSQL(
+                    """
+                    INSERT INTO scan_report_targets_new (reportId, position, target)
+                    SELECT reportId, position, target FROM scan_report_targets
+                    """.trimIndent()
+                )
+            } else {
+                db.execSQL(
+                    """
+                    INSERT INTO scan_report_targets_new (reportId, position, target)
+                    SELECT reportId, rowid, target FROM scan_report_targets
+                    """.trimIndent()
+                )
+            }
+
+            db.execSQL("DROP TABLE IF EXISTS scan_report_targets")
+            db.execSQL("ALTER TABLE scan_report_targets_new RENAME TO scan_report_targets")
+        }
+    }
 }
