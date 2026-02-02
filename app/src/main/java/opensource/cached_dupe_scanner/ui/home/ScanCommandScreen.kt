@@ -172,6 +172,7 @@ fun ScanCommandScreen(
                         ScanPhase.Collecting -> "Collecting files"
                         ScanPhase.Detecting -> "Detecting hash candidates"
                         ScanPhase.Hashing -> "Hashing"
+                        ScanPhase.Saving -> "Saving cache"
                     }
                     Text("Target: $targetText")
                     Text("Phase: $phaseText")
@@ -277,6 +278,9 @@ private fun runScanForTarget(
                             if (hashingStart == 0L) hashingStart = System.currentTimeMillis()
                             hashesComputed = scanned
                             hashCandidates = total ?: hashCandidates
+                        }
+                        ScanPhase.Saving -> {
+                            if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                         }
                     }
                 },
@@ -390,6 +394,9 @@ private fun runScanForAllTargets(
                                 if (hashingStart == 0L) hashingStart = System.currentTimeMillis()
                                 hashesComputed = scanned
                                 hashCandidates = total ?: hashCandidates
+                            }
+                            ScanPhase.Saving -> {
+                                if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                             }
                         }
                     },

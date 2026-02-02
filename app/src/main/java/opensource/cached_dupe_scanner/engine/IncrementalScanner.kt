@@ -126,7 +126,23 @@ class IncrementalScanner(
         } else {
             pending
         }
-        cacheStore.upsertAll(toStore)
+        val totalSave = toStore.size
+        if (totalSave > 0) {
+            var saved = 0
+            toStore.chunked(500).forEach { batch ->
+                if (!shouldContinue()) {
+                    return ScanResult(
+                        scannedAtMillis = scannedAtMillis,
+                        files = files,
+                        duplicateGroups = emptyList()
+                    )
+                }
+                cacheStore.upsertAll(batch)
+                saved += batch.size
+                val current = batch.last()
+                onProgress(saved, totalSave, current, ScanPhase.Saving)
+            }
+        }
 
         val duplicateGroups = files
             .filter { it.hashHex != null }
