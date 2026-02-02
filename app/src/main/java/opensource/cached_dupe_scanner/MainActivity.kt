@@ -50,7 +50,6 @@ class MainActivity : ComponentActivity() {
             CachedDupeScannerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
-                    val pendingScan = remember { mutableStateOf<ScanResult?>(null) }
                     val clearRequested = remember { mutableStateOf(false) }
                     val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                     val displayResult = remember { mutableStateOf<ScanResult?>(null) }
@@ -90,23 +89,24 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    LaunchedEffect(pendingScan.value) {
-                        val scan = pendingScan.value ?: return@LaunchedEffect
+                    fun handleScanComplete(scan: ScanResult) {
                         Log.d("MainActivity", "Scan complete callback received")
-                        pendingScan.value = null
-                        val merged = withContext(Dispatchers.IO) {
-                            Log.d("MainActivity", "Persisting scan to DB")
-                            historyRepo.recordScan(scan)
-                            Log.d("MainActivity", "Reloading merged history")
-                            val mergedOrScan = historyRepo.loadMergedHistory() ?: scan
-                            Log.d("MainActivity", "Merged history loaded")
-                            mergedOrScan
-                        }
-                        Log.d("MainActivity", "Merged history ready")
-                        state.value = ScanUiState.Success(merged)
+                        state.value = ScanUiState.Success(scan)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
                         navigateTo(backStack, screenCache, Screen.Results)
+                        scope.launch {
+                            val merged = withContext(Dispatchers.IO) {
+                                Log.d("MainActivity", "Persisting scan to DB")
+                                historyRepo.recordScan(scan)
+                                Log.d("MainActivity", "Reloading merged history")
+                                val mergedOrScan = historyRepo.loadMergedHistory() ?: scan
+                                Log.d("MainActivity", "Merged history loaded")
+                                mergedOrScan
+                            }
+                            Log.d("MainActivity", "Merged history ready")
+                            state.value = ScanUiState.Success(merged)
+                        }
                     }
 
                     LaunchedEffect(clearRequested.value) {
@@ -209,7 +209,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.ScanCommand -> ScanCommandScreen(
                                 state = state,
-                                onScanComplete = { pendingScan.value = it },
+                                onScanComplete = { handleScanComplete(it) },
                                 onScanCancelled = restoreLastResult,
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
@@ -236,7 +236,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
                                 onClearResults = {
-                                    pendingScan.value = null
                                     clearRequested.value = true
                                 },
                                 settingsStore = settingsStore,
@@ -258,7 +257,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
                                 onClearResults = {
-                                    pendingScan.value = null
                                     clearRequested.value = true
                                 },
                                 settingsStore = settingsStore,
