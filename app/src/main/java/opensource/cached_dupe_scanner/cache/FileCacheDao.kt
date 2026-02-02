@@ -28,6 +28,6 @@ interface FileCacheDao {
     @Query("SELECT sizeBytes as sizeBytes, COUNT(*) as count FROM cached_files WHERE sizeBytes IN (:sizes) GROUP BY sizeBytes")
     fun countBySizes(sizes: List<Long>): List<SizeCount>
 
-    @Query("SELECT sizeBytes as sizeBytes, COUNT(*) as count FROM cached_files WHERE sizeBytes IN (:sizes) AND normalizedPath NOT IN (:excludePaths) GROUP BY sizeBytes")
-    fun countBySizesExcludingPaths(sizes: List<Long>, excludePaths: List<String>): List<SizeCount>
+    @Query("SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes FROM cached_files WHERE normalizedPath IN (:paths)")
+    fun findSizesByPaths(paths: List<String>): List<PathSize>
 }
