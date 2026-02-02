@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
@@ -163,75 +165,87 @@ fun ResultsScreen(
             }
     }
     Box(modifier = modifier) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.padding(Spacing.screenPadding)
-        ) {
-            item {
+        if (selectedGroupIndex != null && result != null) {
+            val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
+            val detailScrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .padding(Spacing.screenPadding)
+                    .verticalScroll(detailScrollState)
+            ) {
                 AppTopBar(
-                    title = "Results",
+                    title = "Group detail",
                     onBack = {
                         onBackToDashboard()
-                    },
-                    actions = {
-                        if (selectedGroupIndex == null) {
-                            IconButton(onClick = { menuExpanded.value = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                            }
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = menuExpanded.value,
-                                onDismissRequest = { menuExpanded.value = false }
-                            ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Clear all results") },
-                                    onClick = {
-                                        menuExpanded.value = false
-                                        onClearResults()
-                                    }
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Show full paths") },
-                                    leadingIcon = {
-                                        Checkbox(
-                                            checked = showFullPaths.value,
-                                            onCheckedChange = null
-                                        )
-                                    },
-                                    onClick = {
-                                        showFullPaths.value = !showFullPaths.value
-                                        settingsStore.setShowFullPaths(showFullPaths.value)
-                                        menuExpanded.value = false
-                                    }
-                                )
-                            }
-                        }
                     }
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                if (group != null) {
+                    GroupDetailContent(
+                        group = group,
+                        deletedPaths = deletedPaths,
+                        imageLoader = imageLoader,
+                        onFileDeleted = { file ->
+                            onDeleteFile?.invoke(file)
+                        }
+                    )
+                } else {
+                    Text("Group not found.")
+                }
             }
-            item { Spacer(modifier = Modifier.height(8.dp)) }
-            when (val current = state.value) {
-                ScanUiState.Idle -> item { Text("No results yet.") }
-                is ScanUiState.Scanning -> item { Text("Scanning…") }
-                is ScanUiState.Error -> item { Text("Error: ${current.message}") }
-                is ScanUiState.Success -> {
-                    val resultValue = result ?: return@LazyColumn
-                    if (selectedGroupIndex != null) {
-                        val group = resultValue.duplicateGroups.getOrNull(selectedGroupIndex)
-                        item {
-                            if (group != null) {
-                                GroupDetailContent(
-                                    group = group,
-                                    deletedPaths = deletedPaths,
-                                    imageLoader = imageLoader,
-                                    onFileDeleted = { file ->
-                                        onDeleteFile?.invoke(file)
-                                    }
-                                )
-                            } else {
-                                Text("Group not found.")
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.padding(Spacing.screenPadding)
+            ) {
+                item {
+                    AppTopBar(
+                        title = "Results",
+                        onBack = {
+                            onBackToDashboard()
+                        },
+                        actions = {
+                            if (selectedGroupIndex == null) {
+                                IconButton(onClick = { menuExpanded.value = true }) {
+                                    Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                                }
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = menuExpanded.value,
+                                    onDismissRequest = { menuExpanded.value = false }
+                                ) {
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Clear all results") },
+                                        onClick = {
+                                            menuExpanded.value = false
+                                            onClearResults()
+                                        }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Show full paths") },
+                                        leadingIcon = {
+                                            Checkbox(
+                                                checked = showFullPaths.value,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            showFullPaths.value = !showFullPaths.value
+                                            settingsStore.setShowFullPaths(showFullPaths.value)
+                                            menuExpanded.value = false
+                                        }
+                                    )
+                                }
                             }
                         }
-                    } else {
+                    )
+                }
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+                when (val current = state.value) {
+                    ScanUiState.Idle -> item { Text("No results yet.") }
+                    is ScanUiState.Scanning -> item { Text("Scanning…") }
+                    is ScanUiState.Error -> item { Text("Error: ${current.message}") }
+                    is ScanUiState.Success -> {
+                        val resultValue = result ?: return@LazyColumn
                         item {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -341,16 +355,16 @@ fun ResultsScreen(
                     }
                 }
             }
-        }
-        loadIndicatorText?.let { indicator ->
-            Text(
-                text = indicator,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 12.dp, top = 12.dp)
-            )
+            loadIndicatorText?.let { indicator ->
+                Text(
+                    text = indicator,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 12.dp, top = 12.dp)
+                )
+            }
         }
     }
 
