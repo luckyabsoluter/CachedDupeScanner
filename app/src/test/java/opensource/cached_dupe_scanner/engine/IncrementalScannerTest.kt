@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.PathNormalizer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -120,6 +121,27 @@ class IncrementalScannerTest {
         scanner.scan(tempDir)
 
         assertEquals(0, hasher.callsFor(file))
+    }
+
+    @Test
+    fun scanHashesWhenDbHasSizeCollision() {
+        val file = File(tempDir, "solo.txt").apply {
+            writeText("aa")
+        }
+        val cached = FileMetadata(
+            path = "other.txt",
+            normalizedPath = PathNormalizer.normalize("other.txt"),
+            sizeBytes = file.length(),
+            lastModifiedMillis = 1234L,
+            hashHex = null
+        )
+        store.upsert(cached)
+        val hasher = CountingHasher()
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        scanner.scan(tempDir)
+
+        assertEquals(1, hasher.callsFor(file))
     }
 
     @Test

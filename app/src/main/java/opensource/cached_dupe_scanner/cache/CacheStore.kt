@@ -32,6 +32,17 @@ class CacheStore(
             CacheLookupResult(CacheStatus.STALE, cachedMetadata)
         }
     }
+
+    fun countBySizes(sizes: Set<Long>, excludePaths: Set<String> = emptySet()): Map<Long, Int> {
+        if (sizes.isEmpty()) return emptyMap()
+        val sizeList = sizes.toList()
+        val results = if (excludePaths.isEmpty()) {
+            dao.countBySizes(sizeList)
+        } else {
+            dao.countBySizesExcludingPaths(sizeList, excludePaths.toList())
+        }
+        return results.associate { it.sizeBytes to it.count }
+    }
 }
 
 private fun FileMetadata.toEntity(): CachedFileEntity {

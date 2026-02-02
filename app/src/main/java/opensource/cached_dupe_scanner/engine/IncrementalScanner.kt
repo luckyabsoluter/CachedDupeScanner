@@ -48,8 +48,15 @@ class IncrementalScanner(
 
         val totalDetect = uniqueScanned.size
         var detectCount = 0
-        val sizeCounts = mutableMapOf<Long, Int>()
         val pending = mutableListOf<FileMetadata>()
+        val sizeCounts = uniqueScanned
+            .filter { it.sizeBytes > 0L }
+            .groupingBy { it.sizeBytes }
+            .eachCount()
+        val cachedSizeCounts = cacheStore.countBySizes(
+            sizes = sizeCounts.keys,
+            excludePaths = uniqueScanned.map { it.normalizedPath }.toSet()
+        )
 
         uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
@@ -69,12 +76,14 @@ class IncrementalScanner(
                 onProgress(detectCount, totalDetect, finalMetadata, ScanPhase.Collecting)
                 return@forEach
             }
-            sizeCounts[current.sizeBytes] = (sizeCounts[current.sizeBytes] ?: 0) + 1
             detectCount += 1
             onProgress(detectCount, totalDetect, current, ScanPhase.Detecting)
         }
 
-        val candidates = uniqueScanned.filter { (sizeCounts[it.sizeBytes] ?: 0) > 1 }
+        val candidates = uniqueScanned.filter {
+            it.sizeBytes > 0L &&
+                ((sizeCounts[it.sizeBytes] ?: 0) + (cachedSizeCounts[it.sizeBytes] ?: 0) > 1)
+        }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
         val lookupByPath = candidates.associateBy({ it.normalizedPath }) { cacheStore.lookup(it) }
         val hashTargets = candidates.filter {
