@@ -16,8 +16,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
-import androidx.compose.ui.layout.layout
 import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,6 +91,7 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(pendingScan.value) {
                         val scan = pendingScan.value ?: return@LaunchedEffect
+                        pendingScan.value = null
                         val merged = withContext(Dispatchers.IO) {
                             historyRepo.recordScan(scan)
                             historyRepo.loadMergedHistory() ?: scan
@@ -101,7 +100,6 @@ class MainActivity : ComponentActivity() {
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
                         navigateTo(backStack, screenCache, Screen.Results)
-                        pendingScan.value = null
                     }
 
                     LaunchedEffect(clearRequested.value) {
@@ -298,27 +296,7 @@ private fun ScreenStack(
     content: @Composable (Screen) -> Unit
 ) {
     Box(modifier = modifier) {
-        screens.forEach { screen ->
-            val visible = screen == current
-            key(screen) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .layout { measurable, constraints ->
-                            val placeable = measurable.measure(constraints)
-                            if (visible) {
-                                layout(placeable.width, placeable.height) {
-                                    placeable.place(0, 0)
-                                }
-                            } else {
-                                layout(0, 0) {}
-                            }
-                        }
-                ) {
-                    content(screen)
-                }
-            }
-        }
+        content(current)
     }
 }
 
