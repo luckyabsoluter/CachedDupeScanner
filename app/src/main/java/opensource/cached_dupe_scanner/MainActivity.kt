@@ -92,14 +92,15 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(pendingScan.value) {
                         val scan = pendingScan.value ?: return@LaunchedEffect
                         pendingScan.value = null
+                        state.value = ScanUiState.Success(scan)
+                        deletedPaths.value = emptySet()
+                        filesRefreshVersion.value += 1
+                        navigateTo(backStack, screenCache, Screen.Results)
                         val merged = withContext(Dispatchers.IO) {
                             historyRepo.recordScan(scan)
                             historyRepo.loadMergedHistory() ?: scan
                         }
                         state.value = ScanUiState.Success(merged)
-                        deletedPaths.value = emptySet()
-                        filesRefreshVersion.value += 1
-                        navigateTo(backStack, screenCache, Screen.Results)
                     }
 
                     LaunchedEffect(clearRequested.value) {
