@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -101,23 +102,30 @@ fun ResultsScreen(
     val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
     val pageSize = 50
     val buffer = 20
-    val result = if (state.value is ScanUiState.Success) {
-        val settings = settingsStore.load()
-        displayResult ?: ScanResultViewFilter.filterForDisplay(
-            result = (state.value as ScanUiState.Success).result,
-            hideZeroSizeInResults = settings.hideZeroSizeInResults,
-            sortKey = sortKey.value,
-            sortDirection = sortDirection.value
-        )
-    } else {
-        null
+    val result = remember(state.value, sortKey.value, sortDirection.value, displayResult) {
+        if (state.value is ScanUiState.Success) {
+            val settings = settingsStore.load()
+            displayResult ?: ScanResultViewFilter.filterForDisplay(
+                result = (state.value as ScanUiState.Success).result,
+                hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                sortKey = sortKey.value,
+                sortDirection = sortDirection.value
+            )
+        } else {
+            null
+        }
     }
     val totalGroups = result?.duplicateGroups?.size ?: 0
-    val visibleCount = remember { mutableStateOf(pageSize) }
+    val visibleCount = rememberSaveable { mutableStateOf(0) }
     val topVisibleGroupIndex = remember { mutableStateOf(0) }
     LaunchedEffect(totalGroups) {
         if (totalGroups > 0) {
-            visibleCount.value = pageSize
+            val initial = pageSize.coerceAtMost(totalGroups)
+            if (visibleCount.value == 0) {
+                visibleCount.value = initial
+            } else {
+                visibleCount.value = visibleCount.value.coerceAtMost(totalGroups)
+            }
         }
     }
     val groupIndexByHash = remember(result?.duplicateGroups) {
