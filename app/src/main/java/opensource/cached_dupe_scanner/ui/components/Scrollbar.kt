@@ -38,8 +38,8 @@ fun VerticalScrollbar(
     modifier: Modifier = Modifier,
     thumbWidth: Dp = ScrollbarDefaults.ThumbWidth,
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
-    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
+    trackColor: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
     thumbPressedColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 1f)
 ) {
     val scope = rememberCoroutineScope()
@@ -121,8 +121,8 @@ fun VerticalLazyScrollbar(
     modifier: Modifier = Modifier,
     thumbWidth: Dp = ScrollbarDefaults.ThumbWidth,
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
-    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
+    trackColor: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
     thumbPressedColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 1f)
 ) {
     val scope = rememberCoroutineScope()
@@ -132,15 +132,17 @@ fun VerticalLazyScrollbar(
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
     }
-    val totalItems = layoutInfo.totalItemsCount
-    if (totalItems == 0) return
     val visibleItems = layoutInfo.visibleItemsInfo
-    if (visibleItems.isEmpty()) return
-
-    val averageItemSizePx = visibleItems.map { it.size }.average().toFloat().coerceAtLeast(1f)
     val viewportHeightPx = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
         .toFloat()
         .coerceAtLeast(1f)
+    val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
+
+    val averageItemSizePx = if (visibleItems.isNotEmpty()) {
+        visibleItems.map { it.size }.average().toFloat().coerceAtLeast(1f)
+    } else {
+        viewportHeightPx
+    }
     val totalContentHeightPx = averageItemSizePx * totalItems
     val maxScrollPx = (totalContentHeightPx - viewportHeightPx).coerceAtLeast(0f)
     val currentScrollPx = (listState.firstVisibleItemIndex * averageItemSizePx) +
