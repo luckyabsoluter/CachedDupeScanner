@@ -30,6 +30,7 @@ fun DashboardScreen(
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
     onOpenFiles: () -> Unit,
+    onOpenTrash: () -> Unit,
     onOpenDbManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
@@ -80,6 +81,13 @@ fun DashboardScreen(
                 actionLabel = "Open files",
                 onAction = onOpenFiles
             )
+
+                DashboardCard(
+                    title = "Trash",
+                    description = "Review and restore files moved to trash.",
+                    actionLabel = "Open trash",
+                    onAction = onOpenTrash
+                )
 
             DashboardCard(
                 title = "DB management",

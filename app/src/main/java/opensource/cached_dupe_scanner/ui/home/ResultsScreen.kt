@@ -64,9 +64,11 @@ import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 import java.util.Locale
 import androidx.compose.material3.RadioButton
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 @Composable
 fun ResultsScreen(
@@ -75,7 +77,7 @@ fun ResultsScreen(
     settingsStore: AppSettingsStore,
     displayResult: ScanResult? = null,
     deletedPaths: Set<String> = emptySet(),
-    onDeleteFile: ((FileMetadata) -> Unit)? = null,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)? = null,
     onOpenGroup: ((Int) -> Unit)? = null,
     onSortChanged: (() -> Unit)? = null,
     selectedGroupIndex: Int? = null,
@@ -83,6 +85,7 @@ fun ResultsScreen(
 ) {
     val listState = rememberLazyListState()
     val menuExpanded = remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -362,8 +365,9 @@ fun ResultsScreen(
                                 group = group,
                                 deletedPaths = deletedPaths,
                                 imageLoader = imageLoader,
-                                onFileDeleted = { file ->
-                                    onDeleteFile?.invoke(file)
+                                onDeleteFile = { file ->
+                                    val handler = onDeleteFile ?: return@GroupDetailContent false
+                                    handler(file)
                                 }
                             )
                         } else {
@@ -489,7 +493,7 @@ private fun GroupDetailContent(
     group: DuplicateGroup,
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
-    onFileDeleted: (FileMetadata) -> Unit
+    onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
     val context = LocalContext.current
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
@@ -575,9 +579,11 @@ private fun GroupDetailContent(
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
+            onDelete = {
+                onDeleteFile(file)
+            },
             onDeleteResult = { deleted ->
                 if (deleted) {
-                    onFileDeleted(file)
                     selectedFile.value = null
                 }
             },
