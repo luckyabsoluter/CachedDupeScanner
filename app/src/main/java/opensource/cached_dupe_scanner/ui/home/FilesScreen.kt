@@ -92,6 +92,9 @@ fun FilesScreen(
     val isLoading = remember { mutableStateOf(true) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val topVisibleIndex = remember { mutableStateOf(0) }
+    val pageSize = 200
+    val buffer = 50
+    val visibleCount = remember { mutableStateOf(0) }
     val imageLoader = remember {
         ImageLoader.Builder(context)
             .components { add(VideoFrameDecoder.Factory()) }
@@ -139,6 +142,12 @@ fun FilesScreen(
     LaunchedEffect(sortedFiles.size) {
         if (sortedFiles.isNotEmpty()) {
             topVisibleIndex.value = 0
+            val initial = pageSize.coerceAtMost(sortedFiles.size)
+            if (visibleCount.value == 0) {
+                visibleCount.value = initial
+            } else {
+                visibleCount.value = visibleCount.value.coerceAtMost(sortedFiles.size)
+            }
         }
     }
 
@@ -157,14 +166,33 @@ fun FilesScreen(
             }
     }
 
+    LaunchedEffect(sortedFiles.size) {
+        if (sortedFiles.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            val remaining = sortedFiles.size - visibleCount.value
+            lastVisible >= (totalItems - buffer) && remaining > 0
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                visibleCount.value = (visibleCount.value + pageSize)
+                    .coerceAtMost(sortedFiles.size)
+            }
+    }
+
     val overlayText = run {
         val total = sortedFiles.size
         if (total == 0) {
             null
         } else {
+            val loaded = visibleCount.value.coerceAtMost(total).coerceAtLeast(1)
             val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
-            val percent = ((current.toDouble() / total.toDouble()) * 100).toInt()
-            "$current/$total (${percent}%)"
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / total.toDouble()) * 100).toInt()
+            "$current/$loaded/$total (${currentPercent}%/${loadedPercent}%)"
         }
     }
 
@@ -204,7 +232,8 @@ fun FilesScreen(
             } else if (sortedFiles.isEmpty()) {
                 item { Text("No files in history.") }
             } else {
-                items(sortedFiles, key = { it.normalizedPath }) { file ->
+                val filesToShow = sortedFiles.take(visibleCount.value)
+                items(filesToShow, key = { it.normalizedPath }) { file ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
