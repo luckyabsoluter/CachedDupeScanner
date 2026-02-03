@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.fillMaxWidth
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -70,6 +71,7 @@ fun VerticalScrollbar(
         Canvas(
             modifier = Modifier
                 .fillMaxHeight()
+                .fillMaxWidth()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
                     detectDragGestures(
                         onDragStart = { start ->
@@ -168,6 +170,7 @@ fun VerticalLazyScrollbar(
         Canvas(
             modifier = Modifier
                 .fillMaxHeight()
+                .fillMaxWidth()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
                     detectDragGestures(
                         onDragStart = { start ->
