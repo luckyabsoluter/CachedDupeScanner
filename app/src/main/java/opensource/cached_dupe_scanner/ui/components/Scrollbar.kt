@@ -177,8 +177,9 @@ fun VerticalLazyScrollbar(
         (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
 
     val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
+    val effectiveMinThumbHeightPx = minThumbHeightPx.coerceAtMost(trackHeightPx)
     val targetThumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
-        .coerceAtLeast(minThumbHeightPx)
+        .coerceAtLeast(effectiveMinThumbHeightPx)
         .coerceAtMost(trackHeightPx)
     SideEffect {
         val current = smoothedThumbHeightPxState.floatValue
@@ -187,11 +188,11 @@ fun VerticalLazyScrollbar(
             targetThumbHeightPx <= 0f -> current
             current <= 0f -> targetThumbHeightPx
             else -> (current * (1f - alpha)) + (targetThumbHeightPx * alpha)
-        }.coerceIn(minThumbHeightPx, trackHeightPx)
+        }.coerceIn(effectiveMinThumbHeightPx, trackHeightPx)
     }
 
     val thumbHeightPx = smoothedThumbHeightPxState.floatValue
-        .coerceIn(minThumbHeightPx, trackHeightPx)
+        .coerceIn(effectiveMinThumbHeightPx, trackHeightPx)
     val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
 
     val scrollFraction = when {
