@@ -141,10 +141,11 @@ fun VerticalLazyScrollbar(
     }
     SideEffect {
         val current = smoothedAverageItemSizePx.floatValue
+        val alpha = if (isDragging.value || listState.isScrollInProgress) 0.05f else 0.2f
         smoothedAverageItemSizePx.floatValue = when {
             measuredAverageItemSizePx <= 0f -> current
             current <= 0f -> measuredAverageItemSizePx
-            else -> (current * 0.8f) + (measuredAverageItemSizePx * 0.2f)
+            else -> (current * (1f - alpha)) + (measuredAverageItemSizePx * alpha)
         }.coerceAtLeast(1f)
     }
 
@@ -155,29 +156,32 @@ fun VerticalLazyScrollbar(
     ) {
         val trackHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
         val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
-        val visibleCount = visibleItems.size.coerceAtLeast(1)
         val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
         val firstVisibleSizePx = (visibleItems.firstOrNull()?.size ?: 0)
             .toFloat()
             .coerceAtLeast(averageItemSizePx)
 
-        val maxScrollItems = (totalItems - visibleCount).coerceAtLeast(0)
-        val maxScrollPxEstimate = averageItemSizePx * maxScrollItems
+        val viewportItemsEstimate = (trackHeightPx / averageItemSizePx)
+            .coerceIn(1f, totalItems.toFloat())
+
+        val maxScrollItemsEstimate = (totalItems.toFloat() - viewportItemsEstimate)
+            .coerceAtLeast(0f)
+        val maxScrollPxEstimate = averageItemSizePx * maxScrollItemsEstimate
 
         val currentScrollItemsEstimate = listState.firstVisibleItemIndex.toFloat() +
             (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
 
         val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-        val thumbHeightPx = (trackHeightPx * (visibleCount.toFloat() / totalItems.toFloat()))
+        val thumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
             .coerceAtLeast(minThumbHeightPx)
             .coerceAtMost(trackHeightPx)
         val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
 
         val scrollFraction = when {
-            maxScrollItems <= 0 -> 0f
+            maxScrollItemsEstimate <= 0f -> 0f
             !listState.canScrollBackward -> 0f
             !listState.canScrollForward -> 1f
-            else -> (currentScrollItemsEstimate / maxScrollItems.toFloat()).coerceIn(0f, 1f)
+            else -> (currentScrollItemsEstimate / maxScrollItemsEstimate).coerceIn(0f, 1f)
         }
         val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
         val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
