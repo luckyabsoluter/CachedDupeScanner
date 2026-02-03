@@ -221,6 +221,7 @@ private fun TrashEntryCard(
     onClick: () -> Unit
 ) {
     val showThumbnail = isMediaFile(entry.originalPath)
+    val fileName = File(entry.originalPath).name.ifBlank { "(unknown)" }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,10 +245,18 @@ private fun TrashEntryCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = formatPath(entry.originalPath, showFullPath = true),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
+                    text = fileName,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = formatPath(entry.originalPath, showFullPath = true),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
