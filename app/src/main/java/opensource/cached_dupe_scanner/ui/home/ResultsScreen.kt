@@ -67,7 +67,6 @@ import kotlinx.coroutines.flow.collect
 fun ResultsScreen(
     state: MutableState<ScanUiState>,
     onBackToDashboard: () -> Unit,
-    onClearResults: () -> Unit,
     settingsStore: AppSettingsStore,
     displayResult: ScanResult? = null,
     deletedPaths: Set<String> = emptySet(),
@@ -195,13 +194,6 @@ fun ResultsScreen(
                                 expanded = menuExpanded.value,
                                 onDismissRequest = { menuExpanded.value = false }
                             ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Clear all results") },
-                                    onClick = {
-                                        menuExpanded.value = false
-                                        onClearResults()
-                                    }
-                                )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text("Show full paths") },
                                     leadingIcon = {
