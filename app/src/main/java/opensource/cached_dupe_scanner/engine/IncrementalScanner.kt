@@ -54,7 +54,6 @@ class IncrementalScanner(
             .groupingBy { it.sizeBytes }
             .eachCount()
         val cachedSizeCounts = cacheStore.countBySizes(sizeCounts.keys)
-        val overlapCounts = cacheStore.countOverlapSizes(uniqueScanned.map { it.normalizedPath }.toSet())
 
         uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
@@ -81,8 +80,9 @@ class IncrementalScanner(
         val candidates = uniqueScanned.filter {
             val size = it.sizeBytes
             if (size <= 0L) return@filter false
-            val total = (sizeCounts[size] ?: 0) + (cachedSizeCounts[size] ?: 0) - (overlapCounts[size] ?: 0)
-            total > 1
+            if ((sizeCounts[size] ?: 0) > 0) return@filter true
+            if ((cachedSizeCounts[size] ?: 0) > 0) return@filter true
+            false
         }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
         val lookupByPath = candidates.associateBy({ it.normalizedPath }) { cacheStore.lookup(it) }
