@@ -164,6 +164,56 @@ class ScanHistoryRepositoryTest {
     }
 
     @Test
+    fun deleteMissingAllRemovesMissingEntries() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val existingFile = File.createTempFile("cached", ".txt")
+        val missingFile = File.createTempFile("cached", ".missing")
+        try {
+            existingFile.writeText("hello")
+            missingFile.writeText("goodbye")
+            missingFile.delete()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        existingFile.absolutePath,
+                        existingFile.absolutePath,
+                        existingFile.length(),
+                        existingFile.lastModified(),
+                        "h1"
+                    ),
+                    FileMetadata(
+                        missingFile.absolutePath,
+                        missingFile.absolutePath,
+                        1,
+                        1,
+                        "h2"
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+
+            val deleted = repo.deleteMissingAll()
+
+            assertEquals(1, deleted)
+            val merged = repo.loadMergedHistory()
+            assertNotNull(merged)
+            assertEquals(1, merged?.files?.size)
+            assertEquals(existingFile.absolutePath, merged?.files?.first()?.normalizedPath)
+        } finally {
+            existingFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
     fun rehashIfChangedUpdatesHashAndMetadata() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
@@ -195,6 +245,51 @@ class ScanHistoryRepositoryTest {
             val updatedHash = Hashing.sha256Hex(file)
 
             val updated = repo.rehashIfChanged(listOf(file.absolutePath))
+
+            assertEquals(1, updated)
+            val entity = database.fileCacheDao().getByNormalizedPath(file.absolutePath)
+            assertNotNull(entity)
+            assertEquals(file.length(), entity?.sizeBytes)
+            assertEquals(file.lastModified(), entity?.lastModifiedMillis)
+            assertEquals(updatedHash, entity?.hashHex)
+        } finally {
+            file.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun rehashIfChangedAllUpdatesHashAndMetadata() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val file = File.createTempFile("cached", ".data")
+        try {
+            file.writeText("alpha")
+            val initialHash = Hashing.sha256Hex(file)
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        file.absolutePath,
+                        file.absolutePath,
+                        file.length(),
+                        file.lastModified(),
+                        initialHash
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+
+            file.writeText("alpha beta")
+            val updatedHash = Hashing.sha256Hex(file)
+
+            val updated = repo.rehashIfChangedAll()
 
             assertEquals(1, updated)
             val entity = database.fileCacheDao().getByNormalizedPath(file.absolutePath)

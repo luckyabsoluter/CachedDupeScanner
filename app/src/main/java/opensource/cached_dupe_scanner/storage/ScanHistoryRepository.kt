@@ -54,10 +54,47 @@ class ScanHistoryRepository(
         return deleted
     }
 
+    fun deleteMissingAll(): Int {
+        val entries = dao.getAll()
+        var deleted = 0
+        entries.forEach { entity ->
+            val path = entity.path.ifBlank { entity.normalizedPath }
+            val file = File(path)
+            if (!file.exists()) {
+                dao.deleteByNormalizedPath(entity.normalizedPath)
+                deleted += 1
+            }
+        }
+        return deleted
+    }
+
     fun rehashIfChanged(normalizedPaths: List<String>): Int {
         var updated = 0
         normalizedPaths.forEach { normalizedPath ->
             val entity = dao.getByNormalizedPath(normalizedPath) ?: return@forEach
+            val path = entity.path.ifBlank { entity.normalizedPath }
+            val file = File(path)
+            if (!file.exists()) return@forEach
+            val size = file.length()
+            val modified = file.lastModified()
+            if (size != entity.sizeBytes || modified != entity.lastModifiedMillis) {
+                val hash = Hashing.sha256Hex(file)
+                val updatedEntity = entity.copy(
+                    sizeBytes = size,
+                    lastModifiedMillis = modified,
+                    hashHex = hash
+                )
+                dao.upsert(updatedEntity)
+                updated += 1
+            }
+        }
+        return updated
+    }
+
+    fun rehashIfChangedAll(): Int {
+        val entries = dao.getAll()
+        var updated = 0
+        entries.forEach { entity ->
             val path = entity.path.ifBlank { entity.normalizedPath }
             val file = File(path)
             if (!file.exists()) return@forEach
