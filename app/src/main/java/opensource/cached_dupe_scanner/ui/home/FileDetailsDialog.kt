@@ -8,6 +8,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -20,6 +22,7 @@ fun FileDetailsDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val confirmDelete = remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("File details") },
@@ -40,7 +43,7 @@ fun FileDetailsDialog(
         },
         dismissButton = {
             Row {
-                OutlinedButton(onClick = onDelete) {
+                OutlinedButton(onClick = { confirmDelete.value = true }) {
                     Text("Delete")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -50,4 +53,27 @@ fun FileDetailsDialog(
             }
         }
     )
+
+    if (confirmDelete.value) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete.value = false },
+            title = { Text("Delete file?") },
+            text = {
+                Text("This will permanently delete the file.")
+            },
+            confirmButton = {
+                OutlinedButton(onClick = {
+                    confirmDelete.value = false
+                    onDelete()
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { confirmDelete.value = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
