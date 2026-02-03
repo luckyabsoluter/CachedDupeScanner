@@ -402,28 +402,28 @@ fun ResultsScreen(
                             selected = pendingSortKey.value == ResultSortKey.Count,
                             onClick = { pendingSortKey.value = ResultSortKey.Count }
                         )
-                        Text("Count")
+                        Text(ResultSortKey.Count.label)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
                             selected = pendingSortKey.value == ResultSortKey.TotalSize,
                             onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
                         )
-                        Text("Total size")
+                        Text(ResultSortKey.TotalSize.label)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
                             selected = pendingSortKey.value == ResultSortKey.PerFileSize,
                             onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
                         )
-                        Text("Per-file size")
+                        Text(ResultSortKey.PerFileSize.label)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
                             selected = pendingSortKey.value == ResultSortKey.Name,
                             onClick = { pendingSortKey.value = ResultSortKey.Name }
                         )
-                        Text("Name")
+                        Text(ResultSortKey.Name.label)
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
