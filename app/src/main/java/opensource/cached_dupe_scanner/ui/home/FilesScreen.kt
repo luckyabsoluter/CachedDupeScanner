@@ -275,10 +275,9 @@ fun FilesScreen(
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
-            onDeleteConfirmed = {
-                val toDelete = file.normalizedPath
-                val deleted = java.io.File(toDelete).delete()
+            onDeleteResult = { deleted ->
                 if (deleted) {
+                    val toDelete = file.normalizedPath
                     selectedFile.value = null
                     filesState.value = (filesState.value ?: emptyList())
                         .filterNot { it.normalizedPath == toDelete }
