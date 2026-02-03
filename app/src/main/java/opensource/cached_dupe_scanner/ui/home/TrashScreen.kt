@@ -277,12 +277,18 @@ private fun TrashEntryDetailsDialog(
     onDeleteForeverRequest: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val fileName = File(entry.originalPath).name.ifBlank { "(unknown)" }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Trash item") },
         text = {
             Column {
-                Text("Original: ${entry.originalPath}")
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("Path: ${entry.originalPath}")
                 Spacer(modifier = Modifier.height(6.dp))
                 Text("Trashed: ${entry.trashedPath}")
                 Spacer(modifier = Modifier.height(6.dp))
