@@ -1,8 +1,10 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -20,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +32,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,6 +48,7 @@ import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
+import java.io.File
 
 @Composable
 fun TrashScreen(
@@ -51,7 +62,14 @@ fun TrashScreen(
     val entries = remember { mutableStateOf<List<TrashEntryEntity>>(emptyList()) }
     val menuOpen = remember { mutableStateOf(false) }
     val confirmEmpty = remember { mutableStateOf(false) }
+    val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val confirmDeleteEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
+    val context = LocalContext.current
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
 
     fun refresh() {
         scope.launch {
@@ -102,17 +120,8 @@ fun TrashScreen(
                 items(entries.value, key = { it.id }) { entry ->
                     TrashEntryCard(
                         entry = entry,
-                        onRestore = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    trashController.restoreFromTrash(entry)
-                                }
-                                refresh()
-                            }
-                        },
-                        onDeleteForever = {
-                            confirmDeleteEntry.value = entry
-                        }
+                        imageLoader = imageLoader,
+                        onClick = { selectedEntry.value = entry }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -154,6 +163,30 @@ fun TrashScreen(
         )
     }
 
+    selectedEntry.value?.let { entry ->
+        TrashEntryDetailsDialog(
+            entry = entry,
+            onOpen = {
+                openFile(context, entry.trashedPath)
+                selectedEntry.value = null
+            },
+            onRestore = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        trashController.restoreFromTrash(entry)
+                    }
+                    selectedEntry.value = null
+                    refresh()
+                }
+            },
+            onDeleteForeverRequest = {
+                selectedEntry.value = null
+                confirmDeleteEntry.value = entry
+            },
+            onDismiss = { selectedEntry.value = null }
+        )
+    }
+
     confirmDeleteEntry.value?.let { entry ->
         AlertDialog(
             onDismissRequest = { confirmDeleteEntry.value = null },
@@ -184,20 +217,81 @@ fun TrashScreen(
 @Composable
 private fun TrashEntryCard(
     entry: TrashEntryEntity,
-    onRestore: () -> Unit,
-    onDeleteForever: () -> Unit
+    imageLoader: ImageLoader,
+    onClick: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = formatPath(entry.originalPath, showFullPath = true))
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = "Deleted: ${formatDate(entry.deletedAtMillis)}")
-            Spacer(modifier = Modifier.height(8.dp))
-            androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = onRestore) { Text("Restore") }
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(onClick = onDeleteForever) { Text("Delete") }
+    val showThumbnail = isMediaFile(entry.originalPath)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors()
+    ) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (showThumbnail) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(File(entry.trashedPath))
+                        .build(),
+                    imageLoader = imageLoader,
+                    contentDescription = "Thumbnail",
+                    modifier = Modifier
+                        .width(56.dp)
+                        .height(56.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = formatPath(entry.originalPath, showFullPath = true),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "${formatBytesWithExact(entry.sizeBytes)} · Deleted ${formatDate(entry.deletedAtMillis)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
+}
+
+@Composable
+private fun TrashEntryDetailsDialog(
+    entry: TrashEntryEntity,
+    onOpen: () -> Unit,
+    onRestore: () -> Unit,
+    onDeleteForeverRequest: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Trash item") },
+        text = {
+            Column {
+                Text("Original: ${entry.originalPath}")
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("Deleted: ${formatDate(entry.deletedAtMillis)}")
+                Text("Size: ${formatBytesWithExact(entry.sizeBytes)}")
+            }
+        },
+        confirmButton = {
+            Row {
+                OutlinedButton(onClick = onOpen) { Text("Open") }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = onRestore) { Text("Restore") }
+            }
+        },
+        dismissButton = {
+            Row {
+                OutlinedButton(onClick = onDeleteForeverRequest) { Text("Delete") }
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    )
 }
