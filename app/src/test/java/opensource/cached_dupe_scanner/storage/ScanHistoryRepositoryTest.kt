@@ -327,4 +327,42 @@ class ScanHistoryRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun rehashMissingHashesAllUpdatesNullHashes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val file = File.createTempFile("cached", ".data")
+        try {
+            file.writeText("alpha")
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        file.absolutePath,
+                        file.absolutePath,
+                        file.length(),
+                        file.lastModified(),
+                        null
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+
+            val updated = repo.rehashMissingHashesAll()
+
+            assertEquals(1, updated)
+            val entity = database.fileCacheDao().getByNormalizedPath(file.absolutePath)
+            assertNotNull(entity)
+            assertEquals(Hashing.sha256Hex(file), entity?.hashHex)
+        } finally {
+            file.delete()
+            database.close()
+        }
+    }
 }

@@ -37,6 +37,7 @@ fun DbManagementScreen(
     val scope = rememberCoroutineScope()
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
+    val rehashMissing = remember { mutableStateOf(false) }
     val isRunning = remember { mutableStateOf(false) }
     val statusMessage = remember { mutableStateOf<String?>(null) }
     val dbCount = remember { mutableStateOf<Int?>(null) }
@@ -87,6 +88,14 @@ fun DbManagementScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Rehash entries with stale size/date")
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = rehashMissing.value,
+                    onCheckedChange = { rehashMissing.value = it }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Compute hash for missing entries")
+            }
         }
 
         statusMessage.value?.let { message ->
@@ -97,7 +106,7 @@ fun DbManagementScreen(
             )
         }
 
-        val canRun = (deleteMissing.value || rehashStale.value) && !isRunning.value
+        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
         Button(
             onClick = {
                 scope.launch {
@@ -112,7 +121,12 @@ fun DbManagementScreen(
                     } else {
                         0
                     }
-                    statusMessage.value = "Maintenance complete. Deleted ${deleted}, rehashed ${rehashed}."
+                    val missingHashed = if (rehashMissing.value) {
+                        withContext(Dispatchers.IO) { historyRepo.rehashMissingHashesAll() }
+                    } else {
+                        0
+                    }
+                    statusMessage.value = "Maintenance complete. Deleted ${deleted}, rehashed ${rehashed}, missing hashes ${missingHashed}."
                     isRunning.value = false
                     refreshCount()
                 }
