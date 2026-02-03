@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -131,43 +133,59 @@ fun VerticalLazyScrollbar(
         derivedStateOf { listState.layoutInfo }
     }
     val visibleItems = layoutInfo.visibleItemsInfo
-    val viewportHeightPx = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
-        .toFloat()
-        .coerceAtLeast(1f)
-    val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
-
-    val averageItemSizePx = if (visibleItems.isNotEmpty()) {
+    val smoothedAverageItemSizePx = remember { mutableFloatStateOf(0f) }
+    val measuredAverageItemSizePx = if (visibleItems.isNotEmpty()) {
         visibleItems.map { it.size }.average().toFloat().coerceAtLeast(1f)
     } else {
-        viewportHeightPx
+        0f
     }
-    val totalContentHeightPx = averageItemSizePx * totalItems
-    val maxScrollPx = (totalContentHeightPx - viewportHeightPx).coerceAtLeast(0f)
-    val currentScrollPx = (listState.firstVisibleItemIndex * averageItemSizePx) +
-        listState.firstVisibleItemScrollOffset
-    val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-    val thumbHeightPx = if (totalContentHeightPx <= 0f) {
-        viewportHeightPx
-    } else {
-        (viewportHeightPx * viewportHeightPx / totalContentHeightPx)
-            .coerceAtLeast(minThumbHeightPx)
-            .coerceAtMost(viewportHeightPx)
+    SideEffect {
+        val current = smoothedAverageItemSizePx.floatValue
+        smoothedAverageItemSizePx.floatValue = when {
+            measuredAverageItemSizePx <= 0f -> current
+            current <= 0f -> measuredAverageItemSizePx
+            else -> (current * 0.8f) + (measuredAverageItemSizePx * 0.2f)
+        }.coerceAtLeast(1f)
     }
-    val scrollFraction = if (maxScrollPx <= 0f) 0f else (currentScrollPx / maxScrollPx)
-    val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
-    val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
-    val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
 
     BoxWithConstraints(
         modifier = modifier
             .width(thumbWidth)
             .fillMaxHeight()
     ) {
+        val trackHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
+        val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
+        val estimatedTotalContentHeightPx = (averageItemSizePx * totalItems)
+            .coerceAtLeast(trackHeightPx)
+        val maxScrollPx = (estimatedTotalContentHeightPx - trackHeightPx).coerceAtLeast(0f)
+
+        val firstVisible = visibleItems.firstOrNull()
+        val firstIndex = firstVisible?.index ?: listState.firstVisibleItemIndex
+        val firstOffsetPx = firstVisible?.offset?.let { (-it).coerceAtLeast(0).toFloat() }
+            ?: listState.firstVisibleItemScrollOffset.toFloat()
+        val currentScrollPxEstimate = (firstIndex * averageItemSizePx) + firstOffsetPx
+
+        val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
+        val thumbHeightPx = (trackHeightPx * trackHeightPx / estimatedTotalContentHeightPx)
+            .coerceAtLeast(minThumbHeightPx)
+            .coerceAtMost(trackHeightPx)
+        val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
+
+        val scrollFraction = when {
+            maxScrollPx <= 0f -> 0f
+            !listState.canScrollBackward -> 0f
+            !listState.canScrollForward -> 1f
+            else -> (currentScrollPxEstimate / maxScrollPx).coerceIn(0f, 1f)
+        }
+        val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
+        val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+
         Canvas(
             modifier = Modifier
                 .fillMaxHeight()
                 .fillMaxWidth()
-                .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
+                .pointerInput(maxScrollPx, trackHeightPx, thumbHeightPx) {
                     detectDragGestures(
                         onDragStart = {
                             isDragging.value = true
