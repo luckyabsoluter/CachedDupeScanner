@@ -20,6 +20,8 @@ class ScanNotificationController(context: Context) {
     private val notificationManager = NotificationManagerCompat.from(appContext)
 
     fun showStarted(targetPath: String?) {
+        notificationPermissionGranted = canPostNotifications()
+        channelEnsured = false
         showProgress(
             phase = ScanPhase.Collecting,
             scanned = 0,
@@ -36,24 +38,27 @@ class ScanNotificationController(context: Context) {
         targetPath: String?,
         currentPath: String?
     ) {
-        if (!canPostNotifications()) return
-        ensureChannel()
         val now = SystemClock.elapsedRealtime()
+        val timeSinceLast = now - lastProgressUpdateAt
+        if (timeSinceLast < PROGRESS_UPDATE_THROTTLE_MS) {
+            pendingProgress = PendingProgress(phase, scanned, total, targetPath, currentPath)
+            return
+        }
+        if (!notificationPermissionGranted) return
+        if (!channelEnsured) {
+            ensureChannel()
+            channelEnsured = true
+        }
         val minBatch = resolveMinBatch(total)
         val last = lastProgressSnapshot
         if (last != null) {
             val samePhase = last.phase == phase
             val sameTarget = last.targetPath == targetPath
             val delta = scanned - last.scanned
-            val withinThrottle = now - lastProgressUpdateAt < PROGRESS_UPDATE_THROTTLE_MS
-            if (samePhase && sameTarget && delta in 0 until minBatch && withinThrottle) {
+            if (samePhase && sameTarget && delta in 0 until minBatch) {
                 pendingProgress = PendingProgress(phase, scanned, total, targetPath, currentPath)
                 return
             }
-        }
-        if (now - lastProgressUpdateAt < PROGRESS_UPDATE_THROTTLE_MS) {
-            pendingProgress = PendingProgress(phase, scanned, total, targetPath, currentPath)
-            return
         }
         lastProgressUpdateAt = now
         val pending = pendingProgress
@@ -83,8 +88,11 @@ class ScanNotificationController(context: Context) {
     }
 
     fun showCompleted(result: ScanResult) {
-        if (!canPostNotifications()) return
-        ensureChannel()
+        if (!notificationPermissionGranted) return
+        if (!channelEnsured) {
+            ensureChannel()
+            channelEnsured = true
+        }
         pendingProgress = null
         lastProgressSnapshot = null
         val builder = baseBuilder()
@@ -98,8 +106,11 @@ class ScanNotificationController(context: Context) {
     }
 
     fun showCancelled() {
-        if (!canPostNotifications()) return
-        ensureChannel()
+        if (!notificationPermissionGranted) return
+        if (!channelEnsured) {
+            ensureChannel()
+            channelEnsured = true
+        }
         pendingProgress = null
         lastProgressSnapshot = null
         val builder = baseBuilder()
@@ -168,6 +179,8 @@ class ScanNotificationController(context: Context) {
     private var lastProgressUpdateAt: Long = 0L
     private var pendingProgress: PendingProgress? = null
     private var lastProgressSnapshot: PendingProgress? = null
+    @Volatile private var notificationPermissionGranted: Boolean = true
+    @Volatile private var channelEnsured: Boolean = false
 
     private fun resolveMinBatch(total: Int?): Int {
         if (total == null || total <= 0) {
