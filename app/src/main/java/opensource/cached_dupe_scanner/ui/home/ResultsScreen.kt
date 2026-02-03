@@ -556,10 +556,11 @@ private fun GroupDetailContent(
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
-            onDeleteConfirmed = {
-                File(file.normalizedPath).delete()
-                onFileDeleted(file)
-                selectedFile.value = null
+            onDeleteResult = { deleted ->
+                if (deleted) {
+                    onFileDeleted(file)
+                    selectedFile.value = null
+                }
             },
             onDismiss = { selectedFile.value = null }
         )

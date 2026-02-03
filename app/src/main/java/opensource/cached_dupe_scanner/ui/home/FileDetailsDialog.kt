@@ -59,7 +59,7 @@ fun FileDetailsDialogWithDeleteConfirm(
     file: FileMetadata,
     showName: Boolean,
     onOpen: () -> Unit,
-    onDeleteConfirmed: () -> Unit,
+    onDeleteResult: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val confirmDelete = remember { mutableStateOf(false) }
@@ -79,7 +79,8 @@ fun FileDetailsDialogWithDeleteConfirm(
             confirmButton = {
                 OutlinedButton(onClick = {
                     confirmDelete.value = false
-                    onDeleteConfirmed()
+                    val deleted = java.io.File(file.normalizedPath).delete()
+                    onDeleteResult(deleted)
                 }) {
                     Text("Delete")
                 }
