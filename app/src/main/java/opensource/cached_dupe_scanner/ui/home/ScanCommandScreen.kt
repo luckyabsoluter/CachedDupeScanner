@@ -1,8 +1,10 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -43,7 +46,9 @@ import opensource.cached_dupe_scanner.storage.ScanReportDurations
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.storage.ScanReportTotals
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 import java.util.UUID
@@ -96,116 +101,127 @@ fun ScanCommandScreen(
         targets.value = store.loadTargets()
     }
 
-    Column(
-        modifier = modifier
-            .padding(Spacing.screenPadding)
-            .verticalScroll(scrollState)
-    ) {
-        AppTopBar(title = "Scan command", onBack = onBack)
-        Spacer(modifier = Modifier.height(8.dp))
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .padding(Spacing.screenPadding)
+                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                .verticalScroll(scrollState)
+        ) {
+            AppTopBar(title = "Scan command", onBack = onBack)
+            Spacer(modifier = Modifier.height(8.dp))
 
-        if (targets.value.isEmpty()) {
-            Text("No scan targets yet. Add one first.")
-            return@Column
-        }
-
-        Text("Select a target:")
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            targets.value.forEach { target ->
-                TargetScanRow(
-                    target = target,
-                    onScan = {
-                        val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
-                        runScanForTarget(
-                            scanScope,
-                            scanner,
-                            state,
-                            target,
-                            onScanComplete,
-                            onScanCancelled,
-                            reportRepo,
-                            skipZeroSizeInDb,
-                            onReportSaved,
-                            notificationController,
-                            currentJob,
-                            cancelRequested,
-                            progressTarget,
-                            progressCurrent,
-                            progressSize,
-                            progressPhase
-                        )
-                    }
-                )
+            if (targets.value.isEmpty()) {
+                Text("No scan targets yet. Add one first.")
+                return@Column
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Button(onClick = {
-            val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
-            runScanForAllTargets(
-                scanScope,
-                scanner,
-                state,
-                targets.value,
-                onScanComplete,
-                onScanCancelled,
-                reportRepo,
-                skipZeroSizeInDb,
-                onReportSaved,
-                notificationController,
-                currentJob,
-                cancelRequested,
-                progressTarget,
-                progressCurrent,
-                progressSize,
-                progressPhase
-            )
-        }, modifier = Modifier.fillMaxWidth()) {
-            Text("Scan all targets")
-        }
+            Text("Select a target:")
+            Spacer(modifier = Modifier.height(6.dp))
 
-        if (state.value is ScanUiState.Scanning) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                targets.value.forEach { target ->
+                    TargetScanRow(
+                        target = target,
+                        onScan = {
+                            val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
+                            runScanForTarget(
+                                scanScope,
+                                scanner,
+                                state,
+                                target,
+                                onScanComplete,
+                                onScanCancelled,
+                                reportRepo,
+                                skipZeroSizeInDb,
+                                onReportSaved,
+                                notificationController,
+                                currentJob,
+                                cancelRequested,
+                                progressTarget,
+                                progressCurrent,
+                                progressSize,
+                                progressPhase
+                            )
+                        }
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Progress", style = MaterialTheme.typography.titleSmall)
-                    val targetText = progressTarget.value ?: "-"
-                    val currentText = progressCurrent.value ?: "-"
-                    val phaseText = when (progressPhase.value) {
-                        ScanPhase.Collecting -> "Collecting files"
-                        ScanPhase.Detecting -> "Detecting hash candidates"
-                        ScanPhase.Hashing -> "Hashing"
-                        ScanPhase.Saving -> "Saving cache"
-                    }
-                    Text("Target: $targetText")
-                    Text("Phase: $phaseText")
-                    val progress = state.value as ScanUiState.Scanning
-                    val totalText = progress.total?.toString() ?: "?"
-                    Text("Scanned: ${progress.scanned} / $totalText")
-                    progressSize.value?.let { size ->
-                        Text("Size: ${size} bytes")
-                    }
-                    Text("Current: $currentText")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            cancelRequested.value = true
-                            currentJob.value?.cancel()
-                            progressTarget.value = null
-                            progressCurrent.value = null
-                            progressSize.value = null
-                            notificationController.showCancelled()
-                            onScanCancelled()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Stop scan")
+            Button(onClick = {
+                val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
+                runScanForAllTargets(
+                    scanScope,
+                    scanner,
+                    state,
+                    targets.value,
+                    onScanComplete,
+                    onScanCancelled,
+                    reportRepo,
+                    skipZeroSizeInDb,
+                    onReportSaved,
+                    notificationController,
+                    currentJob,
+                    cancelRequested,
+                    progressTarget,
+                    progressCurrent,
+                    progressSize,
+                    progressPhase
+                )
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Scan all targets")
+            }
+
+            if (state.value is ScanUiState.Scanning) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Progress", style = MaterialTheme.typography.titleSmall)
+                        val targetText = progressTarget.value ?: "-"
+                        val currentText = progressCurrent.value ?: "-"
+                        val phaseText = when (progressPhase.value) {
+                            ScanPhase.Collecting -> "Collecting files"
+                            ScanPhase.Detecting -> "Detecting hash candidates"
+                            ScanPhase.Hashing -> "Hashing"
+                            ScanPhase.Saving -> "Saving cache"
+                        }
+                        Text("Target: $targetText")
+                        Text("Phase: $phaseText")
+                        val progress = state.value as ScanUiState.Scanning
+                        val totalText = progress.total?.toString() ?: "?"
+                        Text("Scanned: ${progress.scanned} / $totalText")
+                        progressSize.value?.let { size ->
+                            Text("Size: ${size} bytes")
+                        }
+                        Text("Current: $currentText")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                cancelRequested.value = true
+                                currentJob.value?.cancel()
+                                progressTarget.value = null
+                                progressCurrent.value = null
+                                progressSize.value = null
+                                notificationController.showCancelled()
+                                onScanCancelled()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Stop scan")
+                        }
                     }
                 }
             }
         }
+
+        VerticalScrollbar(
+            scrollState = scrollState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 4.dp)
+        )
     }
 }
 
