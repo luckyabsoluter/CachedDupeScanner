@@ -49,8 +49,9 @@ class IncrementalScanner(
         val totalDetect = uniqueScanned.size
         var detectCount = 0
         val pending = mutableListOf<FileMetadata>()
+        val includeZeroSize = !skipZeroSizeInDb
         val sizeCounts = uniqueScanned
-            .filter { it.sizeBytes > 0L }
+            .filter { includeZeroSize || it.sizeBytes > 0L }
             .groupingBy { it.sizeBytes }
             .eachCount()
         val cachedSizeCounts = cacheStore.countBySizes(sizeCounts.keys)
@@ -79,7 +80,7 @@ class IncrementalScanner(
 
         val candidates = uniqueScanned.filter {
             val size = it.sizeBytes
-            if (size <= 0L) return@filter false
+            if (size == 0L && !includeZeroSize) return@filter false
             if ((sizeCounts[size] ?: 0) > 0) return@filter true
             if ((cachedSizeCounts[size] ?: 0) > 0) return@filter true
             false
