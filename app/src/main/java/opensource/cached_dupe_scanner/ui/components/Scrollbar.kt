@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
@@ -185,18 +186,10 @@ fun VerticalLazyScrollbar(
                         } else {
                             (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
                         }
-                        val currentScrollPx = (listState.firstVisibleItemIndex * averageItemSizePx) +
-                            listState.firstVisibleItemScrollOffset
-                        val newScrollPx = (currentScrollPx + deltaScrollPx)
-                            .coerceIn(0f, maxScrollPx)
-                        val targetIndex = (newScrollPx / averageItemSizePx)
-                            .roundToInt()
-                            .coerceIn(0, totalItems - 1)
-                        val targetOffset = (newScrollPx - (targetIndex * averageItemSizePx))
-                            .roundToInt()
-                            .coerceAtLeast(0)
                         scope.launch {
-                            listState.scrollToItem(targetIndex, targetOffset)
+                            listState.scroll {
+                                scrollBy(deltaScrollPx)
+                            }
                         }
                     }
                 }
