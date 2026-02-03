@@ -10,6 +10,7 @@ import opensource.cached_dupe_scanner.core.PathNormalizer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -143,6 +144,37 @@ class IncrementalScannerTest {
         scanner.scan(tempDir)
 
         assertEquals(1, hasher.callsFor(file))
+    }
+
+    @Test
+    fun scanResultsAddHashesAfterSecondScanWithCollision() {
+        val fileA = File(tempDir, "a.txt").apply {
+            writeText("aa")
+        }
+        val scanner = IncrementalScanner(store, Sha256FileHasher(), FileWalker())
+
+        val first = scanner.scan(tempDir)
+
+        val firstA = first.files.find {
+            it.normalizedPath == PathNormalizer.normalize(fileA.path)
+        }
+        assertNotNull(firstA)
+        assertNull(firstA?.hashHex)
+
+        val fileB = File(tempDir, "b.txt").apply {
+            writeText("bb")
+        }
+
+        val second = scanner.scan(tempDir)
+
+        val secondA = second.files.find {
+            it.normalizedPath == PathNormalizer.normalize(fileA.path)
+        }
+        val secondB = second.files.find {
+            it.normalizedPath == PathNormalizer.normalize(fileB.path)
+        }
+        assertNotNull(secondA?.hashHex)
+        assertNotNull(secondB?.hashHex)
     }
 
     @Test
