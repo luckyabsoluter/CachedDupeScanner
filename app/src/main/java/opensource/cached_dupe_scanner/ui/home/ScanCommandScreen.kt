@@ -34,6 +34,7 @@ import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.engine.ScanPhase
+import opensource.cached_dupe_scanner.notifications.ScanNotificationController
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -65,6 +66,7 @@ fun ScanCommandScreen(
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
     val currentJob = remember { mutableStateOf<Job?>(null) }
+    val notificationController = remember { ScanNotificationController(context) }
     val cancelRequested = remember { mutableStateOf(false) }
     val progressTarget = remember { mutableStateOf<String?>(null) }
     val progressCurrent = remember { mutableStateOf<String?>(null) }
@@ -126,6 +128,7 @@ fun ScanCommandScreen(
                             reportRepo,
                             skipZeroSizeInDb,
                             onReportSaved,
+                            notificationController,
                             currentJob,
                             cancelRequested,
                             progressTarget,
@@ -151,6 +154,7 @@ fun ScanCommandScreen(
                 reportRepo,
                 skipZeroSizeInDb,
                 onReportSaved,
+                notificationController,
                 currentJob,
                 cancelRequested,
                 progressTarget,
@@ -192,6 +196,7 @@ fun ScanCommandScreen(
                             progressTarget.value = null
                             progressCurrent.value = null
                             progressSize.value = null
+                            notificationController.showCancelled()
                             onScanCancelled()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -227,6 +232,7 @@ private fun runScanForTarget(
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     onReportSaved: () -> Unit,
+    notificationController: ScanNotificationController,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
@@ -237,6 +243,7 @@ private fun runScanForTarget(
     var job: Job? = null
     job = scope.launch {
         cancelRequested.value = false
+        notificationController.showStarted(target.path)
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val startedAt = System.currentTimeMillis()
         var collectingStart = startedAt
@@ -289,6 +296,13 @@ private fun runScanForTarget(
                             if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                         }
                     }
+                    notificationController.showProgress(
+                        phase = phase,
+                        scanned = scanned,
+                        total = total,
+                        targetPath = target.path,
+                        currentPath = current.normalizedPath
+                    )
                 },
                 shouldContinue = { job?.isActive == true }
             )
@@ -324,9 +338,11 @@ private fun runScanForTarget(
             progressTarget.value = null
             progressCurrent.value = null
             progressSize.value = null
+            notificationController.showCancelled()
             onScanCancelled()
             return@launch
         }
+        notificationController.showCompleted(result)
         onScanComplete(result)
     }
     currentJob.value = job
@@ -342,6 +358,7 @@ private fun runScanForAllTargets(
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     onReportSaved: () -> Unit,
+    notificationController: ScanNotificationController,
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>,
     progressTarget: MutableState<String?>,
@@ -351,12 +368,14 @@ private fun runScanForAllTargets(
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
+        notificationController.clear()
         return
     }
 
     var job: Job? = null
     job = scope.launch {
         cancelRequested.value = false
+        notificationController.showStarted(null)
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val startedAt = System.currentTimeMillis()
         var collectingStart = startedAt
@@ -410,6 +429,13 @@ private fun runScanForAllTargets(
                                 if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                             }
                         }
+                        notificationController.showProgress(
+                            phase = phase,
+                            scanned = scanned,
+                            total = total,
+                            targetPath = target.path,
+                            currentPath = current.normalizedPath
+                        )
                     },
                     shouldContinue = { job?.isActive == true }
                 )
@@ -418,6 +444,7 @@ private fun runScanForAllTargets(
                 progressTarget.value = null
                 progressCurrent.value = null
                 progressSize.value = null
+                notificationController.showCancelled()
                 val finishedAt = System.currentTimeMillis()
                 val report = ScanReport(
                     id = UUID.randomUUID().toString(),
@@ -484,6 +511,7 @@ private fun runScanForAllTargets(
             reportRepo.add(report)
         }
         onReportSaved()
+        notificationController.showCompleted(merged)
         onScanComplete(merged)
     }
     currentJob.value = job
