@@ -118,6 +118,22 @@ class ScanHistoryRepository(
         return updated
     }
 
+    fun rehashMissingHashesAll(): Int {
+        val entries = dao.getAll()
+        var updated = 0
+        entries.forEach { entity ->
+            if (!entity.hashHex.isNullOrBlank()) return@forEach
+            val path = entity.path.ifBlank { entity.normalizedPath }
+            val file = File(path)
+            if (!file.exists()) return@forEach
+            val hash = Hashing.sha256Hex(file)
+            val updatedEntity = entity.copy(hashHex = hash)
+            dao.upsert(updatedEntity)
+            updated += 1
+        }
+        return updated
+    }
+
     fun clearAll() {
         dao.clear()
     }
