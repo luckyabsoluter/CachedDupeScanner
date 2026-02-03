@@ -53,7 +53,7 @@ fun VerticalScrollbar(
             .width(thumbWidth)
             .fillMaxHeight()
     ) {
-        val viewportHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val viewportHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
         val maxScrollPx = scrollState.maxValue.toFloat().coerceAtLeast(0f)
         val contentHeightPx = viewportHeightPx + maxScrollPx
         val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
@@ -153,7 +153,7 @@ fun VerticalLazyScrollbar(
             .width(thumbWidth)
             .fillMaxHeight()
     ) {
-        val trackHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+        val trackHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
         val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
         val visibleCount = visibleItems.size.coerceAtLeast(1)
         val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
