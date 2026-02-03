@@ -42,8 +42,8 @@ fun DbManagementScreen(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    val filesState = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
-    val isLoading = remember { mutableStateOf(true) }
+    val filesState = remember { mutableStateOf<List<FileMetadata>?>(null) }
+    val isLoading = remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf(setOf<String>()) }
     val isDeleting = remember { mutableStateOf(false) }
     val isRehashing = remember { mutableStateOf(false) }
@@ -59,10 +59,6 @@ fun DbManagementScreen(
             }.toSet()
             isLoading.value = false
         }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshFiles()
     }
 
     fun toggleSelection(path: String) {
@@ -88,14 +84,23 @@ fun DbManagementScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Selected ${selected.value.size}/${filesState.value.size}",
+                text = "Selected ${selected.value.size}/${filesState.value?.size ?: 0}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { selected.value = filesState.value.map { it.normalizedPath }.toSet() },
-                    enabled = filesState.value.isNotEmpty() && !isLoading.value
+                    onClick = refreshFiles,
+                    enabled = !isLoading.value && !isDeleting.value && !isRehashing.value
+                ) {
+                    Text(if (isLoading.value) "Scanning..." else "Scan DB")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val files = filesState.value ?: emptyList()
+                        selected.value = files.map { it.normalizedPath }.toSet()
+                    },
+                    enabled = (filesState.value?.isNotEmpty() == true) && !isLoading.value
                 ) {
                     Text("Select all")
                 }
@@ -133,7 +138,7 @@ fun DbManagementScreen(
                         refreshFiles()
                     }
                 },
-                enabled = selected.value.isNotEmpty() && !isDeleting.value && !isRehashing.value
+                enabled = selected.value.isNotEmpty() && !isDeleting.value && !isRehashing.value && !isLoading.value
             ) {
                 Text(if (isDeleting.value) "Deleting..." else "Delete missing")
             }
@@ -150,22 +155,29 @@ fun DbManagementScreen(
                         refreshFiles()
                     }
                 },
-                enabled = selected.value.isNotEmpty() && !isDeleting.value && !isRehashing.value
+                enabled = selected.value.isNotEmpty() && !isDeleting.value && !isRehashing.value && !isLoading.value
             ) {
                 Text(if (isRehashing.value) "Rehashing..." else "Rehash changed")
             }
         }
 
-        if (isLoading.value) {
-            Text("Loading cached entries...")
-        } else if (filesState.value.isEmpty()) {
-            Text("No cached files found.")
-        } else {
+        when {
+            filesState.value == null -> {
+                Text("Scan the DB to load cached entries.")
+            }
+            isLoading.value -> {
+                Text("Loading cached entries...")
+            }
+            filesState.value?.isEmpty() == true -> {
+                Text("No cached files found.")
+            }
+            else -> {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filesState.value, key = { it.normalizedPath }) { file ->
+                val files = filesState.value ?: emptyList()
+                items(files, key = { it.normalizedPath }) { file ->
                     val isSelected = selected.value.contains(file.normalizedPath)
                     Card(
                         modifier = Modifier
@@ -208,6 +220,7 @@ fun DbManagementScreen(
                         }
                     }
                 }
+            }
             }
         }
     }
