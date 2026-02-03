@@ -119,12 +119,54 @@ fun DbManagementScreen(
             }
         }
 
-        OutlinedButton(
-            onClick = { clearDialogOpen.value = true },
-            enabled = !isRunning.value && !isClearing.value,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Clear all cached results")
+        Text(
+            text = "Actions",
+            style = MaterialTheme.typography.titleSmall
+        )
+
+        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        isRunning.value = true
+                        progressTotal.value = 0
+                        progressProcessed.value = 0
+                        progressDeleted.value = 0
+                        progressRehashed.value = 0
+                        progressMissingHashed.value = 0
+                        progressCurrentPath.value = null
+                        val summary = withContext(Dispatchers.IO) {
+                            historyRepo.runMaintenance(
+                                deleteMissing = deleteMissing.value,
+                                rehashStale = rehashStale.value,
+                                rehashMissing = rehashMissing.value
+                            ) { progress ->
+                                progressTotal.value = progress.total
+                                progressProcessed.value = progress.processed
+                                progressDeleted.value = progress.deleted
+                                progressRehashed.value = progress.rehashed
+                                progressMissingHashed.value = progress.missingHashed
+                                progressCurrentPath.value = progress.currentPath
+                            }
+                        }
+                        statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
+                        isRunning.value = false
+                        refreshCount()
+                    }
+                },
+                enabled = canRun,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isRunning.value) "Running..." else "Run maintenance")
+            }
+            OutlinedButton(
+                onClick = { clearDialogOpen.value = true },
+                enabled = !isRunning.value && !isClearing.value,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Clear all cached results")
+            }
         }
 
         statusMessage.value?.let { message ->
@@ -159,42 +201,6 @@ fun DbManagementScreen(
                     maxLines = 1
                 )
             }
-        }
-
-        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
-        Button(
-            onClick = {
-                scope.launch {
-                    isRunning.value = true
-                    progressTotal.value = 0
-                    progressProcessed.value = 0
-                    progressDeleted.value = 0
-                    progressRehashed.value = 0
-                    progressMissingHashed.value = 0
-                    progressCurrentPath.value = null
-                    val summary = withContext(Dispatchers.IO) {
-                        historyRepo.runMaintenance(
-                            deleteMissing = deleteMissing.value,
-                            rehashStale = rehashStale.value,
-                            rehashMissing = rehashMissing.value
-                        ) { progress ->
-                            progressTotal.value = progress.total
-                            progressProcessed.value = progress.processed
-                            progressDeleted.value = progress.deleted
-                            progressRehashed.value = progress.rehashed
-                            progressMissingHashed.value = progress.missingHashed
-                            progressCurrentPath.value = progress.currentPath
-                        }
-                    }
-                    statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
-                    isRunning.value = false
-                    refreshCount()
-                }
-            },
-            enabled = canRun,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isRunning.value) "Running..." else "Run maintenance")
         }
     }
 
