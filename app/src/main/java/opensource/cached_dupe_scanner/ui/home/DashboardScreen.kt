@@ -25,6 +25,7 @@ fun DashboardScreen(
     onOpenScanCommand: () -> Unit,
     onOpenResults: () -> Unit,
     onOpenFiles: () -> Unit,
+    onOpenDbManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
     modifier: Modifier = Modifier
@@ -71,6 +72,13 @@ fun DashboardScreen(
             description = "Browse cached files with sort and actions.",
             actionLabel = "Open files",
             onAction = onOpenFiles
+        )
+
+        DashboardCard(
+            title = "DB management",
+            description = "Validate cached entries and rehash when needed.",
+            actionLabel = "Open DB manager",
+            onAction = onOpenDbManagement
         )
 
         DashboardCard(

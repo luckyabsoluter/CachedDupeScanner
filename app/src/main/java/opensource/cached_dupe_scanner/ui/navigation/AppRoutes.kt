@@ -7,6 +7,7 @@ object AppRoutes {
     const val ScanCommand = "scan"
     const val Results = "results"
     const val ResultsDetail = "results/detail/{index}"
+    const val DbManagement = "db-management"
     const val Settings = "settings"
     const val Reports = "reports"
     const val ReportDetail = "reports/detail/{id}"

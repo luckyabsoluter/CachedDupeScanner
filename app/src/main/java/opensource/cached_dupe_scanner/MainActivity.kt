@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
+import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
 import opensource.cached_dupe_scanner.ui.home.FilesScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
@@ -189,6 +190,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenScanCommand = { navigateTo(backStack, screenCache, Screen.ScanCommand) },
                                 onOpenResults = { navigateTo(backStack, screenCache, Screen.Results) },
                                 onOpenFiles = { navigateTo(backStack, screenCache, Screen.Files) },
+                                onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
                                 modifier = screenModifier
@@ -206,6 +208,11 @@ class MainActivity : ComponentActivity() {
                                 historyRepo = historyRepo,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.DbManagement -> DbManagementScreen(
+                                historyRepo = historyRepo,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -339,6 +346,7 @@ private sealed class Screen {
     data object Permission : Screen()
     data object Targets : Screen()
     data object Files : Screen()
+    data object DbManagement : Screen()
     data object ScanCommand : Screen()
     data object Results : Screen()
     data class ResultsDetail(val index: Int) : Screen()
