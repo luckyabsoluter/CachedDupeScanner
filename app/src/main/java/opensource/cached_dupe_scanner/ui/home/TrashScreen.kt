@@ -275,8 +275,11 @@ private fun TrashEntryDetailsDialog(
             Column {
                 Text("Original: ${entry.originalPath}")
                 Spacer(modifier = Modifier.height(6.dp))
+                Text("Trashed: ${entry.trashedPath}")
+                Spacer(modifier = Modifier.height(6.dp))
                 Text("Deleted: ${formatDate(entry.deletedAtMillis)}")
                 Text("Size: ${formatBytesWithExact(entry.sizeBytes)}")
+                Text("Modified: ${formatDate(entry.lastModifiedMillis)}")
             }
         },
         confirmButton = {
