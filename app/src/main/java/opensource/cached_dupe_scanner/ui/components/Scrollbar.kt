@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.ScrollState
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlin.math.max
 
 object ScrollbarDefaults {
     val ThumbWidth: Dp = 16.dp
@@ -136,7 +137,14 @@ fun VerticalLazyScrollbar(
     val visibleItems = layoutInfo.visibleItemsInfo
     val smoothedAverageItemSizePx = remember { mutableFloatStateOf(0f) }
     val measuredAverageItemSizePx = if (visibleItems.isNotEmpty()) {
-        visibleItems.map { it.size }.average().toFloat().coerceAtLeast(1f)
+        val sizes = visibleItems.map { it.size }.sorted()
+        val mid = sizes.size / 2
+        val median = if (sizes.size % 2 == 1) {
+            sizes[mid].toFloat()
+        } else {
+            ((sizes[max(0, mid - 1)] + sizes[mid]) / 2f)
+        }
+        median.coerceAtLeast(1f)
     } else {
         0f
     }
@@ -149,6 +157,8 @@ fun VerticalLazyScrollbar(
             else -> (current * (1f - alpha)) + (measuredAverageItemSizePx * alpha)
         }.coerceAtLeast(1f)
     }
+
+    val smoothedThumbHeightPxState = remember { mutableFloatStateOf(0f) }
 
     val trackHeightPx = trackHeightPxState.floatValue.coerceAtLeast(1f)
     val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
@@ -167,9 +177,21 @@ fun VerticalLazyScrollbar(
         (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
 
     val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-    val thumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
+    val targetThumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
         .coerceAtLeast(minThumbHeightPx)
         .coerceAtMost(trackHeightPx)
+    SideEffect {
+        val current = smoothedThumbHeightPxState.floatValue
+        val alpha = if (isDragging.value || listState.isScrollInProgress) 0.06f else 0.12f
+        smoothedThumbHeightPxState.floatValue = when {
+            targetThumbHeightPx <= 0f -> current
+            current <= 0f -> targetThumbHeightPx
+            else -> (current * (1f - alpha)) + (targetThumbHeightPx * alpha)
+        }.coerceIn(minThumbHeightPx, trackHeightPx)
+    }
+
+    val thumbHeightPx = smoothedThumbHeightPxState.floatValue
+        .coerceIn(minThumbHeightPx, trackHeightPx)
     val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
 
     val scrollFraction = when {
