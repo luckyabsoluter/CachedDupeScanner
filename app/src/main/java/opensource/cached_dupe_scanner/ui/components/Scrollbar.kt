@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -27,8 +28,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 object ScrollbarDefaults {
-    val ThumbWidth: Dp = 18.dp
-    val MinThumbHeight: Dp = 56.dp
+    val ThumbWidth: Dp = 24.dp
+    val MinThumbHeight: Dp = 64.dp
+    val ThumbBorderWidth: Dp = 1.dp
 }
 
 @Composable
@@ -37,8 +39,10 @@ fun VerticalScrollbar(
     modifier: Modifier = Modifier,
     thumbWidth: Dp = ScrollbarDefaults.ThumbWidth,
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
-    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-    trackColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbBorderColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    thumbBorderWidth: Dp = ScrollbarDefaults.ThumbBorderWidth
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -62,6 +66,7 @@ fun VerticalScrollbar(
         val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
         val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
         val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+        val thumbBorderPx = with(density) { thumbBorderWidth.toPx() }
 
         Canvas(
             modifier = Modifier
@@ -95,6 +100,15 @@ fun VerticalScrollbar(
                 size = Size(size.width, thumbHeightPx),
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
             )
+            if (thumbBorderPx > 0f) {
+                drawRoundRect(
+                    color = thumbBorderColor,
+                    topLeft = Offset(0f, thumbOffsetPx),
+                    size = Size(size.width, thumbHeightPx),
+                    cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx),
+                    style = Stroke(width = thumbBorderPx)
+                )
+            }
         }
     }
 }
@@ -105,8 +119,10 @@ fun VerticalLazyScrollbar(
     modifier: Modifier = Modifier,
     thumbWidth: Dp = ScrollbarDefaults.ThumbWidth,
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
-    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-    trackColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbBorderColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+    thumbBorderWidth: Dp = ScrollbarDefaults.ThumbBorderWidth
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -138,6 +154,7 @@ fun VerticalLazyScrollbar(
     val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
     val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
     val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+    val thumbBorderPx = with(density) { thumbBorderWidth.toPx() }
 
     BoxWithConstraints(
         modifier = modifier
@@ -182,6 +199,15 @@ fun VerticalLazyScrollbar(
                 size = Size(size.width, thumbHeightPx),
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
             )
+            if (thumbBorderPx > 0f) {
+                drawRoundRect(
+                    color = thumbBorderColor,
+                    topLeft = Offset(0f, thumbOffsetPx),
+                    size = Size(size.width, thumbHeightPx),
+                    cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx),
+                    style = Stroke(width = thumbBorderPx)
+                )
+            }
         }
     }
 }
