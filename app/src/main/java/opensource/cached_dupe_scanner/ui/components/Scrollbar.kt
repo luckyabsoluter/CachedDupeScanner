@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -46,6 +47,7 @@ fun VerticalScrollbar(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
     BoxWithConstraints(
         modifier = modifier
             .width(thumbWidth)
@@ -72,10 +74,15 @@ fun VerticalScrollbar(
             modifier = Modifier
                 .fillMaxHeight()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
-                    detectDragGestures { change, dragAmount ->
+                    detectDragGestures(
+                        onDragStart = { start ->
+                            dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
+                                .coerceIn(0f, thumbHeightPx)
+                        }
+                    ) { change, _ ->
                         change.consume()
                         if (maxScrollPx <= 0f) return@detectDragGestures
-                        val newThumbOffset = (thumbOffsetPx + dragAmount.y)
+                        val newThumbOffset = (change.position.y - dragOffsetInThumb.floatValue)
                             .coerceIn(0f, maxThumbOffsetPx)
                         val newScroll = if (maxThumbOffsetPx <= 0f) {
                             0f
@@ -126,6 +133,7 @@ fun VerticalLazyScrollbar(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
     }
@@ -165,10 +173,15 @@ fun VerticalLazyScrollbar(
             modifier = Modifier
                 .fillMaxHeight()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
-                    detectDragGestures { change, dragAmount ->
+                    detectDragGestures(
+                        onDragStart = { start ->
+                            dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
+                                .coerceIn(0f, thumbHeightPx)
+                        }
+                    ) { change, _ ->
                         change.consume()
                         if (maxScrollPx <= 0f) return@detectDragGestures
-                        val newThumbOffset = (thumbOffsetPx + dragAmount.y)
+                        val newThumbOffset = (change.position.y - dragOffsetInThumb.floatValue)
                             .coerceIn(0f, maxThumbOffsetPx)
                         val newScrollPx = if (maxThumbOffsetPx <= 0f) {
                             0f
