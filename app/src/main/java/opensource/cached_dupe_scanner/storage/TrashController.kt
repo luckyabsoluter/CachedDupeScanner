@@ -33,10 +33,8 @@ class TrashController(
             ?: return MoveResult(false, message = "Unable to resolve storage root")
 
         val rootDir = File(root.rootPath)
-        val trashDir = File(rootDir, ".CachedDupeScanner/trashbin")
-        if (!trashDir.exists() && !trashDir.mkdirs()) {
-            return MoveResult(false, message = "Failed to create trash directory")
-        }
+        val trashDir = TrashPaths.ensureTrashLayout(rootDir)
+            .getOrElse { return MoveResult(false, message = it.message ?: "Failed to initialize trash layout") }
 
         val id = UUID.randomUUID().toString()
         val deletedAt = System.currentTimeMillis()
