@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -45,7 +44,6 @@ fun VerticalScrollbar(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
     val isDragging = remember { mutableStateOf(false) }
     BoxWithConstraints(
         modifier = modifier
@@ -74,9 +72,7 @@ fun VerticalScrollbar(
                 .fillMaxWidth()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
                     detectDragGestures(
-                        onDragStart = { start ->
-                            dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
-                                .coerceIn(0f, thumbHeightPx)
+                        onDragStart = {
                             isDragging.value = true
                         },
                         onDragEnd = {
@@ -85,16 +81,16 @@ fun VerticalScrollbar(
                         onDragCancel = {
                             isDragging.value = false
                         }
-                    ) { change, _ ->
+                    ) { change, dragAmount ->
                         change.consume()
                         if (maxScrollPx <= 0f) return@detectDragGestures
-                        val newThumbOffset = (change.position.y - dragOffsetInThumb.floatValue)
-                            .coerceIn(0f, maxThumbOffsetPx)
-                        val newScroll = if (maxThumbOffsetPx <= 0f) {
+                        val deltaScroll = if (maxThumbOffsetPx <= 0f) {
                             0f
                         } else {
-                            (newThumbOffset / maxThumbOffsetPx) * maxScrollPx
+                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
                         }
+                        val newScroll = (scrollState.value + deltaScroll)
+                            .coerceIn(0f, maxScrollPx)
                         scope.launch {
                             scrollState.scrollTo(newScroll.roundToInt())
                         }
@@ -129,7 +125,6 @@ fun VerticalLazyScrollbar(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
     val isDragging = remember { mutableStateOf(false) }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
@@ -173,9 +168,7 @@ fun VerticalLazyScrollbar(
                 .fillMaxWidth()
                 .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
                     detectDragGestures(
-                        onDragStart = { start ->
-                            dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
-                                .coerceIn(0f, thumbHeightPx)
+                        onDragStart = {
                             isDragging.value = true
                         },
                         onDragEnd = {
@@ -184,16 +177,16 @@ fun VerticalLazyScrollbar(
                         onDragCancel = {
                             isDragging.value = false
                         }
-                    ) { change, _ ->
+                    ) { change, dragAmount ->
                         change.consume()
                         if (maxScrollPx <= 0f) return@detectDragGestures
-                        val newThumbOffset = (change.position.y - dragOffsetInThumb.floatValue)
-                            .coerceIn(0f, maxThumbOffsetPx)
-                        val newScrollPx = if (maxThumbOffsetPx <= 0f) {
+                        val deltaScrollPx = if (maxThumbOffsetPx <= 0f) {
                             0f
                         } else {
-                            (newThumbOffset / maxThumbOffsetPx) * maxScrollPx
+                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
                         }
+                        val newScrollPx = (currentScrollPx + deltaScrollPx)
+                            .coerceIn(0f, maxScrollPx)
                         val targetIndex = (newScrollPx / averageItemSizePx)
                             .roundToInt()
                             .coerceIn(0, totalItems - 1)
