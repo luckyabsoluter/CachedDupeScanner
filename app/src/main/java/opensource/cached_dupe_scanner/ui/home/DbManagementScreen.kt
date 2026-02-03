@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +42,12 @@ fun DbManagementScreen(
     val isRunning = remember { mutableStateOf(false) }
     val statusMessage = remember { mutableStateOf<String?>(null) }
     val dbCount = remember { mutableStateOf<Int?>(null) }
+    val progressTotal = remember { mutableStateOf(0) }
+    val progressProcessed = remember { mutableStateOf(0) }
+    val progressDeleted = remember { mutableStateOf(0) }
+    val progressRehashed = remember { mutableStateOf(0) }
+    val progressMissingHashed = remember { mutableStateOf(0) }
+    val progressCurrentPath = remember { mutableStateOf<String?>(null) }
 
     val refreshCount: () -> Unit = {
         scope.launch {
@@ -106,27 +113,58 @@ fun DbManagementScreen(
             )
         }
 
+        if (isRunning.value) {
+            val total = progressTotal.value
+            val processed = progressProcessed.value
+            val progress = if (total > 0) processed.toFloat() / total.toFloat() else 0f
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Progress: ${processed}/${total}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Deleted: ${progressDeleted.value} · Rehashed: ${progressRehashed.value} · Missing hash: ${progressMissingHashed.value}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            progressCurrentPath.value?.let { path ->
+                Text(
+                    text = "Current: $path",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
+
         val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
         Button(
             onClick = {
                 scope.launch {
                     isRunning.value = true
-                    val deleted = if (deleteMissing.value) {
-                        withContext(Dispatchers.IO) { historyRepo.deleteMissingAll() }
-                    } else {
-                        0
+                    progressTotal.value = 0
+                    progressProcessed.value = 0
+                    progressDeleted.value = 0
+                    progressRehashed.value = 0
+                    progressMissingHashed.value = 0
+                    progressCurrentPath.value = null
+                    val summary = withContext(Dispatchers.IO) {
+                        historyRepo.runMaintenance(
+                            deleteMissing = deleteMissing.value,
+                            rehashStale = rehashStale.value,
+                            rehashMissing = rehashMissing.value
+                        ) { progress ->
+                            progressTotal.value = progress.total
+                            progressProcessed.value = progress.processed
+                            progressDeleted.value = progress.deleted
+                            progressRehashed.value = progress.rehashed
+                            progressMissingHashed.value = progress.missingHashed
+                            progressCurrentPath.value = progress.currentPath
+                        }
                     }
-                    val rehashed = if (rehashStale.value) {
-                        withContext(Dispatchers.IO) { historyRepo.rehashIfChangedAll() }
-                    } else {
-                        0
-                    }
-                    val missingHashed = if (rehashMissing.value) {
-                        withContext(Dispatchers.IO) { historyRepo.rehashMissingHashesAll() }
-                    } else {
-                        0
-                    }
-                    statusMessage.value = "Maintenance complete. Deleted ${deleted}, rehashed ${rehashed}, missing hashes ${missingHashed}."
+                    statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
                     isRunning.value = false
                     refreshCount()
                 }
