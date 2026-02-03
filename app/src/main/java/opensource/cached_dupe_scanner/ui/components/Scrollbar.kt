@@ -11,8 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -42,12 +43,14 @@ fun VerticalScrollbar(
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
     thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
     trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbPressedColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 1f),
     thumbBorderColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
     thumbBorderWidth: Dp = ScrollbarDefaults.ThumbBorderWidth
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
+    val isDragging = remember { mutableStateOf(false) }
     BoxWithConstraints(
         modifier = modifier
             .width(thumbWidth)
@@ -78,6 +81,13 @@ fun VerticalScrollbar(
                         onDragStart = { start ->
                             dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
                                 .coerceIn(0f, thumbHeightPx)
+                            isDragging.value = true
+                        },
+                        onDragEnd = {
+                            isDragging.value = false
+                        },
+                        onDragCancel = {
+                            isDragging.value = false
                         }
                     ) { change, _ ->
                         change.consume()
@@ -102,7 +112,7 @@ fun VerticalScrollbar(
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
             )
             drawRoundRect(
-                color = thumbColor,
+                color = if (isDragging.value) thumbPressedColor else thumbColor,
                 topLeft = Offset(0f, thumbOffsetPx),
                 size = Size(size.width, thumbHeightPx),
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
@@ -128,12 +138,14 @@ fun VerticalLazyScrollbar(
     minThumbHeight: Dp = ScrollbarDefaults.MinThumbHeight,
     thumbColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
     trackColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+    thumbPressedColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 1f),
     thumbBorderColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
     thumbBorderWidth: Dp = ScrollbarDefaults.ThumbBorderWidth
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val dragOffsetInThumb = remember { mutableFloatStateOf(0f) }
+    val isDragging = remember { mutableStateOf(false) }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
     }
@@ -177,6 +189,13 @@ fun VerticalLazyScrollbar(
                         onDragStart = { start ->
                             dragOffsetInThumb.floatValue = (start.y - thumbOffsetPx)
                                 .coerceIn(0f, thumbHeightPx)
+                            isDragging.value = true
+                        },
+                        onDragEnd = {
+                            isDragging.value = false
+                        },
+                        onDragCancel = {
+                            isDragging.value = false
                         }
                     ) { change, _ ->
                         change.consume()
@@ -207,7 +226,7 @@ fun VerticalLazyScrollbar(
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
             )
             drawRoundRect(
-                color = thumbColor,
+                color = if (isDragging.value) thumbPressedColor else thumbColor,
                 topLeft = Offset(0f, thumbOffsetPx),
                 size = Size(size.width, thumbHeightPx),
                 cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
