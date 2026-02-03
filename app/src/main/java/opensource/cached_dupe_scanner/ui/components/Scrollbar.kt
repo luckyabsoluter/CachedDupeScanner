@@ -16,6 +16,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -131,12 +133,13 @@ fun VerticalLazyScrollbar(
     val density = LocalDensity.current
     val isDragging = remember { mutableStateOf(false) }
     val trackHeightPxState = remember { mutableFloatStateOf(1f) }
+    val itemSizePxByIndex: SnapshotStateMap<Int, Int> = remember { mutableStateMapOf() }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
     }
     val visibleItems = layoutInfo.visibleItemsInfo
-    val smoothedAverageItemSizePx = remember { mutableFloatStateOf(0f) }
-    val measuredAverageItemSizePx = if (visibleItems.isNotEmpty()) {
+    val smoothedTypicalItemSizePx = remember { mutableFloatStateOf(0f) }
+    val measuredTypicalItemSizePx = if (visibleItems.isNotEmpty()) {
         val sizes = visibleItems.map { it.size }.sorted()
         val mid = sizes.size / 2
         val median = if (sizes.size % 2 == 1) {
@@ -149,12 +152,28 @@ fun VerticalLazyScrollbar(
         0f
     }
     SideEffect {
-        val current = smoothedAverageItemSizePx.floatValue
+        for (info in visibleItems) {
+            if (info.size > 0) {
+                itemSizePxByIndex[info.index] = info.size
+            }
+        }
+        if (itemSizePxByIndex.size > 3000) {
+            val firstIndex = listState.firstVisibleItemIndex
+            val minKeep = (firstIndex - 1500).coerceAtLeast(0)
+            val maxKeep = firstIndex + 1500
+            val keysToRemove = itemSizePxByIndex.keys
+                .filter { it < minKeep || it > maxKeep }
+            for (key in keysToRemove) {
+                itemSizePxByIndex.remove(key)
+            }
+        }
+
+        val current = smoothedTypicalItemSizePx.floatValue
         val alpha = if (isDragging.value || listState.isScrollInProgress) 0.05f else 0.2f
-        smoothedAverageItemSizePx.floatValue = when {
-            measuredAverageItemSizePx <= 0f -> current
-            current <= 0f -> measuredAverageItemSizePx
-            else -> (current * (1f - alpha)) + (measuredAverageItemSizePx * alpha)
+        smoothedTypicalItemSizePx.floatValue = when {
+            measuredTypicalItemSizePx <= 0f -> current
+            current <= 0f -> measuredTypicalItemSizePx
+            else -> (current * (1f - alpha)) + (measuredTypicalItemSizePx * alpha)
         }.coerceAtLeast(1f)
     }
 
@@ -162,25 +181,37 @@ fun VerticalLazyScrollbar(
 
     val trackHeightPx = trackHeightPxState.floatValue.coerceAtLeast(1f)
     val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
-    val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
-    val firstVisibleSizePx = (visibleItems.firstOrNull()?.size ?: 0)
+    val typicalItemSizePx = smoothedTypicalItemSizePx.floatValue.coerceAtLeast(1f)
+
+    val knownSumPx = itemSizePxByIndex.values.sum().toFloat()
+    val knownCount = itemSizePxByIndex.size
+    val unknownCount = (totalItems - knownCount).coerceAtLeast(0)
+    val estimatedContentHeightPx = (knownSumPx + (unknownCount * typicalItemSizePx))
+        .coerceAtLeast(trackHeightPx)
+    val maxScrollPxEstimate = (estimatedContentHeightPx - trackHeightPx).coerceAtLeast(0f)
+
+    val firstIndex = listState.firstVisibleItemIndex
+    var knownBeforeSumPx = 0f
+    var knownBeforeCount = 0
+    for ((index, sizePx) in itemSizePxByIndex) {
+        if (index < firstIndex) {
+            knownBeforeSumPx += sizePx.toFloat()
+            knownBeforeCount += 1
+        }
+    }
+    val unknownBeforeCount = (firstIndex - knownBeforeCount).coerceAtLeast(0)
+    val estimatedBeforeSumPx = knownBeforeSumPx + (unknownBeforeCount * typicalItemSizePx)
+    val firstItemSizePx = (itemSizePxByIndex[firstIndex]?.toFloat() ?: typicalItemSizePx)
+        .coerceAtLeast(1f)
+    val inItemOffsetPx = listState.firstVisibleItemScrollOffset
         .toFloat()
-        .coerceAtLeast(averageItemSizePx)
-
-    val viewportItemsEstimate = (trackHeightPx / averageItemSizePx)
-        .coerceIn(1f, totalItems.toFloat())
-    val maxScrollItemsEstimate = (totalItems.toFloat() - viewportItemsEstimate)
-        .coerceAtLeast(0f)
-    val maxScrollPxEstimate = averageItemSizePx * maxScrollItemsEstimate
-
-    val currentScrollItemsEstimate = listState.firstVisibleItemIndex.toFloat() +
-        (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
+        .coerceIn(0f, firstItemSizePx)
+    val currentScrollPxEstimate = estimatedBeforeSumPx + inItemOffsetPx
 
     val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
     val effectiveMinThumbHeightPx = minThumbHeightPx.coerceAtMost(trackHeightPx)
-    val targetThumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
-        .coerceAtLeast(effectiveMinThumbHeightPx)
-        .coerceAtMost(trackHeightPx)
+    val targetThumbHeightPx = (trackHeightPx * (trackHeightPx / estimatedContentHeightPx))
+        .coerceIn(effectiveMinThumbHeightPx, trackHeightPx)
     SideEffect {
         val current = smoothedThumbHeightPxState.floatValue
         val alpha = if (isDragging.value || listState.isScrollInProgress) 0.06f else 0.12f
@@ -196,10 +227,10 @@ fun VerticalLazyScrollbar(
     val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
 
     val scrollFraction = when {
-        maxScrollItemsEstimate <= 0f -> 0f
+        maxScrollPxEstimate <= 0f -> 0f
         !listState.canScrollBackward -> 0f
         !listState.canScrollForward -> 1f
-        else -> (currentScrollItemsEstimate / maxScrollItemsEstimate).coerceIn(0f, 1f)
+        else -> (currentScrollPxEstimate / maxScrollPxEstimate).coerceIn(0f, 1f)
     }
     val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
     val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
