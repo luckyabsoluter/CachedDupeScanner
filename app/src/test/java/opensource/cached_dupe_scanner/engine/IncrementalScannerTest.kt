@@ -9,6 +9,7 @@ import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.PathNormalizer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -142,6 +143,34 @@ class IncrementalScannerTest {
         scanner.scan(tempDir)
 
         assertEquals(1, hasher.callsFor(file))
+    }
+
+    @Test
+    fun scanHashesCachedEntryMissingHashOnSizeCollision() {
+        val fileA = File(tempDir, "a.txt").apply {
+            writeText("aa")
+        }
+        val fileB = File(tempDir, "b.txt").apply {
+            writeText("bb")
+        }
+        val cached = FileMetadata(
+            path = fileA.path,
+            normalizedPath = PathNormalizer.normalize(fileA.path),
+            sizeBytes = fileA.length(),
+            lastModifiedMillis = fileA.lastModified(),
+            hashHex = null
+        )
+        store.upsert(cached)
+        val hasher = CountingHasher()
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        scanner.scan(tempDir)
+
+        assertEquals(1, hasher.callsFor(fileA))
+        assertEquals(1, hasher.callsFor(fileB))
+        val cachedAfter = database.fileCacheDao()
+            .getByNormalizedPath(PathNormalizer.normalize(fileA.path))
+        assertNotNull(cachedAfter?.hashHex)
     }
 
     @Test

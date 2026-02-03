@@ -55,6 +55,9 @@ class IncrementalScanner(
             .groupingBy { it.sizeBytes }
             .eachCount()
         val cachedSizeCounts = cacheStore.countBySizes(sizeCounts.keys)
+        val cachedOverlapCounts = cacheStore.countBySizesForPaths(
+            uniqueScanned.map { it.normalizedPath }.toSet()
+        )
 
         uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
@@ -81,15 +84,17 @@ class IncrementalScanner(
         val candidates = uniqueScanned.filter {
             val size = it.sizeBytes
             if (size == 0L && !includeZeroSize) return@filter false
-            if ((sizeCounts[size] ?: 0) > 0) return@filter true
-            if ((cachedSizeCounts[size] ?: 0) > 0) return@filter true
+            if ((sizeCounts[size] ?: 0) > 1) return@filter true
+            if ((cachedSizeCounts[size] ?: 0) > (cachedOverlapCounts[size] ?: 0)) return@filter true
             false
         }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
         val lookupByPath = candidates.associateBy({ it.normalizedPath }) { cacheStore.lookup(it) }
         val hashTargets = candidates.filter {
             val cached = lookupByPath[it.normalizedPath]
-            cached == null || cached.status != CacheStatus.FRESH
+            cached == null ||
+                cached.status != CacheStatus.FRESH ||
+                cached.cached?.hashHex == null
         }.toSet()
         val totalHash = hashTargets.size
         var hashCount = 0
@@ -104,9 +109,11 @@ class IncrementalScanner(
             }
             val finalMetadata = if (candidatePaths.contains(current.normalizedPath)) {
                 val cached = lookupByPath[current.normalizedPath]
-                val hashHex = when (cached?.status) {
-                    CacheStatus.FRESH -> cached.cached?.hashHex
-                    CacheStatus.STALE, CacheStatus.MISS, null -> {
+                val hashHex = when {
+                    cached?.status == CacheStatus.FRESH && cached.cached?.hashHex != null -> {
+                        cached.cached.hashHex
+                    }
+                    else -> {
                         hashCount += 1
                         val computed = fileHasher.hash(File(current.path))
                         onProgress(hashCount, totalHash, current, ScanPhase.Hashing)

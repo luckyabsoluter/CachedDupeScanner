@@ -44,6 +44,17 @@ class CacheStore(
         return result
     }
 
+    fun countBySizesForPaths(paths: Set<String>): Map<Long, Int> {
+        if (paths.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Long, Int>()
+        paths.toList().chunked(SQLITE_VARIABLE_LIMIT).forEach { chunk ->
+            dao.findSizesByPaths(chunk).forEach { entry ->
+                result[entry.sizeBytes] = (result[entry.sizeBytes] ?: 0) + 1
+            }
+        }
+        return result
+    }
+
     private companion object {
         const val SQLITE_VARIABLE_LIMIT = 900
     }
