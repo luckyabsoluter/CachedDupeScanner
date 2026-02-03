@@ -3,7 +3,9 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,7 +26,9 @@ import androidx.compose.ui.Alignment
 import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collect
@@ -131,7 +135,8 @@ fun ReportsScreen(
     Box(modifier = modifier) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(Spacing.screenPadding)
+            modifier = Modifier.padding(Spacing.screenPadding),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
         ) {
             item {
                 AppTopBar(
@@ -199,9 +204,17 @@ fun ReportsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(end = 12.dp, top = 12.dp)
+                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
             )
         }
+
+        VerticalLazyScrollbar(
+            listState = listState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 4.dp)
+        )
     }
 }
 
