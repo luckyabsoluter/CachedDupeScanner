@@ -3,8 +3,8 @@ package opensource.cached_dupe_scanner.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
@@ -22,11 +22,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.layout.fillMaxWidth
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -48,72 +48,71 @@ fun VerticalScrollbar(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val isDragging = remember { mutableStateOf(false) }
-    BoxWithConstraints(
+    val trackHeightPxState = remember { mutableFloatStateOf(1f) }
+
+    val viewportHeightPx = trackHeightPxState.floatValue.coerceAtLeast(1f)
+    val maxScrollPx = scrollState.maxValue.toFloat().coerceAtLeast(0f)
+    val contentHeightPx = viewportHeightPx + maxScrollPx
+    val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
+    val thumbHeightPx = if (contentHeightPx <= 0f) {
+        viewportHeightPx
+    } else {
+        (viewportHeightPx * viewportHeightPx / contentHeightPx)
+            .coerceAtLeast(minThumbHeightPx)
+            .coerceAtMost(viewportHeightPx)
+    }
+    val scrollFraction = if (maxScrollPx <= 0f) 0f else scrollState.value.toFloat() / maxScrollPx
+    val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
+    val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
+    val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+
+    Canvas(
         modifier = modifier
             .width(thumbWidth)
             .fillMaxHeight()
-    ) {
-        val boxHeight = maxHeight
-        val viewportHeightPx = with(density) { boxHeight.toPx() }.coerceAtLeast(1f)
-        val maxScrollPx = scrollState.maxValue.toFloat().coerceAtLeast(0f)
-        val contentHeightPx = viewportHeightPx + maxScrollPx
-        val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-        val thumbHeightPx = if (contentHeightPx <= 0f) {
-            viewportHeightPx
-        } else {
-            (viewportHeightPx * viewportHeightPx / contentHeightPx)
-                .coerceAtLeast(minThumbHeightPx)
-                .coerceAtMost(viewportHeightPx)
-        }
-        val scrollFraction = if (maxScrollPx <= 0f) 0f else scrollState.value.toFloat() / maxScrollPx
-        val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
-        val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
-        val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
-
-        Canvas(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth()
-                .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isDragging.value = true
-                        },
-                        onDragEnd = {
-                            isDragging.value = false
-                        },
-                        onDragCancel = {
-                            isDragging.value = false
-                        }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        if (maxScrollPx <= 0f) return@detectDragGestures
-                        val deltaScroll = if (maxThumbOffsetPx <= 0f) {
-                            0f
-                        } else {
-                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
-                        }
-                        val newScroll = (scrollState.value + deltaScroll)
-                            .coerceIn(0f, maxScrollPx)
-                        scope.launch {
-                            scrollState.scrollTo(newScroll.roundToInt())
-                        }
+            .fillMaxWidth()
+            .onSizeChanged { size ->
+                trackHeightPxState.floatValue = size.height.toFloat().coerceAtLeast(1f)
+            }
+            .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
+                detectDragGestures(
+                    onDragStart = {
+                        isDragging.value = true
+                    },
+                    onDragEnd = {
+                        isDragging.value = false
+                    },
+                    onDragCancel = {
+                        isDragging.value = false
+                    }
+                ) { change, dragAmount ->
+                    change.consume()
+                    if (maxScrollPx <= 0f) return@detectDragGestures
+                    val deltaScroll = if (maxThumbOffsetPx <= 0f) {
+                        0f
+                    } else {
+                        (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
+                    }
+                    val newScroll = (scrollState.value + deltaScroll)
+                        .coerceIn(0f, maxScrollPx)
+                    scope.launch {
+                        scrollState.scrollTo(newScroll.roundToInt())
                     }
                 }
-        ) {
-            drawRoundRect(
-                color = trackColor,
-                topLeft = Offset.Zero,
-                size = Size(size.width, size.height),
-                cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-            )
-            drawRoundRect(
-                color = if (isDragging.value) thumbPressedColor else thumbColor,
-                topLeft = Offset(0f, thumbOffsetPx),
-                size = Size(size.width, thumbHeightPx),
-                cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-            )
-        }
+            }
+    ) {
+        drawRoundRect(
+            color = trackColor,
+            topLeft = Offset.Zero,
+            size = Size(size.width, size.height),
+            cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+        )
+        drawRoundRect(
+            color = if (isDragging.value) thumbPressedColor else thumbColor,
+            topLeft = Offset(0f, thumbOffsetPx),
+            size = Size(size.width, thumbHeightPx),
+            cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+        )
     }
 }
 
@@ -130,6 +129,7 @@ fun VerticalLazyScrollbar(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val isDragging = remember { mutableStateOf(false) }
+    val trackHeightPxState = remember { mutableFloatStateOf(1f) }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
     }
@@ -150,87 +150,83 @@ fun VerticalLazyScrollbar(
         }.coerceAtLeast(1f)
     }
 
-    BoxWithConstraints(
+    val trackHeightPx = trackHeightPxState.floatValue.coerceAtLeast(1f)
+    val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
+    val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
+    val firstVisibleSizePx = (visibleItems.firstOrNull()?.size ?: 0)
+        .toFloat()
+        .coerceAtLeast(averageItemSizePx)
+
+    val viewportItemsEstimate = (trackHeightPx / averageItemSizePx)
+        .coerceIn(1f, totalItems.toFloat())
+    val maxScrollItemsEstimate = (totalItems.toFloat() - viewportItemsEstimate)
+        .coerceAtLeast(0f)
+    val maxScrollPxEstimate = averageItemSizePx * maxScrollItemsEstimate
+
+    val currentScrollItemsEstimate = listState.firstVisibleItemIndex.toFloat() +
+        (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
+
+    val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
+    val thumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
+        .coerceAtLeast(minThumbHeightPx)
+        .coerceAtMost(trackHeightPx)
+    val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
+
+    val scrollFraction = when {
+        maxScrollItemsEstimate <= 0f -> 0f
+        !listState.canScrollBackward -> 0f
+        !listState.canScrollForward -> 1f
+        else -> (currentScrollItemsEstimate / maxScrollItemsEstimate).coerceIn(0f, 1f)
+    }
+    val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
+    val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+
+    Canvas(
         modifier = modifier
             .width(thumbWidth)
             .fillMaxHeight()
-    ) {
-        val boxHeight = maxHeight
-        val trackHeightPx = with(density) { boxHeight.toPx() }.coerceAtLeast(1f)
-        val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
-        val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
-        val firstVisibleSizePx = (visibleItems.firstOrNull()?.size ?: 0)
-            .toFloat()
-            .coerceAtLeast(averageItemSizePx)
-
-        val viewportItemsEstimate = (trackHeightPx / averageItemSizePx)
-            .coerceIn(1f, totalItems.toFloat())
-
-        val maxScrollItemsEstimate = (totalItems.toFloat() - viewportItemsEstimate)
-            .coerceAtLeast(0f)
-        val maxScrollPxEstimate = averageItemSizePx * maxScrollItemsEstimate
-
-        val currentScrollItemsEstimate = listState.firstVisibleItemIndex.toFloat() +
-            (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
-
-        val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-        val thumbHeightPx = (trackHeightPx * (viewportItemsEstimate / totalItems.toFloat()))
-            .coerceAtLeast(minThumbHeightPx)
-            .coerceAtMost(trackHeightPx)
-        val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
-
-        val scrollFraction = when {
-            maxScrollItemsEstimate <= 0f -> 0f
-            !listState.canScrollBackward -> 0f
-            !listState.canScrollForward -> 1f
-            else -> (currentScrollItemsEstimate / maxScrollItemsEstimate).coerceIn(0f, 1f)
-        }
-        val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
-        val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
-
-        Canvas(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth()
-                .pointerInput(maxScrollPxEstimate, trackHeightPx, thumbHeightPx) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isDragging.value = true
-                        },
-                        onDragEnd = {
-                            isDragging.value = false
-                        },
-                        onDragCancel = {
-                            isDragging.value = false
-                        }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        if (maxScrollPxEstimate <= 0f) return@detectDragGestures
-                        val deltaScrollPx = if (maxThumbOffsetPx <= 0f) {
-                            0f
-                        } else {
-                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPxEstimate
-                        }
-                        scope.launch {
-                            listState.scroll {
-                                scrollBy(deltaScrollPx)
-                            }
+            .fillMaxWidth()
+            .onSizeChanged { size ->
+                trackHeightPxState.floatValue = size.height.toFloat().coerceAtLeast(1f)
+            }
+            .pointerInput(maxScrollPxEstimate, trackHeightPx, thumbHeightPx) {
+                detectDragGestures(
+                    onDragStart = {
+                        isDragging.value = true
+                    },
+                    onDragEnd = {
+                        isDragging.value = false
+                    },
+                    onDragCancel = {
+                        isDragging.value = false
+                    }
+                ) { change, dragAmount ->
+                    change.consume()
+                    if (maxScrollPxEstimate <= 0f) return@detectDragGestures
+                    val deltaScrollPx = if (maxThumbOffsetPx <= 0f) {
+                        0f
+                    } else {
+                        (dragAmount.y / maxThumbOffsetPx) * maxScrollPxEstimate
+                    }
+                    scope.launch {
+                        listState.scroll {
+                            scrollBy(deltaScrollPx)
                         }
                     }
                 }
-        ) {
-            drawRoundRect(
-                color = trackColor,
-                topLeft = Offset.Zero,
-                size = Size(size.width, size.height),
-                cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-            )
-            drawRoundRect(
-                color = if (isDragging.value) thumbPressedColor else thumbColor,
-                topLeft = Offset(0f, thumbOffsetPx),
-                size = Size(size.width, thumbHeightPx),
-                cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-            )
-        }
+            }
+    ) {
+        drawRoundRect(
+            color = trackColor,
+            topLeft = Offset.Zero,
+            size = Size(size.width, size.height),
+            cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+        )
+        drawRoundRect(
+            color = if (isDragging.value) thumbPressedColor else thumbColor,
+            topLeft = Offset(0f, thumbOffsetPx),
+            size = Size(size.width, thumbHeightPx),
+            cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+        )
     }
 }
