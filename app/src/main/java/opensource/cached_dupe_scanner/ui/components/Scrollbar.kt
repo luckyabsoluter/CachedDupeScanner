@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 object ScrollbarDefaults {
-    val ThumbWidth: Dp = 32.dp
+    val ThumbWidth: Dp = 16.dp
     val MinThumbHeight: Dp = 64.dp
 }
 
