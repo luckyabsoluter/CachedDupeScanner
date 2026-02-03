@@ -155,28 +155,29 @@ fun VerticalLazyScrollbar(
     ) {
         val trackHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
         val totalItems = layoutInfo.totalItemsCount.coerceAtLeast(1)
+        val visibleCount = visibleItems.size.coerceAtLeast(1)
         val averageItemSizePx = smoothedAverageItemSizePx.floatValue.coerceAtLeast(1f)
-        val estimatedTotalContentHeightPx = (averageItemSizePx * totalItems)
-            .coerceAtLeast(trackHeightPx)
-        val maxScrollPx = (estimatedTotalContentHeightPx - trackHeightPx).coerceAtLeast(0f)
+        val firstVisibleSizePx = (visibleItems.firstOrNull()?.size ?: 0)
+            .toFloat()
+            .coerceAtLeast(averageItemSizePx)
 
-        val firstVisible = visibleItems.firstOrNull()
-        val firstIndex = firstVisible?.index ?: listState.firstVisibleItemIndex
-        val firstOffsetPx = firstVisible?.offset?.let { (-it).coerceAtLeast(0).toFloat() }
-            ?: listState.firstVisibleItemScrollOffset.toFloat()
-        val currentScrollPxEstimate = (firstIndex * averageItemSizePx) + firstOffsetPx
+        val maxScrollItems = (totalItems - visibleCount).coerceAtLeast(0)
+        val maxScrollPxEstimate = averageItemSizePx * maxScrollItems
+
+        val currentScrollItemsEstimate = listState.firstVisibleItemIndex.toFloat() +
+            (listState.firstVisibleItemScrollOffset.toFloat() / firstVisibleSizePx)
 
         val minThumbHeightPx = with(density) { minThumbHeight.toPx() }
-        val thumbHeightPx = (trackHeightPx * trackHeightPx / estimatedTotalContentHeightPx)
+        val thumbHeightPx = (trackHeightPx * (visibleCount.toFloat() / totalItems.toFloat()))
             .coerceAtLeast(minThumbHeightPx)
             .coerceAtMost(trackHeightPx)
         val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
 
         val scrollFraction = when {
-            maxScrollPx <= 0f -> 0f
+            maxScrollItems <= 0 -> 0f
             !listState.canScrollBackward -> 0f
             !listState.canScrollForward -> 1f
-            else -> (currentScrollPxEstimate / maxScrollPx).coerceIn(0f, 1f)
+            else -> (currentScrollItemsEstimate / maxScrollItems.toFloat()).coerceIn(0f, 1f)
         }
         val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
         val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
@@ -185,7 +186,7 @@ fun VerticalLazyScrollbar(
             modifier = Modifier
                 .fillMaxHeight()
                 .fillMaxWidth()
-                .pointerInput(maxScrollPx, trackHeightPx, thumbHeightPx) {
+                .pointerInput(maxScrollPxEstimate, trackHeightPx, thumbHeightPx) {
                     detectDragGestures(
                         onDragStart = {
                             isDragging.value = true
@@ -198,11 +199,11 @@ fun VerticalLazyScrollbar(
                         }
                     ) { change, dragAmount ->
                         change.consume()
-                        if (maxScrollPx <= 0f) return@detectDragGestures
+                        if (maxScrollPxEstimate <= 0f) return@detectDragGestures
                         val deltaScrollPx = if (maxThumbOffsetPx <= 0f) {
                             0f
                         } else {
-                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
+                            (dragAmount.y / maxThumbOffsetPx) * maxScrollPxEstimate
                         }
                         scope.launch {
                             listState.scroll {
