@@ -302,4 +302,29 @@ class ScanHistoryRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun countAllReturnsEntryCount() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata("/a", "/a", 1, 1, "h1"),
+                    FileMetadata("/b", "/b", 2, 2, "h2")
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+
+            assertEquals(2, repo.countAll())
+        } finally {
+            database.close()
+        }
+    }
 }

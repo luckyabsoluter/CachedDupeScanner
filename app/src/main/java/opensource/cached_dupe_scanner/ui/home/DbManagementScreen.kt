@@ -14,6 +14,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +39,17 @@ fun DbManagementScreen(
     val rehashStale = remember { mutableStateOf(false) }
     val isRunning = remember { mutableStateOf(false) }
     val statusMessage = remember { mutableStateOf<String?>(null) }
+    val dbCount = remember { mutableStateOf<Int?>(null) }
+
+    val refreshCount: () -> Unit = {
+        scope.launch {
+            dbCount.value = withContext(Dispatchers.IO) { historyRepo.countAll() }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshCount()
+    }
 
     Column(
         modifier = modifier
@@ -49,6 +61,11 @@ fun DbManagementScreen(
 
         Text(
             text = "Choose policies, then run. The app scans storage based on DB entries.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "DB entries: ${dbCount.value ?: "-"}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -97,6 +114,7 @@ fun DbManagementScreen(
                     }
                     statusMessage.value = "Maintenance complete. Deleted ${deleted}, rehashed ${rehashed}."
                     isRunning.value = false
+                    refreshCount()
                 }
             },
             enabled = canRun,

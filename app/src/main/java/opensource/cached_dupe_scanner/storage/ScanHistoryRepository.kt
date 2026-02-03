@@ -40,6 +40,10 @@ class ScanHistoryRepository(
         return dao.getAll().map { it.toMetadata() }
     }
 
+    fun countAll(): Int {
+        return dao.getAll().size
+    }
+
     fun deleteMissingByNormalizedPaths(normalizedPaths: List<String>): Int {
         var deleted = 0
         normalizedPaths.forEach { normalizedPath ->
