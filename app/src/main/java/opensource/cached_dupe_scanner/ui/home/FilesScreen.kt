@@ -268,14 +268,14 @@ fun FilesScreen(
     }
 
     selectedFile.value?.let { file ->
-        FileDetailsDialog(
+        FileDetailsDialogWithDeleteConfirm(
             file = file,
             showName = true,
             onOpen = {
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
-            onDelete = {
+            onDeleteConfirmed = {
                 val toDelete = file.normalizedPath
                 val deleted = java.io.File(toDelete).delete()
                 if (deleted) {

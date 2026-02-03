@@ -549,14 +549,14 @@ private fun GroupDetailContent(
     }
 
     selectedFile.value?.let { file ->
-        FileDetailsDialog(
+        FileDetailsDialogWithDeleteConfirm(
             file = file,
             showName = false,
             onOpen = {
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
-            onDelete = {
+            onDeleteConfirmed = {
                 File(file.normalizedPath).delete()
                 onFileDeleted(file)
                 selectedFile.value = null
