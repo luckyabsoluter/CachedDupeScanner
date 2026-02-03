@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -81,125 +82,165 @@ fun DbManagementScreen(
     ) {
         AppTopBar(title = "DB management", onBack = onBack)
 
-        Text(
-            text = "Choose policies, then run. The app scans storage based on DB entries.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "DB entries: ${dbCount.value ?: "-"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = deleteMissing.value,
-                    onCheckedChange = { deleteMissing.value = it }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Overview",
+                    style = MaterialTheme.typography.titleSmall
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Delete DB entries missing on storage")
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = rehashStale.value,
-                    onCheckedChange = { rehashStale.value = it }
+                Text(
+                    text = "Choose policies, then run. The app scans storage based on DB entries.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Rehash entries with stale size/date")
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = rehashMissing.value,
-                    onCheckedChange = { rehashMissing.value = it }
+                Text(
+                    text = "DB entries: ${dbCount.value ?: "-"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Compute hash for missing entries")
             }
         }
 
-        Text(
-            text = "Actions",
-            style = MaterialTheme.typography.titleSmall
-        )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Policies",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = deleteMissing.value,
+                        onCheckedChange = { deleteMissing.value = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete DB entries missing on storage")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = rehashStale.value,
+                        onCheckedChange = { rehashStale.value = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Rehash entries with stale size/date")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = rehashMissing.value,
+                        onCheckedChange = { rehashMissing.value = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Compute hash for missing entries")
+                }
+            }
+        }
 
         val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = {
-                    scope.launch {
-                        isRunning.value = true
-                        progressTotal.value = 0
-                        progressProcessed.value = 0
-                        progressDeleted.value = 0
-                        progressRehashed.value = 0
-                        progressMissingHashed.value = 0
-                        progressCurrentPath.value = null
-                        val summary = withContext(Dispatchers.IO) {
-                            historyRepo.runMaintenance(
-                                deleteMissing = deleteMissing.value,
-                                rehashStale = rehashStale.value,
-                                rehashMissing = rehashMissing.value
-                            ) { progress ->
-                                progressTotal.value = progress.total
-                                progressProcessed.value = progress.processed
-                                progressDeleted.value = progress.deleted
-                                progressRehashed.value = progress.rehashed
-                                progressMissingHashed.value = progress.missingHashed
-                                progressCurrentPath.value = progress.currentPath
-                            }
-                        }
-                        statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
-                        isRunning.value = false
-                        refreshCount()
-                    }
-                },
-                enabled = canRun,
-                modifier = Modifier.fillMaxWidth()
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(if (isRunning.value) "Running..." else "Run maintenance")
-            }
-            OutlinedButton(
-                onClick = { clearDialogOpen.value = true },
-                enabled = !isRunning.value && !isClearing.value,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Clear all cached results")
-            }
-        }
-
-        statusMessage.value?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        if (isRunning.value) {
-            val total = progressTotal.value
-            val processed = progressProcessed.value
-            val progress = if (total > 0) processed.toFloat() / total.toFloat() else 0f
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Progress: ${processed}/${total}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "Deleted: ${progressDeleted.value} · Rehashed: ${progressRehashed.value} · Missing hash: ${progressMissingHashed.value}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            progressCurrentPath.value?.let { path ->
                 Text(
-                    text = "Current: $path",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    text = "Actions",
+                    style = MaterialTheme.typography.titleSmall
                 )
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isRunning.value = true
+                            progressTotal.value = 0
+                            progressProcessed.value = 0
+                            progressDeleted.value = 0
+                            progressRehashed.value = 0
+                            progressMissingHashed.value = 0
+                            progressCurrentPath.value = null
+                            val summary = withContext(Dispatchers.IO) {
+                                historyRepo.runMaintenance(
+                                    deleteMissing = deleteMissing.value,
+                                    rehashStale = rehashStale.value,
+                                    rehashMissing = rehashMissing.value
+                                ) { progress ->
+                                    progressTotal.value = progress.total
+                                    progressProcessed.value = progress.processed
+                                    progressDeleted.value = progress.deleted
+                                    progressRehashed.value = progress.rehashed
+                                    progressMissingHashed.value = progress.missingHashed
+                                    progressCurrentPath.value = progress.currentPath
+                                }
+                            }
+                            statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
+                            isRunning.value = false
+                            refreshCount()
+                        }
+                    },
+                    enabled = canRun,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isRunning.value) "Running..." else "Run maintenance")
+                }
+                OutlinedButton(
+                    onClick = { clearDialogOpen.value = true },
+                    enabled = !isRunning.value && !isClearing.value,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Clear all cached results")
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Progress",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                statusMessage.value?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (isRunning.value) {
+                    val total = progressTotal.value
+                    val processed = progressProcessed.value
+                    val progress = if (total > 0) processed.toFloat() / total.toFloat() else 0f
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Progress: ${processed}/${total}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Deleted: ${progressDeleted.value} · Rehashed: ${progressRehashed.value} · Missing hash: ${progressMissingHashed.value}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    progressCurrentPath.value?.let { path ->
+                        Text(
+                            text = "Current: $path",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Idle",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
