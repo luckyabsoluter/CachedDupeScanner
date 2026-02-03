@@ -1,13 +1,15 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +27,10 @@ import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import androidx.compose.runtime.snapshotFlow
 
 @Composable
 fun ReportsScreen(
@@ -35,11 +41,15 @@ fun ReportsScreen(
     selectedReportId: String? = null,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val reports = remember { mutableStateOf<List<ScanReport>>(emptyList()) }
     val isLoading = remember { mutableStateOf(true) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
     val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }
+    val pageSize = 50
+    val buffer = 20
+    val visibleCount = remember { mutableStateOf(0) }
+    val topVisibleIndex = remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         isLoading.value = true
@@ -59,64 +69,138 @@ fun ReportsScreen(
         isLoading.value = false
     }
 
-    Column(
-        modifier = modifier
-            .padding(Spacing.screenPadding)
-            .verticalScroll(scrollState)
-    ) {
-        AppTopBar(
-            title = "Scan reports",
-            onBack = {
-                onBack()
+    LaunchedEffect(reports.value.size) {
+        if (reports.value.isNotEmpty()) {
+            val initial = pageSize.coerceAtMost(reports.value.size)
+            if (visibleCount.value == 0) {
+                visibleCount.value = initial
+            } else {
+                visibleCount.value = visibleCount.value.coerceAtMost(reports.value.size)
             }
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        selectedReport?.let { report ->
-            ReportDetail(report)
-            return@Column
         }
+    }
 
-        if (isLoading.value) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Loading reports...")
+    val reportIndexById = remember(reports.value) {
+        reports.value.mapIndexed { index, report -> report.id to index }.toMap()
+    }
+
+    LaunchedEffect(reports.value.size, selectedReportId) {
+        if (selectedReportId != null) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key is String }
+                ?.key as? String
+        }
+            .distinctUntilChanged()
+            .filter { it != null }
+            .collect { key ->
+                val index = reportIndexById[key] ?: 0
+                topVisibleIndex.value = index
             }
-            return@Column
-        }
+    }
 
-        if (reports.value.isEmpty()) {
-            Text("No scan reports yet.")
-            return@Column
+    LaunchedEffect(reports.value.size) {
+        if (reports.value.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            val remaining = reports.value.size - visibleCount.value
+            lastVisible >= (totalItems - buffer) && remaining > 0
         }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                visibleCount.value = (visibleCount.value + pageSize)
+                    .coerceAtMost(reports.value.size)
+            }
+    }
 
-        reports.value.forEach { report ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        if (onOpenReport != null) {
-                            onOpenReport(report.id)
-                        } else {
-                            selected.value = report
+    val loadIndicatorText = run {
+        val total = reports.value.size
+        if (selectedReportId != null || total == 0) {
+            null
+        } else {
+            val loaded = visibleCount.value.coerceAtMost(total).coerceAtLeast(1)
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / total.toDouble()) * 100).toInt()
+            "$current/$loaded/$total (${currentPercent}%/${loadedPercent}%)"
+        }
+    }
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.padding(Spacing.screenPadding)
+        ) {
+            item {
+                AppTopBar(
+                    title = "Scan reports",
+                    onBack = {
+                        onBack()
+                    }
+                )
+            }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
+            selectedReport?.let { report ->
+                item {
+                    ReportDetail(report)
+                }
+                return@LazyColumn
+            }
+
+            if (isLoading.value) {
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Loading reports...")
+                    }
+                }
+            } else if (reports.value.isEmpty()) {
+                item { Text("No scan reports yet.") }
+            } else {
+                val reportsToShow = reports.value.take(visibleCount.value)
+                items(reportsToShow, key = { it.id }) { report ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (onOpenReport != null) {
+                                    onOpenReport(report.id)
+                                } else {
+                                    selected.value = report
+                                }
+                            }
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = formatDate(report.startedAtMillis),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text("Targets: ${report.targets.size}")
+                            Text("Mode: ${report.mode}")
+                            Text("Cancelled: ${report.cancelled}")
                         }
                     }
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = formatDate(report.startedAtMillis),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text("Targets: ${report.targets.size}")
-                    Text("Mode: ${report.mode}")
-                    Text("Cancelled: ${report.cancelled}")
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        loadIndicatorText?.let { indicator ->
+            Text(
+                text = indicator,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 12.dp, top = 12.dp)
+            )
         }
     }
 }
