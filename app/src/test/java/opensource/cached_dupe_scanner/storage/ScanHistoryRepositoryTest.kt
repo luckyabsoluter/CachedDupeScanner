@@ -365,4 +365,76 @@ class ScanHistoryRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun runMaintenanceReportsProgressAndCounts() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val staleFile = File.createTempFile("cached", ".stale")
+        val missingHashFile = File.createTempFile("cached", ".missinghash")
+        val missingFile = File.createTempFile("cached", ".missing")
+        try {
+            staleFile.writeText("alpha")
+            missingHashFile.writeText("beta")
+            missingFile.writeText("gamma")
+            missingFile.delete()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        staleFile.absolutePath,
+                        staleFile.absolutePath,
+                        staleFile.length(),
+                        staleFile.lastModified(),
+                        Hashing.sha256Hex(staleFile)
+                    ),
+                    FileMetadata(
+                        missingHashFile.absolutePath,
+                        missingHashFile.absolutePath,
+                        missingHashFile.length(),
+                        missingHashFile.lastModified(),
+                        null
+                    ),
+                    FileMetadata(
+                        missingFile.absolutePath,
+                        missingFile.absolutePath,
+                        1,
+                        1,
+                        "h2"
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+
+            staleFile.writeText("alpha updated")
+
+            var lastProgress: DbMaintenanceProgress? = null
+            val summary = repo.runMaintenance(
+                deleteMissing = true,
+                rehashStale = true,
+                rehashMissing = true
+            ) { progress ->
+                lastProgress = progress
+            }
+
+            assertEquals(3, summary.total)
+            assertEquals(3, summary.processed)
+            assertEquals(1, summary.deleted)
+            assertEquals(1, summary.rehashed)
+            assertEquals(1, summary.missingHashed)
+            assertNotNull(lastProgress)
+            assertEquals(3, lastProgress?.processed)
+            assertEquals(2, database.fileCacheDao().getAll().size)
+        } finally {
+            staleFile.delete()
+            missingHashFile.delete()
+            database.close()
+        }
+    }
 }
