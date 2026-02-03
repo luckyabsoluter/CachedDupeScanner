@@ -213,6 +213,8 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
+                                onClearAll = { clearRequested.value = true },
+                                clearVersion = filesClearVersion.value,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -244,9 +246,6 @@ class MainActivity : ComponentActivity() {
                                     deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
-                                onClearResults = {
-                                    clearRequested.value = true
-                                },
                                 settingsStore = settingsStore,
                                 modifier = screenModifier
                             )
@@ -265,9 +264,6 @@ class MainActivity : ComponentActivity() {
                                     deletedPaths.value = deletedPaths.value + file.normalizedPath
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
-                                onClearResults = {
-                                    clearRequested.value = true
-                                },
                                 settingsStore = settingsStore,
                                 selectedGroupIndex = screen.index,
                                 modifier = screenModifier

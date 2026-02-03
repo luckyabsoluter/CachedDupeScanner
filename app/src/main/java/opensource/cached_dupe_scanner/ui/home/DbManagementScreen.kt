@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +34,8 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 @Composable
 fun DbManagementScreen(
     historyRepo: ScanHistoryRepository,
+    onClearAll: () -> Unit,
+    clearVersion: Int,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -40,6 +44,8 @@ fun DbManagementScreen(
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
     val isRunning = remember { mutableStateOf(false) }
+    val isClearing = remember { mutableStateOf(false) }
+    val clearDialogOpen = remember { mutableStateOf(false) }
     val statusMessage = remember { mutableStateOf<String?>(null) }
     val dbCount = remember { mutableStateOf<Int?>(null) }
     val progressTotal = remember { mutableStateOf(0) }
@@ -57,6 +63,14 @@ fun DbManagementScreen(
 
     LaunchedEffect(Unit) {
         refreshCount()
+    }
+
+    LaunchedEffect(clearVersion) {
+        refreshCount()
+        if (isClearing.value) {
+            statusMessage.value = "Cleared all cached results."
+            isClearing.value = false
+        }
     }
 
     Column(
@@ -103,6 +117,14 @@ fun DbManagementScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Compute hash for missing entries")
             }
+        }
+
+        OutlinedButton(
+            onClick = { clearDialogOpen.value = true },
+            enabled = !isRunning.value && !isClearing.value,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Clear all cached results")
         }
 
         statusMessage.value?.let { message ->
@@ -174,5 +196,30 @@ fun DbManagementScreen(
         ) {
             Text(if (isRunning.value) "Running..." else "Run maintenance")
         }
+    }
+
+    if (clearDialogOpen.value) {
+        AlertDialog(
+            onDismissRequest = { clearDialogOpen.value = false },
+            title = { Text("Clear all cached results?") },
+            text = { Text("This removes all cached files and results from the database.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clearDialogOpen.value = false
+                        isClearing.value = true
+                        statusMessage.value = "Clearing all cached results..."
+                        onClearAll()
+                    }
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { clearDialogOpen.value = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
