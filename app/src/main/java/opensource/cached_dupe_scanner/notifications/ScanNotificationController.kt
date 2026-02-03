@@ -183,9 +183,10 @@ class ScanNotificationController(context: Context) {
     @Volatile private var channelEnsured: Boolean = false
 
     private fun resolveMinBatch(total: Int?): Int {
-        if (total == null || total <= 0) {
-            return MIN_BATCH_DEFAULT
-        }
-        return max(MIN_BATCH_MIN, total / 100)
+//        if (total == null || total <= 0) {
+//            return MIN_BATCH_DEFAULT
+//        }
+//        return max(MIN_BATCH_MIN, total / 100)
+        return 1
     }
 }
