@@ -268,47 +268,26 @@ fun FilesScreen(
     }
 
     selectedFile.value?.let { file ->
-        AlertDialog(
-            onDismissRequest = { selectedFile.value = null },
-            title = { Text("File details") },
-            text = {
-                Column {
-                    Text("Name: ${formatPath(file.normalizedPath, showFullPath = false)}")
-                    Text("Path: ${file.normalizedPath}")
-                    Text("Size: ${formatBytesWithExact(file.sizeBytes)}")
-                    Text("Modified: ${formatDate(file.lastModifiedMillis)}")
-                }
+        FileDetailsDialog(
+            file = file,
+            showName = true,
+            onOpen = {
+                openFile(context, file.normalizedPath)
+                selectedFile.value = null
             },
-            confirmButton = {
-                OutlinedButton(onClick = {
-                    openFile(context, file.normalizedPath)
+            onDelete = {
+                val toDelete = file.normalizedPath
+                val deleted = java.io.File(toDelete).delete()
+                if (deleted) {
                     selectedFile.value = null
-                }) {
-                    Text("Open")
+                    filesState.value = (filesState.value ?: emptyList())
+                        .filterNot { it.normalizedPath == toDelete }
+                    scope.launch(Dispatchers.IO) {
+                        historyRepo.deleteByNormalizedPath(toDelete)
+                    }
                 }
             },
-            dismissButton = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = {
-                        val toDelete = file.normalizedPath
-                        val deleted = java.io.File(toDelete).delete()
-                        if (deleted) {
-                            selectedFile.value = null
-                            filesState.value = (filesState.value ?: emptyList())
-                                .filterNot { it.normalizedPath == toDelete }
-                            scope.launch(Dispatchers.IO) {
-                                historyRepo.deleteByNormalizedPath(toDelete)
-                            }
-                        }
-                    }) {
-                        Text("Delete")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedButton(onClick = { selectedFile.value = null }) {
-                        Text("Cancel")
-                    }
-                }
-            }
+            onDismiss = { selectedFile.value = null }
         )
     }
 

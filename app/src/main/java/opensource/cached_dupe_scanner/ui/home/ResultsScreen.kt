@@ -549,39 +549,19 @@ private fun GroupDetailContent(
     }
 
     selectedFile.value?.let { file ->
-        AlertDialog(
-            onDismissRequest = { selectedFile.value = null },
-            title = { Text("File details") },
-            text = {
-                Column {
-                    Text("Path: ${file.normalizedPath}")
-                    Text("Size: ${formatBytesWithExact(file.sizeBytes)}")
-                    Text("Modified: ${formatDate(file.lastModifiedMillis)}")
-                }
+        FileDetailsDialog(
+            file = file,
+            showName = false,
+            onOpen = {
+                openFile(context, file.normalizedPath)
+                selectedFile.value = null
             },
-            confirmButton = {
-                OutlinedButton(onClick = {
-                    openFile(context, file.normalizedPath)
-                    selectedFile.value = null
-                }) {
-                    Text("Open")
-                }
+            onDelete = {
+                File(file.normalizedPath).delete()
+                onFileDeleted(file)
+                selectedFile.value = null
             },
-            dismissButton = {
-                Row {
-                    OutlinedButton(onClick = {
-                        File(file.normalizedPath).delete()
-                        onFileDeleted(file)
-                        selectedFile.value = null
-                    }) {
-                        Text("Delete")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedButton(onClick = { selectedFile.value = null }) {
-                        Text("Cancel")
-                    }
-                }
-            }
+            onDismiss = { selectedFile.value = null }
         )
     }
 }
