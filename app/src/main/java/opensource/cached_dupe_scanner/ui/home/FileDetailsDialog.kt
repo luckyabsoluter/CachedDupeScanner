@@ -15,14 +15,13 @@ import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.FileMetadata
 
 @Composable
-fun FileDetailsDialog(
+fun FileDetailsDialogUi(
     file: FileMetadata,
     showName: Boolean,
     onOpen: () -> Unit,
-    onDelete: () -> Unit,
+    onDeleteRequest: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val confirmDelete = remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("File details") },
@@ -43,7 +42,7 @@ fun FileDetailsDialog(
         },
         dismissButton = {
             Row {
-                OutlinedButton(onClick = { confirmDelete.value = true }) {
+                OutlinedButton(onClick = onDeleteRequest) {
                     Text("Delete")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
@@ -53,18 +52,34 @@ fun FileDetailsDialog(
             }
         }
     )
+}
+
+@Composable
+fun FileDetailsDialogWithDeleteConfirm(
+    file: FileMetadata,
+    showName: Boolean,
+    onOpen: () -> Unit,
+    onDeleteConfirmed: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val confirmDelete = remember { mutableStateOf(false) }
+    FileDetailsDialogUi(
+        file = file,
+        showName = showName,
+        onOpen = onOpen,
+        onDeleteRequest = { confirmDelete.value = true },
+        onDismiss = onDismiss
+    )
 
     if (confirmDelete.value) {
         AlertDialog(
             onDismissRequest = { confirmDelete.value = false },
             title = { Text("Delete file?") },
-            text = {
-                Text("This will permanently delete the file.")
-            },
+            text = { Text("This will permanently delete the file.") },
             confirmButton = {
                 OutlinedButton(onClick = {
                     confirmDelete.value = false
-                    onDelete()
+                    onDeleteConfirmed()
                 }) {
                     Text("Delete")
                 }
