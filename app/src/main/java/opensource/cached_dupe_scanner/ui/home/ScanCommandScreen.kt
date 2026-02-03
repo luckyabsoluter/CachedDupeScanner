@@ -17,11 +17,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -55,13 +55,13 @@ fun ScanCommandScreen(
     reportRepo: ScanReportRepository,
     settingsStore: AppSettingsStore,
     targetsVersion: Int,
+    scanScope: CoroutineScope,
     onReportSaved: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
     val currentJob = remember { mutableStateOf<Job?>(null) }
@@ -117,7 +117,7 @@ fun ScanCommandScreen(
                     onScan = {
                         val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
                         runScanForTarget(
-                            scope,
+                            scanScope,
                             scanner,
                             state,
                             target,
@@ -142,7 +142,7 @@ fun ScanCommandScreen(
         Button(onClick = {
             val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
             runScanForAllTargets(
-                scope,
+                scanScope,
                 scanner,
                 state,
                 targets.value,

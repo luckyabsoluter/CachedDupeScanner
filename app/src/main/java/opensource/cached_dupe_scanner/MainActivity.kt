@@ -225,6 +225,7 @@ class MainActivity : ComponentActivity() {
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
                                 targetsVersion = targetsVersion.value,
+                                scanScope = scope,
                                 onReportSaved = { reportsRefreshVersion.value += 1 },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
