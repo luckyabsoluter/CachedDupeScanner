@@ -185,6 +185,8 @@ fun VerticalLazyScrollbar(
                         } else {
                             (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
                         }
+                        val currentScrollPx = (listState.firstVisibleItemIndex * averageItemSizePx) +
+                            listState.firstVisibleItemScrollOffset
                         val newScrollPx = (currentScrollPx + deltaScrollPx)
                             .coerceIn(0f, maxScrollPx)
                         val targetIndex = (newScrollPx / averageItemSizePx)
