@@ -41,7 +41,7 @@ class ScanHistoryRepository(
     }
 
     fun countAll(): Int {
-        return dao.getAll().size
+        return dao.countAll()
     }
 
     fun deleteMissingByNormalizedPaths(normalizedPaths: List<String>): Int {
@@ -140,20 +140,62 @@ class ScanHistoryRepository(
         rehashMissing: Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
     ): DbMaintenanceProgress {
-        val entries = dao.getAll()
-        val total = entries.size
+        val total = dao.countAll()
         var processed = 0
         var deleted = 0
         var rehashed = 0
         var missingHashed = 0
-        entries.forEach { entity ->
-            val path = entity.path.ifBlank { entity.normalizedPath }
-            val file = File(path)
-            if (!file.exists()) {
-                if (deleteMissing) {
-                    dao.deleteByNormalizedPath(entity.normalizedPath)
-                    deleted += 1
+        val batchSize = 200
+        var lastPath = ""
+        while (true) {
+            val batch = dao.getPageAfter(lastPath, batchSize)
+            if (batch.isEmpty()) break
+            batch.forEach { entity ->
+                val path = entity.path.ifBlank { entity.normalizedPath }
+                val file = File(path)
+                if (!file.exists()) {
+                    if (deleteMissing) {
+                        dao.deleteByNormalizedPath(entity.normalizedPath)
+                        deleted += 1
+                    }
+                    processed += 1
+                    onProgress(
+                        DbMaintenanceProgress(
+                            total = total,
+                            processed = processed,
+                            deleted = deleted,
+                            rehashed = rehashed,
+                            missingHashed = missingHashed,
+                            currentPath = path
+                        )
+                    )
+                    lastPath = entity.normalizedPath
+                    return@forEach
                 }
+
+                val size = file.length()
+                val modified = file.lastModified()
+                val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
+                val isMissingHash = entity.hashHex.isNullOrBlank()
+                var shouldHash = false
+                if (rehashStale && isStale) {
+                    rehashed += 1
+                    shouldHash = true
+                }
+                if (rehashMissing && isMissingHash) {
+                    missingHashed += 1
+                    shouldHash = true
+                }
+                if (shouldHash) {
+                    val hash = Hashing.sha256Hex(file)
+                    val updatedEntity = entity.copy(
+                        sizeBytes = size,
+                        lastModifiedMillis = modified,
+                        hashHex = hash
+                    )
+                    dao.upsert(updatedEntity)
+                }
+
                 processed += 1
                 onProgress(
                     DbMaintenanceProgress(
@@ -165,43 +207,8 @@ class ScanHistoryRepository(
                         currentPath = path
                     )
                 )
-                return@forEach
+                lastPath = entity.normalizedPath
             }
-
-            val size = file.length()
-            val modified = file.lastModified()
-            val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
-            val isMissingHash = entity.hashHex.isNullOrBlank()
-            var shouldHash = false
-            if (rehashStale && isStale) {
-                rehashed += 1
-                shouldHash = true
-            }
-            if (rehashMissing && isMissingHash) {
-                missingHashed += 1
-                shouldHash = true
-            }
-            if (shouldHash) {
-                val hash = Hashing.sha256Hex(file)
-                val updatedEntity = entity.copy(
-                    sizeBytes = size,
-                    lastModifiedMillis = modified,
-                    hashHex = hash
-                )
-                dao.upsert(updatedEntity)
-            }
-
-            processed += 1
-            onProgress(
-                DbMaintenanceProgress(
-                    total = total,
-                    processed = processed,
-                    deleted = deleted,
-                    rehashed = rehashed,
-                    missingHashed = missingHashed,
-                    currentPath = path
-                )
-            )
         }
         return DbMaintenanceProgress(
             total = total,

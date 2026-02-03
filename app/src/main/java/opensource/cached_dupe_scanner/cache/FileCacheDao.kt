@@ -13,6 +13,12 @@ interface FileCacheDao {
     @Query("SELECT * FROM cached_files")
     fun getAll(): List<CachedFileEntity>
 
+    @Query("SELECT COUNT(*) FROM cached_files")
+    fun countAll(): Int
+
+    @Query("SELECT * FROM cached_files WHERE normalizedPath > :afterPath ORDER BY normalizedPath LIMIT :limit")
+    fun getPageAfter(afterPath: String, limit: Int): List<CachedFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(entity: CachedFileEntity)
 
