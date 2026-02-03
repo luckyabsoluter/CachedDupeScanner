@@ -104,48 +104,43 @@ fun DbManagementScreen(
             }
         }
 
+        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "Policies",
                     style = MaterialTheme.typography.titleSmall
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = deleteMissing.value,
-                        onCheckedChange = { deleteMissing.value = it }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Delete DB entries missing on storage")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = deleteMissing.value,
+                            onCheckedChange = { deleteMissing.value = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete DB entries missing on storage")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = rehashStale.value,
+                            onCheckedChange = { rehashStale.value = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Rehash entries with stale size/date")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = rehashMissing.value,
+                            onCheckedChange = { rehashMissing.value = it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Compute hash for missing entries")
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = rehashStale.value,
-                        onCheckedChange = { rehashStale.value = it }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Rehash entries with stale size/date")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = rehashMissing.value,
-                        onCheckedChange = { rehashMissing.value = it }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Compute hash for missing entries")
-                }
-            }
-        }
 
-        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
                 Text(
                     text = "Actions",
                     style = MaterialTheme.typography.titleSmall
@@ -184,21 +179,7 @@ fun DbManagementScreen(
                 ) {
                     Text(if (isRunning.value) "Running..." else "Run maintenance")
                 }
-                OutlinedButton(
-                    onClick = { clearDialogOpen.value = true },
-                    enabled = !isRunning.value && !isClearing.value,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Clear all cached results")
-                }
-            }
-        }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
                 Text(
                     text = "Progress",
                     style = MaterialTheme.typography.titleSmall
@@ -242,6 +223,14 @@ fun DbManagementScreen(
                     )
                 }
             }
+        }
+
+        OutlinedButton(
+            onClick = { clearDialogOpen.value = true },
+            enabled = !isRunning.value && !isClearing.value,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Clear all cached results")
         }
     }
 
