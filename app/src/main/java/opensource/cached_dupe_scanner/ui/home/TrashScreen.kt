@@ -34,11 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.snapshotFlow
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.TrashEntryEntity
@@ -60,6 +63,9 @@ fun TrashScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val entries = remember { mutableStateOf<List<TrashEntryEntity>>(emptyList()) }
+    val totalCount = remember { mutableStateOf(0) }
+    val isLoading = remember { mutableStateOf(false) }
+    val cursor = remember { mutableStateOf<Pair<Long, String>?>(null) }
     val menuOpen = remember { mutableStateOf(false) }
     val confirmEmpty = remember { mutableStateOf(false) }
     val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
@@ -72,15 +78,56 @@ fun TrashScreen(
             .build()
     }
 
-    fun refresh() {
+    val pageSize = 200
+    val buffer = 50
+
+    fun resetAndLoad() {
         scope.launch {
-            val loaded = withContext(Dispatchers.IO) { trashRepo.listAll() }
-            entries.value = loaded
+            isLoading.value = true
+            val count = withContext(Dispatchers.IO) { trashRepo.countAll() }
+            val first = withContext(Dispatchers.IO) { trashRepo.getFirstPage(pageSize) }
+            totalCount.value = count
+            entries.value = first
+            cursor.value = first.lastOrNull()?.let { it.deletedAtMillis to it.id }
+            isLoading.value = false
+        }
+    }
+
+    fun loadMore() {
+        if (isLoading.value) return
+        if (entries.value.size >= totalCount.value) return
+        val before = cursor.value ?: return
+        scope.launch {
+            isLoading.value = true
+            val next = withContext(Dispatchers.IO) {
+                trashRepo.getPageBefore(beforeMillis = before.first, beforeId = before.second, limit = pageSize)
+            }
+            if (next.isNotEmpty()) {
+                entries.value = entries.value + next
+                cursor.value = next.last().deletedAtMillis to next.last().id
+            }
+            isLoading.value = false
         }
     }
 
     LaunchedEffect(Unit) {
-        refresh()
+        resetAndLoad()
+    }
+
+    // Infinite scroll auto paging (legacy behavior).
+    LaunchedEffect(totalCount.value, entries.value.size) {
+        if (totalCount.value <= 0) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            val hasMore = entries.value.size < totalCount.value
+            val closeToEnd = lastVisible >= (totalItems - buffer)
+            closeToEnd && hasMore && !isLoading.value
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { loadMore() }
     }
 
     Box(modifier = modifier) {
@@ -126,6 +173,17 @@ fun TrashScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+
+                if (isLoading.value && entries.value.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Loading…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
         }
 
@@ -150,7 +208,7 @@ fun TrashScreen(
                         withContext(Dispatchers.IO) {
                             trashController.emptyTrash()
                         }
-                        refresh()
+                        resetAndLoad()
                     }
                 }) {
                     Text("Delete all")
@@ -179,7 +237,7 @@ fun TrashScreen(
                     when (result) {
                         TrashController.RestoreResult.Success -> {
                             selectedEntry.value = null
-                            refresh()
+                            resetAndLoad()
                         }
 
                         TrashController.RestoreResult.ConflictTargetExists -> {
@@ -188,7 +246,7 @@ fun TrashScreen(
 
                         TrashController.RestoreResult.TrashedFileMissing -> {
                             selectedEntry.value = null
-                            refresh()
+                            resetAndLoad()
                         }
 
                         TrashController.RestoreResult.MoveFailed -> {
@@ -234,7 +292,7 @@ fun TrashScreen(
                         withContext(Dispatchers.IO) {
                             trashController.deletePermanently(entry)
                         }
-                        refresh()
+                        resetAndLoad()
                     }
                 }) {
                     Text("Delete")

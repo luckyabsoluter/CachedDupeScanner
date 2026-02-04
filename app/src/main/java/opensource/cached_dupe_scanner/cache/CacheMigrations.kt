@@ -164,4 +164,12 @@ object CacheMigrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_files_lastModifiedMillis_normalizedPath ON cached_files(lastModifiedMillis, normalizedPath)")
         }
     }
+
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_trash_entries_deletedAtMillis_id ON trash_entries(deletedAtMillis, id)"
+            )
+        }
+    }
 }
