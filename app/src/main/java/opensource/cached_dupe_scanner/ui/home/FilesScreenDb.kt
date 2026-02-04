@@ -38,6 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.ImageLoader
+import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +71,12 @@ fun FilesScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
 
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
+
     val settingsSnapshot = remember { settingsStore.load() }
     val sortKey = remember {
         val key = runCatching { PagedFileRepository.SortKey.valueOf(settingsSnapshot.filesSortKey) }
@@ -85,6 +95,7 @@ fun FilesScreenDb(
     val cursor = remember { mutableStateOf<PagedFileRepository.Cursor>(PagedFileRepository.Cursor.Start) }
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
+    val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
 
     val pageSize = 200
     val visibleCount = rememberSaveable { mutableStateOf(0) }
@@ -185,18 +196,54 @@ fun FilesScreenDb(
                 item { Text("No files in cache.") }
             } else {
                 items(items.value, key = { it.normalizedPath }) { file ->
-                    FileRow(
-                        file = file,
-                        onOpen = { openFile(context, file.normalizedPath) },
-                        onDelete = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    trashController.moveToTrash(file.normalizedPath)
-                                }
-                                resetAndLoad()
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedFile.value = file }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isMediaFile(file.normalizedPath)) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(File(file.normalizedPath))
+                                        .build(),
+                                    imageLoader = imageLoader,
+                                    contentDescription = "Thumbnail",
+                                    modifier = Modifier
+                                        .width(56.dp)
+                                        .height(56.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = formatPath(file.normalizedPath, showFullPath = false),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = file.normalizedPath,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
-                    )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
@@ -218,6 +265,29 @@ fun FilesScreenDb(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .padding(end = 4.dp)
+        )
+    }
+
+    selectedFile.value?.let { file ->
+        FileDetailsDialogWithDeleteConfirm(
+            file = file,
+            showName = true,
+            onOpen = {
+                openFile(context, file.normalizedPath)
+                selectedFile.value = null
+            },
+            onDelete = {
+                withContext(Dispatchers.IO) {
+                    trashController.moveToTrash(file.normalizedPath).success
+                }
+            },
+            onDeleteResult = { deleted ->
+                if (deleted) {
+                    selectedFile.value = null
+                    resetAndLoad()
+                }
+            },
+            onDismiss = { selectedFile.value = null }
         )
     }
 
@@ -291,43 +361,3 @@ fun FilesScreenDb(
     }
 }
 
-@Composable
-private fun FileRow(
-    file: FileMetadata,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors()
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = File(file.normalizedPath).name.ifBlank { file.normalizedPath },
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = file.normalizedPath,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${formatBytesWithExact(file.sizeBytes)} · Modified ${formatDate(file.lastModifiedMillis)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row {
-                OutlinedButton(onClick = onDelete) { Text("Delete") }
-            }
-        }
-    }
-}
