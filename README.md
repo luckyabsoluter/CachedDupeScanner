@@ -45,6 +45,10 @@ This repository currently contains the Android app shell. The scan engine, cache
 ./gradlew assembleDebug
 ```
 
+### Release automation
+
+See [docs/android-apk-release.md](docs/android-apk-release.md) for GitHub Actions release workflow setup and keystore/secrets instructions.
+
 ### Tests
 
 ```bash
