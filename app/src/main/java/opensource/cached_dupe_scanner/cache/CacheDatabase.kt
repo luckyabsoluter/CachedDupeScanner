@@ -6,12 +6,14 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         CachedFileEntity::class,
-        ScanReportEntity::class
+        ScanReportEntity::class,
+        TrashEntryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class CacheDatabase : RoomDatabase() {
     abstract fun fileCacheDao(): FileCacheDao
     abstract fun scanReportDao(): ScanReportDao
+    abstract fun trashDao(): TrashDao
 }

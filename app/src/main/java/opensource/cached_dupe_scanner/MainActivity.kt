@@ -34,10 +34,13 @@ import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
+import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
+import opensource.cached_dupe_scanner.storage.TrashController
+import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import androidx.room.Room
@@ -77,12 +80,15 @@ class MainActivity : ComponentActivity() {
                                 CacheMigrations.MIGRATION_3_4,
                                 CacheMigrations.MIGRATION_4_5,
                                 CacheMigrations.MIGRATION_5_6,
-                                CacheMigrations.MIGRATION_6_7
+                                CacheMigrations.MIGRATION_6_7,
+                                CacheMigrations.MIGRATION_7_8
                             )
                             .build()
                     }
                     val historyRepo = remember { ScanHistoryRepository(database.fileCacheDao(), settingsStore) }
                     val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
+                    val trashRepo = remember { TrashRepository(database.trashDao()) }
+                    val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
 
                     LaunchedEffect(Unit) {
                         if (state.value is ScanUiState.Idle) {
@@ -193,6 +199,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenScanCommand = { navigateTo(backStack, screenCache, Screen.ScanCommand) },
                                 onOpenResults = { navigateTo(backStack, screenCache, Screen.Results) },
                                 onOpenFiles = { navigateTo(backStack, screenCache, Screen.Files) },
+                                onOpenTrash = { navigateTo(backStack, screenCache, Screen.Trash) },
                                 onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
@@ -209,6 +216,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.Files -> FilesScreen(
                                 historyRepo = historyRepo,
+                                trashController = trashController,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
                                 onBack = { pop(backStack) },
@@ -242,12 +250,13 @@ class MainActivity : ComponentActivity() {
                                 },
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
-                                        }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
                                     }
-                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
                                 settingsStore = settingsStore,
@@ -260,12 +269,13 @@ class MainActivity : ComponentActivity() {
                                 onOpenGroup = null,
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            historyRepo.deleteByNormalizedPath(file.normalizedPath)
-                                        }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
                                     }
-                                    deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
                                 },
                                 onSortChanged = { sortSettingsVersion.value++ },
                                 settingsStore = settingsStore,
@@ -292,6 +302,13 @@ class MainActivity : ComponentActivity() {
                                 onBack = { pop(backStack) },
                                 onOpenReport = null,
                                 selectedReportId = screen.id,
+                                modifier = screenModifier
+                            )
+
+                            Screen.Trash -> TrashScreen(
+                                trashRepo = trashRepo,
+                                trashController = trashController,
+                                onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
                         }
@@ -367,6 +384,7 @@ private sealed class Screen {
     data object Permission : Screen()
     data object Targets : Screen()
     data object Files : Screen()
+    data object Trash : Screen()
     data object DbManagement : Screen()
     data object ScanCommand : Screen()
     data object Results : Screen()

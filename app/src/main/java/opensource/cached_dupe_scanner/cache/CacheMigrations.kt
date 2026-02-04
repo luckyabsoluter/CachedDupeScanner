@@ -107,4 +107,24 @@ object CacheMigrations {
             db.execSQL("DROP TABLE IF EXISTS scan_report_targets")
         }
     }
+
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS trash_entries (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    originalPath TEXT NOT NULL,
+                    trashedPath TEXT NOT NULL,
+                    sizeBytes INTEGER NOT NULL,
+                    lastModifiedMillis INTEGER NOT NULL,
+                    deletedAtMillis INTEGER NOT NULL,
+                    volumeRoot TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_trash_entries_deletedAtMillis ON trash_entries(deletedAtMillis)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_trash_entries_originalPath ON trash_entries(originalPath)")
+        }
+    }
 }

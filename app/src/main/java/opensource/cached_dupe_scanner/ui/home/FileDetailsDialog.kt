@@ -10,9 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.FileMetadata
+import kotlinx.coroutines.launch
 
 @Composable
 fun FileDetailsDialogUi(
@@ -59,10 +61,12 @@ fun FileDetailsDialogWithDeleteConfirm(
     file: FileMetadata,
     showName: Boolean,
     onOpen: () -> Unit,
+    onDelete: suspend () -> Boolean,
     onDeleteResult: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val confirmDelete = remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     FileDetailsDialogUi(
         file = file,
         showName = showName,
@@ -74,15 +78,17 @@ fun FileDetailsDialogWithDeleteConfirm(
     if (confirmDelete.value) {
         AlertDialog(
             onDismissRequest = { confirmDelete.value = false },
-            title = { Text("Delete file?") },
-            text = { Text("This will permanently delete the file.") },
+            title = { Text("Move to trash?") },
+            text = { Text("This will move the file to the app trash.") },
             confirmButton = {
                 OutlinedButton(onClick = {
                     confirmDelete.value = false
-                    val deleted = java.io.File(file.normalizedPath).delete()
-                    onDeleteResult(deleted)
+                    scope.launch {
+                        val deleted = onDelete()
+                        onDeleteResult(deleted)
+                    }
                 }) {
-                    Text("Delete")
+                    Text("Move")
                 }
             },
             dismissButton = {
