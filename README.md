@@ -8,6 +8,7 @@ CachedDupeScanner is an Android-first project that scans very large file sets fo
 
 - **Fast duplicate detection** across massive directories.
 - **Persistent cache** to avoid re-reading unchanged files.
+- **Trash support** to avoid immediate deletion and allow recovery.
 - **Deterministic results** with reproducible test suites.
 - **Open-source friendly** structure and contribution workflow.
 
