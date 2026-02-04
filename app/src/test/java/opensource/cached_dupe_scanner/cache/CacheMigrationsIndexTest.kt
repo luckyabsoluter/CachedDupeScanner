@@ -155,6 +155,50 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration11to12CreatesTrashPagingIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "trash-paging-test-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(11) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS trash_entries (
+                                id TEXT NOT NULL PRIMARY KEY,
+                                originalPath TEXT NOT NULL,
+                                trashedPath TEXT NOT NULL,
+                                sizeBytes INTEGER NOT NULL,
+                                lastModifiedMillis INTEGER NOT NULL,
+                                hashHex TEXT,
+                                deletedAtMillis INTEGER NOT NULL,
+                                volumeRoot TEXT NOT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL("CREATE INDEX IF NOT EXISTS index_trash_entries_deletedAtMillis ON trash_entries(deletedAtMillis)")
+                        db.execSQL("CREATE INDEX IF NOT EXISTS index_trash_entries_originalPath ON trash_entries(originalPath)")
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_11_12.migrate(db)
+            assertTrue(hasIndex(db, "trash_entries", "index_trash_entries_deletedAtMillis_id"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun hasIndex(db: SupportSQLiteDatabase, table: String, indexName: String): Boolean {
         db.query("PRAGMA index_list('$table')").use { cursor ->
             val nameIdx = cursor.getColumnIndex("name")

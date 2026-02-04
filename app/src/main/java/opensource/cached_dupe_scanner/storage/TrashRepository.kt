@@ -8,6 +8,14 @@ class TrashRepository(
 ) {
     fun listAll(): List<TrashEntryEntity> = dao.getAll()
 
+    fun countAll(): Int = dao.countAll()
+
+    fun getFirstPage(limit: Int): List<TrashEntryEntity> = dao.getFirstPage(limit)
+
+    fun getPageBefore(beforeMillis: Long, beforeId: String, limit: Int): List<TrashEntryEntity> {
+        return dao.getPageBefore(beforeMillis, beforeId, limit)
+    }
+
     fun getById(id: String): TrashEntryEntity? = dao.getById(id)
 
     fun upsert(entry: TrashEntryEntity) = dao.upsert(entry)

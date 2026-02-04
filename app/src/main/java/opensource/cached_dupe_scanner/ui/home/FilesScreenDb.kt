@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +44,8 @@ import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -98,6 +101,7 @@ fun FilesScreenDb(
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
 
     val pageSize = 200
+    val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
 
     fun resetAndLoad() {
@@ -140,6 +144,24 @@ fun FilesScreenDb(
         total.value = 0
         cursor.value = PagedFileRepository.Cursor.Start
         visibleCount.value = 0
+    }
+
+    // Auto-load next page on scroll (legacy behavior).
+    LaunchedEffect(total.value, items.value.size) {
+        if (total.value <= 0) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            val hasMore = items.value.size < total.value
+            val closeToEnd = lastVisible >= (totalItems - buffer)
+            closeToEnd && hasMore && !isLoading.value
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                loadMore()
+            }
     }
 
     Box(modifier = modifier) {
@@ -247,13 +269,14 @@ fun FilesScreenDb(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                item {
-                    OutlinedButton(
-                        onClick = { loadMore() },
-                        enabled = !isLoading.value,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (isLoading.value) "Loading…" else "Load more")
+                if (isLoading.value && items.value.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Loading…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

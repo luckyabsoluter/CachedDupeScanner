@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
     tableName = "trash_entries",
     indices = [
         Index("deletedAtMillis"),
+        Index(value = ["deletedAtMillis", "id"], name = "index_trash_entries_deletedAtMillis_id"),
         Index("originalPath")
     ]
 )
