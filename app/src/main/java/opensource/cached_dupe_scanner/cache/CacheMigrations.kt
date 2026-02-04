@@ -127,4 +127,10 @@ object CacheMigrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_trash_entries_originalPath ON trash_entries(originalPath)")
         }
     }
+
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE trash_entries ADD COLUMN hashHex TEXT")
+        }
+    }
 }
