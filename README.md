@@ -1,33 +1,82 @@
 # CachedDupeScanner
 
-CachedDupeScanner is an Android-first project that scans very large file sets for duplicates, persists scan metadata, and reuses that cache to make subsequent scans dramatically faster.
+CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very large directories quickly, persists metadata and hashes in a **Room-backed cache**, and dramatically accelerates subsequent scans by reusing cached results.
 
+## Key features
 
+- **Incremental scans**: unchanged files are not re-hashed; cache is reused.
+- **Deferred hashing**: SHA-256 is computed only when size collisions exist.
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite).
+- **Target management**: save multiple scan targets; run per-target or batch scans.
+- **Duplicate grouping**: results grouped by hash with sorting/filtering.
+- **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete.
+- **Scan reports**: timings, phase durations, hash candidate counts.
+- **Export**: JSON/CSV utilities for results.
+- **DB maintenance**: purge missing files, re-hash stale or missing entries.
 
-## Goals
+## How scanning works
 
-- **Fast duplicate detection** across massive directories.
-- **Persistent cache** to avoid re-reading unchanged files.
-- **Trash support** to avoid immediate deletion and allow recovery.
-- **Deterministic results** with reproducible test suites.
-- **Open-source friendly** structure and contribution workflow.
+1. **Collect files**: `FileWalker` gathers file metadata.
+2. **Select candidates**: only size-collision files become hash candidates.
+3. **Cache lookup**: `CacheStore` checks FRESH/STALE/MISS state.
+4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates.
+5. **Group results**: duplicates are grouped by hash and persisted.
 
-## What is “Cached” here?
+## Cache policy (current)
 
-Each scan stores file metadata (path, size, timestamp, hashes) and directory state. Later scans compare changes and only re-hash files that are new or modified.
+The cache is designed to **delay hashing as long as possible**.
 
-## Cache Policy (Current)
+1. **Always record size/mtime**: path, size, and modified time are stored for all files.
+2. **Hash only on collisions**: hashing occurs only if a size collision exists.
+3. **Change detection**: size/mtime changes mark entries as stale, re-hashed on demand.
 
-The cache is designed to **delay hashing as long as possible** and only compute hashes when needed.
+## Architecture overview
 
-1. **Always store size first**
-	- File path + size + mtime are recorded for every scanned file.
-2. **Hash only on collisions**
-	- Hash is computed **only when there is a size collision** (same size appears more than once in the candidate set).
-3. **Incremental re-hash**
-	- If size/mtime changes, the file is treated as stale and re-hashed only when needed by step 2.
+```
+UI (Compose)
+  -> Scan Orchestrator
+      -> File Walker
+          -> Hashing (SHA-256)
+      -> Cache Store (Room/SQLite)
+  -> Results / Reports / Trash
+```
 
-This keeps CPU and I/O costs low for large scans while still ensuring reliable duplicate detection.
+Key design points:
+
+- **Deferred hashing** to minimize CPU/I/O
+- **Chunked writes** for large datasets
+- **Normalized paths** for stable identifiers
+
+## Data model summary
+
+Room database (scan-cache.db) core tables:
+
+- **cached_files**: path, size, mtime, hash
+- **scan_reports**: scan summary (durations, counts, targets)
+- **trash_entries**: trash records (origin/trashed path, size, timestamps)
+
+For detailed DB access flows, see [docs/db-access.md](docs/db-access.md).
+
+## Module map
+
+- **core**: `FileMetadata`, `ScanResult`, duplicate analysis
+- **engine**: `IncrementalScanner`, `FileWalker`, hashing
+- **cache**: Room entities/DAO, cache lookup/upsert
+- **storage**: settings/targets/reports/trash
+- **export**: JSON/CSV exports
+- **ui**: Compose screens and components
+
+## Main screens
+
+- Dashboard (entry point)
+- Permission (file access)
+- Targets (scan targets)
+- Scan Command (run scans + progress)
+- Results / Files (duplicates and file list)
+- Trash (restore/permanent delete)
+- DB Management (cleanup/rehash)
+- Reports (scan reports)
+- Settings / About
 
 ## Quickstart
 
@@ -42,38 +91,25 @@ This keeps CPU and I/O costs low for large scans while still ensuring reliable d
 ./gradlew assembleDebug
 ```
 
-### Release automation
-
-See [docs/android-apk-release.md](docs/android-apk-release.md) for GitHub Actions release workflow setup and keystore/secrets instructions.
-
 ### Tests
 
 ```bash
 ./gradlew test
 ```
 
-### Instrumented Tests
+### Instrumented tests
 
 ```bash
 ./gradlew connectedAndroidTest
 ```
 
-## Architecture
+### Release automation
 
-```
-UI (Compose)
-  -> Scan Orchestrator
-	  -> File Walker
-		  -> Hashing Engine (tiered: size -> partial hash -> full hash)
-	  -> Cache Store (Room/SQLite)
-  -> Results Store
-```
+For signed APK automation, see [docs/android-apk-release.md](docs/android-apk-release.md).
 
-Key decisions:
+## Development workflow
 
-- **Tiered hashing** for speed: size and mtime checks before computing hashes.
-- **Chunked I/O** to avoid memory spikes.
-- **Stable identifiers** for files to track across scans.
+Project rules and the agent guide are in [AGENTS.md](AGENTS.md).
 
 ## License
 
