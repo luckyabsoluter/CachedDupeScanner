@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
 import opensource.cached_dupe_scanner.ui.home.FilesScreen
+import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreen
 import opensource.cached_dupe_scanner.ui.home.ReportsScreen
@@ -205,6 +206,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
+                                onOpenAbout = { navigateTo(backStack, screenCache, Screen.About) },
                                 modifier = screenModifier
                             )
                             Screen.Permission -> PermissionScreen(
@@ -313,6 +315,10 @@ class MainActivity : ComponentActivity() {
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+                            Screen.About -> AboutScreen(
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
                             Screen.Reports -> ReportsScreen(
                                 reportRepo = reportRepo,
                                 refreshVersion = reportsRefreshVersion.value,
@@ -416,6 +422,7 @@ private sealed class Screen {
     data object Results : Screen()
     data class ResultsDetail(val index: Int) : Screen()
     data object Settings : Screen()
+    data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
 }
