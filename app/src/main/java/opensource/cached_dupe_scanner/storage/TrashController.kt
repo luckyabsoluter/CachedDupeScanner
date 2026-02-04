@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.storage
 import android.content.Context
 import android.os.Build
 import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.TrashEntryEntity
 import java.io.File
 import java.util.UUID
@@ -11,7 +12,8 @@ class TrashController(
     private val context: Context,
     private val database: CacheDatabase,
     private val historyRepo: ScanHistoryRepository,
-    private val trashRepo: TrashRepository
+    private val trashRepo: TrashRepository,
+    private val storageRootProvider: StorageRootProvider = DefaultStorageRootProvider
 ) {
     data class MoveResult(
         val success: Boolean,
@@ -19,17 +21,25 @@ class TrashController(
         val message: String? = null
     )
 
+    sealed class RestoreResult {
+        data object Success : RestoreResult()
+        data object ConflictTargetExists : RestoreResult()
+        data object TrashedFileMissing : RestoreResult()
+        data object MoveFailed : RestoreResult()
+        data object DbUpdateFailed : RestoreResult()
+    }
+
     fun moveToTrash(normalizedPath: String): MoveResult {
         val file = File(normalizedPath)
         if (!file.exists()) {
             // Treat as success: if it's gone, remove cache and don't create trash entry.
             database.runInTransaction {
-                historyRepo.deleteByNormalizedPath(normalizedPath)
+                database.fileCacheDao().deleteByNormalizedPath(normalizedPath)
             }
             return MoveResult(success = true, entry = null)
         }
 
-        val root = StorageRootResolver.resolveRootForPath(context, file.absolutePath)
+        val root = storageRootProvider.resolve(context, file.absolutePath)
             ?: return MoveResult(false, message = "Unable to resolve storage root")
 
         val rootDir = File(root.rootPath)
@@ -42,6 +52,11 @@ class TrashController(
         val destName = "${deletedAt}_${id.take(8)}_$baseName"
         val destFile = File(trashDir, destName)
 
+        val cached = database.fileCacheDao().getByNormalizedPath(normalizedPath)
+        val snapshotSize = cached?.sizeBytes ?: file.length()
+        val snapshotModified = cached?.lastModifiedMillis ?: file.lastModified()
+        val snapshotHash = cached?.hashHex
+
         val moved = moveFile(file, destFile)
         if (!moved) {
             return MoveResult(false, message = "Failed to move file")
@@ -51,15 +66,16 @@ class TrashController(
             id = id,
             originalPath = normalizedPath,
             trashedPath = destFile.absolutePath,
-            sizeBytes = destFile.length(),
-            lastModifiedMillis = destFile.lastModified(),
+            sizeBytes = snapshotSize,
+            lastModifiedMillis = snapshotModified,
+            hashHex = snapshotHash,
             deletedAtMillis = deletedAt,
             volumeRoot = root.rootPath
         )
 
         runCatching {
             database.runInTransaction {
-                historyRepo.deleteByNormalizedPath(normalizedPath)
+                database.fileCacheDao().deleteByNormalizedPath(normalizedPath)
                 trashRepo.upsert(entry)
             }
         }.onFailure {
@@ -71,16 +87,19 @@ class TrashController(
         return MoveResult(true, entry = entry)
     }
 
-    fun restoreFromTrash(entry: TrashEntryEntity): Boolean {
+    fun restoreFromTrash(entry: TrashEntryEntity): RestoreResult {
         val trashed = File(entry.trashedPath)
         if (!trashed.exists()) {
             database.runInTransaction {
                 trashRepo.deleteById(entry.id)
             }
-            return false
+            return RestoreResult.TrashedFileMissing
         }
 
         val target = File(entry.originalPath)
+        if (target.exists()) {
+            return RestoreResult.ConflictTargetExists
+        }
         target.parentFile?.let { parent ->
             if (!parent.exists()) {
                 parent.mkdirs()
@@ -88,12 +107,29 @@ class TrashController(
         }
 
         val restored = moveFile(trashed, target)
-        if (!restored) return false
+        if (!restored) return RestoreResult.MoveFailed
 
-        database.runInTransaction {
-            trashRepo.deleteById(entry.id)
+        val restoredSize = target.length()
+        val restoredModified = target.lastModified()
+        val restoredEntity = CachedFileEntity(
+            normalizedPath = entry.originalPath,
+            path = entry.originalPath,
+            sizeBytes = restoredSize,
+            lastModifiedMillis = restoredModified,
+            hashHex = entry.hashHex
+        )
+
+        return runCatching {
+            database.runInTransaction {
+                database.fileCacheDao().upsert(restoredEntity)
+                trashRepo.deleteById(entry.id)
+            }
+            RestoreResult.Success
+        }.getOrElse {
+            // Best-effort rollback: move back to trash location and keep DB entry
+            moveFile(target, trashed)
+            RestoreResult.DbUpdateFailed
         }
-        return true
     }
 
     fun deletePermanently(entry: TrashEntryEntity): Boolean {

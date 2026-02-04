@@ -64,6 +64,7 @@ fun TrashScreen(
     val confirmEmpty = remember { mutableStateOf(false) }
     val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val confirmDeleteEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
+    val restoreError = remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -172,11 +173,32 @@ fun TrashScreen(
             },
             onRestore = {
                 scope.launch {
-                    withContext(Dispatchers.IO) {
+                    val result = withContext(Dispatchers.IO) {
                         trashController.restoreFromTrash(entry)
                     }
-                    selectedEntry.value = null
-                    refresh()
+                    when (result) {
+                        TrashController.RestoreResult.Success -> {
+                            selectedEntry.value = null
+                            refresh()
+                        }
+
+                        TrashController.RestoreResult.ConflictTargetExists -> {
+                            restoreError.value = "Restore skipped: a file already exists at the original path."
+                        }
+
+                        TrashController.RestoreResult.TrashedFileMissing -> {
+                            selectedEntry.value = null
+                            refresh()
+                        }
+
+                        TrashController.RestoreResult.MoveFailed -> {
+                            restoreError.value = "Restore failed: unable to move file out of trash."
+                        }
+
+                        TrashController.RestoreResult.DbUpdateFailed -> {
+                            restoreError.value = "Restore failed: database update failed. File was kept in trash."
+                        }
+                    }
                 }
             },
             onDeleteForeverRequest = {
@@ -184,6 +206,19 @@ fun TrashScreen(
                 confirmDeleteEntry.value = entry
             },
             onDismiss = { selectedEntry.value = null }
+        )
+    }
+
+    restoreError.value?.let { message ->
+        AlertDialog(
+            onDismissRequest = { restoreError.value = null },
+            title = { Text("Restore") },
+            text = { Text(message) },
+            confirmButton = {
+                OutlinedButton(onClick = { restoreError.value = null }) {
+                    Text("OK")
+                }
+            }
         )
     }
 

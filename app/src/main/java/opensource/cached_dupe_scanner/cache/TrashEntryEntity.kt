@@ -18,6 +18,7 @@ data class TrashEntryEntity(
     val trashedPath: String,
     val sizeBytes: Long,
     val lastModifiedMillis: Long,
+    val hashHex: String?,
     val deletedAtMillis: Long,
     val volumeRoot: String
 )
