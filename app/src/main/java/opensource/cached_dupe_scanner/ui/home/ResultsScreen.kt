@@ -3,8 +3,10 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -54,7 +56,10 @@ import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
+import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.io.File
 import java.util.Locale
@@ -177,7 +182,8 @@ fun ResultsScreen(
     Box(modifier = modifier) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(Spacing.screenPadding)
+            modifier = Modifier.padding(Spacing.screenPadding),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
         ) {
             item {
                 AppTopBar(
@@ -337,30 +343,41 @@ fun ResultsScreen(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
-                Column(
-                    modifier = Modifier
-                        .padding(Spacing.screenPadding)
-                        .verticalScroll(detailScrollState)
-                ) {
-                    AppTopBar(
-                        title = "Group detail",
-                        onBack = {
-                            onBackToDashboard()
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (group != null) {
-                        GroupDetailContent(
-                            group = group,
-                            deletedPaths = deletedPaths,
-                            imageLoader = imageLoader,
-                            onFileDeleted = { file ->
-                                onDeleteFile?.invoke(file)
+                Box {
+                    Column(
+                        modifier = Modifier
+                            .padding(Spacing.screenPadding)
+                            .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                            .verticalScroll(detailScrollState)
+                    ) {
+                        AppTopBar(
+                            title = "Group detail",
+                            onBack = {
+                                onBackToDashboard()
                             }
                         )
-                    } else {
-                        Text("Group not found.")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (group != null) {
+                            GroupDetailContent(
+                                group = group,
+                                deletedPaths = deletedPaths,
+                                imageLoader = imageLoader,
+                                onFileDeleted = { file ->
+                                    onDeleteFile?.invoke(file)
+                                }
+                            )
+                        } else {
+                            Text("Group not found.")
+                        }
                     }
+
+                    VerticalScrollbar(
+                        scrollState = detailScrollState,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .padding(end = 4.dp)
+                    )
                 }
             }
             BackHandler {
@@ -376,9 +393,19 @@ fun ResultsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(end = 12.dp, top = 12.dp)
+                        .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
                 )
             }
+        }
+
+        if (selectedGroupIndex == null) {
+            VerticalLazyScrollbar(
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+            )
         }
     }
 

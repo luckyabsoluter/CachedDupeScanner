@@ -1,8 +1,10 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,8 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
-
+import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 @Composable
 fun SettingsScreen(
     settingsStore: AppSettingsStore,
@@ -29,48 +32,59 @@ fun SettingsScreen(
     val scrollState = rememberScrollState()
     val settings = remember { mutableStateOf(settingsStore.load()) }
 
-    Column(
-        modifier = modifier
-            .padding(Spacing.screenPadding)
-            .verticalScroll(scrollState)
-    ) {
-        AppTopBar(title = "Settings", onBack = onBack)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .padding(Spacing.screenPadding)
+                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                .verticalScroll(scrollState)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Skip zero-size in DB")
-                Text("Do not store size 0 files in the database")
-            }
-            Switch(
-                checked = settings.value.skipZeroSizeInDb,
-                onCheckedChange = { enabled ->
-                    settingsStore.setSkipZeroSizeInDb(enabled)
-                    settings.value = settings.value.copy(skipZeroSizeInDb = enabled)
+            AppTopBar(title = "Settings", onBack = onBack)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Skip zero-size in DB")
+                    Text("Do not store size 0 files in the database")
                 }
-            )
+                Switch(
+                    checked = settings.value.skipZeroSizeInDb,
+                    onCheckedChange = { enabled ->
+                        settingsStore.setSkipZeroSizeInDb(enabled)
+                        settings.value = settings.value.copy(skipZeroSizeInDb = enabled)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Hide zero-size in results")
+                    Text("Do not display size 0 files in results")
+                }
+                Switch(
+                    checked = settings.value.hideZeroSizeInResults,
+                    onCheckedChange = { enabled ->
+                        settingsStore.setHideZeroSizeInResults(enabled)
+                        settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
+                    }
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Hide zero-size in results")
-                Text("Do not display size 0 files in results")
-            }
-            Switch(
-                checked = settings.value.hideZeroSizeInResults,
-                onCheckedChange = { enabled ->
-                    settingsStore.setHideZeroSizeInResults(enabled)
-                    settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
-                }
-            )
-        }
+        VerticalScrollbar(
+            scrollState = scrollState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 4.dp)
+        )
     }
 }

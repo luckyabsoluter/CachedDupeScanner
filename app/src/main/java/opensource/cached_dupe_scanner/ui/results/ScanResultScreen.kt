@@ -1,23 +1,30 @@
 package opensource.cached_dupe_scanner.ui.results
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
 @Composable
 fun ScanResultScreen(state: ScanUiState, modifier: Modifier = Modifier) {
@@ -59,10 +66,25 @@ private fun DuplicateGroupList(groups: List<DuplicateGroup>) {
         return
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(groups) { group ->
-            DuplicateGroupCard(group)
+    val listState = rememberLazyListState()
+    Box {
+        LazyColumn(
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+        ) {
+            items(groups) { group ->
+                DuplicateGroupCard(group)
+            }
         }
+
+        VerticalLazyScrollbar(
+            listState = listState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 4.dp)
+        )
     }
 }
 
