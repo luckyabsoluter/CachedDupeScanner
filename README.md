@@ -2,6 +2,20 @@
 
 CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very large directories quickly, persists metadata and hashes in a **Room-backed cache**, and dramatically accelerates subsequent scans by reusing cached results.
 
+## Screenshots
+<img width="100" alt="Screenshot_20260204_153212" src="https://github.com/user-attachments/assets/5a4dda4b-02af-4fc1-9546-58fbd8ca7a45" />
+<img width="100" alt="Screenshot_20260204_153310" src="https://github.com/user-attachments/assets/366568dc-cf8c-4c58-ab4c-fff2a018ef2f" />
+<img width="100" alt="Screenshot_20260204_153318" src="https://github.com/user-attachments/assets/262fb3e5-5e74-4b0f-a190-525ce9e39ac2" />
+<img width="100" alt="Screenshot_20260204_153327" src="https://github.com/user-attachments/assets/64662850-743c-4b89-8e6c-3c95acba6ec3" />
+<img width="100" alt="Screenshot_20260204_153343" src="https://github.com/user-attachments/assets/23970da5-27e7-40b4-a318-d2a7cb0a067d" />
+<img width="100" alt="Screenshot_20260204_153354" src="https://github.com/user-attachments/assets/4fef6179-0738-453f-91c0-000cb8e18b29" />
+<img width="100" alt="Screenshot_20260204_153447" src="https://github.com/user-attachments/assets/99a18a0b-04bf-408f-8d0e-e71cbe622544" />
+<img width="100" alt="Screenshot_20260204_153452" src="https://github.com/user-attachments/assets/d15621e9-5165-4b56-a1d1-a0f463a8c0a6" />
+<img width="100" alt="Screenshot_20260204_153508" src="https://github.com/user-attachments/assets/7797694c-fd2d-420a-8944-3164e8e79f0a" />
+<img width="100" alt="Screenshot_20260204_153541" src="https://github.com/user-attachments/assets/cdc0c813-8406-4491-b1c1-8bbaa554ffdb" />
+<img width="100" alt="Screenshot_20260204_153555" src="https://github.com/user-attachments/assets/15971c27-0f4e-4ff9-8b6d-b3e99a7b0513" />
+<img width="100" alt="Screenshot_20260204_153600" src="https://github.com/user-attachments/assets/92c8e80a-eebf-4a31-9ed8-aad07cc27b2c" />
+
 ## Key features
 
 - **Incremental scans**: unchanged files are not re-hashed; cache is reused.
