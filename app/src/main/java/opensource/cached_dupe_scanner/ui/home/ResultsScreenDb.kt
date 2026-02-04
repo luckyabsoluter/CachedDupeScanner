@@ -121,6 +121,7 @@ fun ResultsScreenDb(
     val pageSize = 50
     val buffer = 20
     val visibleCount = rememberSaveable { mutableStateOf(0) }
+    val topVisibleGroupIndex = remember { mutableStateOf(0) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -191,6 +192,25 @@ fun ResultsScreenDb(
 
     LaunchedEffect(visibleCount.value, groupCount.value, sortKey.value) {
         loadMoreIfNeeded()
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { topVisibleGroupIndex.value = it }
+    }
+
+    val loadIndicatorText = if (selectedGroupIndex != null || groupCount.value == 0) {
+        null
+    } else {
+        val totalGroups = groupCount.value
+        val loaded = visibleCount.value.coerceAtMost(totalGroups)
+        val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+        val safeLoaded = loaded.coerceAtLeast(1)
+        val safeTotal = totalGroups.coerceAtLeast(1)
+        val currentPercent = ((current.toDouble() / safeLoaded.toDouble()) * 100).toInt()
+        val loadedPercent = ((loaded.toDouble() / safeTotal.toDouble()) * 100).toInt()
+        "$current/$loaded/$totalGroups (${currentPercent}%/${loadedPercent}%)"
     }
 
     // Auto-load next page as user scrolls (legacy behavior).
@@ -320,6 +340,19 @@ fun ResultsScreenDb(
                     .fillMaxHeight()
                     .padding(end = 4.dp)
             )
+        }
+
+        if (selectedGroupIndex == null) {
+            loadIndicatorText?.let { indicator ->
+                Text(
+                    text = indicator,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
+                )
+            }
         }
     }
 
