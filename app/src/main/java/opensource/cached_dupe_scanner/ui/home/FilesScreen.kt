@@ -68,6 +68,7 @@ private enum class FileSortDirection {
 @Composable
 fun FilesScreen(
     historyRepo: ScanHistoryRepository,
+    trashController: opensource.cached_dupe_scanner.storage.TrashController,
     clearVersion: Int,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -317,15 +318,15 @@ fun FilesScreen(
                 openFile(context, file.normalizedPath)
                 selectedFile.value = null
             },
+            onDelete = {
+                trashController.moveToTrash(file.normalizedPath).success
+            },
             onDeleteResult = { deleted ->
                 if (deleted) {
                     val toDelete = file.normalizedPath
                     selectedFile.value = null
                     filesState.value = (filesState.value ?: emptyList())
                         .filterNot { it.normalizedPath == toDelete }
-                    scope.launch(Dispatchers.IO) {
-                        historyRepo.deleteByNormalizedPath(toDelete)
-                    }
                 }
             },
             onDismiss = { selectedFile.value = null }
