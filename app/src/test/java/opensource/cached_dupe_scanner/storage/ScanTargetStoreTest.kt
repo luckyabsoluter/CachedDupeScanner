@@ -30,4 +30,28 @@ class ScanTargetStoreTest {
         assertEquals(0, store.loadTargets().size)
         assertEquals(null, store.loadSelectedTargetId())
     }
+
+    @Test
+    fun exportImportTargets() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = ScanTargetStore(context)
+
+        val targets = listOf(
+            ScanTarget(id = "t-1", path = "/storage/emulated/0/Download"),
+            ScanTarget(id = "t-2", path = "/storage/emulated/0/Documents")
+        )
+        store.saveTargets(targets)
+        store.saveSelectedTargetId("t-2")
+
+        val json = store.exportToJson()
+
+        store.saveTargets(emptyList())
+        store.saveSelectedTargetId(null)
+
+        val imported = store.importFromJson(json)
+        assertEquals(2, imported.size)
+        assertEquals("/storage/emulated/0/Download", imported[0].path)
+        assertEquals("/storage/emulated/0/Documents", imported[1].path)
+        assertEquals("t-2", store.loadSelectedTargetId())
+    }
 }
