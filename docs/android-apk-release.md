@@ -12,6 +12,7 @@ Create it once locally. **Never commit** the generated `.jks` file to Git.
 ```bash
 keytool -genkeypair \
   -v \
+  -storetype pkcs12 \
   -keystore release-keystore.jks \
   -alias release \
   -keyalg RSA \
