@@ -69,6 +69,41 @@ class ScanTargetStore(context: Context) {
         prefs.edit().putString(KEY_SELECTED, id).apply()
     }
 
+    fun exportToJson(): String {
+        val targets = loadTargets()
+        val array = JSONArray()
+        targets.forEach { target ->
+            val item = JSONObject()
+            item.put("id", target.id)
+            item.put("path", target.path)
+            array.put(item)
+        }
+        return JSONObject()
+            .put(KEY_TARGETS, array)
+            .put(KEY_SELECTED, loadSelectedTargetId())
+            .toString()
+    }
+
+    fun importFromJson(json: String): List<ScanTarget> {
+        val obj = JSONObject(json)
+        val array = obj.optJSONArray(KEY_TARGETS) ?: JSONArray()
+        val targets = mutableListOf<ScanTarget>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val id = item.optString("id", "").ifBlank { UUID.randomUUID().toString() }
+            val path = item.optString("path", "")
+            if (path.isNotBlank()) {
+                targets.add(ScanTarget(id = id, path = path))
+            }
+        }
+        saveTargets(targets)
+
+        val selected = obj.optString(KEY_SELECTED, "").ifBlank { null }
+        val selectedValid = selected?.takeIf { id -> targets.any { it.id == id } }
+        saveSelectedTargetId(selectedValid)
+        return targets
+    }
+
     companion object {
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_TARGETS = "scan_targets"

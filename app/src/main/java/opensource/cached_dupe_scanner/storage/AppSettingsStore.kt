@@ -56,6 +56,42 @@ class AppSettingsStore(context: Context) {
         prefs.edit().putString(KEY_FILES_SORT_DIR, value).apply()
     }
 
+    fun exportToJson(): String {
+        val settings = load()
+        return org.json.JSONObject()
+            .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
+            .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
+            .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
+            .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
+            .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
+            .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
+            .toString()
+    }
+
+    fun importFromJson(json: String): AppSettings {
+        val obj = org.json.JSONObject(json)
+        val settings = AppSettings(
+            skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, false),
+            hideZeroSizeInResults = obj.optBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
+            resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, "Count"),
+            resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, "Desc"),
+            showFullPaths = obj.optBoolean(KEY_SHOW_FULL_PATHS, false),
+            filesSortKey = obj.optString(KEY_FILES_SORT_KEY, "Name"),
+            filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, "Asc")
+        )
+        prefs.edit()
+            .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
+            .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
+            .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
+            .putBoolean(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
+            .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
+            .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
+            .apply()
+        return settings
+    }
+
     companion object {
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"

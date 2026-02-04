@@ -34,6 +34,7 @@ fun DashboardScreen(
     onOpenDbManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
+    onOpenAbout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -108,6 +109,13 @@ fun DashboardScreen(
                 description = "Review past scan reports.",
                 actionLabel = "Open reports",
                 onAction = onOpenReports
+            )
+
+            DashboardCard(
+                title = "About",
+                description = "Project summary and links.",
+                actionLabel = "Open about",
+                onAction = onOpenAbout
             )
         }
 
