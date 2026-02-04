@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
 import opensource.cached_dupe_scanner.ui.home.FilesScreenDb
+import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ReportsScreen
@@ -207,6 +208,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
+                                onOpenAbout = { navigateTo(backStack, screenCache, Screen.About) },
                                 modifier = screenModifier
                             )
                             Screen.Permission -> PermissionScreen(
@@ -274,6 +276,10 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.Settings -> SettingsScreen(
                                 settingsStore = settingsStore,
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+                            Screen.About -> AboutScreen(
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -379,6 +385,7 @@ private sealed class Screen {
     data object ScanCommand : Screen()
     data object Results : Screen()
     data object Settings : Screen()
+    data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
 }
