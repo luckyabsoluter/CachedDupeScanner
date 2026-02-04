@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
                     val filesRefreshVersion = remember { mutableStateOf(0) }
                     val targetsVersion = remember { mutableStateOf(0) }
                     val reportsRefreshVersion = remember { mutableStateOf(0) }
+                    val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
                     val scope = rememberCoroutineScope()
@@ -107,6 +109,7 @@ class MainActivity : ComponentActivity() {
                         state.value = ScanUiState.Success(scan)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
+                        selectedResultsGroupIndex.value = null
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 Log.d("MainActivity", "Persisting scan to DB")
@@ -176,6 +179,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     BackHandler {
+                        val current = backStack.lastOrNull()
+                        if (current == Screen.Results && selectedResultsGroupIndex.value != null) {
+                            selectedResultsGroupIndex.value = null
+                            return@BackHandler
+                        }
                         if (backStack.size > 1) {
                             pop(backStack)
                         } else {
@@ -251,28 +259,17 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
-                                onBack = { goDashboard(backStack, screenCache) },
+                                onBack = {
+                                    if (selectedResultsGroupIndex.value != null) {
+                                        selectedResultsGroupIndex.value = null
+                                    } else {
+                                        goDashboard(backStack, screenCache)
+                                    }
+                                },
                                 onOpenGroup = { index ->
-                                    navigateTo(backStack, screenCache, Screen.ResultsDetail(index))
+                                    selectedResultsGroupIndex.value = index
                                 },
-                                modifier = screenModifier
-                            )
-                            is Screen.ResultsDetail -> ResultsScreenDb(
-                                resultsRepo = resultsRepo,
-                                settingsStore = settingsStore,
-                                deletedPaths = deletedPaths.value,
-                                onDeleteFile = { file ->
-                                    val ok = withContext(Dispatchers.IO) {
-                                        trashController.moveToTrash(file.normalizedPath).success
-                                    }
-                                    if (ok) {
-                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                    }
-                                    ok
-                                },
-                                onBack = { pop(backStack) },
-                                onOpenGroup = null,
-                                selectedGroupIndex = screen.index,
+                                selectedGroupIndex = selectedResultsGroupIndex.value,
                                 modifier = screenModifier
                             )
                             Screen.Settings -> SettingsScreen(
@@ -381,7 +378,6 @@ private sealed class Screen {
     data object DbManagement : Screen()
     data object ScanCommand : Screen()
     data object Results : Screen()
-    data class ResultsDetail(val index: Int) : Screen()
     data object Settings : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
