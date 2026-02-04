@@ -232,7 +232,7 @@ fun ResultsScreenDb(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("DB files: ${fileCount.value}")
+                        Text("Files scanned: ${fileCount.value}")
                         Text("Duplicate groups: ${groupCount.value}")
                     }
                     OutlinedButton(onClick = { sortDialogOpen.value = true }) {
@@ -249,7 +249,9 @@ fun ResultsScreenDb(
                 val toShow = groups.value.take(visibleCount.value)
                 itemsIndexed(toShow, key = { _, g -> "${g.sizeBytes}:${g.hashHex}" }) { index, g ->
                     DuplicateGroupCardDb(
+                        resultsRepo = resultsRepo,
                         group = g,
+                        deletedPaths = deletedPaths,
                         showFullPaths = showFullPaths.value,
                         imageLoader = imageLoader,
                         onOpen = {
@@ -310,7 +312,8 @@ fun ResultsScreenDb(
                             resultsRepo = resultsRepo,
                             group = group,
                             deletedPaths = deletedPaths,
-                            onDeleteFile = onDeleteFile
+                            onDeleteFile = onDeleteFile,
+                            imageLoader = imageLoader
                         )
                     }
                 }
@@ -408,56 +411,96 @@ fun ResultsScreenDb(
 
 @Composable
 private fun DuplicateGroupCardDb(
+    resultsRepo: ResultsDbRepository,
     group: DuplicateGroupEntity,
+    deletedPaths: Set<String>,
     showFullPaths: Boolean,
     imageLoader: ImageLoader,
     onOpen: () -> Unit
 ) {
+    val context = LocalContext.current
+    val previewMembers = remember(group.sizeBytes, group.hashHex) { mutableStateOf<List<FileMetadata>>(emptyList()) }
+
+    LaunchedEffect(group.sizeBytes, group.hashHex) {
+        val members = withContext(Dispatchers.IO) {
+            resultsRepo.listGroupMembers(
+                sizeBytes = group.sizeBytes,
+                hashHex = group.hashHex,
+                afterPath = null,
+                limit = 10
+            )
+        }
+        previewMembers.value = members
+    }
+
+    val preview = previewMembers.value.firstOrNull { isMediaFile(it.normalizedPath) }
+    val groupDeleted = previewMembers.value.any { deletedPaths.contains(it.normalizedPath) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors()
+        colors = if (groupDeleted) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            val previewPath = remember(group.hashHex, group.sizeBytes) { null as String? }
-            if (previewPath != null && isMediaFile(previewPath)) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (preview != null) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(File(previewPath))
+                    model = ImageRequest.Builder(context)
+                        .data(File(preview.normalizedPath))
                         .build(),
                     imageLoader = imageLoader,
                     contentDescription = "Thumbnail",
                     modifier = Modifier
-                        .width(56.dp)
-                        .height(56.dp)
+                        .height(72.dp)
+                        .width(72.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
             }
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "${group.fileCount} files · Total ${formatBytes(group.totalBytes)}",
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    style = MaterialTheme.typography.bodyMedium
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Per file: ${formatBytes(group.sizeBytes)} · Hash: ${group.hashHex.take(12)}…",
+                    text = "Per-file ${formatBytes(group.sizeBytes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (showFullPaths) {
-                    Spacer(modifier = Modifier.height(4.dp))
+
+                Spacer(modifier = Modifier.height(6.dp))
+                previewMembers.value
+                    .sortedBy { it.normalizedPath }
+                    .forEach { file ->
+                        val date = formatDate(file.lastModifiedMillis)
+                        Text(
+                            text = "${formatPath(file.normalizedPath, showFullPaths)} · ${date}",
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                val remaining = (group.fileCount - previewMembers.value.size).coerceAtLeast(0)
+                if (remaining > 0) {
                     Text(
-                        text = "Key: ${group.sizeBytes}:${group.hashHex}",
+                        text = "+${remaining} more…",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -470,10 +513,12 @@ private fun GroupDetailDb(
     resultsRepo: ResultsDbRepository,
     group: DuplicateGroupEntity,
     deletedPaths: Set<String>,
-    onDeleteFile: (suspend (FileMetadata) -> Boolean)?
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    imageLoader: ImageLoader
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val members = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
     val isLoading = remember { mutableStateOf(false) }
     val pageSize = 200
@@ -507,57 +552,74 @@ private fun GroupDetailDb(
         loadMore(reset = true)
     }
 
+    val preview = members.value.firstOrNull { isMediaFile(it.normalizedPath) }
+    if (preview != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(File(preview.normalizedPath))
+                .build(),
+            imageLoader = imageLoader,
+            contentDescription = "Thumbnail",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
     Text("${group.fileCount} files · Total ${formatBytes(group.totalBytes)}")
-    Text("Per file: ${formatBytes(group.sizeBytes)}")
+    Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
     Spacer(modifier = Modifier.height(8.dp))
 
-    members.value.forEach { file ->
-        val deleted = deletedPaths.contains(file.normalizedPath)
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = File(file.normalizedPath).name.ifBlank { file.normalizedPath },
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = file.normalizedPath,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "${formatBytesWithExact(file.sizeBytes)} · Modified ${formatDate(file.lastModifiedMillis)}${if (deleted) " · Deleted" else ""}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row {
-                    OutlinedButton(
-                        onClick = { openFile(context, file.normalizedPath) },
-                        enabled = !deleted
-                    ) {
-                        Text("Open")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val handler = onDeleteFile ?: return@OutlinedButton
-                            scope.launch { handler(file) }
-                        },
-                        enabled = !deleted
-                    ) {
-                        Text("Delete")
+    members.value
+        .sortedBy { it.normalizedPath }
+        .forEach { file ->
+            val date = formatDate(file.lastModifiedMillis)
+            val isDeleted = deletedPaths.contains(file.normalizedPath)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { selectedFile.value = file },
+                colors = if (isDeleted) {
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                } else {
+                    CardDefaults.cardColors()
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = file.normalizedPath,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (isDeleted) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDeleted) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(8.dp))
         }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
 
     OutlinedButton(
         onClick = { loadMore(reset = false) },
@@ -565,5 +627,26 @@ private fun GroupDetailDb(
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(if (isLoading.value) "Loading…" else "Load more")
+    }
+
+    selectedFile.value?.let { file ->
+        FileDetailsDialogWithDeleteConfirm(
+            file = file,
+            showName = false,
+            onOpen = {
+                openFile(context, file.normalizedPath)
+                selectedFile.value = null
+            },
+            onDelete = {
+                val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
+                handler(file)
+            },
+            onDeleteResult = { deleted ->
+                if (deleted) {
+                    selectedFile.value = null
+                }
+            },
+            onDismiss = { selectedFile.value = null }
+        )
     }
 }
