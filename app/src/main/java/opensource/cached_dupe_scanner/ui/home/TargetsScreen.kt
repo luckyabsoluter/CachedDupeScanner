@@ -2,9 +2,11 @@ package opensource.cached_dupe_scanner.ui.home
 
 import android.os.Environment
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +24,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -32,7 +35,9 @@ import opensource.cached_dupe_scanner.sample.SampleData
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import java.io.File
 
 @Composable
@@ -58,70 +63,81 @@ fun TargetsScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .padding(Spacing.screenPadding)
-            .verticalScroll(scrollState)
-    ) {
-        AppTopBar(title = "Scan targets", onBack = onBack)
-        Spacer(modifier = Modifier.height(8.dp))
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .padding(Spacing.screenPadding)
+                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                .verticalScroll(scrollState)
+        ) {
+            AppTopBar(title = "Scan targets", onBack = onBack)
+            Spacer(modifier = Modifier.height(8.dp))
 
-        TextField(
-            value = newPath.value,
-            onValueChange = { newPath.value = it },
-            label = { Text("Add target path") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Button(onClick = {
-            val path = newPath.value.trim()
-            if (path.isNotBlank()) {
+            TextField(
+                value = newPath.value,
+                onValueChange = { newPath.value = it },
+                label = { Text("Add target path") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(onClick = {
+                val path = newPath.value.trim()
+                if (path.isNotBlank()) {
+                    store.addTarget(path)
+                    targets.value = store.loadTargets()
+                    newPath.value = ""
+                    onTargetsChanged()
+                }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Add target")
+            }
+
+            Button(onClick = {
+                val path = Environment.getExternalStorageDirectory().absolutePath
                 store.addTarget(path)
                 targets.value = store.loadTargets()
-                newPath.value = ""
                 onTargetsChanged()
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Add device storage root")
             }
-        }, modifier = Modifier.fillMaxWidth()) {
-            Text("Add target")
-        }
 
-        Button(onClick = {
-            val path = Environment.getExternalStorageDirectory().absolutePath
-            store.addTarget(path)
-            targets.value = store.loadTargets()
-            onTargetsChanged()
-        }, modifier = Modifier.fillMaxWidth()) {
-            Text("Add device storage root")
-        }
-
-        Button(onClick = {
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    SampleData.createSampleFiles(rootDir)
-                }
-                store.addTarget(rootDir.absolutePath)
-                targets.value = store.loadTargets()
-                onTargetsChanged()
-            }
-        }, modifier = Modifier.fillMaxWidth()) {
-            Text("Create samples + add target")
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            targets.value.forEach { target ->
-                TargetRow(
-                    target = target,
-                    onEdit = {
-                        editingId.value = target.id
-                        editingPath.value = target.path
-                    },
-                    onRemove = {
-                        deletingId.value = target.id
+            Button(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        SampleData.createSampleFiles(rootDir)
                     }
-                )
+                    store.addTarget(rootDir.absolutePath)
+                    targets.value = store.loadTargets()
+                    onTargetsChanged()
+                }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Create samples + add target")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                targets.value.forEach { target ->
+                    TargetRow(
+                        target = target,
+                        onEdit = {
+                            editingId.value = target.id
+                            editingPath.value = target.path
+                        },
+                        onRemove = {
+                            deletingId.value = target.id
+                        }
+                    )
+                }
             }
         }
+
+        VerticalScrollbar(
+            scrollState = scrollState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 4.dp)
+        )
     }
 
     if (editingId.value != null) {
