@@ -1,9 +1,15 @@
 package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "cached_files")
+@Entity(
+    tableName = "cached_files",
+    indices = [
+        Index("sizeBytes")
+    ]
+)
 data class CachedFileEntity(
     @PrimaryKey
     val normalizedPath: String,

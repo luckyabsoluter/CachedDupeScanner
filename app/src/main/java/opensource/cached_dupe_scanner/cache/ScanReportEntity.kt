@@ -1,9 +1,15 @@
 package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "scan_reports")
+@Entity(
+    tableName = "scan_reports",
+    indices = [
+        Index("startedAtMillis")
+    ]
+)
 data class ScanReportEntity(
     @PrimaryKey
     val id: String,
