@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +54,8 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
@@ -116,6 +119,7 @@ fun ResultsScreenDb(
     val membersCache = remember { mutableStateMapOf<String, MembersCacheEntry>() }
 
     val pageSize = 50
+    val buffer = 20
     val visibleCount = rememberSaveable { mutableStateOf(0) }
 
     val imageLoader = remember {
@@ -185,8 +189,27 @@ fun ResultsScreenDb(
         }
     }
 
-    LaunchedEffect(visibleCount.value) {
+    LaunchedEffect(visibleCount.value, groupCount.value, sortKey.value) {
         loadMoreIfNeeded()
+    }
+
+    // Auto-load next page as user scrolls (legacy behavior).
+    LaunchedEffect(groupCount.value, groups.value.size) {
+        if (groupCount.value <= 0) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            val remainingToTarget = groupCount.value - visibleCount.value
+            val closeToEnd = lastVisible >= (totalItems - buffer)
+            closeToEnd && remainingToTarget > 0
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                visibleCount.value = (visibleCount.value + pageSize)
+                    .coerceAtMost(groupCount.value)
+            }
     }
 
     Box(modifier = modifier) {
@@ -276,17 +299,14 @@ fun ResultsScreenDb(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                if (groupCount.value > visibleCount.value) {
+                if (isLoading.value && groups.value.isNotEmpty()) {
                     item {
-                        OutlinedButton(
-                            onClick = {
-                                visibleCount.value = (visibleCount.value + pageSize)
-                                    .coerceAtMost(groupCount.value)
-                            },
+                        Text(
+                            text = "Loading…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Load more")
-                        }
+                        )
                     }
                 }
             }
