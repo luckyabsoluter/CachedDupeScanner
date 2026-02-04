@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "scan_reports",
     indices = [
-        Index("startedAtMillis")
+        Index(value = ["startedAtMillis"], name = "index_scan_reports_startedAtMillis")
     ]
 )
 data class ScanReportEntity(
