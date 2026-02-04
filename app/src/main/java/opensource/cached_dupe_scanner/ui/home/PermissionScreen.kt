@@ -38,6 +38,7 @@ fun PermissionScreen(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val allFilesAccessGranted = hasAllFilesAccess()
 
     Box(modifier = modifier) {
         Column(
@@ -49,18 +50,23 @@ fun PermissionScreen(
             AppTopBar(title = "Permission", onBack = onBack)
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (Environment.isExternalStorageManager()) {
-                    "All-files access: granted"
-                } else {
-                    "All-files access: not granted"
-                },
+                text = allFilesAccessStatusText(
+                    sdkInt = Build.VERSION.SDK_INT,
+                    hasAccess = allFilesAccessGranted
+                ),
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(12.dp))
             Button(
                 onClick = {
-                    val uri = Uri.parse("package:${context.packageName}")
-                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val uri = Uri.parse("package:${context.packageName}")
+                        Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    }
                     context.startActivity(intent)
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -108,5 +114,31 @@ fun PermissionScreen(
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+    }
+}
+
+internal fun hasAllFilesAccess(
+    sdkInt: Int = Build.VERSION.SDK_INT,
+    isExternalStorageManager: () -> Boolean = { Environment.isExternalStorageManager() }
+): Boolean {
+    return if (sdkInt >= Build.VERSION_CODES.R) {
+        isExternalStorageManager()
+    } else {
+        true
+    }
+}
+
+internal fun allFilesAccessStatusText(
+    sdkInt: Int = Build.VERSION.SDK_INT,
+    hasAccess: Boolean = hasAllFilesAccess(sdkInt)
+): String {
+    return if (sdkInt >= Build.VERSION_CODES.R) {
+        if (hasAccess) {
+            "All-files access: granted"
+        } else {
+            "All-files access: not granted"
+        }
+    } else {
+        "All-files access: not required"
     }
 }
