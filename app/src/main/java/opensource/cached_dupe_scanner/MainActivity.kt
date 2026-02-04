@@ -250,6 +250,18 @@ class MainActivity : ComponentActivity() {
                                     navigateTo(backStack, screenCache, Screen.ResultsDetail(index))
                                 },
                                 deletedPaths = deletedPaths.value,
+                                onRefresh = {
+                                    val merged = withContext(Dispatchers.IO) {
+                                        historyRepo.loadMergedHistory()
+                                    }
+                                    displayResult.value = null
+                                    deletedPaths.value = emptySet()
+                                    if (merged != null) {
+                                        state.value = ScanUiState.Success(merged)
+                                    } else {
+                                        state.value = ScanUiState.Idle
+                                    }
+                                },
                                 onDeleteFile = { file ->
                                     val ok = withContext(Dispatchers.IO) {
                                         trashController.moveToTrash(file.normalizedPath).success
@@ -269,6 +281,18 @@ class MainActivity : ComponentActivity() {
                                 onBackToDashboard = { pop(backStack) },
                                 onOpenGroup = null,
                                 deletedPaths = deletedPaths.value,
+                                onRefresh = {
+                                    val merged = withContext(Dispatchers.IO) {
+                                        historyRepo.loadMergedHistory()
+                                    }
+                                    displayResult.value = null
+                                    deletedPaths.value = emptySet()
+                                    if (merged != null) {
+                                        state.value = ScanUiState.Success(merged)
+                                    } else {
+                                        state.value = ScanUiState.Idle
+                                    }
+                                },
                                 onDeleteFile = { file ->
                                     val ok = withContext(Dispatchers.IO) {
                                         trashController.moveToTrash(file.normalizedPath).success
