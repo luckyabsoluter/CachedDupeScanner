@@ -140,4 +140,28 @@ object CacheMigrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_scan_reports_startedAtMillis ON scan_reports(startedAtMillis)")
         }
     }
+
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS dupe_groups (
+                    sizeBytes INTEGER NOT NULL,
+                    hashHex TEXT NOT NULL,
+                    fileCount INTEGER NOT NULL,
+                    totalBytes INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(sizeBytes, hashHex)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dupe_groups_fileCount ON dupe_groups(fileCount)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dupe_groups_totalBytes ON dupe_groups(totalBytes)")
+
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_files_hashHex ON cached_files(hashHex)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_files_sizeBytes_hashHex ON cached_files(sizeBytes, hashHex)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_files_sizeBytes_normalizedPath ON cached_files(sizeBytes, normalizedPath)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_files_lastModifiedMillis_normalizedPath ON cached_files(lastModifiedMillis, normalizedPath)")
+        }
+    }
 }
