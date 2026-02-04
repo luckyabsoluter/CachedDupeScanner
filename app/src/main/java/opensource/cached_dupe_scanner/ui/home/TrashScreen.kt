@@ -66,6 +66,7 @@ fun TrashScreen(
     val totalCount = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val cursor = remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val topVisibleIndex = remember { mutableStateOf(0) }
     val menuOpen = remember { mutableStateOf(false) }
     val confirmEmpty = remember { mutableStateOf(false) }
     val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
@@ -112,6 +113,25 @@ fun TrashScreen(
 
     LaunchedEffect(Unit) {
         resetAndLoad()
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { topVisibleIndex.value = it }
+    }
+
+    val overlayText = run {
+        val total = totalCount.value
+        if (total <= 0) {
+            null
+        } else {
+            val loaded = entries.value.size.coerceAtMost(total).coerceAtLeast(1)
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / total.toDouble()) * 100).toInt()
+            "$current/$loaded/$total (${currentPercent}%/${loadedPercent}%)"
+        }
     }
 
     // Infinite scroll auto paging (legacy behavior).
@@ -194,6 +214,17 @@ fun TrashScreen(
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+
+        overlayText?.let { indicator ->
+            Text(
+                text = indicator,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
+            )
+        }
     }
 
     if (confirmEmpty.value) {

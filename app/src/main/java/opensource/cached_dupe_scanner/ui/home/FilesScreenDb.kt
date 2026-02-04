@@ -99,6 +99,7 @@ fun FilesScreenDb(
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val topVisibleIndex = remember { mutableStateOf(0) }
 
     val pageSize = 200
     val buffer = 50
@@ -144,6 +145,25 @@ fun FilesScreenDb(
         total.value = 0
         cursor.value = PagedFileRepository.Cursor.Start
         visibleCount.value = 0
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { topVisibleIndex.value = it }
+    }
+
+    val overlayText = run {
+        val totalCount = total.value
+        if (totalCount <= 0) {
+            null
+        } else {
+            val loaded = items.value.size.coerceAtMost(totalCount).coerceAtLeast(1)
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / totalCount.toDouble()) * 100).toInt()
+            "$current/$loaded/$totalCount (${currentPercent}%/${loadedPercent}%)"
+        }
     }
 
     // Auto-load next page on scroll (legacy behavior).
@@ -280,6 +300,17 @@ fun FilesScreenDb(
                     }
                 }
             }
+        }
+
+        overlayText?.let { indicator ->
+            Text(
+                text = indicator,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
+            )
         }
 
         VerticalLazyScrollbar(
