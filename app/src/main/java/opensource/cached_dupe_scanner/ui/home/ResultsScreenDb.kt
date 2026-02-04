@@ -36,6 +36,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,6 +66,13 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import java.io.File
+
+private class MembersCacheEntry {
+    val members = mutableStateListOf<FileMetadata>()
+    val cursor = mutableStateOf<String?>(null)
+    val isLoading = mutableStateOf(false)
+    val isComplete = mutableStateOf(false)
+}
 
 @Composable
 fun ResultsScreenDb(
@@ -101,6 +110,10 @@ fun ResultsScreenDb(
     val fileCount = remember { mutableStateOf(0) }
     val groupCount = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
+
+    // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
+    // Key: "<sizeBytes>:<hashHex>"
+    val membersCache = remember { mutableStateMapOf<String, MembersCacheEntry>() }
 
     val pageSize = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
@@ -254,6 +267,7 @@ fun ResultsScreenDb(
                         deletedPaths = deletedPaths,
                         showFullPaths = showFullPaths.value,
                         imageLoader = imageLoader,
+                        membersCache = membersCache,
                         onOpen = {
                             val handler = onOpenGroup ?: return@DuplicateGroupCardDb
                             handler(index)
@@ -291,6 +305,12 @@ fun ResultsScreenDb(
 
     if (selectedGroupIndex != null) {
         val group = groups.value.getOrNull(selectedGroupIndex)
+        val cacheKey = remember(group?.sizeBytes, group?.hashHex) {
+            if (group == null) null else "${group.sizeBytes}:${group.hashHex}"
+        }
+        val entry = remember(cacheKey) {
+            if (cacheKey == null) null else membersCache.getOrPut(cacheKey) { MembersCacheEntry() }
+        }
         val detailScrollState = rememberScrollState()
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -313,7 +333,8 @@ fun ResultsScreenDb(
                             group = group,
                             deletedPaths = deletedPaths,
                             onDeleteFile = onDeleteFile,
-                            imageLoader = imageLoader
+                            imageLoader = imageLoader,
+                            cacheEntry = entry
                         )
                     }
                 }
@@ -416,12 +437,17 @@ private fun DuplicateGroupCardDb(
     deletedPaths: Set<String>,
     showFullPaths: Boolean,
     imageLoader: ImageLoader,
+    membersCache: MutableMap<String, MembersCacheEntry>,
     onOpen: () -> Unit
 ) {
     val context = LocalContext.current
-    val previewMembers = remember(group.sizeBytes, group.hashHex) { mutableStateOf<List<FileMetadata>>(emptyList()) }
+    val cacheKey = remember(group.sizeBytes, group.hashHex) { "${group.sizeBytes}:${group.hashHex}" }
+    val entry = remember(cacheKey) { membersCache.getOrPut(cacheKey) { MembersCacheEntry() } }
 
     LaunchedEffect(group.sizeBytes, group.hashHex) {
+        // Only do the initial DB hit once per group key.
+        if (entry.members.isNotEmpty() || entry.isLoading.value) return@LaunchedEffect
+        entry.isLoading.value = true
         val members = withContext(Dispatchers.IO) {
             resultsRepo.listGroupMembers(
                 sizeBytes = group.sizeBytes,
@@ -430,11 +456,16 @@ private fun DuplicateGroupCardDb(
                 limit = 10
             )
         }
-        previewMembers.value = members
+        entry.members.clear()
+        entry.members.addAll(members)
+        entry.cursor.value = members.lastOrNull()?.normalizedPath
+        // If we already got all files (small group), mark complete.
+        entry.isComplete.value = members.size >= group.fileCount
+        entry.isLoading.value = false
     }
 
-    val preview = previewMembers.value.firstOrNull { isMediaFile(it.normalizedPath) }
-    val groupDeleted = previewMembers.value.any { deletedPaths.contains(it.normalizedPath) }
+    val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
+    val groupDeleted = entry.members.any { deletedPaths.contains(it.normalizedPath) }
 
     Card(
         modifier = Modifier
@@ -482,7 +513,7 @@ private fun DuplicateGroupCardDb(
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
-                previewMembers.value
+                entry.members
                     .sortedBy { it.normalizedPath }
                     .forEach { file ->
                         val date = formatDate(file.lastModifiedMillis)
@@ -495,7 +526,7 @@ private fun DuplicateGroupCardDb(
                         )
                     }
 
-                val remaining = (group.fileCount - previewMembers.value.size).coerceAtLeast(0)
+                val remaining = (group.fileCount - entry.members.size).coerceAtLeast(0)
                 if (remaining > 0) {
                     Text(
                         text = "+${remaining} more…",
@@ -514,23 +545,25 @@ private fun GroupDetailDb(
     group: DuplicateGroupEntity,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
-    imageLoader: ImageLoader
+    imageLoader: ImageLoader,
+    cacheEntry: MembersCacheEntry?
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
-    val members = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
-    val isLoading = remember { mutableStateOf(false) }
+    val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
-    val cursor = remember { mutableStateOf<String?>(null) }
+    val cursor = entry.cursor
 
     fun loadMore(reset: Boolean) {
-        if (isLoading.value) return
+        if (entry.isLoading.value) return
+        if (entry.isComplete.value) return
         scope.launch {
-            isLoading.value = true
+            entry.isLoading.value = true
             if (reset) {
                 cursor.value = null
-                members.value = emptyList()
+                entry.members.clear()
+                entry.isComplete.value = false
             }
             val next = withContext(Dispatchers.IO) {
                 resultsRepo.listGroupMembers(
@@ -541,18 +574,25 @@ private fun GroupDetailDb(
                 )
             }
             if (next.isNotEmpty()) {
-                members.value = members.value + next
+                entry.members.addAll(next)
                 cursor.value = next.last().normalizedPath
             }
-            isLoading.value = false
+            // Mark complete if we reached the known count or got a short/empty page.
+            if (entry.members.size >= group.fileCount || next.size < pageSize) {
+                entry.isComplete.value = true
+            }
+            entry.isLoading.value = false
         }
     }
 
     LaunchedEffect(group.sizeBytes, group.hashHex) {
-        loadMore(reset = true)
+        // If we already have members cached, don't re-query on every open.
+        if (entry.members.isEmpty() && !entry.isLoading.value) {
+            loadMore(reset = true)
+        }
     }
 
-    val preview = members.value.firstOrNull { isMediaFile(it.normalizedPath) }
+    val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
     if (preview != null) {
         AsyncImage(
             model = ImageRequest.Builder(context)
@@ -570,7 +610,7 @@ private fun GroupDetailDb(
     Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
     Spacer(modifier = Modifier.height(8.dp))
 
-    members.value
+    entry.members
         .sortedBy { it.normalizedPath }
         .forEach { file ->
             val date = formatDate(file.lastModifiedMillis)
@@ -623,10 +663,16 @@ private fun GroupDetailDb(
 
     OutlinedButton(
         onClick = { loadMore(reset = false) },
-        enabled = !isLoading.value,
+        enabled = !entry.isLoading.value && !entry.isComplete.value,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(if (isLoading.value) "Loading…" else "Load more")
+        Text(
+            when {
+                entry.isComplete.value -> "All loaded"
+                entry.isLoading.value -> "Loading…"
+                else -> "Load more"
+            }
+        )
     }
 
     selectedFile.value?.let { file ->
