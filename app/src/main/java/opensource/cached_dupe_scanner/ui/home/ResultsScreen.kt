@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -78,6 +79,7 @@ fun ResultsScreen(
     displayResult: ScanResult? = null,
     deletedPaths: Set<String> = emptySet(),
     onDeleteFile: (suspend (FileMetadata) -> Boolean)? = null,
+    onRefresh: (suspend () -> Unit)? = null,
     onOpenGroup: ((Int) -> Unit)? = null,
     onSortChanged: (() -> Unit)? = null,
     selectedGroupIndex: Int? = null,
@@ -203,6 +205,18 @@ fun ResultsScreen(
                                 expanded = menuExpanded.value,
                                 onDismissRequest = { menuExpanded.value = false }
                             ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Refresh") },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        val handler = onRefresh ?: return@DropdownMenuItem
+                                        scope.launch { handler() }
+                                    }
+                                )
+
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text("Show full paths") },
                                     leadingIcon = {
