@@ -12,14 +12,15 @@ Create it once locally. **Never commit** the generated `.jks` file to Git.
 ```bash
 keytool -genkeypair \
   -v \
+  -storetype pkcs12 \
   -keystore release-keystore.jks \
-  -alias release \
+  -alias alias-release \
   -keyalg RSA \
   -keysize 2048 \
   -validity 10000
 ```
 
-- The `-alias` value (e.g., `release`) must match the GitHub Secret `ANDROID_KEY_ALIAS`.
+- The `-alias` value (e.g., `alias-release`) must match the GitHub Secret `ANDROID_KEY_ALIAS`.
 - Store the keystore password and key password as `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_PASSWORD`, respectively.
 
 ## 2) Encode the keystore as Base64
@@ -48,7 +49,7 @@ In the GitHub repo, go to `Settings` → `Secrets and variables` → `Actions` �
 
 - `ANDROID_KEYSTORE_BASE64`: Base64 string of the keystore file
 - `ANDROID_KEYSTORE_PASSWORD`: keystore password
-- `ANDROID_KEY_ALIAS`: key alias (e.g., `release`)
+- `ANDROID_KEY_ALIAS`: key alias (e.g., `alias-release`)
 - `ANDROID_KEY_PASSWORD`: key password
 
 ## 4) Trigger a release via tag
