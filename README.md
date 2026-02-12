@@ -1,36 +1,96 @@
 # CachedDupeScanner
 
-CachedDupeScanner is an Android-first project that scans very large file sets for duplicates, persists scan metadata, and reuses that cache to make subsequent scans dramatically faster.
+CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very large directories quickly, persists metadata and hashes in a **Room-backed cache**, and dramatically accelerates subsequent scans by reusing cached results.
 
-This repository is optimized for AI vibe coding workflows: the README is the single source of truth for milestones, required tests, and commit boundaries. Treat the sections below as the execution plan for agents and contributors.
+## Screenshots
+<img width="100" src="https://github.com/user-attachments/assets/e580c048-3c51-4356-a23c-88369d99d852" />
+<img width="100" src="https://github.com/user-attachments/assets/1eafa9b1-6de7-49f4-9416-ba556be9893a" />
+<img width="100" src="https://github.com/user-attachments/assets/2595b492-c63b-422d-b24d-bb2055c8f48a" />
+<img width="100" src="https://github.com/user-attachments/assets/c8105f4e-f16b-40e0-86e5-5660ece2a8fd" />
+<img width="100" src="https://github.com/user-attachments/assets/969a62d7-47e0-4b38-8922-dfe407e6f508" />
+<img width="100" src="https://github.com/user-attachments/assets/07f34db9-ca7d-4c06-8830-ac55964b09b4" />
+<img width="100" src="https://github.com/user-attachments/assets/fb076a13-605e-4c29-a2d9-af9d9d16ea33" />
+<img width="100" src="https://github.com/user-attachments/assets/d7f90d51-15af-4e53-9093-abe9971e373b" />
+<img width="100" src="https://github.com/user-attachments/assets/164d7c80-520c-4418-b9cc-42d31df34637" />
+<img width="100" src="https://github.com/user-attachments/assets/ab779d92-3887-49cd-ba74-6b7694f317ef" />
+<img width="100" src="https://github.com/user-attachments/assets/9783eeb7-8ea3-4b4f-a5ec-ef7110a2883d" />
+<img width="100" src="https://github.com/user-attachments/assets/8808ceec-982e-4bba-a23c-65cc439f36e3" />
 
-## Goals
+## Key features
 
-- **Fast duplicate detection** across massive directories.
-- **Persistent cache** to avoid re-reading unchanged files.
-- **Deterministic results** with reproducible test suites.
-- **Open-source friendly** structure and contribution workflow.
+- **Incremental scans**: unchanged files are not re-hashed; cache is reused.
+- **Deferred hashing**: SHA-256 is computed only when size collisions exist.
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite).
+- **Target management**: save multiple scan targets; run per-target or batch scans.
+- **Duplicate grouping**: results grouped by hash with sorting/filtering.
+- **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete.
+- **Scan reports**: timings, phase durations, hash candidate counts.
+- **Export**: JSON/CSV utilities for results.
+- **DB maintenance**: purge missing files, re-hash stale or missing entries.
 
-## What is “Cached” here?
+## How scanning works
 
-Each scan stores file metadata (path, size, timestamp, hashes) and directory state. Later scans compare changes and only re-hash files that are new or modified.
+1. **Collect files**: `FileWalker` gathers file metadata.
+2. **Select candidates**: only size-collision files become hash candidates.
+3. **Cache lookup**: `CacheStore` checks FRESH/STALE/MISS state.
+4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates.
+5. **Group results**: duplicates are grouped by hash and persisted.
 
-## Cache Policy (Current)
+## Cache policy (current)
 
-The cache is designed to **delay hashing as long as possible** and only compute hashes when needed.
+The cache is designed to **delay hashing as long as possible**.
 
-1. **Always store size first**
-	- File path + size + mtime are recorded for every scanned file.
-2. **Hash only on collisions**
-	- Hash is computed **only when there is a size collision** (same size appears more than once in the candidate set).
-3. **Incremental re-hash**
-	- If size/mtime changes, the file is treated as stale and re-hashed only when needed by step 2.
+1. **Always record size/mtime**: path, size, and modified time are stored for all files.
+2. **Hash only on collisions**: hashing occurs only if a size collision exists.
+3. **Change detection**: size/mtime changes mark entries as stale, re-hashed on demand.
 
-This keeps CPU and I/O costs low for large scans while still ensuring reliable duplicate detection.
+## Architecture overview
 
-## Project Status
+```
+UI (Compose)
+  -> Scan Orchestrator
+      -> File Walker
+          -> Hashing (SHA-256)
+      -> Cache Store (Room/SQLite)
+  -> Results / Reports / Trash
+```
 
-This repository currently contains the Android app shell. The scan engine, cache storage layer, and test suite will be built step-by-step using the milestones defined below.
+Key design points:
+
+- **Deferred hashing** to minimize CPU/I/O
+- **Chunked writes** for large datasets
+- **Normalized paths** for stable identifiers
+
+## Data model summary
+
+Room database (scan-cache.db) core tables:
+
+- **cached_files**: path, size, mtime, hash
+- **scan_reports**: scan summary (durations, counts, targets)
+- **trash_entries**: trash records (origin/trashed path, size, timestamps)
+
+For detailed DB access flows, see [docs/db-access.md](docs/db-access.md).
+
+## Module map
+
+- **core**: `FileMetadata`, `ScanResult`, duplicate analysis
+- **engine**: `IncrementalScanner`, `FileWalker`, hashing
+- **cache**: Room entities/DAO, cache lookup/upsert
+- **storage**: settings/targets/reports/trash
+- **export**: JSON/CSV exports
+- **ui**: Compose screens and components
+
+## Main screens
+
+- Dashboard (entry point)
+- Permission (file access)
+- Targets (scan targets)
+- Scan Command (run scans + progress)
+- Results / Files (duplicates and file list)
+- Trash (restore/permanent delete)
+- DB Management (cleanup/rehash)
+- Reports (scan reports)
+- Settings / About
 
 ## Quickstart
 
@@ -45,133 +105,25 @@ This repository currently contains the Android app shell. The scan engine, cache
 ./gradlew assembleDebug
 ```
 
-### Release automation
-
-See [docs/android-apk-release.md](docs/android-apk-release.md) for GitHub Actions release workflow setup and keystore/secrets instructions.
-
 ### Tests
 
 ```bash
 ./gradlew test
 ```
 
-### Instrumented Tests
+### Instrumented tests
 
 ```bash
 ./gradlew connectedAndroidTest
 ```
 
-## Architecture (Planned)
+### Release automation
 
-```
-UI (Compose)
-  -> Scan Orchestrator
-	  -> File Walker
-		  -> Hashing Engine (tiered: size -> partial hash -> full hash)
-	  -> Cache Store (Room/SQLite)
-  -> Results Store
-```
+For signed APK automation, see [docs/android-apk-release.md](docs/android-apk-release.md).
 
-Key decisions:
+## Development workflow
 
-- **Tiered hashing** for speed: size and mtime checks before computing hashes.
-- **Chunked I/O** to avoid memory spikes.
-- **Stable identifiers** for files to track across scans.
-
-## Milestones (Agent Roadmap)
-
-Each milestone must be delivered with passing tests and a clean, focused commit. Use the commit messages below as guidance.
-
-### M1 — Core scan model & hashing
-
-Deliverables:
-
-- Data model for file metadata and scan results.
-- Hashing utilities with streaming support.
-
-Required tests:
-
-- Hashing produces expected digest for known fixtures.
-- Streaming hash matches single-pass hash.
-- File metadata normalization is deterministic.
-
-Suggested commit:
-
-```
-feat(core): add file metadata model and hashing utils
-```
-
-### M2 — Cache store
-
-Deliverables:
-
-- Cache schema (Room/SQLite).
-- Upsert and lookup logic.
-
-Required tests:
-
-- Cache insert/update semantics.
-- Cache lookup returns correct stale/fresh results.
-
-Suggested commit:
-
-```
-feat(cache): add persistent scan cache
-```
-
-### M3 — Scan engine
-
-Deliverables:
-
-- File walker that honors ignore rules.
-- Incremental scan strategy using the cache.
-
-Required tests:
-
-- Incremental scan avoids re-hashing unchanged files.
-- Modified files are re-hashed and updated in cache.
-
-Suggested commit:
-
-```
-feat(engine): add incremental duplicate scan engine
-```
-
-### M4 — UI results and export
-
-Deliverables:
-
-- Compose UI for scan progress and results.
-- Export results to JSON/CSV.
-
-Required tests:
-
-- UI state reducer handles progress, success, and error.
-- Exporter produces stable output.
-
-Suggested commit:
-
-```
-feat(ui): add scan results view and export
-```
-
-### M5 — Performance & regression tests
-
-Deliverables:
-
-- Benchmark scaffolding.
-- Regression tests for cache behavior.
-
-Required tests:
-
-- Benchmark smoke test runs within time limits.
-- Regression cases for previously fixed issues.
-
-Suggested commit:
-
-```
-test(perf): add benchmark and regression tests
-```
+Project rules and the agent guide are in [AGENTS.md](AGENTS.md).
 
 ## License
 
