@@ -112,7 +112,9 @@ fun ResultsScreenDb(
     val groups = remember { mutableStateOf<List<DuplicateGroupEntity>>(emptyList()) }
     val fileCount = remember { mutableStateOf(0) }
     val groupCount = remember { mutableStateOf(0) }
-    val isLoading = remember { mutableStateOf(false) }
+    val isRefreshing = remember { mutableStateOf(false) }
+    val isPaging = remember { mutableStateOf(false) }
+    val loadError = remember { mutableStateOf<String?>(null) }
 
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
@@ -139,40 +141,55 @@ fun ResultsScreenDb(
     }
 
     fun refresh(reset: Boolean, rebuild: Boolean) {
+        if (isRefreshing.value) return
         scope.launch {
-            isLoading.value = true
-            withContext(Dispatchers.IO) {
-                if (rebuild) {
-                    resultsRepo.rebuildGroups()
+            isRefreshing.value = true
+            loadError.value = null
+            try {
+                val (nextFileCount, nextGroupCount) = withContext(Dispatchers.IO) {
+                    if (rebuild) {
+                        resultsRepo.rebuildGroups()
+                    }
+                    resultsRepo.countFiles() to resultsRepo.countGroups()
                 }
-                fileCount.value = resultsRepo.countFiles()
-                groupCount.value = resultsRepo.countGroups()
+                fileCount.value = nextFileCount
+                groupCount.value = nextGroupCount
+                if (reset) {
+                    groups.value = emptyList()
+                    visibleCount.value = 0
+                    topVisibleGroupIndex.value = 0
+                }
+            } catch (_: Exception) {
+                loadError.value = "결과를 불러오지 못했습니다. 다시 시도해 주세요."
+            } finally {
+                isRefreshing.value = false
             }
-            if (reset) {
-                groups.value = emptyList()
-                visibleCount.value = 0
-            }
-            isLoading.value = false
         }
     }
 
     fun loadMoreIfNeeded() {
-        if (isLoading.value) return
+        if (isRefreshing.value || isPaging.value) return
         val needed = visibleCount.value.coerceAtMost(groupCount.value)
         if (groups.value.size >= needed) return
         val offset = groups.value.size
         val limit = needed - offset
         if (limit <= 0) return
         scope.launch {
-            isLoading.value = true
-            val next = withContext(Dispatchers.IO) {
-                // SortDirection is currently enforced as Desc in SQL; Asc is not supported yet.
-                resultsRepo.listGroups(sortKey = mapSort(sortKey.value), offset = offset, limit = limit)
+            isPaging.value = true
+            loadError.value = null
+            try {
+                val next = withContext(Dispatchers.IO) {
+                    // SortDirection is currently enforced as Desc in SQL; Asc is not supported yet.
+                    resultsRepo.listGroups(sortKey = mapSort(sortKey.value), offset = offset, limit = limit)
+                }
+                if (next.isNotEmpty()) {
+                    groups.value = groups.value + next
+                }
+            } catch (_: Exception) {
+                loadError.value = "목록을 이어서 불러오지 못했습니다. 새로고침해 주세요."
+            } finally {
+                isPaging.value = false
             }
-            if (next.isNotEmpty()) {
-                groups.value = groups.value + next
-            }
-            isLoading.value = false
         }
     }
 
@@ -299,8 +316,13 @@ fun ResultsScreenDb(
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            if (groupCount.value == 0 && !isLoading.value) {
-                item { Text("No duplicates found.") }
+            if (groupCount.value == 0) {
+                item {
+                    Text(
+                        if (isRefreshing.value) "Loading results..."
+                        else "No duplicates found."
+                    )
+                }
             } else {
                 val toShow = groups.value.take(visibleCount.value)
                 itemsIndexed(toShow, key = { _, g -> "${g.sizeBytes}:${g.hashHex}" }) { index, g ->
@@ -319,7 +341,7 @@ fun ResultsScreenDb(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                if (isLoading.value && groups.value.isNotEmpty()) {
+                if ((isRefreshing.value || isPaging.value) && groups.value.isNotEmpty()) {
                     item {
                         Text(
                             text = "Loading…",
@@ -327,6 +349,25 @@ fun ResultsScreenDb(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                }
+            }
+
+            loadError.value?.let { message ->
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        OutlinedButton(
+                            onClick = { refresh(reset = true, rebuild = true) },
+                            enabled = !isRefreshing.value
+                        ) {
+                            Text("Retry")
+                        }
                     }
                 }
             }
@@ -501,20 +542,23 @@ private fun DuplicateGroupCardDb(
         // Only do the initial DB hit once per group key.
         if (entry.members.isNotEmpty() || entry.isLoading.value) return@LaunchedEffect
         entry.isLoading.value = true
-        val members = withContext(Dispatchers.IO) {
-            resultsRepo.listGroupMembers(
-                sizeBytes = group.sizeBytes,
-                hashHex = group.hashHex,
-                afterPath = null,
-                limit = 10
-            )
+        try {
+            val members = withContext(Dispatchers.IO) {
+                resultsRepo.listGroupMembers(
+                    sizeBytes = group.sizeBytes,
+                    hashHex = group.hashHex,
+                    afterPath = null,
+                    limit = 10
+                )
+            }
+            entry.members.clear()
+            entry.members.addAll(members)
+            entry.cursor.value = members.lastOrNull()?.normalizedPath
+            // If we already got all files (small group), mark complete.
+            entry.isComplete.value = members.size >= group.fileCount
+        } finally {
+            entry.isLoading.value = false
         }
-        entry.members.clear()
-        entry.members.addAll(members)
-        entry.cursor.value = members.lastOrNull()?.normalizedPath
-        // If we already got all files (small group), mark complete.
-        entry.isComplete.value = members.size >= group.fileCount
-        entry.isLoading.value = false
     }
 
     val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
@@ -613,28 +657,31 @@ private fun GroupDetailDb(
         if (entry.isComplete.value) return
         scope.launch {
             entry.isLoading.value = true
-            if (reset) {
-                cursor.value = null
-                entry.members.clear()
-                entry.isComplete.value = false
+            try {
+                if (reset) {
+                    cursor.value = null
+                    entry.members.clear()
+                    entry.isComplete.value = false
+                }
+                val next = withContext(Dispatchers.IO) {
+                    resultsRepo.listGroupMembers(
+                        sizeBytes = group.sizeBytes,
+                        hashHex = group.hashHex,
+                        afterPath = cursor.value,
+                        limit = pageSize
+                    )
+                }
+                if (next.isNotEmpty()) {
+                    entry.members.addAll(next)
+                    cursor.value = next.last().normalizedPath
+                }
+                // Mark complete if we reached the known count or got a short/empty page.
+                if (entry.members.size >= group.fileCount || next.size < pageSize) {
+                    entry.isComplete.value = true
+                }
+            } finally {
+                entry.isLoading.value = false
             }
-            val next = withContext(Dispatchers.IO) {
-                resultsRepo.listGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex,
-                    afterPath = cursor.value,
-                    limit = pageSize
-                )
-            }
-            if (next.isNotEmpty()) {
-                entry.members.addAll(next)
-                cursor.value = next.last().normalizedPath
-            }
-            // Mark complete if we reached the known count or got a short/empty page.
-            if (entry.members.size >= group.fileCount || next.size < pageSize) {
-                entry.isComplete.value = true
-            }
-            entry.isLoading.value = false
         }
     }
 
