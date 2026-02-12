@@ -71,4 +71,44 @@ class DuplicateGroupDaoTest {
 
         db.close()
     }
+
+    @Test
+    fun insertFromCacheDoesNotFailWhenSameGroupAlreadyExists() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        val fileDao = db.fileCacheDao()
+        val groupDao = db.duplicateGroupDao()
+
+        fileDao.upsert(
+            CachedFileEntity(
+                normalizedPath = "/a",
+                path = "/a",
+                sizeBytes = 10,
+                lastModifiedMillis = 1,
+                hashHex = "h1"
+            )
+        )
+        fileDao.upsert(
+            CachedFileEntity(
+                normalizedPath = "/b",
+                path = "/b",
+                sizeBytes = 10,
+                lastModifiedMillis = 1,
+                hashHex = "h1"
+            )
+        )
+
+        groupDao.insertFromCache(updatedAtMillis = 100L)
+        groupDao.insertFromCache(updatedAtMillis = 200L)
+
+        assertEquals(1, groupDao.countGroups())
+        val group = groupDao.get(sizeBytes = 10, hashHex = "h1")
+        assertNotNull(group)
+        assertEquals(200L, group?.updatedAtMillis)
+
+        db.close()
+    }
 }

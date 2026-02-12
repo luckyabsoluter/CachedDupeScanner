@@ -21,7 +21,7 @@ interface DuplicateGroupDao {
 
     @Query(
         """
-        INSERT INTO dupe_groups (sizeBytes, hashHex, fileCount, totalBytes, updatedAtMillis)
+        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashHex, fileCount, totalBytes, updatedAtMillis)
         SELECT
             sizeBytes as sizeBytes,
             hashHex as hashHex,
