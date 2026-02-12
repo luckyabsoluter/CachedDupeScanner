@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           APK_DIR="app/build/outputs/apk/release"
           APK_PATH=$(ls -1 "$APK_DIR"/*.apk | head -n 1)
-          NEW_PATH="$APK_DIR/app-${GITHUB_REF_NAME}.apk"
+          NEW_PATH="$APK_DIR/CachedDupeScanner-${GITHUB_REF_NAME}.apk"
           mv "$APK_PATH" "$NEW_PATH"
           echo "apk_path=$NEW_PATH" >> "$GITHUB_OUTPUT"
 
