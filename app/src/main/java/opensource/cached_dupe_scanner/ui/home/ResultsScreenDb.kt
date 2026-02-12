@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -85,6 +86,7 @@ fun ResultsScreenDb(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onOpenGroup: ((Int) -> Unit)?,
+    refreshVersion: Int = 0,
     selectedGroupIndex: Int? = null,
     modifier: Modifier = Modifier
 ) {
@@ -124,6 +126,7 @@ fun ResultsScreenDb(
     val buffer = 20
     val visibleCount = rememberSaveable { mutableStateOf(0) }
     val topVisibleGroupIndex = remember { mutableStateOf(0) }
+    val queryVersion = remember { mutableStateOf(0L) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -145,18 +148,37 @@ fun ResultsScreenDb(
         scope.launch {
             isRefreshing.value = true
             loadError.value = null
+            val requestVersion = if (reset) {
+                queryVersion.value += 1
+                queryVersion.value
+            } else {
+                queryVersion.value
+            }
             try {
-                val (nextFileCount, nextGroupCount) = withContext(Dispatchers.IO) {
+                val sortForQuery = mapSort(sortKey.value)
+                val (nextFileCount, nextGroupCount, firstPage) = withContext(Dispatchers.IO) {
                     if (rebuild) {
                         resultsRepo.rebuildGroups()
                     }
-                    resultsRepo.countFiles() to resultsRepo.countGroups()
+                    val fileCount = resultsRepo.countFiles()
+                    val groupCount = resultsRepo.countGroups()
+                    val first = if (reset && groupCount > 0) {
+                        resultsRepo.listGroups(
+                            sortKey = sortForQuery,
+                            offset = 0,
+                            limit = pageSize.coerceAtMost(groupCount)
+                        )
+                    } else {
+                        emptyList()
+                    }
+                    Triple(fileCount, groupCount, first)
                 }
+                if (requestVersion != queryVersion.value) return@launch
                 fileCount.value = nextFileCount
                 groupCount.value = nextGroupCount
                 if (reset) {
-                    groups.value = emptyList()
-                    visibleCount.value = 0
+                    groups.value = firstPage
+                    visibleCount.value = firstPage.size
                     topVisibleGroupIndex.value = 0
                 }
             } catch (_: Exception) {
@@ -169,6 +191,7 @@ fun ResultsScreenDb(
 
     fun loadMoreIfNeeded() {
         if (isRefreshing.value || isPaging.value) return
+        val requestVersion = queryVersion.value
         val needed = visibleCount.value.coerceAtMost(groupCount.value)
         if (groups.value.size >= needed) return
         val offset = groups.value.size
@@ -182,6 +205,8 @@ fun ResultsScreenDb(
                     // SortDirection is currently enforced as Desc in SQL; Asc is not supported yet.
                     resultsRepo.listGroups(sortKey = mapSort(sortKey.value), offset = offset, limit = limit)
                 }
+                if (requestVersion != queryVersion.value) return@launch
+                if (offset != groups.value.size) return@launch
                 if (next.isNotEmpty()) {
                     groups.value = groups.value + next
                 }
@@ -198,6 +223,14 @@ fun ResultsScreenDb(
     }
 
     LaunchedEffect(sortKey.value) {
+        refresh(reset = true, rebuild = false)
+    }
+
+    LaunchedEffect(refreshVersion) {
+        if (refreshVersion <= 0) return@LaunchedEffect
+        while (isRefreshing.value) {
+            delay(100)
+        }
         refresh(reset = true, rebuild = false)
     }
 
@@ -222,7 +255,7 @@ fun ResultsScreenDb(
     } else {
         val totalGroups = groupCount.value
         val loaded = visibleCount.value.coerceAtMost(totalGroups)
-        val current = (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+        val current = if (loaded <= 0) 0 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
         val safeLoaded = loaded.coerceAtLeast(1)
         val safeTotal = totalGroups.coerceAtLeast(1)
         val currentPercent = ((current.toDouble() / safeLoaded.toDouble()) * 100).toInt()
