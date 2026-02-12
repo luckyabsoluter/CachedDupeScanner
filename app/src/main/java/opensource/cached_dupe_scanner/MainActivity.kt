@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     val filesRefreshVersion = remember { mutableStateOf(0) }
                     val targetsVersion = remember { mutableStateOf(0) }
                     val reportsRefreshVersion = remember { mutableStateOf(0) }
+                    val resultsRefreshVersion = remember { mutableStateOf(0) }
                     val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
@@ -117,6 +118,7 @@ class MainActivity : ComponentActivity() {
                                 historyRepo.recordScan(scan)
                                 resultsRepo.rebuildGroups()
                             }
+                            resultsRefreshVersion.value += 1
                         }
                         navigateTo(backStack, screenCache, Screen.Results)
                     }
@@ -271,6 +273,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenGroup = { index ->
                                     selectedResultsGroupIndex.value = index
                                 },
+                                refreshVersion = resultsRefreshVersion.value,
                                 selectedGroupIndex = selectedResultsGroupIndex.value,
                                 modifier = screenModifier
                             )
