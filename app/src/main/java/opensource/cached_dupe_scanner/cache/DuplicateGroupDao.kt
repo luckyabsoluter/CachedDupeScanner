@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 
 @Dao
 interface DuplicateGroupDao {
@@ -36,6 +37,7 @@ interface DuplicateGroupDao {
     )
     fun insertFromCache(updatedAtMillis: Long)
 
+    @Transaction
     fun rebuildFromCache(updatedAtMillis: Long) {
         clearInternal()
         insertFromCache(updatedAtMillis)
@@ -44,10 +46,16 @@ interface DuplicateGroupDao {
     @Query("SELECT COUNT(*) FROM dupe_groups")
     fun countGroups(): Int
 
+    @Query("SELECT MAX(updatedAtMillis) FROM dupe_groups")
+    fun latestUpdatedAtMillis(): Long?
+
+    @Query("SELECT COUNT(*) FROM dupe_groups WHERE updatedAtMillis = :updatedAtMillis")
+    fun countGroupsAt(updatedAtMillis: Long): Int
+
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY fileCount DESC, totalBytes DESC
+        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashHex DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -56,7 +64,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY fileCount ASC, totalBytes ASC
+        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashHex ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -65,7 +73,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY totalBytes DESC, fileCount DESC
+        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashHex DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -74,7 +82,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY totalBytes ASC, fileCount ASC
+        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashHex ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -83,7 +91,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY sizeBytes DESC, fileCount DESC
+        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashHex DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -92,11 +100,71 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY sizeBytes ASC, fileCount ASC
+        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashHex ASC
         LIMIT :limit OFFSET :offset
         """
     )
     fun listByPerFileSizeAsc(limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashHex DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByCountDescAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashHex ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByCountAscAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashHex DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByTotalBytesDescAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashHex ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByTotalBytesAscAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashHex DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByPerFileSizeDescAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashHex ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByPerFileSizeAscAt(updatedAtMillis: Long, limit: Int, offset: Int): List<DuplicateGroupEntity>
 
     @Query(
         """

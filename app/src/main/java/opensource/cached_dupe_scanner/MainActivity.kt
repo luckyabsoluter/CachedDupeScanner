@@ -113,14 +113,18 @@ class MainActivity : ComponentActivity() {
                         filesRefreshVersion.value += 1
                         selectedResultsGroupIndex.value = null
                         scope.launch {
-                            withContext(Dispatchers.IO) {
-                                Log.d("MainActivity", "Persisting scan to DB")
-                                historyRepo.recordScan(scan)
-                                resultsRepo.rebuildGroups()
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    Log.d("MainActivity", "Persisting scan to DB")
+                                    historyRepo.recordScan(scan)
+                                    resultsRepo.rebuildGroups()
+                                }
+                            }.onFailure { error ->
+                                Log.e("MainActivity", "Failed to persist/rebuild results", error)
                             }
                             resultsRefreshVersion.value += 1
+                            navigateTo(backStack, screenCache, Screen.Results)
                         }
-                        navigateTo(backStack, screenCache, Screen.Results)
                     }
 
                     LaunchedEffect(clearRequested.value) {

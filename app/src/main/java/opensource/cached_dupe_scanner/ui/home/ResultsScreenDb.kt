@@ -98,10 +98,20 @@ fun ResultsScreenDb(
     val settingsSnapshot = remember { settingsStore.load() }
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
 
-    val sortKey = remember {
-        val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
+    fun normalizeDbSortKey(key: ResultSortKey): ResultSortKey {
+        return if (key == ResultSortKey.Name) ResultSortKey.Count else key
+    }
+
+    val initialSortKey = remember(settingsSnapshot.resultSortKey) {
+        val parsed = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
             .getOrDefault(ResultSortKey.Count)
-        mutableStateOf(key)
+        normalizeDbSortKey(parsed)
+    }
+    val shouldNormalizeSortKeySetting = remember(settingsSnapshot.resultSortKey, initialSortKey) {
+        settingsSnapshot.resultSortKey != initialSortKey.name
+    }
+    val sortKey = remember {
+        mutableStateOf(initialSortKey)
     }
     val sortDirection = remember {
         val dir = runCatching { SortDirection.valueOf(settingsSnapshot.resultSortDirection) }
@@ -117,6 +127,8 @@ fun ResultsScreenDb(
     val isRefreshing = remember { mutableStateOf(false) }
     val isPaging = remember { mutableStateOf(false) }
     val loadError = remember { mutableStateOf<String?>(null) }
+    val snapshotUpdatedAtMillis = remember { mutableStateOf<Long?>(null) }
+    val queryCoordinator = remember { ResultsScreenDbQueryCoordinator() }
 
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
@@ -126,7 +138,6 @@ fun ResultsScreenDb(
     val buffer = 20
     val visibleCount = rememberSaveable { mutableStateOf(0) }
     val topVisibleGroupIndex = remember { mutableStateOf(0) }
-    val queryVersion = remember { mutableStateOf(0L) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -135,7 +146,8 @@ fun ResultsScreenDb(
     }
 
     fun mapSort(key: ResultSortKey, direction: SortDirection): DuplicateGroupSortKey {
-        return when (key) {
+        val normalizedKey = normalizeDbSortKey(key)
+        return when (normalizedKey) {
             ResultSortKey.Count -> {
                 if (direction == SortDirection.Asc) DuplicateGroupSortKey.CountAsc
                 else DuplicateGroupSortKey.CountDesc
@@ -155,42 +167,45 @@ fun ResultsScreenDb(
         }
     }
 
+    LaunchedEffect(shouldNormalizeSortKeySetting) {
+        if (shouldNormalizeSortKeySetting) {
+            settingsStore.setResultSortKey(initialSortKey.name)
+        }
+    }
+
     fun refresh(reset: Boolean, rebuild: Boolean) {
         if (isRefreshing.value) return
+        if (reset) {
+            groups.value = emptyList()
+            visibleCount.value = 0
+            topVisibleGroupIndex.value = 0
+            snapshotUpdatedAtMillis.value = null
+        }
         scope.launch {
             isRefreshing.value = true
             loadError.value = null
-            val requestVersion = if (reset) {
-                queryVersion.value += 1
-                queryVersion.value
-            } else {
-                queryVersion.value
-            }
+            val requestToken = queryCoordinator.beginRefresh(reset = reset)
             try {
-                val sortForQuery = mapSort(sortKey.value, sortDirection.value)
-                val (nextFileCount, nextGroupCount, firstPage) = withContext(Dispatchers.IO) {
-                    if (rebuild) {
-                        resultsRepo.rebuildGroups()
-                    }
-                    val fileCount = resultsRepo.countFiles()
-                    val groupCount = resultsRepo.countGroups()
-                    val first = if (reset && groupCount > 0) {
-                        resultsRepo.listGroups(
-                            sortKey = sortForQuery,
-                            offset = 0,
-                            limit = pageSize.coerceAtMost(groupCount)
-                        )
-                    } else {
-                        emptyList()
-                    }
-                    Triple(fileCount, groupCount, first)
+                val normalizedSortKey = normalizeDbSortKey(sortKey.value)
+                if (normalizedSortKey != sortKey.value) {
+                    sortKey.value = normalizedSortKey
+                    settingsStore.setResultSortKey(normalizedSortKey.name)
                 }
-                if (requestVersion != queryVersion.value) return@launch
-                fileCount.value = nextFileCount
-                groupCount.value = nextGroupCount
+                val sortForQuery = mapSort(normalizedSortKey, sortDirection.value)
+                val snapshot = withContext(Dispatchers.IO) {
+                    resultsRepo.loadInitialSnapshot(
+                        sortKey = sortForQuery,
+                        limit = pageSize,
+                        rebuild = rebuild
+                    )
+                }
+                if (!queryCoordinator.isRefreshTokenValid(requestToken)) return@launch
+                fileCount.value = snapshot.fileCount
+                groupCount.value = snapshot.groupCount
+                snapshotUpdatedAtMillis.value = snapshot.updatedAtMillis
                 if (reset) {
-                    groups.value = firstPage
-                    visibleCount.value = firstPage.size
+                    groups.value = snapshot.firstPage
+                    visibleCount.value = snapshot.firstPage.size
                     topVisibleGroupIndex.value = 0
                 }
             } catch (_: Exception) {
@@ -203,7 +218,7 @@ fun ResultsScreenDb(
 
     fun loadMoreIfNeeded() {
         if (isRefreshing.value || isPaging.value) return
-        val requestVersion = queryVersion.value
+        val snapshotUpdatedAt = snapshotUpdatedAtMillis.value ?: return
         val needed = visibleCount.value.coerceAtMost(groupCount.value)
         if (groups.value.size >= needed) return
         val offset = groups.value.size
@@ -212,16 +227,35 @@ fun ResultsScreenDb(
         scope.launch {
             isPaging.value = true
             loadError.value = null
+            val requestToken = queryCoordinator.beginPaging()
+            var needsRefresh = false
             try {
+                val snapshotChangedBeforePaging = withContext(Dispatchers.IO) {
+                    resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                }
+                if (snapshotChangedBeforePaging) {
+                    needsRefresh = true
+                    return@launch
+                }
                 val next = withContext(Dispatchers.IO) {
-                    resultsRepo.listGroups(
+                    resultsRepo.loadPageAtSnapshot(
                         sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAt,
                         offset = offset,
                         limit = limit
                     )
                 }
-                if (requestVersion != queryVersion.value) return@launch
+                if (!queryCoordinator.isPagingTokenValid(requestToken)) return@launch
                 if (offset != groups.value.size) return@launch
+                if (next.isEmpty()) {
+                    val snapshotChangedAfterPaging = withContext(Dispatchers.IO) {
+                        resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                    }
+                    if (snapshotChangedAfterPaging) {
+                        needsRefresh = true
+                        return@launch
+                    }
+                }
                 if (next.isNotEmpty()) {
                     groups.value = groups.value + next
                 }
@@ -229,12 +263,11 @@ fun ResultsScreenDb(
                 loadError.value = "목록을 이어서 불러오지 못했습니다. 새로고침해 주세요."
             } finally {
                 isPaging.value = false
+                if (needsRefresh && !isRefreshing.value) {
+                    refresh(reset = true, rebuild = false)
+                }
             }
         }
-    }
-
-    LaunchedEffect(Unit) {
-        refresh(reset = true, rebuild = true)
     }
 
     LaunchedEffect(sortKey.value, sortDirection.value) {
@@ -249,13 +282,7 @@ fun ResultsScreenDb(
         refresh(reset = true, rebuild = false)
     }
 
-    LaunchedEffect(groupCount.value) {
-        if (groupCount.value > 0 && visibleCount.value == 0) {
-            visibleCount.value = pageSize.coerceAtMost(groupCount.value)
-        }
-    }
-
-    LaunchedEffect(visibleCount.value, groupCount.value, sortKey.value, sortDirection.value) {
+    LaunchedEffect(visibleCount.value, groupCount.value, groups.value.size) {
         loadMoreIfNeeded()
     }
 
@@ -357,7 +384,7 @@ fun ResultsScreenDb(
                         Text("Duplicate groups: ${groupCount.value}")
                     }
                     OutlinedButton(onClick = {
-                        pendingSortKey.value = sortKey.value
+                        pendingSortKey.value = normalizeDbSortKey(sortKey.value)
                         pendingSortDirection.value = sortDirection.value
                         sortDialogOpen.value = true
                     }) {
@@ -552,9 +579,10 @@ fun ResultsScreenDb(
             confirmButton = {
                 OutlinedButton(
                     onClick = {
-                        sortKey.value = pendingSortKey.value
+                        val normalizedSortKey = normalizeDbSortKey(pendingSortKey.value)
+                        sortKey.value = normalizedSortKey
                         sortDirection.value = pendingSortDirection.value
-                        settingsStore.setResultSortKey(sortKey.value.name)
+                        settingsStore.setResultSortKey(normalizedSortKey.name)
                         settingsStore.setResultSortDirection(sortDirection.value.name)
                         sortDialogOpen.value = false
                     }

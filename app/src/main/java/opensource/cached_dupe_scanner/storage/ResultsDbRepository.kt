@@ -6,6 +6,13 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.core.FileMetadata
 
+data class ResultsSnapshot(
+    val fileCount: Int,
+    val groupCount: Int,
+    val updatedAtMillis: Long?,
+    val firstPage: List<DuplicateGroupEntity>
+)
+
 class ResultsDbRepository(
     private val fileDao: FileCacheDao,
     private val groupDao: DuplicateGroupDao
@@ -14,8 +21,8 @@ class ResultsDbRepository(
 
     fun countGroups(): Int = groupDao.countGroups()
 
-    fun rebuildGroups() {
-        groupDao.rebuildFromCache(System.currentTimeMillis())
+    fun rebuildGroups(updatedAtMillis: Long = System.currentTimeMillis()) {
+        groupDao.rebuildFromCache(updatedAtMillis)
     }
 
     fun listGroups(sortKey: DuplicateGroupSortKey, offset: Int, limit: Int): List<DuplicateGroupEntity> {
@@ -26,6 +33,68 @@ class ResultsDbRepository(
             DuplicateGroupSortKey.TotalBytesAsc -> groupDao.listByTotalBytesAsc(limit, offset)
             DuplicateGroupSortKey.PerFileSizeDesc -> groupDao.listByPerFileSizeDesc(limit, offset)
             DuplicateGroupSortKey.PerFileSizeAsc -> groupDao.listByPerFileSizeAsc(limit, offset)
+        }
+    }
+
+    fun latestSnapshotUpdatedAt(): Long? = groupDao.latestUpdatedAtMillis()
+
+    fun hasSnapshotChanged(snapshotUpdatedAtMillis: Long?): Boolean {
+        return groupDao.latestUpdatedAtMillis() != snapshotUpdatedAtMillis
+    }
+
+    fun loadInitialSnapshot(
+        sortKey: DuplicateGroupSortKey,
+        limit: Int,
+        rebuild: Boolean
+    ): ResultsSnapshot {
+        if (rebuild) {
+            rebuildGroups()
+        }
+        val fileCount = countFiles()
+        val updatedAtMillis = groupDao.latestUpdatedAtMillis()
+        if (updatedAtMillis == null) {
+            return ResultsSnapshot(
+                fileCount = fileCount,
+                groupCount = 0,
+                updatedAtMillis = null,
+                firstPage = emptyList()
+            )
+        }
+
+        val groupCount = groupDao.countGroupsAt(updatedAtMillis)
+        val safeLimit = limit.coerceAtLeast(0).coerceAtMost(groupCount)
+        val firstPage = if (safeLimit > 0) {
+            loadPageAtSnapshot(
+                sortKey = sortKey,
+                snapshotUpdatedAtMillis = updatedAtMillis,
+                offset = 0,
+                limit = safeLimit
+            )
+        } else {
+            emptyList()
+        }
+        return ResultsSnapshot(
+            fileCount = fileCount,
+            groupCount = groupCount,
+            updatedAtMillis = updatedAtMillis,
+            firstPage = firstPage
+        )
+    }
+
+    fun loadPageAtSnapshot(
+        sortKey: DuplicateGroupSortKey,
+        snapshotUpdatedAtMillis: Long,
+        offset: Int,
+        limit: Int
+    ): List<DuplicateGroupEntity> {
+        if (offset < 0 || limit <= 0) return emptyList()
+        return when (sortKey) {
+            DuplicateGroupSortKey.CountDesc -> groupDao.listByCountDescAt(snapshotUpdatedAtMillis, limit, offset)
+            DuplicateGroupSortKey.CountAsc -> groupDao.listByCountAscAt(snapshotUpdatedAtMillis, limit, offset)
+            DuplicateGroupSortKey.TotalBytesDesc -> groupDao.listByTotalBytesDescAt(snapshotUpdatedAtMillis, limit, offset)
+            DuplicateGroupSortKey.TotalBytesAsc -> groupDao.listByTotalBytesAscAt(snapshotUpdatedAtMillis, limit, offset)
+            DuplicateGroupSortKey.PerFileSizeDesc -> groupDao.listByPerFileSizeDescAt(snapshotUpdatedAtMillis, limit, offset)
+            DuplicateGroupSortKey.PerFileSizeAsc -> groupDao.listByPerFileSizeAscAt(snapshotUpdatedAtMillis, limit, offset)
         }
     }
 
