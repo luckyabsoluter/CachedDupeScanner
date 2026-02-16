@@ -56,6 +56,15 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
+        ORDER BY fileCount ASC, totalBytes ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByCountAsc(limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
         ORDER BY totalBytes DESC, fileCount DESC
         LIMIT :limit OFFSET :offset
         """
@@ -65,11 +74,29 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
+        ORDER BY totalBytes ASC, fileCount ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByTotalBytesAsc(limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
         ORDER BY sizeBytes DESC, fileCount DESC
         LIMIT :limit OFFSET :offset
         """
     )
     fun listByPerFileSizeDesc(limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT * FROM dupe_groups
+        ORDER BY sizeBytes ASC, fileCount ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listByPerFileSizeAsc(limit: Int, offset: Int): List<DuplicateGroupEntity>
 
     @Query(
         """

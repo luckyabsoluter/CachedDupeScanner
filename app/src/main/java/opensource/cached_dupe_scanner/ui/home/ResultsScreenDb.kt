@@ -134,12 +134,24 @@ fun ResultsScreenDb(
             .build()
     }
 
-    fun mapSort(key: ResultSortKey): DuplicateGroupSortKey {
+    fun mapSort(key: ResultSortKey, direction: SortDirection): DuplicateGroupSortKey {
         return when (key) {
-            ResultSortKey.Count -> DuplicateGroupSortKey.CountDesc
-            ResultSortKey.TotalSize -> DuplicateGroupSortKey.TotalBytesDesc
-            ResultSortKey.PerFileSize -> DuplicateGroupSortKey.PerFileSizeDesc
-            ResultSortKey.Name -> DuplicateGroupSortKey.CountDesc
+            ResultSortKey.Count -> {
+                if (direction == SortDirection.Asc) DuplicateGroupSortKey.CountAsc
+                else DuplicateGroupSortKey.CountDesc
+            }
+            ResultSortKey.TotalSize -> {
+                if (direction == SortDirection.Asc) DuplicateGroupSortKey.TotalBytesAsc
+                else DuplicateGroupSortKey.TotalBytesDesc
+            }
+            ResultSortKey.PerFileSize -> {
+                if (direction == SortDirection.Asc) DuplicateGroupSortKey.PerFileSizeAsc
+                else DuplicateGroupSortKey.PerFileSizeDesc
+            }
+            ResultSortKey.Name -> {
+                if (direction == SortDirection.Asc) DuplicateGroupSortKey.CountAsc
+                else DuplicateGroupSortKey.CountDesc
+            }
         }
     }
 
@@ -155,7 +167,7 @@ fun ResultsScreenDb(
                 queryVersion.value
             }
             try {
-                val sortForQuery = mapSort(sortKey.value)
+                val sortForQuery = mapSort(sortKey.value, sortDirection.value)
                 val (nextFileCount, nextGroupCount, firstPage) = withContext(Dispatchers.IO) {
                     if (rebuild) {
                         resultsRepo.rebuildGroups()
@@ -202,8 +214,11 @@ fun ResultsScreenDb(
             loadError.value = null
             try {
                 val next = withContext(Dispatchers.IO) {
-                    // SortDirection is currently enforced as Desc in SQL; Asc is not supported yet.
-                    resultsRepo.listGroups(sortKey = mapSort(sortKey.value), offset = offset, limit = limit)
+                    resultsRepo.listGroups(
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        offset = offset,
+                        limit = limit
+                    )
                 }
                 if (requestVersion != queryVersion.value) return@launch
                 if (offset != groups.value.size) return@launch
@@ -222,7 +237,7 @@ fun ResultsScreenDb(
         refresh(reset = true, rebuild = true)
     }
 
-    LaunchedEffect(sortKey.value) {
+    LaunchedEffect(sortKey.value, sortDirection.value) {
         refresh(reset = true, rebuild = false)
     }
 
@@ -240,7 +255,7 @@ fun ResultsScreenDb(
         }
     }
 
-    LaunchedEffect(visibleCount.value, groupCount.value, sortKey.value) {
+    LaunchedEffect(visibleCount.value, groupCount.value, sortKey.value, sortDirection.value) {
         loadMoreIfNeeded()
     }
 
@@ -341,7 +356,11 @@ fun ResultsScreenDb(
                         Text("Files scanned: ${fileCount.value}")
                         Text("Duplicate groups: ${groupCount.value}")
                     }
-                    OutlinedButton(onClick = { sortDialogOpen.value = true }) {
+                    OutlinedButton(onClick = {
+                        pendingSortKey.value = sortKey.value
+                        pendingSortDirection.value = sortDirection.value
+                        sortDialogOpen.value = true
+                    }) {
                         Text("Sort")
                     }
                 }
@@ -528,11 +547,6 @@ fun ResultsScreenDb(
                         )
                         Text(SortDirection.Asc.label)
                     }
-                    Text(
-                        text = "Direction is currently applied as Desc.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             },
             confirmButton = {

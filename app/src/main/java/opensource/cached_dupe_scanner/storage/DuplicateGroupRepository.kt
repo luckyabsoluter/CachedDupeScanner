@@ -19,8 +19,11 @@ class DuplicateGroupRepository(
     fun listPage(sortKey: DuplicateGroupSortKey, offset: Int, limit: Int): List<DuplicateGroupEntity> {
         return when (sortKey) {
             DuplicateGroupSortKey.CountDesc -> dao.listByCountDesc(limit = limit, offset = offset)
+            DuplicateGroupSortKey.CountAsc -> dao.listByCountAsc(limit = limit, offset = offset)
             DuplicateGroupSortKey.TotalBytesDesc -> dao.listByTotalBytesDesc(limit = limit, offset = offset)
+            DuplicateGroupSortKey.TotalBytesAsc -> dao.listByTotalBytesAsc(limit = limit, offset = offset)
             DuplicateGroupSortKey.PerFileSizeDesc -> dao.listByPerFileSizeDesc(limit = limit, offset = offset)
+            DuplicateGroupSortKey.PerFileSizeAsc -> dao.listByPerFileSizeAsc(limit = limit, offset = offset)
         }
     }
 
@@ -42,6 +45,9 @@ class DuplicateGroupRepository(
 
 enum class DuplicateGroupSortKey {
     CountDesc,
+    CountAsc,
     TotalBytesDesc,
-    PerFileSizeDesc
+    TotalBytesAsc,
+    PerFileSizeDesc,
+    PerFileSizeAsc
 }

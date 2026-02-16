@@ -21,8 +21,11 @@ class ResultsDbRepository(
     fun listGroups(sortKey: DuplicateGroupSortKey, offset: Int, limit: Int): List<DuplicateGroupEntity> {
         return when (sortKey) {
             DuplicateGroupSortKey.CountDesc -> groupDao.listByCountDesc(limit, offset)
+            DuplicateGroupSortKey.CountAsc -> groupDao.listByCountAsc(limit, offset)
             DuplicateGroupSortKey.TotalBytesDesc -> groupDao.listByTotalBytesDesc(limit, offset)
+            DuplicateGroupSortKey.TotalBytesAsc -> groupDao.listByTotalBytesAsc(limit, offset)
             DuplicateGroupSortKey.PerFileSizeDesc -> groupDao.listByPerFileSizeDesc(limit, offset)
+            DuplicateGroupSortKey.PerFileSizeAsc -> groupDao.listByPerFileSizeAsc(limit, offset)
         }
     }
 
