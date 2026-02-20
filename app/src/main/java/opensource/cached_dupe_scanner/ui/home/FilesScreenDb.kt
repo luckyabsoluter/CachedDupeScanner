@@ -58,6 +58,25 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import java.io.File
 
+internal data class FilesAfterDelete(
+    val items: List<FileMetadata>,
+    val totalCount: Int
+)
+
+internal fun reduceFilesAfterDelete(
+    currentItems: List<FileMetadata>,
+    currentTotalCount: Int,
+    deletedPath: String
+): FilesAfterDelete {
+    val nextItems = currentItems.filterNot { it.normalizedPath == deletedPath }
+    val deletedCount = currentItems.size - nextItems.size
+    val nextTotal = (currentTotalCount - deletedCount).coerceAtLeast(0)
+    return FilesAfterDelete(
+        items = nextItems,
+        totalCount = nextTotal
+    )
+}
+
 @Composable
 fun FilesScreenDb(
     fileRepo: PagedFileRepository,
@@ -338,7 +357,14 @@ fun FilesScreenDb(
             onDeleteResult = { deleted ->
                 if (deleted) {
                     selectedFile.value = null
-                    resetAndLoad()
+                    val reduced = reduceFilesAfterDelete(
+                        currentItems = items.value,
+                        currentTotalCount = total.value,
+                        deletedPath = file.normalizedPath
+                    )
+                    items.value = reduced.items
+                    total.value = reduced.totalCount
+                    visibleCount.value = reduced.items.size
                 }
             },
             onDismiss = { selectedFile.value = null }
@@ -414,4 +440,3 @@ fun FilesScreenDb(
         )
     }
 }
-
