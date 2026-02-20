@@ -58,24 +58,10 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import java.io.File
 
-internal data class FilesAfterDelete(
-    val items: List<FileMetadata>,
-    val totalCount: Int
-)
-
-internal fun reduceFilesAfterDelete(
-    currentItems: List<FileMetadata>,
-    currentTotalCount: Int,
+internal fun markDeletedPath(
+    currentDeletedPaths: Set<String>,
     deletedPath: String
-): FilesAfterDelete {
-    val nextItems = currentItems.filterNot { it.normalizedPath == deletedPath }
-    val deletedCount = currentItems.size - nextItems.size
-    val nextTotal = (currentTotalCount - deletedCount).coerceAtLeast(0)
-    return FilesAfterDelete(
-        items = nextItems,
-        totalCount = nextTotal
-    )
-}
+): Set<String> = currentDeletedPaths + deletedPath
 
 @Composable
 fun FilesScreenDb(
@@ -118,6 +104,7 @@ fun FilesScreenDb(
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val deletedPaths = rememberSaveable { mutableStateOf(setOf<String>()) }
     val topVisibleIndex = remember { mutableStateOf(0) }
 
     val pageSize = 200
@@ -162,6 +149,7 @@ fun FilesScreenDb(
     LaunchedEffect(clearVersion) {
         items.value = emptyList()
         total.value = 0
+        deletedPaths.value = emptySet()
         cursor.value = PagedFileRepository.Cursor.Start
         visibleCount.value = 0
     }
@@ -257,10 +245,18 @@ fun FilesScreenDb(
                 item { Text("No files in cache.") }
             } else {
                 items(items.value, key = { it.normalizedPath }) { file ->
+                    val isDeleted = deletedPaths.value.contains(file.normalizedPath)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selectedFile.value = file }
+                            .clickable { selectedFile.value = file },
+                        colors = if (isDeleted) {
+                            CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        } else {
+                            CardDefaults.cardColors()
+                        }
                     ) {
                         Row(
                             modifier = Modifier
@@ -286,7 +282,12 @@ fun FilesScreenDb(
                                     text = formatPath(file.normalizedPath, showFullPath = false),
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = if (isDeleted) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -294,13 +295,21 @@ fun FilesScreenDb(
                                     style = MaterialTheme.typography.bodySmall,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isDeleted) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isDeleted) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
                         }
@@ -357,14 +366,10 @@ fun FilesScreenDb(
             onDeleteResult = { deleted ->
                 if (deleted) {
                     selectedFile.value = null
-                    val reduced = reduceFilesAfterDelete(
-                        currentItems = items.value,
-                        currentTotalCount = total.value,
+                    deletedPaths.value = markDeletedPath(
+                        currentDeletedPaths = deletedPaths.value,
                         deletedPath = file.normalizedPath
                     )
-                    items.value = reduced.items
-                    total.value = reduced.totalCount
-                    visibleCount.value = reduced.items.size
                 }
             },
             onDismiss = { selectedFile.value = null }

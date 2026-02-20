@@ -1,60 +1,36 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import opensource.cached_dupe_scanner.core.FileMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FilesScreenDbStateReducerTest {
     @Test
-    fun removeDeletedFileFromLoadedItemsAndTotal() {
-        val files = listOf(
-            fileMeta("a"),
-            fileMeta("b"),
-            fileMeta("c")
+    fun addDeletedPathToSet() {
+        val marked = markDeletedPath(
+            currentDeletedPaths = setOf("a", "b"),
+            deletedPath = "c"
         )
 
-        val reduced = reduceFilesAfterDelete(
-            currentItems = files,
-            currentTotalCount = 10,
+        assertEquals(setOf("a", "b", "c"), marked)
+    }
+
+    @Test
+    fun duplicateDeletedPathDoesNotDuplicateSetEntry() {
+        val marked = markDeletedPath(
+            currentDeletedPaths = setOf("a", "b"),
             deletedPath = "b"
         )
 
-        assertEquals(listOf("a", "c"), reduced.items.map { it.normalizedPath })
-        assertEquals(9, reduced.totalCount)
+        assertEquals(setOf("a", "b"), marked)
     }
 
     @Test
-    fun whenDeletedPathNotInLoadedItemsTotalRemainsSame() {
-        val files = listOf(fileMeta("a"), fileMeta("b"))
-
-        val reduced = reduceFilesAfterDelete(
-            currentItems = files,
-            currentTotalCount = 5,
+    fun supportsEmptyInitialSet() {
+        val marked = markDeletedPath(
+            currentDeletedPaths = emptySet(),
             deletedPath = "x"
         )
 
-        assertEquals(listOf("a", "b"), reduced.items.map { it.normalizedPath })
-        assertEquals(5, reduced.totalCount)
+        assertEquals(setOf("x"), marked)
     }
-
-    @Test
-    fun totalNeverGoesBelowZero() {
-        val files = listOf(fileMeta("a"))
-
-        val reduced = reduceFilesAfterDelete(
-            currentItems = files,
-            currentTotalCount = 0,
-            deletedPath = "a"
-        )
-
-        assertEquals(emptyList<String>(), reduced.items.map { it.normalizedPath })
-        assertEquals(0, reduced.totalCount)
-    }
-
-    private fun fileMeta(path: String): FileMetadata = FileMetadata(
-        path = path,
-        normalizedPath = path,
-        sizeBytes = 1L,
-        lastModifiedMillis = 1L
-    )
 }
