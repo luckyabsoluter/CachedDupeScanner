@@ -161,9 +161,6 @@ fun ResultsScreenDb(
     val loadError = remember { mutableStateOf<String?>(null) }
     val snapshotUpdatedAtMillis = remember { mutableStateOf<Long?>(null) }
     val queryCoordinator = remember { ResultsScreenDbQueryCoordinator() }
-    val needsRefreshAfterGroupEdit = remember { mutableStateOf(false) }
-    val needsRebuildAfterGroupEdit = remember { mutableStateOf(false) }
-    val pendingGroupEditScrollAnchor = remember { mutableStateOf<GroupListScrollAnchor?>(null) }
 
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
@@ -356,31 +353,6 @@ fun ResultsScreenDb(
             delay(100)
         }
         refresh(reset = true, rebuild = false)
-    }
-
-    LaunchedEffect(selectedGroupIndex) {
-        if (selectedGroupIndex != null) {
-            pendingGroupEditScrollAnchor.value = captureCurrentGroupListAnchor()
-        }
-    }
-
-    LaunchedEffect(selectedGroupIndex, needsRefreshAfterGroupEdit.value) {
-        if (selectedGroupIndex != null) return@LaunchedEffect
-        if (!needsRefreshAfterGroupEdit.value) return@LaunchedEffect
-        needsRefreshAfterGroupEdit.value = false
-        val anchor = pendingGroupEditScrollAnchor.value ?: captureCurrentGroupListAnchor()
-        pendingGroupEditScrollAnchor.value = null
-        val rebuild = needsRebuildAfterGroupEdit.value
-        needsRebuildAfterGroupEdit.value = false
-        while (isRefreshing.value) {
-            delay(100)
-        }
-        refresh(
-            reset = true,
-            rebuild = rebuild,
-            preserveScroll = true,
-            preservedAnchor = anchor
-        )
     }
 
     LaunchedEffect(visibleCount.value, groupCount.value, groups.value.size) {
@@ -616,12 +588,7 @@ fun ResultsScreenDb(
                             group = group,
                             deletedPaths = deletedPaths,
                             onDeleteFile = onDeleteFile,
-                            onGroupEdited = { rebuiltNow ->
-                                needsRefreshAfterGroupEdit.value = true
-                                if (!rebuiltNow) {
-                                    needsRebuildAfterGroupEdit.value = true
-                                }
-                            },
+                            onGroupEdited = { _ -> },
                             imageLoader = imageLoader,
                             cacheEntry = entry,
                             detailScrollState = detailScrollState,
