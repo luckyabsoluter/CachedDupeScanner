@@ -21,19 +21,72 @@ class ResultsScreenDbSelectionTest {
     }
 
     @Test
-    fun selectAllLoadedMemberPathsReturnsEveryLoadedPath() {
-        val members = listOf(
-            file("/a/file1.jpg"),
-            file("/a/file2.jpg"),
-            file("/b/file3.jpg")
+    fun countSelectedForDisplayUsesTotalMinusExclusionsInSelectAllMode() {
+        val selectedCount = countSelectedForDisplay(
+            totalCount = 10,
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = setOf("/a", "/b", "/c")
         )
 
-        val selected = selectAllLoadedMemberPaths(members)
+        assertEquals(7, selectedCount)
+    }
 
-        assertEquals(
-            setOf("/a/file1.jpg", "/a/file2.jpg", "/b/file3.jpg"),
-            selected
+    @Test
+    fun countSelectedForDisplayDoesNotGoNegative() {
+        val selectedCount = countSelectedForDisplay(
+            totalCount = 2,
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = setOf("/a", "/b", "/c")
         )
+
+        assertEquals(0, selectedCount)
+    }
+
+    @Test
+    fun isPathSelectedForModeReflectsSelectAllAndExclusions() {
+        val selectedInAll = isPathSelectedForMode(
+            path = "/a/file1.jpg",
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = emptySet()
+        )
+        val excludedInAll = isPathSelectedForMode(
+            path = "/a/file2.jpg",
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = setOf("/a/file2.jpg")
+        )
+        val selectedInPartial = isPathSelectedForMode(
+            path = "/a/file3.jpg",
+            selectAllMode = false,
+            selectedPaths = setOf("/a/file3.jpg"),
+            deselectedPaths = emptySet()
+        )
+
+        assertEquals(true, selectedInAll)
+        assertEquals(false, excludedInAll)
+        assertEquals(true, selectedInPartial)
+    }
+
+    @Test
+    fun selectionStatusTextShowsSelectAllState() {
+        val full = selectionStatusText(
+            totalCount = 5,
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = emptySet()
+        )
+        val partial = selectionStatusText(
+            totalCount = 5,
+            selectAllMode = true,
+            selectedPaths = emptySet(),
+            deselectedPaths = setOf("/a/file1.jpg")
+        )
+
+        assertEquals("Select all active · 5 selected", full)
+        assertEquals("Select all active · 1 excluded · 4 selected", partial)
     }
 
     @Test

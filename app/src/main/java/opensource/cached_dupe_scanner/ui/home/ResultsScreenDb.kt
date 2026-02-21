@@ -81,6 +81,11 @@ private class MembersCacheEntry {
     val isComplete = mutableStateOf(false)
 }
 
+private data class BulkDeleteOutcome(
+    val successCount: Int,
+    val failedPaths: Set<String>
+)
+
 @Composable
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
@@ -727,15 +732,17 @@ private fun GroupDetailDb(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val isSelectAllMode = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val selectedPaths = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
+    val deselectedPathsInSelectAll = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
     val confirmBulkDelete = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
     val cursor = entry.cursor
-    val selectionMode = selectedPaths.value.isNotEmpty()
-    val allLoadedSelected = entry.members.isNotEmpty() && selectedPaths.value.size == entry.members.size
+    val selectionMode = isSelectAllMode.value || selectedPaths.value.isNotEmpty()
+    val allSelectedAcrossGroup = isSelectAllMode.value && deselectedPathsInSelectAll.value.isEmpty()
 
     fun loadMore(reset: Boolean) {
         if (entry.isLoading.value) return
@@ -747,7 +754,9 @@ private fun GroupDetailDb(
                     cursor.value = null
                     entry.members.clear()
                     entry.isComplete.value = false
+                    isSelectAllMode.value = false
                     selectedPaths.value = emptySet()
+                    deselectedPathsInSelectAll.value = emptySet()
                 }
                 val next = withContext(Dispatchers.IO) {
                     resultsRepo.listGroupMembers(
@@ -783,6 +792,7 @@ private fun GroupDetailDb(
         }
     }
     LaunchedEffect(entry.members.size) {
+        if (isSelectAllMode.value) return@LaunchedEffect
         val filtered = filterSelectionToLoadedMembers(
             selectedPaths = selectedPaths.value,
             members = entry.members
@@ -812,7 +822,12 @@ private fun GroupDetailDb(
 
     if (selectionMode) {
         Text(
-            text = "${selectedPaths.value.size} selected",
+            text = selectionStatusText(
+                totalCount = group.fileCount,
+                selectAllMode = isSelectAllMode.value,
+                selectedPaths = selectedPaths.value,
+                deselectedPaths = deselectedPathsInSelectAll.value
+            ),
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -824,16 +839,20 @@ private fun GroupDetailDb(
         ) {
             OutlinedButton(
                 onClick = {
-                    selectedPaths.value = if (allLoadedSelected) {
-                        emptySet()
+                    if (allSelectedAcrossGroup) {
+                        isSelectAllMode.value = false
+                        selectedPaths.value = emptySet()
+                        deselectedPathsInSelectAll.value = emptySet()
                     } else {
-                        selectAllLoadedMemberPaths(entry.members)
+                        isSelectAllMode.value = true
+                        selectedPaths.value = emptySet()
+                        deselectedPathsInSelectAll.value = emptySet()
                     }
                     bulkDeleteMessage.value = null
                 },
-                enabled = entry.members.isNotEmpty() && !isBulkDeleting.value
+                enabled = !isBulkDeleting.value
             ) {
-                Text(if (allLoadedSelected) "Deselect all" else "Select all")
+                Text(if (allSelectedAcrossGroup) "Deselect all" else "Select all")
             }
             OutlinedButton(
                 onClick = { confirmBulkDelete.value = true },
@@ -842,10 +861,10 @@ private fun GroupDetailDb(
                 Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
             }
         }
-        if (!entry.isComplete.value) {
+        if (isSelectAllMode.value && !entry.isComplete.value) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Select all applies to currently loaded files.",
+                text = "Select all includes not-loaded files in delete queries.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -867,27 +886,46 @@ private fun GroupDetailDb(
         .forEach { file ->
             val date = formatDate(file.lastModifiedMillis)
             val isDeleted = deletedPaths.contains(file.normalizedPath)
-            val isSelected = selectedPaths.value.contains(file.normalizedPath)
+            val isSelected = isPathSelectedForMode(
+                path = file.normalizedPath,
+                selectAllMode = isSelectAllMode.value,
+                selectedPaths = selectedPaths.value,
+                deselectedPaths = deselectedPathsInSelectAll.value
+            )
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .combinedClickable(
                         onClick = {
                             if (selectionMode) {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
+                                if (isSelectAllMode.value) {
+                                    deselectedPathsInSelectAll.value = togglePathSelection(
+                                        selectedPaths = deselectedPathsInSelectAll.value,
+                                        path = file.normalizedPath
+                                    )
+                                } else {
+                                    selectedPaths.value = togglePathSelection(
+                                        selectedPaths = selectedPaths.value,
+                                        path = file.normalizedPath
+                                    )
+                                }
                                 bulkDeleteMessage.value = null
                             } else {
                                 selectedFile.value = file
                             }
                         },
                         onLongClick = {
-                            selectedPaths.value = togglePathSelection(
-                                selectedPaths = selectedPaths.value,
-                                path = file.normalizedPath
-                            )
+                            if (isSelectAllMode.value) {
+                                deselectedPathsInSelectAll.value = togglePathSelection(
+                                    selectedPaths = deselectedPathsInSelectAll.value,
+                                    path = file.normalizedPath
+                                )
+                            } else {
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
+                            }
                             bulkDeleteMessage.value = null
                         }
                     ),
@@ -909,10 +947,17 @@ private fun GroupDetailDb(
                         Checkbox(
                             checked = isSelected,
                             onCheckedChange = {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
+                                if (isSelectAllMode.value) {
+                                    deselectedPathsInSelectAll.value = togglePathSelection(
+                                        selectedPaths = deselectedPathsInSelectAll.value,
+                                        path = file.normalizedPath
+                                    )
+                                } else {
+                                    selectedPaths.value = togglePathSelection(
+                                        selectedPaths = selectedPaths.value,
+                                        path = file.normalizedPath
+                                    )
+                                }
                                 bulkDeleteMessage.value = null
                             }
                         )
@@ -984,11 +1029,25 @@ private fun GroupDetailDb(
     }
 
     if (confirmBulkDelete.value) {
-        val targets = selectedFilesForDelete(
-            members = entry.members,
-            selectedPaths = selectedPaths.value,
-            deletedPaths = deletedPaths
-        )
+        val immediateTargets = if (isSelectAllMode.value) {
+            emptyList()
+        } else {
+            selectedFilesForDelete(
+                members = entry.members,
+                selectedPaths = selectedPaths.value,
+                deletedPaths = deletedPaths
+            )
+        }
+        val selectedCountLabel = if (isSelectAllMode.value) {
+            countSelectedForDisplay(
+                totalCount = group.fileCount,
+                selectAllMode = true,
+                selectedPaths = emptySet(),
+                deselectedPaths = deselectedPathsInSelectAll.value
+            )
+        } else {
+            immediateTargets.size
+        }
         AlertDialog(
             onDismissRequest = {
                 if (!isBulkDeleting.value) {
@@ -997,35 +1056,96 @@ private fun GroupDetailDb(
             },
             title = { Text("Delete selected files?") },
             text = {
-                if (targets.isEmpty()) {
+                if (selectedCountLabel <= 0) {
                     Text("No deletable files are selected.")
+                } else if (isSelectAllMode.value) {
+                    if (deselectedPathsInSelectAll.value.isEmpty()) {
+                        Text("Select all is active. $selectedCountLabel files will be deleted, including not-loaded files.")
+                    } else {
+                        Text("Select all is active with ${deselectedPathsInSelectAll.value.size} exclusions. $selectedCountLabel files will be deleted.")
+                    }
                 } else {
-                    Text("${targets.size} selected files will be deleted (moved to app trash).")
+                    Text("$selectedCountLabel selected files will be deleted (moved to app trash).")
                 }
             },
             confirmButton = {
                 OutlinedButton(
                     onClick = {
                         val handler = onDeleteFile ?: return@OutlinedButton
+                        val selectAllSnapshot = isSelectAllMode.value
+                        val selectedPathsSnapshot = selectedPaths.value
+                        val excludedFromAllSnapshot = deselectedPathsInSelectAll.value
+                        val deletedPathsSnapshot = deletedPaths
+
                         isBulkDeleting.value = true
                         bulkDeleteMessage.value = null
                         scope.launch {
-                            var successCount = 0
-                            val failedPaths = linkedSetOf<String>()
-                            targets.forEach { file ->
-                                val deleted = runCatching { handler(file) }.getOrDefault(false)
-                                if (deleted) {
-                                    successCount += 1
-                                } else {
-                                    failedPaths.add(file.normalizedPath)
+                            val outcome = if (selectAllSnapshot) {
+                                val pageSizeForBulk = 500
+                                var afterPath: String? = null
+                                var successCount = 0
+                                val failedPaths = linkedSetOf<String>()
+
+                                while (true) {
+                                    val page = withContext(Dispatchers.IO) {
+                                        resultsRepo.listGroupMembers(
+                                            sizeBytes = group.sizeBytes,
+                                            hashHex = group.hashHex,
+                                            afterPath = afterPath,
+                                            limit = pageSizeForBulk
+                                        )
+                                    }
+                                    if (page.isEmpty()) break
+                                    page.forEach { file ->
+                                        val path = file.normalizedPath
+                                        val isSelectedInAll = !excludedFromAllSnapshot.contains(path)
+                                        if (!isSelectedInAll || deletedPathsSnapshot.contains(path)) return@forEach
+
+                                        val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                        if (deleted) {
+                                            successCount += 1
+                                        } else {
+                                            failedPaths.add(path)
+                                        }
+                                    }
+                                    if (page.size < pageSizeForBulk) break
+                                    afterPath = page.last().normalizedPath
                                 }
+                                BulkDeleteOutcome(
+                                    successCount = successCount,
+                                    failedPaths = failedPaths
+                                )
+                            } else {
+                                val targets = selectedFilesForDelete(
+                                    members = entry.members,
+                                    selectedPaths = selectedPathsSnapshot,
+                                    deletedPaths = deletedPathsSnapshot
+                                )
+                                var successCount = 0
+                                val failedPaths = linkedSetOf<String>()
+                                targets.forEach { file ->
+                                    val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                    if (deleted) {
+                                        successCount += 1
+                                    } else {
+                                        failedPaths.add(file.normalizedPath)
+                                    }
+                                }
+                                BulkDeleteOutcome(
+                                    successCount = successCount,
+                                    failedPaths = failedPaths
+                                )
                             }
-                            selectedPaths.value = failedPaths
+
+                            isSelectAllMode.value = false
+                            deselectedPathsInSelectAll.value = emptySet()
+                            selectedPaths.value = outcome.failedPaths
+
                             bulkDeleteMessage.value = when {
-                                successCount == 0 && failedPaths.isEmpty() -> "No files deleted."
-                                failedPaths.isEmpty() -> "$successCount files deleted."
-                                successCount == 0 -> "Delete failed for ${failedPaths.size} files."
-                                else -> "$successCount deleted, ${failedPaths.size} failed."
+                                outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files deleted."
+                                outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
+                                outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
+                                else -> "${outcome.successCount} deleted, ${outcome.failedPaths.size} failed."
                             }
                             isBulkDeleting.value = false
                             confirmBulkDelete.value = false
@@ -1055,8 +1175,51 @@ internal fun togglePathSelection(selectedPaths: Set<String>, path: String): Set<
     return selectedPaths + path
 }
 
-internal fun selectAllLoadedMemberPaths(members: List<FileMetadata>): Set<String> {
-    return members.mapTo(linkedSetOf()) { it.normalizedPath }
+internal fun countSelectedForDisplay(
+    totalCount: Int,
+    selectAllMode: Boolean,
+    selectedPaths: Set<String>,
+    deselectedPaths: Set<String>
+): Int {
+    return if (selectAllMode) {
+        (totalCount - deselectedPaths.size).coerceAtLeast(0)
+    } else {
+        selectedPaths.size
+    }
+}
+
+internal fun isPathSelectedForMode(
+    path: String,
+    selectAllMode: Boolean,
+    selectedPaths: Set<String>,
+    deselectedPaths: Set<String>
+): Boolean {
+    return if (selectAllMode) {
+        !deselectedPaths.contains(path)
+    } else {
+        selectedPaths.contains(path)
+    }
+}
+
+internal fun selectionStatusText(
+    totalCount: Int,
+    selectAllMode: Boolean,
+    selectedPaths: Set<String>,
+    deselectedPaths: Set<String>
+): String {
+    val selectedCount = countSelectedForDisplay(
+        totalCount = totalCount,
+        selectAllMode = selectAllMode,
+        selectedPaths = selectedPaths,
+        deselectedPaths = deselectedPaths
+    )
+    return if (!selectAllMode) {
+        "$selectedCount selected"
+    } else if (deselectedPaths.isEmpty()) {
+        "Select all active · $selectedCount selected"
+    } else {
+        "Select all active · ${deselectedPaths.size} excluded · $selectedCount selected"
+    }
 }
 
 internal fun filterSelectionToLoadedMembers(
