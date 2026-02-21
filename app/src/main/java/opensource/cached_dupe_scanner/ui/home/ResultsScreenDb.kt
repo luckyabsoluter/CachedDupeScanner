@@ -310,17 +310,25 @@ fun ResultsScreenDb(
                     needsRefresh = true
                     return@launch
                 }
+                val overlap = offset.coerceAtMost(pageSize)
+                val queryOffset = (offset - overlap).coerceAtLeast(0)
+                val queryLimit = limit + overlap
                 val next = withContext(Dispatchers.IO) {
                     resultsRepo.loadPageAtSnapshot(
                         sortKey = mapSort(sortKey.value, sortDirection.value),
                         snapshotUpdatedAtMillis = snapshotUpdatedAt,
-                        offset = offset,
-                        limit = limit
+                        offset = queryOffset,
+                        limit = queryLimit
                     )
                 }
                 if (!queryCoordinator.isPagingTokenValid(requestToken)) return@launch
                 if (offset != groups.value.size) return@launch
-                if (next.isEmpty()) {
+                val toAppend = uniqueGroupsToAppend(
+                    existing = groups.value,
+                    fetched = next,
+                    maxAppend = limit
+                )
+                if (next.isEmpty() || toAppend.isEmpty()) {
                     val snapshotChangedAfterPaging = withContext(Dispatchers.IO) {
                         resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
                     }
@@ -329,8 +337,8 @@ fun ResultsScreenDb(
                         return@launch
                     }
                 }
-                if (next.isNotEmpty()) {
-                    groups.value = groups.value + next
+                if (toAppend.isNotEmpty()) {
+                    groups.value = groups.value + toAppend
                 }
             } catch (_: Exception) {
                 loadError.value = "목록을 이어서 불러오지 못했습니다. 새로고침해 주세요."
@@ -1511,4 +1519,22 @@ internal fun findIndexByGroupKeyOrFallback(
         if (indexByKey >= 0) return indexByKey
     }
     return fallbackIndex.coerceIn(0, groups.lastIndex)
+}
+
+internal fun uniqueGroupsToAppend(
+    existing: List<DuplicateGroupEntity>,
+    fetched: List<DuplicateGroupEntity>,
+    maxAppend: Int
+): List<DuplicateGroupEntity> {
+    if (maxAppend <= 0 || fetched.isEmpty()) return emptyList()
+    val existingKeys = existing.mapTo(hashSetOf()) { groupStableKey(it) }
+    val appended = ArrayList<DuplicateGroupEntity>(maxAppend)
+    fetched.forEach { group ->
+        if (appended.size >= maxAppend) return@forEach
+        val key = groupStableKey(group)
+        if (existingKeys.contains(key)) return@forEach
+        existingKeys.add(key)
+        appended.add(group)
+    }
+    return appended
 }

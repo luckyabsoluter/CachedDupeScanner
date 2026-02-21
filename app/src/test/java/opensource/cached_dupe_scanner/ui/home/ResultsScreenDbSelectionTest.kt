@@ -247,6 +247,48 @@ class ResultsScreenDbSelectionTest {
         assertEquals(2, index)
     }
 
+    @Test
+    fun uniqueGroupsToAppendSkipsOverlapAndKeepsOrder() {
+        val existing = listOf(
+            group(size = 10L, hash = "a"),
+            group(size = 20L, hash = "b"),
+            group(size = 30L, hash = "c")
+        )
+        val fetchedWithOverlap = listOf(
+            group(size = 30L, hash = "c"),
+            group(size = 40L, hash = "d"),
+            group(size = 50L, hash = "e")
+        )
+
+        val appended = uniqueGroupsToAppend(
+            existing = existing,
+            fetched = fetchedWithOverlap,
+            maxAppend = 2
+        )
+
+        assertEquals(listOf("40:d", "50:e"), appended.map { "${it.sizeBytes}:${it.hashHex}" })
+    }
+
+    @Test
+    fun uniqueGroupsToAppendPreventsDuplicateAppendInsideFetchedPage() {
+        val existing = listOf(
+            group(size = 10L, hash = "a")
+        )
+        val fetched = listOf(
+            group(size = 20L, hash = "b"),
+            group(size = 20L, hash = "b"),
+            group(size = 30L, hash = "c")
+        )
+
+        val appended = uniqueGroupsToAppend(
+            existing = existing,
+            fetched = fetched,
+            maxAppend = 10
+        )
+
+        assertEquals(listOf("20:b", "30:c"), appended.map { "${it.sizeBytes}:${it.hashHex}" })
+    }
+
     private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,
