@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -212,6 +213,40 @@ class ResultsScreenDbSelectionTest {
         )
     }
 
+    @Test
+    fun findIndexByGroupKeyOrFallbackReturnsMatchingKeyIndex() {
+        val groups = listOf(
+            group(size = 10L, hash = "a"),
+            group(size = 20L, hash = "b"),
+            group(size = 30L, hash = "c")
+        )
+
+        val index = findIndexByGroupKeyOrFallback(
+            groups = groups,
+            key = "20:b",
+            fallbackIndex = 0
+        )
+
+        assertEquals(1, index)
+    }
+
+    @Test
+    fun findIndexByGroupKeyOrFallbackClampsFallbackWhenKeyMissing() {
+        val groups = listOf(
+            group(size = 10L, hash = "a"),
+            group(size = 20L, hash = "b"),
+            group(size = 30L, hash = "c")
+        )
+
+        val index = findIndexByGroupKeyOrFallback(
+            groups = groups,
+            key = "99:z",
+            fallbackIndex = 99
+        )
+
+        assertEquals(2, index)
+    }
+
     private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,
@@ -219,6 +254,16 @@ class ResultsScreenDbSelectionTest {
             sizeBytes = 10L,
             lastModifiedMillis = modified,
             hashHex = "h"
+        )
+    }
+
+    private fun group(size: Long, hash: String): DuplicateGroupEntity {
+        return DuplicateGroupEntity(
+            sizeBytes = size,
+            hashHex = hash,
+            fileCount = 2,
+            totalBytes = size * 2,
+            updatedAtMillis = 1L
         )
     }
 }

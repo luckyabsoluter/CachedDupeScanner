@@ -89,6 +89,12 @@ private data class BulkDeleteOutcome(
     val failedPaths: Set<String>
 )
 
+private data class GroupListScrollAnchor(
+    val index: Int,
+    val offset: Int,
+    val key: String?
+)
+
 internal enum class ResultGroupMemberSortKey(val label: String) {
     Path("Path"),
     Modified("Modified")
@@ -155,6 +161,9 @@ fun ResultsScreenDb(
     val loadError = remember { mutableStateOf<String?>(null) }
     val snapshotUpdatedAtMillis = remember { mutableStateOf<Long?>(null) }
     val queryCoordinator = remember { ResultsScreenDbQueryCoordinator() }
+    val needsRefreshAfterGroupEdit = remember { mutableStateOf(false) }
+    val needsRebuildAfterGroupEdit = remember { mutableStateOf(false) }
+    val pendingGroupEditScrollAnchor = remember { mutableStateOf<GroupListScrollAnchor?>(null) }
 
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
@@ -199,9 +208,32 @@ fun ResultsScreenDb(
         }
     }
 
-    fun refresh(reset: Boolean, rebuild: Boolean) {
+    fun captureCurrentGroupListAnchor(): GroupListScrollAnchor {
+        val index = listState.firstVisibleItemIndex
+        val offset = listState.firstVisibleItemScrollOffset
+        val key = groups.value.getOrNull(index)?.let(::groupStableKey)
+        return GroupListScrollAnchor(
+            index = index,
+            offset = offset,
+            key = key
+        )
+    }
+
+    fun refresh(
+        reset: Boolean,
+        rebuild: Boolean,
+        preserveScroll: Boolean = false,
+        preservedAnchor: GroupListScrollAnchor? = null
+    ) {
         if (isRefreshing.value) return
-        if (reset) {
+        val anchorIndex = if (preserveScroll) preservedAnchor?.index ?: listState.firstVisibleItemIndex else 0
+        val anchorOffset = if (preserveScroll) preservedAnchor?.offset ?: listState.firstVisibleItemScrollOffset else 0
+        val anchorKey = if (preserveScroll) {
+            preservedAnchor?.key ?: groups.value.getOrNull(anchorIndex)?.let(::groupStableKey)
+        } else {
+            null
+        }
+        if (reset && !preserveScroll) {
             groups.value = emptyList()
             visibleCount.value = 0
             topVisibleGroupIndex.value = 0
@@ -218,10 +250,15 @@ fun ResultsScreenDb(
                     settingsStore.setResultSortKey(normalizedSortKey.name)
                 }
                 val sortForQuery = mapSort(normalizedSortKey, sortDirection.value)
+                val firstPageLimit = if (reset && preserveScroll) {
+                    visibleCount.value.coerceAtLeast(pageSize)
+                } else {
+                    pageSize
+                }
                 val snapshot = withContext(Dispatchers.IO) {
                     resultsRepo.loadInitialSnapshot(
                         sortKey = sortForQuery,
-                        limit = pageSize,
+                        limit = firstPageLimit,
                         rebuild = rebuild
                     )
                 }
@@ -232,7 +269,20 @@ fun ResultsScreenDb(
                 if (reset) {
                     groups.value = snapshot.firstPage
                     visibleCount.value = snapshot.firstPage.size
-                    topVisibleGroupIndex.value = 0
+                    if (preserveScroll) {
+                        val targetIndex = findIndexByGroupKeyOrFallback(
+                            groups = snapshot.firstPage,
+                            key = anchorKey,
+                            fallbackIndex = anchorIndex
+                        )
+                        topVisibleGroupIndex.value = targetIndex
+                        if (snapshot.firstPage.isNotEmpty()) {
+                            val targetOffset = if (targetIndex == anchorIndex) anchorOffset.coerceAtLeast(0) else 0
+                            listState.scrollToItem(targetIndex, targetOffset)
+                        }
+                    } else {
+                        topVisibleGroupIndex.value = 0
+                    }
                 }
             } catch (_: Exception) {
                 loadError.value = "결과를 불러오지 못했습니다. 다시 시도해 주세요."
@@ -306,6 +356,31 @@ fun ResultsScreenDb(
             delay(100)
         }
         refresh(reset = true, rebuild = false)
+    }
+
+    LaunchedEffect(selectedGroupIndex) {
+        if (selectedGroupIndex != null) {
+            pendingGroupEditScrollAnchor.value = captureCurrentGroupListAnchor()
+        }
+    }
+
+    LaunchedEffect(selectedGroupIndex, needsRefreshAfterGroupEdit.value) {
+        if (selectedGroupIndex != null) return@LaunchedEffect
+        if (!needsRefreshAfterGroupEdit.value) return@LaunchedEffect
+        needsRefreshAfterGroupEdit.value = false
+        val anchor = pendingGroupEditScrollAnchor.value ?: captureCurrentGroupListAnchor()
+        pendingGroupEditScrollAnchor.value = null
+        val rebuild = needsRebuildAfterGroupEdit.value
+        needsRebuildAfterGroupEdit.value = false
+        while (isRefreshing.value) {
+            delay(100)
+        }
+        refresh(
+            reset = true,
+            rebuild = rebuild,
+            preserveScroll = true,
+            preservedAnchor = anchor
+        )
     }
 
     LaunchedEffect(visibleCount.value, groupCount.value, groups.value.size) {
@@ -541,6 +616,12 @@ fun ResultsScreenDb(
                             group = group,
                             deletedPaths = deletedPaths,
                             onDeleteFile = onDeleteFile,
+                            onGroupEdited = { rebuiltNow ->
+                                needsRefreshAfterGroupEdit.value = true
+                                if (!rebuiltNow) {
+                                    needsRebuildAfterGroupEdit.value = true
+                                }
+                            },
                             imageLoader = imageLoader,
                             cacheEntry = entry,
                             detailScrollState = detailScrollState,
@@ -763,6 +844,7 @@ private fun GroupDetailDb(
     group: DuplicateGroupEntity,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onGroupEdited: (rebuildSucceeded: Boolean) -> Unit,
     imageLoader: ImageLoader,
     cacheEntry: MembersCacheEntry?,
     detailScrollState: ScrollState,
@@ -822,6 +904,17 @@ private fun GroupDetailDb(
                 entry.isLoading.value = false
             }
         }
+    }
+
+    suspend fun refreshCurrentGroupNow(): Boolean {
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                resultsRepo.refreshSingleGroup(
+                    sizeBytes = group.sizeBytes,
+                    hashHex = group.hashHex
+                )
+            }
+        }.isSuccess
     }
 
     LaunchedEffect(group.sizeBytes, group.hashHex) {
@@ -1097,7 +1190,12 @@ private fun GroupDetailDb(
                 },
                 onDelete = {
                     val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
-                    handler(file)
+                    val deleted = handler(file)
+                    if (deleted) {
+                        val refreshed = refreshCurrentGroupNow()
+                        onGroupEdited(refreshed)
+                    }
+                    deleted
                 },
                 onDeleteResult = { deleted ->
                     if (deleted) {
@@ -1227,6 +1325,10 @@ private fun GroupDetailDb(
                                 outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
                                 outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
                                 else -> "${outcome.successCount} deleted, ${outcome.failedPaths.size} failed."
+                            }
+                            if (outcome.successCount > 0) {
+                                val refreshed = refreshCurrentGroupNow()
+                                onGroupEdited(refreshed)
                             }
                             isBulkDeleting.value = false
                             confirmBulkDelete.value = false
@@ -1425,4 +1527,21 @@ internal fun selectedFilesForDelete(
     return members.filter { file ->
         selectedPaths.contains(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
     }
+}
+
+internal fun groupStableKey(group: DuplicateGroupEntity): String {
+    return "${group.sizeBytes}:${group.hashHex}"
+}
+
+internal fun findIndexByGroupKeyOrFallback(
+    groups: List<DuplicateGroupEntity>,
+    key: String?,
+    fallbackIndex: Int
+): Int {
+    if (groups.isEmpty()) return 0
+    if (key != null) {
+        val indexByKey = groups.indexOfFirst { groupStableKey(it) == key }
+        if (indexByKey >= 0) return indexByKey
+    }
+    return fallbackIndex.coerceIn(0, groups.lastIndex)
 }

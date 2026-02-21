@@ -231,4 +231,67 @@ class ResultsDbRepositoryTest {
 
         db.close()
     }
+
+    @Test
+    fun refreshSingleGroupKeepsSnapshotConsistentForAllGroups() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        insertDuplicateGroup(fileDao, sizeBytes = 10L, hashHex = "ha", count = 3, pathPrefix = "a")
+        insertDuplicateGroup(fileDao, sizeBytes = 20L, hashHex = "hb", count = 2, pathPrefix = "b")
+        repo.rebuildGroups(updatedAtMillis = 100L)
+
+        fileDao.deleteByNormalizedPath("/a1")
+        repo.refreshSingleGroup(sizeBytes = 10L, hashHex = "ha", updatedAtMillis = 200L)
+
+        val snapshot = repo.loadInitialSnapshot(
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            limit = 10,
+            rebuild = false
+        )
+
+        assertEquals(2, snapshot.groupCount)
+        assertEquals(100L, snapshot.updatedAtMillis)
+        assertEquals(
+            setOf("ha", "hb"),
+            snapshot.firstPage.map { it.hashHex }.toSet()
+        )
+        assertEquals(
+            2,
+            snapshot.firstPage.first { it.hashHex == "ha" }.fileCount
+        )
+        assertEquals(
+            2,
+            snapshot.firstPage.first { it.hashHex == "hb" }.fileCount
+        )
+
+        db.close()
+    }
+
+    @Test
+    fun refreshSingleGroupRemovesCollapsedGroupWithoutRebuildingAll() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        insertDuplicateGroup(fileDao, sizeBytes = 10L, hashHex = "ha", count = 2, pathPrefix = "a")
+        insertDuplicateGroup(fileDao, sizeBytes = 20L, hashHex = "hb", count = 2, pathPrefix = "b")
+        repo.rebuildGroups(updatedAtMillis = 100L)
+
+        fileDao.deleteByNormalizedPath("/a1")
+        repo.refreshSingleGroup(sizeBytes = 10L, hashHex = "ha", updatedAtMillis = 200L)
+
+        val snapshot = repo.loadInitialSnapshot(
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            limit = 10,
+            rebuild = false
+        )
+
+        assertEquals(1, snapshot.groupCount)
+        assertEquals(100L, snapshot.updatedAtMillis)
+        assertEquals(listOf("hb"), snapshot.firstPage.map { it.hashHex })
+
+        db.close()
+    }
 }

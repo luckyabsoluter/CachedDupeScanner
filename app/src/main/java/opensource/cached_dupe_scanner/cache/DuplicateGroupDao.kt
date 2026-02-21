@@ -37,10 +37,34 @@ interface DuplicateGroupDao {
     )
     fun insertFromCache(updatedAtMillis: Long)
 
+    @Query(
+        """
+        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashHex, fileCount, totalBytes, updatedAtMillis)
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex,
+            COUNT(*) as fileCount,
+            (COUNT(*) * sizeBytes) as totalBytes,
+            :updatedAtMillis as updatedAtMillis
+        FROM cached_files
+        WHERE hashHex = :hashHex AND sizeBytes = :sizeBytes
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+        """
+    )
+    fun insertSingleGroupFromCache(sizeBytes: Long, hashHex: String, updatedAtMillis: Long)
+
     @Transaction
     fun rebuildFromCache(updatedAtMillis: Long) {
         clearInternal()
         insertFromCache(updatedAtMillis)
+    }
+
+    @Transaction
+    fun refreshSingleGroup(sizeBytes: Long, hashHex: String, updatedAtMillis: Long) {
+        val snapshotUpdatedAtMillis = latestUpdatedAtMillis() ?: updatedAtMillis
+        delete(sizeBytes, hashHex)
+        insertSingleGroupFromCache(sizeBytes, hashHex, snapshotUpdatedAtMillis)
     }
 
     @Query("SELECT COUNT(*) FROM dupe_groups")

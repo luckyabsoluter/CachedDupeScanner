@@ -25,6 +25,10 @@ class ResultsDbRepository(
         groupDao.rebuildFromCache(updatedAtMillis)
     }
 
+    fun refreshSingleGroup(sizeBytes: Long, hashHex: String, updatedAtMillis: Long = System.currentTimeMillis()) {
+        groupDao.refreshSingleGroup(sizeBytes, hashHex, updatedAtMillis)
+    }
+
     fun listGroups(sortKey: DuplicateGroupSortKey, offset: Int, limit: Int): List<DuplicateGroupEntity> {
         return when (sortKey) {
             DuplicateGroupSortKey.CountDesc -> groupDao.listByCountDesc(limit, offset)
