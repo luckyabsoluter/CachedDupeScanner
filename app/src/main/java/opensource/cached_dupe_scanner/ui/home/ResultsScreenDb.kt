@@ -1,7 +1,10 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -712,6 +715,7 @@ private fun DuplicateGroupCardDb(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun GroupDetailDb(
     resultsRepo: ResultsDbRepository,
     group: DuplicateGroupEntity,
@@ -723,13 +727,19 @@ private fun GroupDetailDb(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
+    val selectedPaths = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
+    val confirmBulkDelete = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
+    val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
+    val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
     val cursor = entry.cursor
+    val selectionMode = selectedPaths.value.isNotEmpty()
+    val allLoadedSelected = entry.members.isNotEmpty() && selectedPaths.value.size == entry.members.size
 
     fun loadMore(reset: Boolean) {
         if (entry.isLoading.value) return
-        if (entry.isComplete.value) return
+        if (!reset && entry.isComplete.value) return
         scope.launch {
             entry.isLoading.value = true
             try {
@@ -737,6 +747,7 @@ private fun GroupDetailDb(
                     cursor.value = null
                     entry.members.clear()
                     entry.isComplete.value = false
+                    selectedPaths.value = emptySet()
                 }
                 val next = withContext(Dispatchers.IO) {
                     resultsRepo.listGroupMembers(
@@ -766,6 +777,20 @@ private fun GroupDetailDb(
             loadMore(reset = true)
         }
     }
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) {
+            selectedFile.value = null
+        }
+    }
+    LaunchedEffect(entry.members.size) {
+        val filtered = filterSelectionToLoadedMembers(
+            selectedPaths = selectedPaths.value,
+            members = entry.members
+        )
+        if (filtered != selectedPaths.value) {
+            selectedPaths.value = filtered
+        }
+    }
 
     val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
     if (preview != null) {
@@ -785,15 +810,87 @@ private fun GroupDetailDb(
     Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
     Spacer(modifier = Modifier.height(8.dp))
 
+    if (selectionMode) {
+        Text(
+            text = "${selectedPaths.value.size} selected",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    selectedPaths.value = if (allLoadedSelected) {
+                        emptySet()
+                    } else {
+                        selectAllLoadedMemberPaths(entry.members)
+                    }
+                    bulkDeleteMessage.value = null
+                },
+                enabled = entry.members.isNotEmpty() && !isBulkDeleting.value
+            ) {
+                Text(if (allLoadedSelected) "Deselect all" else "Select all")
+            }
+            OutlinedButton(
+                onClick = { confirmBulkDelete.value = true },
+                enabled = onDeleteFile != null && !isBulkDeleting.value
+            ) {
+                Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
+            }
+        }
+        if (!entry.isComplete.value) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Select all applies to currently loaded files.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    bulkDeleteMessage.value?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
     entry.members
         .sortedBy { it.normalizedPath }
         .forEach { file ->
             val date = formatDate(file.lastModifiedMillis)
             val isDeleted = deletedPaths.contains(file.normalizedPath)
+            val isSelected = selectedPaths.value.contains(file.normalizedPath)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { selectedFile.value = file },
+                    .combinedClickable(
+                        onClick = {
+                            if (selectionMode) {
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
+                                bulkDeleteMessage.value = null
+                            } else {
+                                selectedFile.value = file
+                            }
+                        },
+                        onLongClick = {
+                            selectedPaths.value = togglePathSelection(
+                                selectedPaths = selectedPaths.value,
+                                path = file.normalizedPath
+                            )
+                            bulkDeleteMessage.value = null
+                        }
+                    ),
                 colors = if (isDeleted) {
                     CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -808,6 +905,19 @@ private fun GroupDetailDb(
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (selectionMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = {
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
+                                bulkDeleteMessage.value = null
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = file.normalizedPath,
@@ -850,24 +960,119 @@ private fun GroupDetailDb(
         )
     }
 
-    selectedFile.value?.let { file ->
-        FileDetailsDialogWithDeleteConfirm(
-            file = file,
-            showName = false,
-            onOpen = {
-                openFile(context, file.normalizedPath)
-                selectedFile.value = null
-            },
-            onDelete = {
-                val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
-                handler(file)
-            },
-            onDeleteResult = { deleted ->
-                if (deleted) {
+    if (!selectionMode) {
+        selectedFile.value?.let { file ->
+            FileDetailsDialogWithDeleteConfirm(
+                file = file,
+                showName = false,
+                onOpen = {
+                    openFile(context, file.normalizedPath)
                     selectedFile.value = null
+                },
+                onDelete = {
+                    val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
+                    handler(file)
+                },
+                onDeleteResult = { deleted ->
+                    if (deleted) {
+                        selectedFile.value = null
+                    }
+                },
+                onDismiss = { selectedFile.value = null }
+            )
+        }
+    }
+
+    if (confirmBulkDelete.value) {
+        val targets = selectedFilesForDelete(
+            members = entry.members,
+            selectedPaths = selectedPaths.value,
+            deletedPaths = deletedPaths
+        )
+        AlertDialog(
+            onDismissRequest = {
+                if (!isBulkDeleting.value) {
+                    confirmBulkDelete.value = false
                 }
             },
-            onDismiss = { selectedFile.value = null }
+            title = { Text("Delete selected files?") },
+            text = {
+                if (targets.isEmpty()) {
+                    Text("No deletable files are selected.")
+                } else {
+                    Text("${targets.size} selected files will be deleted (moved to app trash).")
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        val handler = onDeleteFile ?: return@OutlinedButton
+                        isBulkDeleting.value = true
+                        bulkDeleteMessage.value = null
+                        scope.launch {
+                            var successCount = 0
+                            val failedPaths = linkedSetOf<String>()
+                            targets.forEach { file ->
+                                val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                if (deleted) {
+                                    successCount += 1
+                                } else {
+                                    failedPaths.add(file.normalizedPath)
+                                }
+                            }
+                            selectedPaths.value = failedPaths
+                            bulkDeleteMessage.value = when {
+                                successCount == 0 && failedPaths.isEmpty() -> "No files deleted."
+                                failedPaths.isEmpty() -> "$successCount files deleted."
+                                successCount == 0 -> "Delete failed for ${failedPaths.size} files."
+                                else -> "$successCount deleted, ${failedPaths.size} failed."
+                            }
+                            isBulkDeleting.value = false
+                            confirmBulkDelete.value = false
+                        }
+                    },
+                    enabled = onDeleteFile != null && !isBulkDeleting.value
+                ) {
+                    Text(if (isBulkDeleting.value) "Deleting..." else "Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { confirmBulkDelete.value = false },
+                    enabled = !isBulkDeleting.value
+                ) {
+                    Text("Cancel")
+                }
+            }
         )
+    }
+}
+
+internal fun togglePathSelection(selectedPaths: Set<String>, path: String): Set<String> {
+    if (selectedPaths.contains(path)) {
+        return selectedPaths - path
+    }
+    return selectedPaths + path
+}
+
+internal fun selectAllLoadedMemberPaths(members: List<FileMetadata>): Set<String> {
+    return members.mapTo(linkedSetOf()) { it.normalizedPath }
+}
+
+internal fun filterSelectionToLoadedMembers(
+    selectedPaths: Set<String>,
+    members: List<FileMetadata>
+): Set<String> {
+    val loadedPaths = members.mapTo(hashSetOf()) { it.normalizedPath }
+    return selectedPaths.filterTo(linkedSetOf()) { loadedPaths.contains(it) }
+}
+
+internal fun selectedFilesForDelete(
+    members: List<FileMetadata>,
+    selectedPaths: Set<String>,
+    deletedPaths: Set<String>
+): List<FileMetadata> {
+    return members.filter { file ->
+        selectedPaths.contains(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
     }
 }
