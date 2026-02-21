@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -70,8 +71,10 @@ import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import java.io.File
 
 private class MembersCacheEntry {
@@ -305,12 +308,12 @@ fun ResultsScreenDb(
     } else {
         val totalGroups = groupCount.value
         val loaded = visibleCount.value.coerceAtMost(totalGroups)
-        val current = if (loaded <= 0) 0 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
-        val safeLoaded = loaded.coerceAtLeast(1)
-        val safeTotal = totalGroups.coerceAtLeast(1)
-        val currentPercent = ((current.toDouble() / safeLoaded.toDouble()) * 100).toInt()
-        val loadedPercent = ((loaded.toDouble() / safeTotal.toDouble()) * 100).toInt()
-        "$current/$loaded/$totalGroups (${currentPercent}%/${loadedPercent}%)"
+        val current = if (loaded <= 0) 1 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+        formatLoadProgressText(
+            current = current,
+            loaded = loaded,
+            total = totalGroups
+        )
     }
 
     // Auto-load next page as user scrolls (legacy behavior).
@@ -471,16 +474,7 @@ fun ResultsScreenDb(
         }
 
         if (selectedGroupIndex == null) {
-            loadIndicatorText?.let { indicator ->
-                Text(
-                    text = indicator,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
-                )
-            }
+            TopRightLoadIndicator(text = loadIndicatorText)
         }
     }
 
@@ -493,6 +487,24 @@ fun ResultsScreenDb(
             if (cacheKey == null) null else membersCache.getOrPut(cacheKey) { MembersCacheEntry() }
         }
         val detailScrollState = rememberScrollState()
+        val detailLoadIndicatorText = run {
+            if (group == null || entry == null) {
+                null
+            } else {
+                val total = group.fileCount
+                val loaded = entry.members.size.coerceAtMost(total)
+                val current = estimateCurrentFromScroll(
+                    scrollValue = detailScrollState.value,
+                    maxScrollValue = detailScrollState.maxValue,
+                    loadedCount = loaded
+                )
+                formatLoadProgressText(
+                    current = current,
+                    loaded = loaded,
+                    total = total
+                )
+            }
+        }
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
@@ -515,7 +527,8 @@ fun ResultsScreenDb(
                             deletedPaths = deletedPaths,
                             onDeleteFile = onDeleteFile,
                             imageLoader = imageLoader,
-                            cacheEntry = entry
+                            cacheEntry = entry,
+                            detailScrollState = detailScrollState
                         )
                     }
                 }
@@ -526,6 +539,7 @@ fun ResultsScreenDb(
                         .fillMaxHeight()
                         .padding(end = 4.dp)
                 )
+                TopRightLoadIndicator(text = detailLoadIndicatorText)
             }
         }
         BackHandler { onBack() }
@@ -727,7 +741,8 @@ private fun GroupDetailDb(
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     imageLoader: ImageLoader,
-    cacheEntry: MembersCacheEntry?
+    cacheEntry: MembersCacheEntry?,
+    detailScrollState: ScrollState
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -781,10 +796,9 @@ private fun GroupDetailDb(
     }
 
     LaunchedEffect(group.sizeBytes, group.hashHex) {
-        // If we already have members cached, don't re-query on every open.
-        if (entry.members.isEmpty() && !entry.isLoading.value) {
-            loadMore(reset = true)
-        }
+        // Continue loading when entering detail, even if preview members were already cached.
+        if (entry.isLoading.value || entry.isComplete.value) return@LaunchedEffect
+        loadMore(reset = entry.members.isEmpty())
     }
     LaunchedEffect(selectionMode) {
         if (selectionMode) {
@@ -800,6 +814,23 @@ private fun GroupDetailDb(
         if (filtered != selectedPaths.value) {
             selectedPaths.value = filtered
         }
+    }
+    LaunchedEffect(group.sizeBytes, group.hashHex, detailScrollState) {
+        val thresholdPx = 240
+        snapshotFlow {
+            shouldTriggerDetailAutoLoad(
+                scrollValue = detailScrollState.value,
+                maxScrollValue = detailScrollState.maxValue,
+                thresholdPx = thresholdPx,
+                isLoading = entry.isLoading.value,
+                isComplete = entry.isComplete.value
+            )
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                loadMore(reset = false)
+            }
     }
 
     val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
@@ -1220,6 +1251,30 @@ internal fun selectionStatusText(
     } else {
         "Select all active · ${deselectedPaths.size} excluded · $selectedCount selected"
     }
+}
+
+internal fun estimateCurrentFromScroll(
+    scrollValue: Int,
+    maxScrollValue: Int,
+    loadedCount: Int
+): Int {
+    if (loadedCount <= 0) return 1
+    val safeLoaded = loadedCount.coerceAtLeast(1)
+    if (maxScrollValue <= 0) return 1
+    val ratio = scrollValue.toDouble() / maxScrollValue.toDouble()
+    return (1 + (ratio * (safeLoaded - 1)).toInt()).coerceIn(1, safeLoaded)
+}
+
+internal fun shouldTriggerDetailAutoLoad(
+    scrollValue: Int,
+    maxScrollValue: Int,
+    thresholdPx: Int,
+    isLoading: Boolean,
+    isComplete: Boolean
+): Boolean {
+    if (isLoading || isComplete) return false
+    val remaining = (maxScrollValue - scrollValue).coerceAtLeast(0)
+    return remaining <= thresholdPx.coerceAtLeast(0)
 }
 
 internal fun filterSelectionToLoadedMembers(

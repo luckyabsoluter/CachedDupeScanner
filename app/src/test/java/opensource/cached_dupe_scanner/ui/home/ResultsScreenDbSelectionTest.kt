@@ -121,6 +121,57 @@ class ResultsScreenDbSelectionTest {
         assertEquals(listOf("/a/file1.jpg"), targets.map { it.normalizedPath })
     }
 
+    @Test
+    fun shouldTriggerDetailAutoLoadWhenNearBottomAndNotLoading() {
+        val trigger = shouldTriggerDetailAutoLoad(
+            scrollValue = 980,
+            maxScrollValue = 1000,
+            thresholdPx = 40,
+            isLoading = false,
+            isComplete = false
+        )
+
+        assertEquals(true, trigger)
+    }
+
+    @Test
+    fun shouldNotTriggerDetailAutoLoadWhenAlreadyLoadingOrComplete() {
+        val loading = shouldTriggerDetailAutoLoad(
+            scrollValue = 980,
+            maxScrollValue = 1000,
+            thresholdPx = 40,
+            isLoading = true,
+            isComplete = false
+        )
+        val complete = shouldTriggerDetailAutoLoad(
+            scrollValue = 980,
+            maxScrollValue = 1000,
+            thresholdPx = 40,
+            isLoading = false,
+            isComplete = true
+        )
+
+        assertEquals(false, loading)
+        assertEquals(false, complete)
+    }
+
+    @Test
+    fun estimateCurrentFromScrollMapsTopAndBottomToRange() {
+        val top = estimateCurrentFromScroll(
+            scrollValue = 0,
+            maxScrollValue = 1000,
+            loadedCount = 10
+        )
+        val bottom = estimateCurrentFromScroll(
+            scrollValue = 1000,
+            maxScrollValue = 1000,
+            loadedCount = 10
+        )
+
+        assertEquals(1, top)
+        assertEquals(10, bottom)
+    }
+
     private fun file(path: String): FileMetadata {
         return FileMetadata(
             path = path,

@@ -53,6 +53,8 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
+import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -165,11 +167,11 @@ fun FilesScreenDb(
         if (totalCount <= 0) {
             null
         } else {
-            val loaded = items.value.size.coerceAtMost(totalCount).coerceAtLeast(1)
-            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
-            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
-            val loadedPercent = ((loaded.toDouble() / totalCount.toDouble()) * 100).toInt()
-            "$current/$loaded/$totalCount (${currentPercent}%/${loadedPercent}%)"
+            formatLoadProgressText(
+                current = (topVisibleIndex.value + 1),
+                loaded = items.value.size.coerceAtMost(totalCount),
+                total = totalCount
+            )
         }
     }
 
@@ -330,16 +332,7 @@ fun FilesScreenDb(
             }
         }
 
-        overlayText?.let { indicator ->
-            Text(
-                text = indicator,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
-            )
-        }
+        TopRightLoadIndicator(text = overlayText)
 
         VerticalLazyScrollbar(
             listState = listState,
