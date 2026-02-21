@@ -89,6 +89,11 @@ private data class BulkDeleteOutcome(
     val failedPaths: Set<String>
 )
 
+internal enum class ResultGroupMemberSortKey(val label: String) {
+    Path("Path"),
+    Modified("Modified")
+}
+
 @Composable
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
@@ -131,6 +136,16 @@ fun ResultsScreenDb(
     }
     val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
+    val groupMemberSortKey = remember {
+        val parsed = runCatching { ResultGroupMemberSortKey.valueOf(settingsSnapshot.resultGroupSortKey) }
+            .getOrDefault(ResultGroupMemberSortKey.Path)
+        mutableStateOf(parsed)
+    }
+    val groupMemberSortDirection = remember {
+        val parsed = runCatching { SortDirection.valueOf(settingsSnapshot.resultGroupSortDirection) }
+            .getOrDefault(SortDirection.Asc)
+        mutableStateOf(parsed)
+    }
 
     val groups = remember { mutableStateOf<List<DuplicateGroupEntity>>(emptyList()) }
     val fileCount = remember { mutableStateOf(0) }
@@ -528,7 +543,15 @@ fun ResultsScreenDb(
                             onDeleteFile = onDeleteFile,
                             imageLoader = imageLoader,
                             cacheEntry = entry,
-                            detailScrollState = detailScrollState
+                            detailScrollState = detailScrollState,
+                            sortKey = groupMemberSortKey.value,
+                            sortDirection = groupMemberSortDirection.value,
+                            onApplySort = { key, direction ->
+                                groupMemberSortKey.value = key
+                                groupMemberSortDirection.value = direction
+                                settingsStore.setResultGroupSortKey(key.name)
+                                settingsStore.setResultGroupSortDirection(direction.name)
+                            }
                         )
                     }
                 }
@@ -742,7 +765,10 @@ private fun GroupDetailDb(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     imageLoader: ImageLoader,
     cacheEntry: MembersCacheEntry?,
-    detailScrollState: ScrollState
+    detailScrollState: ScrollState,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -753,6 +779,9 @@ private fun GroupDetailDb(
     val confirmBulkDelete = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
+    val groupSortDialogOpen = remember { mutableStateOf(false) }
+    val pendingGroupSortKey = remember { mutableStateOf(sortKey) }
+    val pendingGroupSortDirection = remember { mutableStateOf(sortDirection) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
     val cursor = entry.cursor
@@ -847,8 +876,25 @@ private fun GroupDetailDb(
         )
         Spacer(modifier = Modifier.height(8.dp))
     }
-    Text("${group.fileCount} files · Total ${formatBytes(group.totalBytes)}")
-    Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text("${group.fileCount} files · Total ${formatBytes(group.totalBytes)}")
+            Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
+        }
+        OutlinedButton(
+            onClick = {
+                pendingGroupSortKey.value = sortKey
+                pendingGroupSortDirection.value = sortDirection
+                groupSortDialogOpen.value = true
+            }
+        ) {
+            Text("Sort")
+        }
+    }
     Spacer(modifier = Modifier.height(8.dp))
 
     if (selectionMode) {
@@ -912,40 +958,76 @@ private fun GroupDetailDb(
         Spacer(modifier = Modifier.height(8.dp))
     }
 
-    entry.members
-        .sortedBy { it.normalizedPath }
-        .forEach { file ->
-            val date = formatDate(file.lastModifiedMillis)
-            val isDeleted = deletedPaths.contains(file.normalizedPath)
-            val isSelected = isPathSelectedForMode(
-                path = file.normalizedPath,
-                selectAllMode = isSelectAllMode.value,
-                selectedPaths = selectedPaths.value,
-                deselectedPaths = deselectedPathsInSelectAll.value
-            )
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = {
-                            if (selectionMode) {
-                                if (isSelectAllMode.value) {
-                                    deselectedPathsInSelectAll.value = togglePathSelection(
-                                        selectedPaths = deselectedPathsInSelectAll.value,
-                                        path = file.normalizedPath
-                                    )
-                                } else {
-                                    selectedPaths.value = togglePathSelection(
-                                        selectedPaths = selectedPaths.value,
-                                        path = file.normalizedPath
-                                    )
-                                }
-                                bulkDeleteMessage.value = null
+    val sortedMembers = sortGroupMembers(
+        members = entry.members,
+        sortKey = sortKey,
+        direction = sortDirection
+    )
+
+    sortedMembers.forEach { file ->
+        val date = formatDate(file.lastModifiedMillis)
+        val isDeleted = deletedPaths.contains(file.normalizedPath)
+        val isSelected = isPathSelectedForMode(
+            path = file.normalizedPath,
+            selectAllMode = isSelectAllMode.value,
+            selectedPaths = selectedPaths.value,
+            deselectedPaths = deselectedPathsInSelectAll.value
+        )
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {
+                        if (selectionMode) {
+                            if (isSelectAllMode.value) {
+                                deselectedPathsInSelectAll.value = togglePathSelection(
+                                    selectedPaths = deselectedPathsInSelectAll.value,
+                                    path = file.normalizedPath
+                                )
                             } else {
-                                selectedFile.value = file
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
                             }
-                        },
-                        onLongClick = {
+                            bulkDeleteMessage.value = null
+                        } else {
+                            selectedFile.value = file
+                        }
+                    },
+                    onLongClick = {
+                        if (isSelectAllMode.value) {
+                            deselectedPathsInSelectAll.value = togglePathSelection(
+                                selectedPaths = deselectedPathsInSelectAll.value,
+                                path = file.normalizedPath
+                            )
+                        } else {
+                            selectedPaths.value = togglePathSelection(
+                                selectedPaths = selectedPaths.value,
+                                path = file.normalizedPath
+                            )
+                        }
+                        bulkDeleteMessage.value = null
+                    }
+                ),
+            colors = if (isDeleted) {
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            } else {
+                CardDefaults.cardColors()
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(10.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = {
                             if (isSelectAllMode.value) {
                                 deselectedPathsInSelectAll.value = togglePathSelection(
                                     selectedPaths = deselectedPathsInSelectAll.value,
@@ -959,68 +1041,36 @@ private fun GroupDetailDb(
                             }
                             bulkDeleteMessage.value = null
                         }
-                    ),
-                colors = if (isDeleted) {
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
                     )
-                } else {
-                    CardDefaults.cardColors()
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (selectionMode) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = {
-                                if (isSelectAllMode.value) {
-                                    deselectedPathsInSelectAll.value = togglePathSelection(
-                                        selectedPaths = deselectedPathsInSelectAll.value,
-                                        path = file.normalizedPath
-                                    )
-                                } else {
-                                    selectedPaths.value = togglePathSelection(
-                                        selectedPaths = selectedPaths.value,
-                                        path = file.normalizedPath
-                                    )
-                                }
-                                bulkDeleteMessage.value = null
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = file.normalizedPath,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            color = if (isDeleted) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDeleted) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = file.normalizedPath,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
         }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
 
     OutlinedButton(
         onClick = { loadMore(reset = false) },
@@ -1196,6 +1246,88 @@ private fun GroupDetailDb(
                 }
             }
         )
+    }
+
+    if (groupSortDialogOpen.value) {
+        AlertDialog(
+            onDismissRequest = { groupSortDialogOpen.value = false },
+            title = { Text("Group sort options") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Sort by")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Path,
+                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Path }
+                        )
+                        Text(ResultGroupMemberSortKey.Path.label)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Modified,
+                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Modified }
+                        )
+                        Text(ResultGroupMemberSortKey.Modified.label)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Direction")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = pendingGroupSortDirection.value == SortDirection.Asc,
+                            onClick = { pendingGroupSortDirection.value = SortDirection.Asc }
+                        )
+                        Text(SortDirection.Asc.label)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = pendingGroupSortDirection.value == SortDirection.Desc,
+                            onClick = { pendingGroupSortDirection.value = SortDirection.Desc }
+                        )
+                        Text(SortDirection.Desc.label)
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        onApplySort(
+                            pendingGroupSortKey.value,
+                            pendingGroupSortDirection.value
+                        )
+                        groupSortDialogOpen.value = false
+                    }
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { groupSortDialogOpen.value = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+internal fun sortGroupMembers(
+    members: List<FileMetadata>,
+    sortKey: ResultGroupMemberSortKey,
+    direction: SortDirection
+): List<FileMetadata> {
+    val comparator = when (sortKey) {
+        ResultGroupMemberSortKey.Path -> {
+            compareBy<FileMetadata> { it.normalizedPath }
+        }
+        ResultGroupMemberSortKey.Modified -> {
+            compareBy<FileMetadata> { it.lastModifiedMillis }
+                .thenBy { it.normalizedPath }
+        }
+    }
+    return if (direction == SortDirection.Asc) {
+        members.sortedWith(comparator)
+    } else {
+        members.sortedWith(comparator.reversed())
     }
 }
 

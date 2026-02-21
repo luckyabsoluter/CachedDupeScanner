@@ -172,12 +172,52 @@ class ResultsScreenDbSelectionTest {
         assertEquals(10, bottom)
     }
 
-    private fun file(path: String): FileMetadata {
+    @Test
+    fun sortGroupMembersSortsByPathAsc() {
+        val members = listOf(
+            file("/b/file2.jpg", modified = 2L),
+            file("/a/file1.jpg", modified = 3L),
+            file("/c/file3.jpg", modified = 1L)
+        )
+
+        val sorted = sortGroupMembers(
+            members = members,
+            sortKey = ResultGroupMemberSortKey.Path,
+            direction = opensource.cached_dupe_scanner.core.SortDirection.Asc
+        )
+
+        assertEquals(
+            listOf("/a/file1.jpg", "/b/file2.jpg", "/c/file3.jpg"),
+            sorted.map { it.normalizedPath }
+        )
+    }
+
+    @Test
+    fun sortGroupMembersSortsByModifiedDesc() {
+        val members = listOf(
+            file("/b/file2.jpg", modified = 2L),
+            file("/a/file1.jpg", modified = 3L),
+            file("/c/file3.jpg", modified = 1L)
+        )
+
+        val sorted = sortGroupMembers(
+            members = members,
+            sortKey = ResultGroupMemberSortKey.Modified,
+            direction = opensource.cached_dupe_scanner.core.SortDirection.Desc
+        )
+
+        assertEquals(
+            listOf("/a/file1.jpg", "/b/file2.jpg", "/c/file3.jpg"),
+            sorted.map { it.normalizedPath }
+        )
+    }
+
+    private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
             sizeBytes = 10L,
-            lastModifiedMillis = 1L,
+            lastModifiedMillis = modified,
             hashHex = "h"
         )
     }

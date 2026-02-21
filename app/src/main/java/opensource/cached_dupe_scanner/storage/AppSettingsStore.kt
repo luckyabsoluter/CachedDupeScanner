@@ -8,6 +8,8 @@ data class AppSettings(
     val hideZeroSizeInResults: Boolean,
     val resultSortKey: String,
     val resultSortDirection: String,
+    val resultGroupSortKey: String,
+    val resultGroupSortDirection: String,
     val showFullPaths: Boolean,
     val filesSortKey: String,
     val filesSortDirection: String
@@ -22,6 +24,8 @@ class AppSettingsStore(context: Context) {
             hideZeroSizeInResults = prefs.getBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
             resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, "Count") ?: "Count",
             resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, "Desc") ?: "Desc",
+            resultGroupSortKey = prefs.getString(KEY_RESULT_GROUP_SORT_KEY, "Path") ?: "Path",
+            resultGroupSortDirection = prefs.getString(KEY_RESULT_GROUP_SORT_DIR, "Asc") ?: "Asc",
             showFullPaths = prefs.getBoolean(KEY_SHOW_FULL_PATHS, false),
             filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, "Name") ?: "Name",
             filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, "Asc") ?: "Asc"
@@ -44,6 +48,14 @@ class AppSettingsStore(context: Context) {
         prefs.edit().putString(KEY_RESULT_SORT_DIR, value).apply()
     }
 
+    fun setResultGroupSortKey(value: String) {
+        prefs.edit().putString(KEY_RESULT_GROUP_SORT_KEY, value).apply()
+    }
+
+    fun setResultGroupSortDirection(value: String) {
+        prefs.edit().putString(KEY_RESULT_GROUP_SORT_DIR, value).apply()
+    }
+
     fun setShowFullPaths(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_FULL_PATHS, enabled).apply()
     }
@@ -63,6 +75,8 @@ class AppSettingsStore(context: Context) {
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
+            .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
+            .put(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
             .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
@@ -76,6 +90,8 @@ class AppSettingsStore(context: Context) {
             hideZeroSizeInResults = obj.optBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
             resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, "Count"),
             resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, "Desc"),
+            resultGroupSortKey = obj.optString(KEY_RESULT_GROUP_SORT_KEY, "Path"),
+            resultGroupSortDirection = obj.optString(KEY_RESULT_GROUP_SORT_DIR, "Asc"),
             showFullPaths = obj.optBoolean(KEY_SHOW_FULL_PATHS, false),
             filesSortKey = obj.optString(KEY_FILES_SORT_KEY, "Name"),
             filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, "Asc")
@@ -85,6 +101,8 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
+            .putString(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
+            .putString(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
             .putBoolean(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
@@ -98,6 +116,8 @@ class AppSettingsStore(context: Context) {
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
+        private const val KEY_RESULT_GROUP_SORT_KEY = "result_group_sort_key"
+        private const val KEY_RESULT_GROUP_SORT_DIR = "result_group_sort_dir"
         private const val KEY_SHOW_FULL_PATHS = "show_full_paths"
         private const val KEY_FILES_SORT_KEY = "files_sort_key"
         private const val KEY_FILES_SORT_DIR = "files_sort_dir"
