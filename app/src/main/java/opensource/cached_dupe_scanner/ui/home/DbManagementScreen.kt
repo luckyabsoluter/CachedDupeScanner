@@ -58,7 +58,8 @@ fun DbManagementScreen(
     val isRebuilding = remember { mutableStateOf(false) }
     val isClearing = remember { mutableStateOf(false) }
     val clearDialogOpen = remember { mutableStateOf(false) }
-    val statusMessage = remember { mutableStateOf<String?>(null) }
+    val maintenanceStatusMessage = remember { mutableStateOf<String?>(null) }
+    val groupStatusMessage = remember { mutableStateOf<String?>(null) }
     val dbCount = remember { mutableStateOf<Int?>(null) }
     val groupCount = remember { mutableStateOf<Int?>(null) }
     val progressTotal = remember { mutableStateOf(0) }
@@ -85,7 +86,7 @@ fun DbManagementScreen(
     LaunchedEffect(clearVersion) {
         refreshOverview()
         if (isClearing.value) {
-            statusMessage.value = "Cleared all cached results."
+            maintenanceStatusMessage.value = "Cleared all cached results."
             isClearing.value = false
         }
     }
@@ -130,13 +131,65 @@ fun DbManagementScreen(
 
         val isBusy = isRunning.value || isRebuilding.value || isClearing.value
         val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Duplicate group snapshot",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = "This action rebuilds the derived group snapshot only. It does not scan files on storage.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isRebuilding.value = true
+                            groupStatusMessage.value = "Rebuilding duplicate groups..."
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    resultsRepo.rebuildGroups()
+                                }
+                            }.onSuccess {
+                                groupStatusMessage.value = "Duplicate groups rebuilt."
+                                onMaintenanceApplied()
+                                refreshOverview()
+                            }.onFailure {
+                                groupStatusMessage.value = "Failed to rebuild duplicate groups."
+                            }
+                            isRebuilding.value = false
+                        }
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isRebuilding.value) "Rebuilding groups..." else "Rebuild duplicate groups")
+                }
+                if (isRebuilding.value) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                groupStatusMessage.value?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Policies",
+                    text = "File maintenance policies",
                     style = MaterialTheme.typography.titleSmall
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,33 +220,9 @@ fun DbManagementScreen(
                 }
 
                 Text(
-                    text = "Actions",
+                    text = "Run",
                     style = MaterialTheme.typography.titleSmall
                 )
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            isRebuilding.value = true
-                            statusMessage.value = "Rebuilding duplicate groups..."
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    resultsRepo.rebuildGroups()
-                                }
-                            }.onSuccess {
-                                statusMessage.value = "Duplicate groups rebuilt."
-                                onMaintenanceApplied()
-                                refreshOverview()
-                            }.onFailure {
-                                statusMessage.value = "Failed to rebuild duplicate groups."
-                            }
-                            isRebuilding.value = false
-                        }
-                    },
-                    enabled = !isBusy,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (isRebuilding.value) "Rebuilding groups..." else "Rebuild duplicate groups")
-                }
                 Button(
                     onClick = {
                         scope.launch {
@@ -218,7 +247,7 @@ fun DbManagementScreen(
                                     progressCurrentPath.value = progress.currentPath
                                 }
                             }
-                            statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
+                            maintenanceStatusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
                             isRunning.value = false
                             onMaintenanceApplied()
                             refreshOverview()
@@ -231,10 +260,10 @@ fun DbManagementScreen(
                 }
 
                 Text(
-                    text = "Progress",
+                    text = "Maintenance progress",
                     style = MaterialTheme.typography.titleSmall
                 )
-                statusMessage.value?.let { message ->
+                maintenanceStatusMessage.value?.let { message ->
                     Text(
                         text = message,
                         style = MaterialTheme.typography.bodySmall,
@@ -265,14 +294,6 @@ fun DbManagementScreen(
                             maxLines = 1
                         )
                     }
-                } else if (isRebuilding.value) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Rebuilding duplicate groups snapshot...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 } else {
                     Text(
                         text = "Idle",
@@ -311,7 +332,7 @@ fun DbManagementScreen(
                     onClick = {
                         clearDialogOpen.value = false
                         isClearing.value = true
-                        statusMessage.value = "Clearing all cached results..."
+                        maintenanceStatusMessage.value = "Clearing all cached results..."
                         onClearAll()
                     }
                 ) {
