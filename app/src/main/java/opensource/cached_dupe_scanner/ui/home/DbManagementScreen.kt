@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
@@ -41,6 +42,7 @@ import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 @Composable
 fun DbManagementScreen(
     historyRepo: ScanHistoryRepository,
+    resultsRepo: ResultsDbRepository,
     onMaintenanceApplied: () -> Unit,
     onClearAll: () -> Unit,
     clearVersion: Int,
@@ -53,10 +55,12 @@ fun DbManagementScreen(
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
     val isRunning = remember { mutableStateOf(false) }
+    val isRebuilding = remember { mutableStateOf(false) }
     val isClearing = remember { mutableStateOf(false) }
     val clearDialogOpen = remember { mutableStateOf(false) }
     val statusMessage = remember { mutableStateOf<String?>(null) }
     val dbCount = remember { mutableStateOf<Int?>(null) }
+    val groupCount = remember { mutableStateOf<Int?>(null) }
     val progressTotal = remember { mutableStateOf(0) }
     val progressProcessed = remember { mutableStateOf(0) }
     val progressDeleted = remember { mutableStateOf(0) }
@@ -64,18 +68,22 @@ fun DbManagementScreen(
     val progressMissingHashed = remember { mutableStateOf(0) }
     val progressCurrentPath = remember { mutableStateOf<String?>(null) }
 
-    val refreshCount: () -> Unit = {
+    val refreshOverview: () -> Unit = {
         scope.launch {
-            dbCount.value = withContext(Dispatchers.IO) { historyRepo.countAll() }
+            val counts = withContext(Dispatchers.IO) {
+                Pair(historyRepo.countAll(), resultsRepo.countGroups())
+            }
+            dbCount.value = counts.first
+            groupCount.value = counts.second
         }
     }
 
     LaunchedEffect(Unit) {
-        refreshCount()
+        refreshOverview()
     }
 
     LaunchedEffect(clearVersion) {
-        refreshCount()
+        refreshOverview()
         if (isClearing.value) {
             statusMessage.value = "Cleared all cached results."
             isClearing.value = false
@@ -112,10 +120,16 @@ fun DbManagementScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text(
+                    text = "Duplicate groups: ${groupCount.value ?: "-"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isRunning.value
+        val isBusy = isRunning.value || isRebuilding.value || isClearing.value
+        val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(12.dp),
@@ -156,6 +170,30 @@ fun DbManagementScreen(
                     text = "Actions",
                     style = MaterialTheme.typography.titleSmall
                 )
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isRebuilding.value = true
+                            statusMessage.value = "Rebuilding duplicate groups..."
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    resultsRepo.rebuildGroups()
+                                }
+                            }.onSuccess {
+                                statusMessage.value = "Duplicate groups rebuilt."
+                                onMaintenanceApplied()
+                                refreshOverview()
+                            }.onFailure {
+                                statusMessage.value = "Failed to rebuild duplicate groups."
+                            }
+                            isRebuilding.value = false
+                        }
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isRebuilding.value) "Rebuilding groups..." else "Rebuild duplicate groups")
+                }
                 Button(
                     onClick = {
                         scope.launch {
@@ -183,7 +221,7 @@ fun DbManagementScreen(
                             statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
                             isRunning.value = false
                             onMaintenanceApplied()
-                            refreshCount()
+                            refreshOverview()
                         }
                     },
                     enabled = canRun,
@@ -227,6 +265,14 @@ fun DbManagementScreen(
                             maxLines = 1
                         )
                     }
+                } else if (isRebuilding.value) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Rebuilding duplicate groups snapshot...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 } else {
                     Text(
                         text = "Idle",
@@ -239,7 +285,7 @@ fun DbManagementScreen(
 
             OutlinedButton(
                 onClick = { clearDialogOpen.value = true },
-                enabled = !isRunning.value && !isClearing.value,
+                enabled = !isBusy,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Clear all cached results")

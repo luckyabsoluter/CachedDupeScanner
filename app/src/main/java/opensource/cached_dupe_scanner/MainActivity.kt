@@ -245,6 +245,7 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
+                                resultsRepo = resultsRepo,
                                 onMaintenanceApplied = {
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
