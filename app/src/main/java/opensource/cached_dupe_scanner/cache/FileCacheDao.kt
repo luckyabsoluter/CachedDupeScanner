@@ -5,6 +5,16 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
+/**
+ * DAO for `cached_files`.
+ *
+ * Query groups:
+ * - Point lookups and counts (`getByNormalizedPath`, `countAll`).
+ * - Cursor paging for file manager and maintenance (`getPageAfter`, `getPageBy*`).
+ * - Duplicate-member listing by (`sizeBytes`, `hashHex`).
+ * - Mutations (`upsert`, `upsertAll`, `deleteByNormalizedPath`, `clear`).
+ * - Projection helpers used by scanner/group synchronization (`countBySizes`, `findSizesByPaths`, `findGroupKeysByPaths`).
+ */
 @Dao
 interface FileCacheDao {
     @Query("SELECT * FROM cached_files WHERE normalizedPath = :normalizedPath LIMIT 1")
@@ -118,4 +128,13 @@ interface FileCacheDao {
 
     @Query("SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes FROM cached_files WHERE normalizedPath IN (:paths)")
     fun findSizesByPaths(paths: List<String>): List<PathSize>
+
+    @Query(
+        """
+        SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes, hashHex as hashHex
+        FROM cached_files
+        WHERE normalizedPath IN (:paths)
+        """
+    )
+    fun findGroupKeysByPaths(paths: List<String>): List<PathGroupKey>
 }

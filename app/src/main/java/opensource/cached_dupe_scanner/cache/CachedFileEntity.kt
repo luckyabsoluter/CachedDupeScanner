@@ -14,11 +14,21 @@ import androidx.room.PrimaryKey
         Index(value = ["lastModifiedMillis", "normalizedPath"], name = "index_cached_files_lastModifiedMillis_normalizedPath")
     ]
 )
+/**
+ * Canonical persisted cache row for one file path.
+ *
+ * Rows in this table are the source of truth used by incremental scan logic and group derivation.
+ */
 data class CachedFileEntity(
+    /** Stable normalized absolute path. Primary key. */
     @PrimaryKey
     val normalizedPath: String,
+    /** Original display path shown to users. */
     val path: String,
+    /** Last observed file size in bytes. */
     val sizeBytes: Long,
+    /** Last observed file mtime in epoch millis. */
     val lastModifiedMillis: Long,
+    /** SHA-256 hash when available; null when not computed yet. */
     val hashHex: String?
 )

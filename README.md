@@ -69,7 +69,6 @@ Room database (scan-cache.db) core tables:
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
 
-For detailed DB access flows, see [docs/db-access.md](docs/db-access.md).
 
 ## Module map
 

@@ -10,6 +10,11 @@ import androidx.room.PrimaryKey
         Index(value = ["startedAtMillis"], name = "index_scan_reports_startedAtMillis")
     ]
 )
+/**
+ * Immutable summary row for one scan execution.
+ *
+ * Stores timing and count metrics displayed in the Reports UI.
+ */
 data class ScanReportEntity(
     @PrimaryKey
     val id: String,

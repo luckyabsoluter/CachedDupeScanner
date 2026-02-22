@@ -4,6 +4,13 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 
+/**
+ * DAO for materialized duplicate-group snapshot table `dupe_groups`.
+ *
+ * Operational policy:
+ * - Full rebuild (`rebuildFromCache`) is reserved for explicit DB management actions.
+ * - Runtime cache mutations should refresh only touched group keys via `delete` + `insertSingleGroupFromCache`.
+ */
 @Dao
 interface DuplicateGroupDao {
     @Query("DELETE FROM dupe_groups")

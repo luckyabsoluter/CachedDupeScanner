@@ -429,7 +429,7 @@ fun ResultsScreenDb(
                                     leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
                                     onClick = {
                                         menuExpanded.value = false
-                                        refresh(reset = true, rebuild = true)
+                                        refresh(reset = true, rebuild = false)
                                     }
                                 )
                                 androidx.compose.material3.DropdownMenuItem(
@@ -523,7 +523,7 @@ fun ResultsScreenDb(
                             color = MaterialTheme.colorScheme.error
                         )
                         OutlinedButton(
-                            onClick = { refresh(reset = true, rebuild = true) },
+                            onClick = { refresh(reset = true, rebuild = false) },
                             enabled = !isRefreshing.value
                         ) {
                             Text("Retry")

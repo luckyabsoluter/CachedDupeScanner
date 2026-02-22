@@ -99,7 +99,8 @@ class MainActivity : ComponentActivity() {
                         ScanHistoryRepository(
                             dao = database.fileCacheDao(),
                             settingsStore = settingsStore,
-                            groupDao = database.duplicateGroupDao()
+                            groupDao = database.duplicateGroupDao(),
+                            database = database
                         )
                     }
                     val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }

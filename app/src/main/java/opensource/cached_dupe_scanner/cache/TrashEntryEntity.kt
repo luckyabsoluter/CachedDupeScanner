@@ -12,6 +12,11 @@ import androidx.room.PrimaryKey
         Index("originalPath")
     ]
 )
+/**
+ * Metadata ledger row for files moved into app-managed trash.
+ *
+ * The file itself is moved on filesystem; this table tracks origin and restore metadata.
+ */
 data class TrashEntryEntity(
     @PrimaryKey
     val id: String,

@@ -5,6 +5,11 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
+/**
+ * DAO for app-managed trash ledger.
+ *
+ * Supports count/list paging by delete timestamp and id, point lookup by id, and row lifecycle mutations.
+ */
 @Dao
 interface TrashDao {
     @Query("SELECT COUNT(*) FROM trash_entries")
