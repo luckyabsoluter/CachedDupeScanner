@@ -437,4 +437,62 @@ class ScanHistoryRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun runMaintenanceWithDeleteMissingAlsoSynchronizesDuplicateGroups() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val existingFile = File.createTempFile("cached", ".existing")
+        val missingFile = File.createTempFile("cached", ".missing")
+        try {
+            existingFile.writeText("same-content")
+            missingFile.writeText("same-content")
+            val sharedHash = Hashing.sha256Hex(existingFile)
+            val sharedSize = existingFile.length()
+            missingFile.delete()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao()
+            )
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        existingFile.absolutePath,
+                        existingFile.absolutePath,
+                        sharedSize,
+                        existingFile.lastModified(),
+                        sharedHash
+                    ),
+                    FileMetadata(
+                        missingFile.absolutePath,
+                        missingFile.absolutePath,
+                        sharedSize,
+                        1L,
+                        sharedHash
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            val summary = repo.runMaintenance(
+                deleteMissing = true,
+                rehashStale = false,
+                rehashMissing = false
+            ) { }
+
+            assertEquals(1, summary.deleted)
+            assertEquals(0, database.duplicateGroupDao().countGroups())
+        } finally {
+            existingFile.delete()
+            database.close()
+        }
+    }
 }

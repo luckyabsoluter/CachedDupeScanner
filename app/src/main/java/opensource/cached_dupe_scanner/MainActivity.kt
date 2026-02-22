@@ -95,7 +95,13 @@ class MainActivity : ComponentActivity() {
                             )
                             .build()
                     }
-                    val historyRepo = remember { ScanHistoryRepository(database.fileCacheDao(), settingsStore) }
+                    val historyRepo = remember {
+                        ScanHistoryRepository(
+                            dao = database.fileCacheDao(),
+                            settingsStore = settingsStore,
+                            groupDao = database.duplicateGroupDao()
+                        )
+                    }
                     val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
                     val trashRepo = remember { TrashRepository(database.trashDao()) }
                     val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
@@ -117,10 +123,9 @@ class MainActivity : ComponentActivity() {
                                 withContext(Dispatchers.IO) {
                                     Log.d("MainActivity", "Persisting scan to DB")
                                     historyRepo.recordScan(scan)
-                                    resultsRepo.rebuildGroups()
                                 }
                             }.onFailure { error ->
-                                Log.e("MainActivity", "Failed to persist/rebuild results", error)
+                                Log.e("MainActivity", "Failed to persist scan results", error)
                             }
                             resultsRefreshVersion.value += 1
                             navigateTo(backStack, screenCache, Screen.Results)
@@ -136,6 +141,9 @@ class MainActivity : ComponentActivity() {
                         deletedPaths.value = emptySet()
                         displayResult.value = null
                         filesClearVersion.value += 1
+                        filesRefreshVersion.value += 1
+                        resultsRefreshVersion.value += 1
+                        selectedResultsGroupIndex.value = null
                         clearRequested.value = false
                     }
 
@@ -237,6 +245,10 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
+                                onMaintenanceApplied = {
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
+                                },
                                 onClearAll = { clearRequested.value = true },
                                 clearVersion = filesClearVersion.value,
                                 onBack = { pop(backStack) },

@@ -41,6 +41,7 @@ import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 @Composable
 fun DbManagementScreen(
     historyRepo: ScanHistoryRepository,
+    onMaintenanceApplied: () -> Unit,
     onClearAll: () -> Unit,
     clearVersion: Int,
     onBack: () -> Unit,
@@ -181,6 +182,7 @@ fun DbManagementScreen(
                             }
                             statusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
                             isRunning.value = false
+                            onMaintenanceApplied()
                             refreshCount()
                         }
                     },

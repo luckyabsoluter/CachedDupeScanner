@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.core.Hashing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -130,6 +131,66 @@ class TrashControllerTest {
         // Keep trash entry and trashed file
         assertNotNull(trashRepo.getById(entry.id))
         assertTrue(File(entry.trashedPath).exists())
+
+        volumeRoot.deleteRecursively()
+        database.close()
+    }
+
+    @Test
+    fun moveToTrashSynchronizesDuplicateGroupsThroughHistoryRepository() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        val volumeRoot = createTempDir(prefix = "volume_")
+        val fileA = File(volumeRoot, "docs/c_a.txt")
+        val fileB = File(volumeRoot, "docs/c_b.txt")
+        fileA.parentFile!!.mkdirs()
+        fileA.writeText("same")
+        fileB.writeText("same")
+
+        val hash = Hashing.sha256Hex(fileA)
+        val size = fileA.length()
+        database.fileCacheDao().upsert(
+            CachedFileEntity(
+                normalizedPath = fileA.absolutePath,
+                path = fileA.absolutePath,
+                sizeBytes = size,
+                lastModifiedMillis = fileA.lastModified(),
+                hashHex = hash
+            )
+        )
+        database.fileCacheDao().upsert(
+            CachedFileEntity(
+                normalizedPath = fileB.absolutePath,
+                path = fileB.absolutePath,
+                sizeBytes = size,
+                lastModifiedMillis = fileB.lastModified(),
+                hashHex = hash
+            )
+        )
+        database.duplicateGroupDao().rebuildFromCache(System.currentTimeMillis())
+        assertEquals(1, database.duplicateGroupDao().countGroups())
+
+        val settings = AppSettingsStore(context)
+        val historyRepo = ScanHistoryRepository(
+            dao = database.fileCacheDao(),
+            settingsStore = settings,
+            groupDao = database.duplicateGroupDao()
+        )
+        val trashRepo = TrashRepository(database.trashDao())
+        val controller = TrashController(
+            context = context,
+            database = database,
+            historyRepo = historyRepo,
+            trashRepo = trashRepo,
+            storageRootProvider = FakeRootProvider(volumeRoot)
+        )
+
+        val moved = controller.moveToTrash(fileA.absolutePath)
+        assertTrue(moved.success)
+        assertEquals(0, database.duplicateGroupDao().countGroups())
 
         volumeRoot.deleteRecursively()
         database.close()

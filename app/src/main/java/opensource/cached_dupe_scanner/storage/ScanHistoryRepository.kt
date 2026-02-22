@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.storage
 
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanResult
@@ -10,7 +11,8 @@ import java.io.File
 
 class ScanHistoryRepository(
     private val dao: FileCacheDao,
-    private val settingsStore: AppSettingsStore
+    private val settingsStore: AppSettingsStore,
+    private val groupDao: DuplicateGroupDao? = null
 ) {
     fun recordScan(result: ScanResult) {
         val settings = settingsStore.load()
@@ -26,6 +28,9 @@ class ScanHistoryRepository(
             )
         }
         dao.upsertAll(files)
+        if (files.isNotEmpty()) {
+            rebuildAllGroups()
+        }
     }
 
     fun loadMergedHistory(): ScanResult? {
@@ -55,6 +60,9 @@ class ScanHistoryRepository(
                 deleted += 1
             }
         }
+        if (deleted > 0) {
+            rebuildAllGroups()
+        }
         return deleted
     }
 
@@ -68,6 +76,9 @@ class ScanHistoryRepository(
                 dao.deleteByNormalizedPath(entity.normalizedPath)
                 deleted += 1
             }
+        }
+        if (deleted > 0) {
+            rebuildAllGroups()
         }
         return deleted
     }
@@ -92,6 +103,9 @@ class ScanHistoryRepository(
                 updated += 1
             }
         }
+        if (updated > 0) {
+            rebuildAllGroups()
+        }
         return updated
     }
 
@@ -115,6 +129,9 @@ class ScanHistoryRepository(
                 updated += 1
             }
         }
+        if (updated > 0) {
+            rebuildAllGroups()
+        }
         return updated
     }
 
@@ -130,6 +147,9 @@ class ScanHistoryRepository(
             val updatedEntity = entity.copy(hashHex = hash)
             dao.upsert(updatedEntity)
             updated += 1
+        }
+        if (updated > 0) {
+            rebuildAllGroups()
         }
         return updated
     }
@@ -210,6 +230,9 @@ class ScanHistoryRepository(
                 lastPath = entity.normalizedPath
             }
         }
+        if (deleted > 0 || rehashed > 0 || missingHashed > 0) {
+            rebuildAllGroups()
+        }
         return DbMaintenanceProgress(
             total = total,
             processed = processed,
@@ -222,11 +245,52 @@ class ScanHistoryRepository(
 
     fun clearAll() {
         dao.clear()
+        groupDao?.clear()
     }
 
     fun deleteByNormalizedPath(normalizedPath: String) {
+        val before = dao.getByNormalizedPath(normalizedPath)
         dao.deleteByNormalizedPath(normalizedPath)
+        refreshTouchedGroup(before)
     }
+
+    fun upsert(entity: CachedFileEntity) {
+        dao.upsert(entity)
+        refreshTouchedGroup(entity)
+    }
+
+    private fun rebuildAllGroups() {
+        groupDao?.rebuildFromCache(System.currentTimeMillis())
+    }
+
+    private fun refreshTouchedGroup(entity: CachedFileEntity?) {
+        val group = entity.toGroupKey() ?: return
+        val groups = groupDao ?: return
+        val snapshotUpdatedAtMillis = groups.latestUpdatedAtMillis()
+        if (snapshotUpdatedAtMillis == null) {
+            groups.rebuildFromCache(System.currentTimeMillis())
+            return
+        }
+        groups.refreshSingleGroup(
+            sizeBytes = group.sizeBytes,
+            hashHex = group.hashHex,
+            updatedAtMillis = snapshotUpdatedAtMillis
+        )
+    }
+}
+
+private data class GroupKey(
+    val sizeBytes: Long,
+    val hashHex: String
+)
+
+private fun CachedFileEntity?.toGroupKey(): GroupKey? {
+    val entity = this ?: return null
+    val hash = entity.hashHex?.takeIf { it.isNotBlank() } ?: return null
+    return GroupKey(
+        sizeBytes = entity.sizeBytes,
+        hashHex = hash
+    )
 }
 
 data class DbMaintenanceProgress(

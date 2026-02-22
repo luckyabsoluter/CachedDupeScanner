@@ -34,7 +34,7 @@ class TrashController(
         if (!file.exists()) {
             // Treat as success: if it's gone, remove cache and don't create trash entry.
             database.runInTransaction {
-                database.fileCacheDao().deleteByNormalizedPath(normalizedPath)
+                historyRepo.deleteByNormalizedPath(normalizedPath)
             }
             return MoveResult(success = true, entry = null)
         }
@@ -75,7 +75,7 @@ class TrashController(
 
         runCatching {
             database.runInTransaction {
-                database.fileCacheDao().deleteByNormalizedPath(normalizedPath)
+                historyRepo.deleteByNormalizedPath(normalizedPath)
                 trashRepo.upsert(entry)
             }
         }.onFailure {
@@ -121,7 +121,7 @@ class TrashController(
 
         return runCatching {
             database.runInTransaction {
-                database.fileCacheDao().upsert(restoredEntity)
+                historyRepo.upsert(restoredEntity)
                 trashRepo.deleteById(entry.id)
             }
             RestoreResult.Success
