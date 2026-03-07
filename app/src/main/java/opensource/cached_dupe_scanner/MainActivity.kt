@@ -22,15 +22,16 @@ import androidx.compose.runtime.Composable
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
-import opensource.cached_dupe_scanner.ui.home.FilesScreen
+import opensource.cached_dupe_scanner.ui.home.FilesScreenDb
 import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
-import opensource.cached_dupe_scanner.ui.home.ResultsScreen
+import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
@@ -39,6 +40,8 @@ import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
@@ -68,6 +71,8 @@ class MainActivity : ComponentActivity() {
                     val filesRefreshVersion = remember { mutableStateOf(0) }
                     val targetsVersion = remember { mutableStateOf(0) }
                     val reportsRefreshVersion = remember { mutableStateOf(0) }
+                    val resultsRefreshVersion = remember { mutableStateOf(0) }
+                    val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
                     val scope = rememberCoroutineScope()
@@ -84,24 +89,28 @@ class MainActivity : ComponentActivity() {
                                 CacheMigrations.MIGRATION_6_7,
                                 CacheMigrations.MIGRATION_7_8,
                                 CacheMigrations.MIGRATION_8_9,
-                                CacheMigrations.MIGRATION_9_10
+                                CacheMigrations.MIGRATION_9_10,
+                                CacheMigrations.MIGRATION_10_11,
+                                CacheMigrations.MIGRATION_11_12
                             )
                             .build()
                     }
-                    val historyRepo = remember { ScanHistoryRepository(database.fileCacheDao(), settingsStore) }
+                    val historyRepo = remember {
+                        ScanHistoryRepository(
+                            dao = database.fileCacheDao(),
+                            settingsStore = settingsStore,
+                            groupDao = database.duplicateGroupDao(),
+                            database = database
+                        )
+                    }
                     val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
                     val trashRepo = remember { TrashRepository(database.trashDao()) }
                     val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
+                    val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
+                    val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
 
                     LaunchedEffect(Unit) {
-                        if (state.value is ScanUiState.Idle) {
-                            val stored = withContext(Dispatchers.IO) {
-                                historyRepo.loadMergedHistory()
-                            }
-                            if (stored != null) {
-                                state.value = ScanUiState.Success(stored)
-                            }
-                        }
+                        // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
                     }
 
                     fun handleScanComplete(scan: ScanResult) {
@@ -109,19 +118,19 @@ class MainActivity : ComponentActivity() {
                         state.value = ScanUiState.Success(scan)
                         deletedPaths.value = emptySet()
                         filesRefreshVersion.value += 1
+                        selectedResultsGroupIndex.value = null
                         scope.launch {
-                            val merged = withContext(Dispatchers.IO) {
-                                Log.d("MainActivity", "Persisting scan to DB")
-                                historyRepo.recordScan(scan)
-                                Log.d("MainActivity", "Reloading merged history")
-                                val mergedOrScan = historyRepo.loadMergedHistory() ?: scan
-                                Log.d("MainActivity", "Merged history loaded")
-                                mergedOrScan
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    Log.d("MainActivity", "Persisting scan to DB")
+                                    historyRepo.recordScan(scan)
+                                }
+                            }.onFailure { error ->
+                                Log.e("MainActivity", "Failed to persist scan results", error)
                             }
-                            Log.d("MainActivity", "Merged history ready")
-                            state.value = ScanUiState.Success(merged)
+                            resultsRefreshVersion.value += 1
+                            navigateTo(backStack, screenCache, Screen.Results)
                         }
-                        navigateTo(backStack, screenCache, Screen.Results)
                     }
 
                     LaunchedEffect(clearRequested.value) {
@@ -133,6 +142,9 @@ class MainActivity : ComponentActivity() {
                         deletedPaths.value = emptySet()
                         displayResult.value = null
                         filesClearVersion.value += 1
+                        filesRefreshVersion.value += 1
+                        resultsRefreshVersion.value += 1
+                        selectedResultsGroupIndex.value = null
                         clearRequested.value = false
                     }
 
@@ -183,6 +195,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     BackHandler {
+                        val current = backStack.lastOrNull()
+                        if (current == Screen.Results && selectedResultsGroupIndex.value != null) {
+                            selectedResultsGroupIndex.value = null
+                            return@BackHandler
+                        }
                         if (backStack.size > 1) {
                             pop(backStack)
                         } else {
@@ -218,9 +235,10 @@ class MainActivity : ComponentActivity() {
                                 onTargetsChanged = { targetsVersion.value += 1 },
                                 modifier = screenModifier
                             )
-                            Screen.Files -> FilesScreen(
-                                historyRepo = historyRepo,
+                            Screen.Files -> FilesScreenDb(
+                                fileRepo = fileRepo,
                                 trashController = trashController,
+                                settingsStore = settingsStore,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
                                 onBack = { pop(backStack) },
@@ -228,6 +246,11 @@ class MainActivity : ComponentActivity() {
                             )
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
+                                resultsRepo = resultsRepo,
+                                onMaintenanceApplied = {
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
+                                },
                                 onClearAll = { clearRequested.value = true },
                                 clearVersion = filesClearVersion.value,
                                 onBack = { pop(backStack) },
@@ -245,69 +268,31 @@ class MainActivity : ComponentActivity() {
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
-                            Screen.Results -> ResultsScreen(
-                                state = state,
-                                displayResult = displayResult.value,
-                                onBackToDashboard = { goDashboard(backStack, screenCache) },
+                            Screen.Results -> ResultsScreenDb(
+                                resultsRepo = resultsRepo,
+                                settingsStore = settingsStore,
+                                deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                onBack = {
+                                    if (selectedResultsGroupIndex.value != null) {
+                                        selectedResultsGroupIndex.value = null
+                                    } else {
+                                        goDashboard(backStack, screenCache)
+                                    }
+                                },
                                 onOpenGroup = { index ->
-                                    navigateTo(backStack, screenCache, Screen.ResultsDetail(index))
+                                    selectedResultsGroupIndex.value = index
                                 },
-                                deletedPaths = deletedPaths.value,
-                                onRefresh = {
-                                    val merged = withContext(Dispatchers.IO) {
-                                        historyRepo.loadMergedHistory()
-                                    }
-                                    displayResult.value = null
-                                    deletedPaths.value = emptySet()
-                                    if (merged != null) {
-                                        state.value = ScanUiState.Success(merged)
-                                    } else {
-                                        state.value = ScanUiState.Idle
-                                    }
-                                },
-                                onDeleteFile = { file ->
-                                    val ok = withContext(Dispatchers.IO) {
-                                        trashController.moveToTrash(file.normalizedPath).success
-                                    }
-                                    if (ok) {
-                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                    }
-                                    ok
-                                },
-                                onSortChanged = { sortSettingsVersion.value++ },
-                                settingsStore = settingsStore,
-                                modifier = screenModifier
-                            )
-                            is Screen.ResultsDetail -> ResultsScreen(
-                                state = state,
-                                displayResult = displayResult.value,
-                                onBackToDashboard = { pop(backStack) },
-                                onOpenGroup = null,
-                                deletedPaths = deletedPaths.value,
-                                onRefresh = {
-                                    val merged = withContext(Dispatchers.IO) {
-                                        historyRepo.loadMergedHistory()
-                                    }
-                                    displayResult.value = null
-                                    deletedPaths.value = emptySet()
-                                    if (merged != null) {
-                                        state.value = ScanUiState.Success(merged)
-                                    } else {
-                                        state.value = ScanUiState.Idle
-                                    }
-                                },
-                                onDeleteFile = { file ->
-                                    val ok = withContext(Dispatchers.IO) {
-                                        trashController.moveToTrash(file.normalizedPath).success
-                                    }
-                                    if (ok) {
-                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                    }
-                                    ok
-                                },
-                                onSortChanged = { sortSettingsVersion.value++ },
-                                settingsStore = settingsStore,
-                                selectedGroupIndex = screen.index,
+                                refreshVersion = resultsRefreshVersion.value,
+                                selectedGroupIndex = selectedResultsGroupIndex.value,
                                 modifier = screenModifier
                             )
                             Screen.Settings -> SettingsScreen(
@@ -420,7 +405,6 @@ private sealed class Screen {
     data object DbManagement : Screen()
     data object ScanCommand : Screen()
     data object Results : Screen()
-    data class ResultsDetail(val index: Int) : Screen()
     data object Settings : Screen()
     data object About : Screen()
     data object Reports : Screen()
