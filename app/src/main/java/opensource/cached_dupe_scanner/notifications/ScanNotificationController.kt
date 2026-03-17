@@ -82,7 +82,7 @@ class ScanNotificationController(context: Context) {
         } else {
             builder.setProgress(effective.total, effective.scanned.coerceAtMost(effective.total), false)
         }
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
+        notificationManager.notify(notificationIdFor(NotificationSlot.Scan), builder.build())
     }
 
     fun showCompleted(result: ScanResult) {
@@ -93,6 +93,7 @@ class ScanNotificationController(context: Context) {
         }
         resetScanProgressState()
         showTerminalNotification(
+            slot = NotificationSlot.Scan,
             title = "Scan complete",
             text = "Files: ${result.files.size} • Groups: ${result.duplicateGroups.size}"
         )
@@ -106,6 +107,7 @@ class ScanNotificationController(context: Context) {
         }
         resetScanProgressState()
         showTerminalNotification(
+            slot = NotificationSlot.Scan,
             title = "Scan cancelled",
             text = "The scan was stopped before completion."
         )
@@ -145,7 +147,7 @@ class ScanNotificationController(context: Context) {
         pendingTaskProgress = null
         val effective = pending ?: PendingTaskProgress(title, text, subText, progress, total)
         notificationManager.notify(
-            NOTIFICATION_ID,
+            notificationIdFor(NotificationSlot.DbTask),
             buildProgressNotification(
                 title = effective.title,
                 text = effective.text,
@@ -163,7 +165,12 @@ class ScanNotificationController(context: Context) {
             channelEnsured = true
         }
         resetTaskProgressState()
-        showTerminalNotification(title = title, text = text, subText = subText)
+        showTerminalNotification(
+            slot = NotificationSlot.DbTask,
+            title = title,
+            text = text,
+            subText = subText
+        )
     }
 
     fun showTaskFailed(title: String, text: String, subText: String? = null) {
@@ -173,13 +180,18 @@ class ScanNotificationController(context: Context) {
             channelEnsured = true
         }
         resetTaskProgressState()
-        showTerminalNotification(title = title, text = text, subText = subText)
+        showTerminalNotification(
+            slot = NotificationSlot.DbTask,
+            title = title,
+            text = text,
+            subText = subText
+        )
     }
 
     fun clear() {
         resetScanProgressState()
         resetTaskProgressState()
-        notificationManager.cancel(NOTIFICATION_ID)
+        notificationManager.cancel(notificationIdFor(NotificationSlot.Scan))
     }
 
     private fun baseBuilder(): NotificationCompat.Builder {
@@ -239,6 +251,7 @@ class ScanNotificationController(context: Context) {
         .build()
 
     private fun showTerminalNotification(
+        slot: NotificationSlot,
         title: String,
         text: String,
         subText: String? = null
@@ -251,7 +264,7 @@ class ScanNotificationController(context: Context) {
             .setSubText(subText)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setProgress(0, 0, false)
-        notificationManager.notify(NOTIFICATION_ID, builder.build())
+        notificationManager.notify(notificationIdFor(slot), builder.build())
     }
 
     private fun resetScanProgressState() {
@@ -267,7 +280,6 @@ class ScanNotificationController(context: Context) {
 
     companion object {
         private const val CHANNEL_ID = "scan_progress"
-        private const val NOTIFICATION_ID = 1001
         private const val PROGRESS_UPDATE_THROTTLE_MS = 1000L
     }
 
