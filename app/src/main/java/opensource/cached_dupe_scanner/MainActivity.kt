@@ -63,7 +63,6 @@ class MainActivity : ComponentActivity() {
             CachedDupeScannerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
-                    val clearRequested = remember { mutableStateOf(false) }
                     val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                     val displayResult = remember { mutableStateOf<ScanResult?>(null) }
                     val sortSettingsVersion = remember { mutableStateOf(0) }
@@ -131,21 +130,6 @@ class MainActivity : ComponentActivity() {
                             resultsRefreshVersion.value += 1
                             navigateTo(backStack, screenCache, Screen.Results)
                         }
-                    }
-
-                    LaunchedEffect(clearRequested.value) {
-                        if (!clearRequested.value) return@LaunchedEffect
-                        withContext(Dispatchers.IO) {
-                            historyRepo.clearAll()
-                        }
-                        state.value = ScanUiState.Idle
-                        deletedPaths.value = emptySet()
-                        displayResult.value = null
-                        filesClearVersion.value += 1
-                        filesRefreshVersion.value += 1
-                        resultsRefreshVersion.value += 1
-                        selectedResultsGroupIndex.value = null
-                        clearRequested.value = false
                     }
 
                     LaunchedEffect(state.value, sortSettingsVersion.value) {
@@ -247,12 +231,23 @@ class MainActivity : ComponentActivity() {
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
                                 resultsRepo = resultsRepo,
+                                appScope = scope,
                                 onMaintenanceApplied = {
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
                                 },
-                                onClearAll = { clearRequested.value = true },
-                                clearVersion = filesClearVersion.value,
+                                onClearAll = {
+                                    withContext(Dispatchers.IO) {
+                                        historyRepo.clearAll()
+                                    }
+                                    state.value = ScanUiState.Idle
+                                    deletedPaths.value = emptySet()
+                                    displayResult.value = null
+                                    filesClearVersion.value += 1
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
+                                    selectedResultsGroupIndex.value = null
+                                },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )

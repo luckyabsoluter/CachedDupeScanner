@@ -25,13 +25,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opensource.cached_dupe_scanner.notifications.DbTaskNotificationKind
+import opensource.cached_dupe_scanner.notifications.ScanNotificationController
+import opensource.cached_dupe_scanner.notifications.buildDbMaintenanceNotificationContent
+import opensource.cached_dupe_scanner.notifications.buildDbTaskStartedNotificationContent
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -43,14 +48,15 @@ import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 fun DbManagementScreen(
     historyRepo: ScanHistoryRepository,
     resultsRepo: ResultsDbRepository,
+    appScope: CoroutineScope,
     onMaintenanceApplied: () -> Unit,
-    onClearAll: () -> Unit,
-    clearVersion: Int,
+    onClearAll: suspend () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val notificationController = remember { ScanNotificationController(context) }
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
@@ -70,7 +76,7 @@ fun DbManagementScreen(
     val progressCurrentPath = remember { mutableStateOf<String?>(null) }
 
     val refreshOverview: () -> Unit = {
-        scope.launch {
+        appScope.launch {
             val counts = withContext(Dispatchers.IO) {
                 Pair(historyRepo.countAll(), resultsRepo.countGroups())
             }
@@ -81,14 +87,6 @@ fun DbManagementScreen(
 
     LaunchedEffect(Unit) {
         refreshOverview()
-    }
-
-    LaunchedEffect(clearVersion) {
-        refreshOverview()
-        if (isClearing.value) {
-            maintenanceStatusMessage.value = "Cleared all cached results."
-            isClearing.value = false
-        }
     }
 
     Box(modifier = modifier) {
@@ -148,19 +146,33 @@ fun DbManagementScreen(
                 )
                 OutlinedButton(
                     onClick = {
-                        scope.launch {
+                        appScope.launch {
                             isRebuilding.value = true
                             groupStatusMessage.value = "Rebuilding duplicate groups..."
+                            val content = buildDbTaskStartedNotificationContent(DbTaskNotificationKind.RebuildGroups)
+                            notificationController.showTaskStarted(
+                                title = content.title,
+                                text = content.text,
+                                subText = content.subText
+                            )
                             runCatching {
                                 withContext(Dispatchers.IO) {
                                     resultsRepo.rebuildGroups()
                                 }
                             }.onSuccess {
                                 groupStatusMessage.value = "Duplicate groups rebuilt."
+                                notificationController.showTaskCompleted(
+                                    title = "Duplicate groups rebuilt",
+                                    text = "The duplicate group snapshot is ready."
+                                )
                                 onMaintenanceApplied()
                                 refreshOverview()
                             }.onFailure {
                                 groupStatusMessage.value = "Failed to rebuild duplicate groups."
+                                notificationController.showTaskFailed(
+                                    title = "Duplicate group rebuild failed",
+                                    text = "The duplicate group snapshot could not be refreshed."
+                                )
                             }
                             isRebuilding.value = false
                         }
@@ -225,7 +237,7 @@ fun DbManagementScreen(
                 )
                 Button(
                     onClick = {
-                        scope.launch {
+                        appScope.launch {
                             isRunning.value = true
                             progressTotal.value = 0
                             progressProcessed.value = 0
@@ -233,24 +245,51 @@ fun DbManagementScreen(
                             progressRehashed.value = 0
                             progressMissingHashed.value = 0
                             progressCurrentPath.value = null
-                            val summary = withContext(Dispatchers.IO) {
-                                historyRepo.runMaintenance(
-                                    deleteMissing = deleteMissing.value,
-                                    rehashStale = rehashStale.value,
-                                    rehashMissing = rehashMissing.value
-                                ) { progress ->
-                                    progressTotal.value = progress.total
-                                    progressProcessed.value = progress.processed
-                                    progressDeleted.value = progress.deleted
-                                    progressRehashed.value = progress.rehashed
-                                    progressMissingHashed.value = progress.missingHashed
-                                    progressCurrentPath.value = progress.currentPath
+                            val content = buildDbTaskStartedNotificationContent(DbTaskNotificationKind.Maintenance)
+                            notificationController.showTaskStarted(
+                                title = content.title,
+                                text = content.text,
+                                subText = content.subText
+                            )
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    historyRepo.runMaintenance(
+                                        deleteMissing = deleteMissing.value,
+                                        rehashStale = rehashStale.value,
+                                        rehashMissing = rehashMissing.value
+                                    ) { progress ->
+                                        progressTotal.value = progress.total
+                                        progressProcessed.value = progress.processed
+                                        progressDeleted.value = progress.deleted
+                                        progressRehashed.value = progress.rehashed
+                                        progressMissingHashed.value = progress.missingHashed
+                                        progressCurrentPath.value = progress.currentPath
+                                        val progressContent = buildDbMaintenanceNotificationContent(progress)
+                                        notificationController.showTaskProgress(
+                                            title = progressContent.title,
+                                            text = progressContent.text,
+                                            subText = progressContent.subText,
+                                            progress = progress.processed,
+                                            total = progress.total
+                                        )
+                                    }
                                 }
+                            }.onSuccess { summary ->
+                                maintenanceStatusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
+                                notificationController.showTaskCompleted(
+                                    title = "DB maintenance complete",
+                                    text = "Deleted ${summary.deleted} • Rehashed ${summary.rehashed} • Missing hash ${summary.missingHashed}"
+                                )
+                                onMaintenanceApplied()
+                                refreshOverview()
+                            }.onFailure {
+                                maintenanceStatusMessage.value = "Failed to run maintenance."
+                                notificationController.showTaskFailed(
+                                    title = "DB maintenance failed",
+                                    text = "The maintenance run did not finish."
+                                )
                             }
-                            maintenanceStatusMessage.value = "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
                             isRunning.value = false
-                            onMaintenanceApplied()
-                            refreshOverview()
                         }
                     },
                     enabled = canRun,
@@ -331,9 +370,33 @@ fun DbManagementScreen(
                 Button(
                     onClick = {
                         clearDialogOpen.value = false
-                        isClearing.value = true
-                        maintenanceStatusMessage.value = "Clearing all cached results..."
-                        onClearAll()
+                        appScope.launch {
+                            isClearing.value = true
+                            maintenanceStatusMessage.value = "Clearing all cached results..."
+                            val content = buildDbTaskStartedNotificationContent(DbTaskNotificationKind.ClearAll)
+                            notificationController.showTaskStarted(
+                                title = content.title,
+                                text = content.text,
+                                subText = content.subText
+                            )
+                            runCatching {
+                                onClearAll()
+                            }.onSuccess {
+                                maintenanceStatusMessage.value = "Cleared all cached results."
+                                notificationController.showTaskCompleted(
+                                    title = "Cached results cleared",
+                                    text = "Cached files and duplicate groups were removed."
+                                )
+                                refreshOverview()
+                            }.onFailure {
+                                maintenanceStatusMessage.value = "Failed to clear cached results."
+                                notificationController.showTaskFailed(
+                                    title = "Clear cached results failed",
+                                    text = "Cached files and duplicate groups could not be removed."
+                                )
+                            }
+                            isClearing.value = false
+                        }
                     }
                 ) {
                     Text("Clear")
