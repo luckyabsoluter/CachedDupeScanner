@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
+import opensource.cached_dupe_scanner.ui.home.DbManagementUiState
 import opensource.cached_dupe_scanner.ui.home.FilesScreenDb
 import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity() {
                     val context = LocalContext.current
                     val settingsStore = remember { AppSettingsStore(context) }
                     val scope = rememberCoroutineScope()
+                    val dbManagementUiState = remember { DbManagementUiState() }
                     val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                     val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                     val database = remember {
@@ -231,6 +233,7 @@ class MainActivity : ComponentActivity() {
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
                                 resultsRepo = resultsRepo,
+                                uiState = dbManagementUiState,
                                 appScope = scope,
                                 onMaintenanceApplied = {
                                     filesRefreshVersion.value += 1
