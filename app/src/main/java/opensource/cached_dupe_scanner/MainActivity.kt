@@ -130,7 +130,6 @@ class MainActivity : ComponentActivity() {
                                 Log.e("MainActivity", "Failed to persist scan results", error)
                             }
                             resultsRefreshVersion.value += 1
-                            navigateTo(backStack, screenCache, Screen.Results)
                         }
                     }
 
