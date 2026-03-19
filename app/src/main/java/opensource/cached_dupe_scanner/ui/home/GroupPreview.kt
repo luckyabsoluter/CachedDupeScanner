@@ -1,5 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,12 +16,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import opensource.cached_dupe_scanner.core.FileMetadata
 import java.io.File
+import kotlin.math.min
 
 internal fun mediaPreviewCandidates(
     files: List<FileMetadata>,
@@ -33,6 +39,21 @@ internal fun mediaPreviewCandidates(
         .toList()
 }
 
+internal fun activePreviewPath(
+    candidatePaths: List<String>,
+    failedPaths: Set<String>
+): String? {
+    return candidatePaths.firstOrNull { path -> !failedPaths.contains(path) }
+}
+
+internal fun shouldUseRememberedPreview(
+    candidatePaths: List<String>,
+    failedPaths: Set<String>,
+    hasRememberedPreview: Boolean
+): Boolean {
+    return hasRememberedPreview && activePreviewPath(candidatePaths, failedPaths) == null
+}
+
 @Composable
 internal fun GroupPreviewThumbnail(
     candidatePaths: List<String>,
@@ -42,8 +63,21 @@ internal fun GroupPreviewThumbnail(
 ) {
     val context = LocalContext.current
     var failedPaths by remember(candidatePaths) { mutableStateOf(emptySet<String>()) }
+    var rememberedPreview by remember { mutableStateOf<ImageBitmap?>(null) }
     val activePath = remember(candidatePaths, failedPaths) {
-        candidatePaths.firstOrNull { path -> !failedPaths.contains(path) }
+        activePreviewPath(
+            candidatePaths = candidatePaths,
+            failedPaths = failedPaths
+        )
+    }
+
+    if (shouldUseRememberedPreview(candidatePaths, failedPaths, rememberedPreview != null)) {
+        Image(
+            bitmap = rememberedPreview!!,
+            contentDescription = contentDescription,
+            modifier = modifier
+        )
+        return
     }
 
     if (activePath == null) {
@@ -61,11 +95,28 @@ internal fun GroupPreviewThumbnail(
         imageLoader = imageLoader,
         contentDescription = contentDescription,
         modifier = modifier,
+        onSuccess = { result ->
+            rememberedPreview = rememberPreviewBitmap(result.result.drawable) ?: rememberedPreview
+        },
         onError = {
             failedPaths = failedPaths + activePath
         }
     )
 }
+
+private fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
+    val width = drawable.intrinsicWidth
+        .takeIf { it > 0 }
+        ?.let { min(it, MAX_REMEMBERED_PREVIEW_DIMENSION_PX) }
+        ?: return null
+    val height = drawable.intrinsicHeight
+        .takeIf { it > 0 }
+        ?.let { min(it, MAX_REMEMBERED_PREVIEW_DIMENSION_PX) }
+        ?: return null
+    return drawable.toBitmap(width = width, height = height).asImageBitmap()
+}
+
+private const val MAX_REMEMBERED_PREVIEW_DIMENSION_PX = 1024
 
 @Composable
 private fun MissingPreviewThumbnail(
