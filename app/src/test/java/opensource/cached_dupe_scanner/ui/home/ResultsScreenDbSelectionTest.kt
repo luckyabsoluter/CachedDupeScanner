@@ -123,6 +123,37 @@ class ResultsScreenDbSelectionTest {
     }
 
     @Test
+    fun mediaPreviewCandidatesSkipDeletedMissingAndDuplicatePaths() {
+        val candidates = mediaPreviewCandidates(
+            files = listOf(
+                file("/a/readme.txt"),
+                file("/a/deleted.jpg"),
+                file("/a/missing.png"),
+                file("/a/ok.webp"),
+                file("/a/ok.webp")
+            ),
+            deletedPaths = setOf("/a/deleted.jpg"),
+            pathExists = { path -> path == "/a/ok.webp" }
+        )
+
+        assertEquals(listOf("/a/ok.webp"), candidates)
+    }
+
+    @Test
+    fun mediaPreviewCandidatesReturnEmptyWhenEveryMediaFileIsUnavailable() {
+        val candidates = mediaPreviewCandidates(
+            files = listOf(
+                file("/a/deleted.jpg"),
+                file("/a/missing.png")
+            ),
+            deletedPaths = setOf("/a/deleted.jpg"),
+            pathExists = { false }
+        )
+
+        assertEquals(emptyList<String>(), candidates)
+    }
+
+    @Test
     fun shouldTriggerDetailAutoLoadWhenNearBottomAndNotLoading() {
         val trigger = shouldTriggerDetailAutoLoad(
             scrollValue = 980,

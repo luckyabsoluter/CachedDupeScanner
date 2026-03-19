@@ -52,9 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
-import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
-import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -75,8 +73,6 @@ import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
-import java.io.File
-
 private class MembersCacheEntry {
     val members = mutableStateListOf<FileMetadata>()
     val cursor = mutableStateOf<String?>(null)
@@ -737,7 +733,11 @@ private fun DuplicateGroupCardDb(
         }
     }
 
-    val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
+    val hasPreviewMedia = entry.members.any { isMediaFile(it.normalizedPath) }
+    val previewCandidates = mediaPreviewCandidates(
+        files = entry.members,
+        deletedPaths = deletedPaths
+    )
     val groupDeleted = entry.members.any { deletedPaths.contains(it.normalizedPath) }
 
     Card(
@@ -758,11 +758,9 @@ private fun DuplicateGroupCardDb(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (preview != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(File(preview.normalizedPath))
-                        .build(),
+            if (hasPreviewMedia) {
+                GroupPreviewThumbnail(
+                    candidatePaths = previewCandidates,
                     imageLoader = imageLoader,
                     contentDescription = "Thumbnail",
                     modifier = Modifier
@@ -930,12 +928,14 @@ private fun GroupDetailDb(
             }
     }
 
-    val preview = entry.members.firstOrNull { isMediaFile(it.normalizedPath) }
-    if (preview != null) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(File(preview.normalizedPath))
-                .build(),
+    val hasPreviewMedia = entry.members.any { isMediaFile(it.normalizedPath) }
+    val previewCandidates = mediaPreviewCandidates(
+        files = entry.members,
+        deletedPaths = deletedPaths
+    )
+    if (hasPreviewMedia) {
+        GroupPreviewThumbnail(
+            candidatePaths = previewCandidates,
             imageLoader = imageLoader,
             contentDescription = "Thumbnail",
             modifier = Modifier

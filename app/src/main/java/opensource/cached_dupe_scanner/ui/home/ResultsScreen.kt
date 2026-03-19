@@ -45,8 +45,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
 import opensource.cached_dupe_scanner.core.DuplicateGroup
@@ -62,7 +60,6 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
-import java.io.File
 import java.util.Locale
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.rememberCoroutineScope
@@ -274,7 +271,11 @@ fun ResultsScreen(
                             val groupCount = group.files.size
                             val groupSize = group.files.sumOf { it.sizeBytes }
                             val fileSize = formatBytes(group.files.firstOrNull()?.sizeBytes ?: 0)
-                            val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
+                            val hasPreviewMedia = group.files.any { isMediaFile(it.normalizedPath) }
+                            val previewCandidates = mediaPreviewCandidates(
+                                files = group.files,
+                                deletedPaths = deletedPaths
+                            )
                             val groupDeleted = group.files.any { deletedPaths.contains(it.normalizedPath) }
                             Card(
                                 modifier = Modifier
@@ -300,11 +301,9 @@ fun ResultsScreen(
                                         .fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (preview != null) {
-                                        AsyncImage(
-                                            model = ImageRequest.Builder(context)
-                                                .data(File(preview.normalizedPath))
-                                                .build(),
+                                    if (hasPreviewMedia) {
+                                        GroupPreviewThumbnail(
+                                            candidatePaths = previewCandidates,
                                             imageLoader = imageLoader,
                                             contentDescription = "Thumbnail",
                                             modifier = Modifier.size(72.dp)
@@ -514,15 +513,17 @@ private fun GroupDetailContent(
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytesWithExact(group.files.firstOrNull()?.sizeBytes ?: 0)
-    val preview = group.files.firstOrNull { isMediaFile(it.normalizedPath) }
+    val hasPreviewMedia = group.files.any { isMediaFile(it.normalizedPath) }
+    val previewCandidates = mediaPreviewCandidates(
+        files = group.files,
+        deletedPaths = deletedPaths
+    )
 
     Text("Group detail")
     Spacer(modifier = Modifier.height(8.dp))
-    if (preview != null) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(File(preview.normalizedPath))
-                .build(),
+    if (hasPreviewMedia) {
+        GroupPreviewThumbnail(
+            candidatePaths = previewCandidates,
             imageLoader = imageLoader,
             contentDescription = "Thumbnail",
             modifier = Modifier
