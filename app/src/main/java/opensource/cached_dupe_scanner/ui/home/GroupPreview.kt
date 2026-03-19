@@ -57,19 +57,21 @@ internal fun shouldUseRememberedPreview(
 @Composable
 internal fun GroupPreviewThumbnail(
     candidatePaths: List<String>,
+    previewMemoryKey: String,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     imageLoader: ImageLoader,
     modifier: Modifier = Modifier,
     contentDescription: String = "Thumbnail"
 ) {
     val context = LocalContext.current
     var failedPaths by remember(candidatePaths) { mutableStateOf(emptySet<String>()) }
-    var rememberedPreview by remember { mutableStateOf<ImageBitmap?>(null) }
     val activePath = remember(candidatePaths, failedPaths) {
         activePreviewPath(
             candidatePaths = candidatePaths,
             failedPaths = failedPaths
         )
     }
+    val rememberedPreview = rememberedPreviewCache[previewMemoryKey]
 
     if (shouldUseRememberedPreview(candidatePaths, failedPaths, rememberedPreview != null)) {
         Image(
@@ -96,7 +98,8 @@ internal fun GroupPreviewThumbnail(
         contentDescription = contentDescription,
         modifier = modifier,
         onSuccess = { result ->
-            rememberedPreview = rememberPreviewBitmap(result.result.drawable) ?: rememberedPreview
+            val previewBitmap = rememberPreviewBitmap(result.result.drawable) ?: return@AsyncImage
+            rememberedPreviewCache[previewMemoryKey] = previewBitmap
         },
         onError = {
             failedPaths = failedPaths + activePath

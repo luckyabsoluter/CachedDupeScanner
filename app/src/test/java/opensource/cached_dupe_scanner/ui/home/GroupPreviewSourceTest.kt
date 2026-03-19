@@ -28,5 +28,17 @@ class GroupPreviewSourceTest {
             "GroupPreviewThumbnail should not set contentScale explicitly",
             groupPreviewBlock.contains("contentScale =")
         )
+        assertTrue(
+            "GroupPreviewThumbnail should accept a shared preview memory key",
+            groupPreviewBlock.contains("previewMemoryKey: String")
+        )
+        assertTrue(
+            "GroupPreviewThumbnail should use a shared remembered preview cache",
+            groupPreviewBlock.contains("rememberedPreviewCache: MutableMap<String, ImageBitmap>")
+        )
+        assertFalse(
+            "GroupPreviewThumbnail should not keep remembered preview only in local remember state",
+            groupPreviewBlock.contains("var rememberedPreview by remember")
+        )
     }
 }

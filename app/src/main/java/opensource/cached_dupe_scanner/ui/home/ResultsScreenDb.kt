@@ -48,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -161,6 +162,7 @@ fun ResultsScreenDb(
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
     val membersCache = remember { mutableStateMapOf<String, MembersCacheEntry>() }
+    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
 
     val pageSize = 50
     val buffer = 20
@@ -488,6 +490,7 @@ fun ResultsScreenDb(
                         deletedPaths = deletedPaths,
                         showFullPaths = showFullPaths.value,
                         imageLoader = imageLoader,
+                        rememberedPreviewCache = rememberedPreviewCache,
                         membersCache = membersCache,
                         onOpen = {
                             val handler = onOpenGroup ?: return@DuplicateGroupCardDb
@@ -594,6 +597,7 @@ fun ResultsScreenDb(
                             onDeleteFile = onDeleteFile,
                             onGroupEdited = { _ -> },
                             imageLoader = imageLoader,
+                            rememberedPreviewCache = rememberedPreviewCache,
                             cacheEntry = entry,
                             detailScrollState = detailScrollState,
                             sortKey = groupMemberSortKey.value,
@@ -703,6 +707,7 @@ private fun DuplicateGroupCardDb(
     deletedPaths: Set<String>,
     showFullPaths: Boolean,
     imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     membersCache: MutableMap<String, MembersCacheEntry>,
     onOpen: () -> Unit
 ) {
@@ -761,6 +766,8 @@ private fun DuplicateGroupCardDb(
             if (hasPreviewMedia) {
                 GroupPreviewThumbnail(
                     candidatePaths = previewCandidates,
+                    previewMemoryKey = cacheKey,
+                    rememberedPreviewCache = rememberedPreviewCache,
                     imageLoader = imageLoader,
                     contentDescription = "Thumbnail",
                     modifier = Modifier
@@ -819,6 +826,7 @@ private fun GroupDetailDb(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onGroupEdited: (rebuildSucceeded: Boolean) -> Unit,
     imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     cacheEntry: MembersCacheEntry?,
     detailScrollState: ScrollState,
     sortKey: ResultGroupMemberSortKey,
@@ -827,6 +835,7 @@ private fun GroupDetailDb(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val previewMemoryKey = remember(group.sizeBytes, group.hashHex) { "${group.sizeBytes}:${group.hashHex}" }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val isSelectAllMode = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val selectedPaths = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
@@ -936,6 +945,8 @@ private fun GroupDetailDb(
     if (hasPreviewMedia) {
         GroupPreviewThumbnail(
             candidatePaths = previewCandidates,
+            previewMemoryKey = previewMemoryKey,
+            rememberedPreviewCache = rememberedPreviewCache,
             imageLoader = imageLoader,
             contentDescription = "Thumbnail",
             modifier = Modifier

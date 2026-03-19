@@ -35,12 +35,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,6 +93,7 @@ fun ResultsScreen(
             .components { add(VideoFrameDecoder.Factory()) }
             .build()
     }
+    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val settingsSnapshot = remember { settingsStore.load() }
         val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
     val sortKey = remember {
@@ -276,6 +279,9 @@ fun ResultsScreen(
                                 files = group.files,
                                 deletedPaths = deletedPaths
                             )
+                            val previewMemoryKey = remember(group.hashHex, group.files.firstOrNull()?.sizeBytes) {
+                                "${group.files.firstOrNull()?.sizeBytes ?: 0L}:${group.hashHex}"
+                            }
                             val groupDeleted = group.files.any { deletedPaths.contains(it.normalizedPath) }
                             Card(
                                 modifier = Modifier
@@ -304,6 +310,8 @@ fun ResultsScreen(
                                     if (hasPreviewMedia) {
                                         GroupPreviewThumbnail(
                                             candidatePaths = previewCandidates,
+                                            previewMemoryKey = previewMemoryKey,
+                                            rememberedPreviewCache = rememberedPreviewCache,
                                             imageLoader = imageLoader,
                                             contentDescription = "Thumbnail",
                                             modifier = Modifier.size(72.dp)
@@ -378,6 +386,7 @@ fun ResultsScreen(
                                 group = group,
                                 deletedPaths = deletedPaths,
                                 imageLoader = imageLoader,
+                                rememberedPreviewCache = rememberedPreviewCache,
                                 onDeleteFile = { file ->
                                     val handler = onDeleteFile ?: return@GroupDetailContent false
                                     handler(file)
@@ -506,6 +515,7 @@ private fun GroupDetailContent(
     group: DuplicateGroup,
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
     val context = LocalContext.current
@@ -518,12 +528,17 @@ private fun GroupDetailContent(
         files = group.files,
         deletedPaths = deletedPaths
     )
+    val previewMemoryKey = remember(group.hashHex, group.files.firstOrNull()?.sizeBytes) {
+        "${group.files.firstOrNull()?.sizeBytes ?: 0L}:${group.hashHex}"
+    }
 
     Text("Group detail")
     Spacer(modifier = Modifier.height(8.dp))
     if (hasPreviewMedia) {
         GroupPreviewThumbnail(
             candidatePaths = previewCandidates,
+            previewMemoryKey = previewMemoryKey,
+            rememberedPreviewCache = rememberedPreviewCache,
             imageLoader = imageLoader,
             contentDescription = "Thumbnail",
             modifier = Modifier
