@@ -22,11 +22,12 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Deferred hashing**: SHA-256 is computed only when size collisions exist.
 - **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite).
 - **Target management**: save multiple scan targets; run per-target or batch scans.
-- **Duplicate grouping**: results grouped by hash with sorting/filtering.
+- **Duplicate grouping**: database-backed result browsing with infinite scrolling for large datasets.
 - **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete.
+- **Manage duplicates**: group-detail views with multi-select, select-all, and specific delete tracking.
 - **Scan reports**: timings, phase durations, hash candidate counts.
 - **Export**: JSON/CSV utilities for results.
-- **DB maintenance**: purge missing files, re-hash stale or missing entries.
+- **DB maintenance**: purge missing files, re-hash stale or missing entries, and rebuild duplicate groups. Actionable via notification-backed execution for long-running tasks.
 
 ## How scanning works
 
@@ -68,6 +69,7 @@ Room database (scan-cache.db) core tables:
 - **cached_files**: path, size, mtime, hash
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
+- **dupe_groups**: materialized snapshot of duplicate groups for fast paginated browsing
 
 
 ## Module map
