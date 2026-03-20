@@ -1,31 +1,50 @@
 package opensource.cached_dupe_scanner.storage
 
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.PathGroupKey
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.Hashing
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
-import opensource.cached_dupe_scanner.core.Hashing
 import java.io.File
 
 class ScanHistoryRepository(
     private val dao: FileCacheDao,
-    private val settingsStore: AppSettingsStore
+    private val settingsStore: AppSettingsStore,
+    private val groupDao: DuplicateGroupDao? = null,
+    private val database: CacheDatabase? = null
 ) {
     fun recordScan(result: ScanResult) {
         val settings = settingsStore.load()
         val files = result.files
             .filter { file -> !settings.skipZeroSizeInDb || file.sizeBytes > 0 }
             .map { file ->
-            CachedFileEntity(
-                normalizedPath = file.normalizedPath,
-                path = file.path,
-                sizeBytes = file.sizeBytes,
-                lastModifiedMillis = file.lastModifiedMillis,
-                hashHex = file.hashHex
-            )
+                CachedFileEntity(
+                    normalizedPath = file.normalizedPath,
+                    path = file.path,
+                    sizeBytes = file.sizeBytes,
+                    lastModifiedMillis = file.lastModifiedMillis,
+                    hashHex = file.hashHex
+                )
+            }
+
+        files.chunked(RECORD_SCAN_CHUNK_SIZE).forEach { chunk ->
+            runInConsistencyTransaction {
+                val existingKeysByPath = loadExistingGroupKeysByPath(
+                    paths = chunk.map { it.normalizedPath }
+                )
+                dao.upsertAll(chunk)
+                val touched = linkedSetOf<GroupKey>()
+                existingKeysByPath.values.forEach { touched.add(it) }
+                chunk.forEach { entity ->
+                    entity.toGroupKey()?.let(touched::add)
+                }
+                refreshGroupsLocked(touched)
+            }
         }
-        dao.upsertAll(files)
     }
 
     fun loadMergedHistory(): ScanResult? {
@@ -51,7 +70,7 @@ class ScanHistoryRepository(
             val path = entity.path.ifBlank { entity.normalizedPath }
             val file = File(path)
             if (!file.exists()) {
-                dao.deleteByNormalizedPath(normalizedPath)
+                deleteEntityAndRefreshGroup(entity)
                 deleted += 1
             }
         }
@@ -65,7 +84,7 @@ class ScanHistoryRepository(
             val path = entity.path.ifBlank { entity.normalizedPath }
             val file = File(path)
             if (!file.exists()) {
-                dao.deleteByNormalizedPath(entity.normalizedPath)
+                deleteEntityAndRefreshGroup(entity)
                 deleted += 1
             }
         }
@@ -88,7 +107,7 @@ class ScanHistoryRepository(
                     lastModifiedMillis = modified,
                     hashHex = hash
                 )
-                dao.upsert(updatedEntity)
+                upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
             }
         }
@@ -111,7 +130,7 @@ class ScanHistoryRepository(
                     lastModifiedMillis = modified,
                     hashHex = hash
                 )
-                dao.upsert(updatedEntity)
+                upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
             }
         }
@@ -128,7 +147,7 @@ class ScanHistoryRepository(
             if (!file.exists()) return@forEach
             val hash = Hashing.sha256Hex(file)
             val updatedEntity = entity.copy(hashHex = hash)
-            dao.upsert(updatedEntity)
+            upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
             updated += 1
         }
         return updated
@@ -155,7 +174,7 @@ class ScanHistoryRepository(
                 val file = File(path)
                 if (!file.exists()) {
                     if (deleteMissing) {
-                        dao.deleteByNormalizedPath(entity.normalizedPath)
+                        deleteEntityAndRefreshGroup(entity)
                         deleted += 1
                     }
                     processed += 1
@@ -193,7 +212,7 @@ class ScanHistoryRepository(
                         lastModifiedMillis = modified,
                         hashHex = hash
                     )
-                    dao.upsert(updatedEntity)
+                    upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 }
 
                 processed += 1
@@ -221,13 +240,117 @@ class ScanHistoryRepository(
     }
 
     fun clearAll() {
-        dao.clear()
+        runInConsistencyTransaction {
+            dao.clear()
+            groupDao?.clear()
+        }
     }
 
     fun deleteByNormalizedPath(normalizedPath: String) {
-        dao.deleteByNormalizedPath(normalizedPath)
+        runInConsistencyTransaction {
+            val before = dao.getByNormalizedPath(normalizedPath)
+            dao.deleteByNormalizedPath(normalizedPath)
+            refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
+        }
+    }
+
+    fun upsert(entity: CachedFileEntity) {
+        runInConsistencyTransaction {
+            val before = dao.getByNormalizedPath(entity.normalizedPath)
+            dao.upsert(entity)
+            refreshGroupsLocked(touchedGroupKeys(before = before, after = entity))
+        }
+    }
+
+    private fun deleteEntityAndRefreshGroup(entity: CachedFileEntity) {
+        runInConsistencyTransaction {
+            dao.deleteByNormalizedPath(entity.normalizedPath)
+            refreshGroupsLocked(touchedGroupKeys(before = entity, after = null))
+        }
+    }
+
+    private fun upsertEntityAndRefreshGroups(before: CachedFileEntity, after: CachedFileEntity) {
+        runInConsistencyTransaction {
+            dao.upsert(after)
+            refreshGroupsLocked(touchedGroupKeys(before = before, after = after))
+        }
+    }
+
+    private fun refreshGroupsLocked(keys: Set<GroupKey>) {
+        if (keys.isEmpty()) return
+        val groups = groupDao ?: return
+        val snapshotUpdatedAtMillis = groups.latestUpdatedAtMillis() ?: System.currentTimeMillis()
+        keys.forEach { key ->
+            groups.delete(
+                sizeBytes = key.sizeBytes,
+                hashHex = key.hashHex
+            )
+            groups.insertSingleGroupFromCache(
+                sizeBytes = key.sizeBytes,
+                hashHex = key.hashHex,
+                updatedAtMillis = snapshotUpdatedAtMillis
+            )
+        }
+    }
+
+    private fun loadExistingGroupKeysByPath(paths: List<String>): Map<String, GroupKey> {
+        if (paths.isEmpty()) return emptyMap()
+        val keysByPath = LinkedHashMap<String, GroupKey>(paths.size)
+        paths.distinct()
+            .chunked(PATH_QUERY_CHUNK_SIZE)
+            .forEach { chunk ->
+                dao.findGroupKeysByPaths(chunk).forEach { row ->
+                    row.toGroupKey()?.let { group ->
+                        keysByPath[row.normalizedPath] = group
+                    }
+                }
+            }
+        return keysByPath
+    }
+
+    private fun touchedGroupKeys(before: CachedFileEntity?, after: CachedFileEntity?): Set<GroupKey> {
+        val keys = linkedSetOf<GroupKey>()
+        before.toGroupKey()?.let(keys::add)
+        after.toGroupKey()?.let(keys::add)
+        return keys
+    }
+
+    private inline fun runInConsistencyTransaction(crossinline block: () -> Unit) {
+        val db = database
+        if (db == null) {
+            block()
+            return
+        }
+        db.runInTransaction {
+            block()
+        }
     }
 }
+
+private data class GroupKey(
+    val sizeBytes: Long,
+    val hashHex: String
+)
+
+private fun CachedFileEntity?.toGroupKey(): GroupKey? {
+    val entity = this ?: return null
+    val hash = entity.hashHex?.takeIf { it.isNotBlank() } ?: return null
+    return GroupKey(
+        sizeBytes = entity.sizeBytes,
+        hashHex = hash
+    )
+}
+
+private fun PathGroupKey.toGroupKey(): GroupKey? {
+    val hash = hashHex?.takeIf { it.isNotBlank() } ?: return null
+    return GroupKey(
+        sizeBytes = sizeBytes,
+        hashHex = hash
+    )
+}
+
+private const val RECORD_SCAN_CHUNK_SIZE = 500
+private const val PATH_QUERY_CHUNK_SIZE = 800
 
 data class DbMaintenanceProgress(
     val total: Int,

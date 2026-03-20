@@ -19,26 +19,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import opensource.cached_dupe_scanner.sample.SampleData
 import opensource.cached_dupe_scanner.storage.ScanTarget
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
-import java.io.File
 
 @Composable
 fun TargetsScreen(
@@ -48,20 +41,12 @@ fun TargetsScreen(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
     val newPath = remember { mutableStateOf("") }
     val editingId = remember { mutableStateOf<String?>(null) }
     val editingPath = remember { mutableStateOf("") }
     val deletingId = remember { mutableStateOf<String?>(null) }
-    val rootDir = remember { File(context.filesDir, "scans") }
-
-    LaunchedEffect(Unit) {
-        if (!rootDir.exists()) {
-            rootDir.mkdirs()
-        }
-    }
 
     Box(modifier = modifier) {
         Column(
@@ -98,19 +83,6 @@ fun TargetsScreen(
                 onTargetsChanged()
             }, modifier = Modifier.fillMaxWidth()) {
                 Text("Add device storage root")
-            }
-
-            Button(onClick = {
-                scope.launch {
-                    withContext(Dispatchers.IO) {
-                        SampleData.createSampleFiles(rootDir)
-                    }
-                    store.addTarget(rootDir.absolutePath)
-                    targets.value = store.loadTargets()
-                    onTargetsChanged()
-                }
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text("Create samples + add target")
             }
 
             Spacer(modifier = Modifier.height(12.dp))

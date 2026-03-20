@@ -5,6 +5,11 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
+/**
+ * DAO for scan report history.
+ *
+ * Reports are append/update records keyed by `id`, ordered by `startedAtMillis` for listing.
+ */
 @Dao
 interface ScanReportDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)

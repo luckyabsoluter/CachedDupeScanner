@@ -8,9 +8,15 @@ import androidx.room.PrimaryKey
     tableName = "trash_entries",
     indices = [
         Index("deletedAtMillis"),
+        Index(value = ["deletedAtMillis", "id"], name = "index_trash_entries_deletedAtMillis_id"),
         Index("originalPath")
     ]
 )
+/**
+ * Metadata ledger row for files moved into app-managed trash.
+ *
+ * The file itself is moved on filesystem; this table tracks origin and restore metadata.
+ */
 data class TrashEntryEntity(
     @PrimaryKey
     val id: String,

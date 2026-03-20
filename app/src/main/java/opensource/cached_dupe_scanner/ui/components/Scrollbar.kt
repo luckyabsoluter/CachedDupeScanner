@@ -10,12 +10,13 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
@@ -37,6 +38,11 @@ object ScrollbarDefaults {
     val ThumbWidth: Dp = 16.dp
     val MinThumbHeight: Dp = 64.dp
 }
+
+private data class ScrollbarDragSnapshot(
+    val maxScrollPx: Float,
+    val maxThumbOffsetPx: Float
+)
 
 @Composable
 fun VerticalScrollbar(
@@ -68,6 +74,12 @@ fun VerticalScrollbar(
     val maxThumbOffsetPx = (viewportHeightPx - thumbHeightPx).coerceAtLeast(0f)
     val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
     val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+    val latestDragSnapshot = rememberUpdatedState(
+        ScrollbarDragSnapshot(
+            maxScrollPx = maxScrollPx,
+            maxThumbOffsetPx = maxThumbOffsetPx
+        )
+    )
 
     Canvas(
         modifier = modifier
@@ -77,7 +89,7 @@ fun VerticalScrollbar(
             .onSizeChanged { size ->
                 trackHeightPxState.floatValue = size.height.toFloat().coerceAtLeast(1f)
             }
-            .pointerInput(maxScrollPx, viewportHeightPx, thumbHeightPx) {
+            .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
                         isDragging.value = true
@@ -90,14 +102,15 @@ fun VerticalScrollbar(
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    if (maxScrollPx <= 0f) return@detectDragGestures
-                    val deltaScroll = if (maxThumbOffsetPx <= 0f) {
+                    val dragSnapshot = latestDragSnapshot.value
+                    if (dragSnapshot.maxScrollPx <= 0f) return@detectDragGestures
+                    val deltaScroll = if (dragSnapshot.maxThumbOffsetPx <= 0f) {
                         0f
                     } else {
-                        (dragAmount.y / maxThumbOffsetPx) * maxScrollPx
+                        (dragAmount.y / dragSnapshot.maxThumbOffsetPx) * dragSnapshot.maxScrollPx
                     }
                     val newScroll = (scrollState.value + deltaScroll)
-                        .coerceIn(0f, maxScrollPx)
+                        .coerceIn(0f, dragSnapshot.maxScrollPx)
                     scope.launch {
                         scrollState.scrollTo(newScroll.roundToInt())
                     }
@@ -234,6 +247,12 @@ fun VerticalLazyScrollbar(
     }
     val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
     val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
+    val latestDragSnapshot = rememberUpdatedState(
+        ScrollbarDragSnapshot(
+            maxScrollPx = maxScrollPxEstimate,
+            maxThumbOffsetPx = maxThumbOffsetPx
+        )
+    )
 
     Canvas(
         modifier = modifier
@@ -243,7 +262,7 @@ fun VerticalLazyScrollbar(
             .onSizeChanged { size ->
                 trackHeightPxState.floatValue = size.height.toFloat().coerceAtLeast(1f)
             }
-            .pointerInput(maxScrollPxEstimate, trackHeightPx, thumbHeightPx) {
+            .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
                         isDragging.value = true
@@ -256,11 +275,12 @@ fun VerticalLazyScrollbar(
                     }
                 ) { change, dragAmount ->
                     change.consume()
-                    if (maxScrollPxEstimate <= 0f) return@detectDragGestures
-                    val deltaScrollPx = if (maxThumbOffsetPx <= 0f) {
+                    val dragSnapshot = latestDragSnapshot.value
+                    if (dragSnapshot.maxScrollPx <= 0f) return@detectDragGestures
+                    val deltaScrollPx = if (dragSnapshot.maxThumbOffsetPx <= 0f) {
                         0f
                     } else {
-                        (dragAmount.y / maxThumbOffsetPx) * maxScrollPxEstimate
+                        (dragAmount.y / dragSnapshot.maxThumbOffsetPx) * dragSnapshot.maxScrollPx
                     }
                     scope.launch {
                         listState.scroll {

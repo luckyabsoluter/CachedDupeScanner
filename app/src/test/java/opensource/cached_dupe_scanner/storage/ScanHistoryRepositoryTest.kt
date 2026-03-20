@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.Hashing
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -434,6 +436,153 @@ class ScanHistoryRepositoryTest {
         } finally {
             staleFile.delete()
             missingHashFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun runMaintenanceWithDeleteMissingAlsoSynchronizesDuplicateGroups() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val existingFile = File.createTempFile("cached", ".existing")
+        val missingFile = File.createTempFile("cached", ".missing")
+        try {
+            existingFile.writeText("same-content")
+            missingFile.writeText("same-content")
+            val sharedHash = Hashing.sha256Hex(existingFile)
+            val sharedSize = existingFile.length()
+            missingFile.delete()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            val result = ScanResult(
+                scannedAtMillis = 1,
+                files = listOf(
+                    FileMetadata(
+                        existingFile.absolutePath,
+                        existingFile.absolutePath,
+                        sharedSize,
+                        existingFile.lastModified(),
+                        sharedHash
+                    ),
+                    FileMetadata(
+                        missingFile.absolutePath,
+                        missingFile.absolutePath,
+                        sharedSize,
+                        1L,
+                        sharedHash
+                    )
+                ),
+                duplicateGroups = emptyList()
+            )
+            repo.recordScan(result)
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            val summary = repo.runMaintenance(
+                deleteMissing = true,
+                rehashStale = false,
+                rehashMissing = false
+            ) { }
+
+            assertEquals(1, summary.deleted)
+            assertEquals(0, database.duplicateGroupDao().countGroups())
+        } finally {
+            existingFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun deleteByNormalizedPathImmediatelyRefreshesOnlyTouchedGroup() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            val size = 10L
+            val hash = "h-same"
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata("/a", "/a", size, 1L, hash),
+                        FileMetadata("/b", "/b", size, 1L, hash)
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            repo.deleteByNormalizedPath("/a")
+
+            assertEquals(0, database.duplicateGroupDao().countGroups())
+            assertNull(database.duplicateGroupDao().get(size, hash))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun upsertRefreshesOldAndNewGroupsWithoutGlobalRebuild() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            val size = 42L
+            val hashA = "hash-a"
+            val hashB = "hash-b"
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata("/a", "/a", size, 1L, hashA),
+                        FileMetadata("/b", "/b", size, 1L, hashA),
+                        FileMetadata("/c", "/c", size, 1L, hashB),
+                        FileMetadata("/d", "/d", size, 1L, hashB)
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+            assertEquals(2, database.duplicateGroupDao().countGroups())
+
+            repo.upsert(
+                CachedFileEntity(
+                    normalizedPath = "/a",
+                    path = "/a",
+                    sizeBytes = size,
+                    lastModifiedMillis = 2L,
+                    hashHex = hashB
+                )
+            )
+
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+            assertNull(database.duplicateGroupDao().get(size, hashA))
+            val movedGroup = database.duplicateGroupDao().get(size, hashB)
+            assertNotNull(movedGroup)
+            assertEquals(3, movedGroup?.fileCount)
+        } finally {
             database.close()
         }
     }
