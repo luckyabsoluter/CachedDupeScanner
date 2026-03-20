@@ -167,7 +167,7 @@ fun TrashScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.padding(Spacing.screenPadding),
-            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
         ) {
             item {
                 AppTopBar(
@@ -194,12 +194,15 @@ fun TrashScreen(
                 )
             }
 
-            item { Spacer(modifier = Modifier.height(8.dp)) }
+            item { Spacer(modifier = Modifier.height(Spacing.itemGap)) }
 
             activeTask?.let { task ->
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(
+                            modifier = Modifier.padding(Spacing.cardPadding),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.itemGap)
+                        ) {
                             Text(task.title, style = MaterialTheme.typography.titleSmall)
                             Text(task.detail)
                             task.currentPath?.let { current ->
@@ -209,7 +212,6 @@ fun TrashScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = { taskCoordinator.requestCancel(TaskArea.Trash) },
                                 enabled = task.isCancellable,
@@ -219,7 +221,7 @@ fun TrashScreen(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(Spacing.itemGap))
                 }
             }
 
@@ -232,7 +234,7 @@ fun TrashScreen(
                         imageLoader = imageLoader,
                         onClick = { selectedEntry.value = entry }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(Spacing.itemGap))
                 }
 
                 if (isLoading.value && entries.value.isNotEmpty()) {
@@ -253,7 +255,7 @@ fun TrashScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .padding(end = 4.dp)
+                .padding(end = Spacing.xs)
         )
 
         overlayText?.let { indicator ->
@@ -263,7 +265,10 @@ fun TrashScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
+                    .padding(
+                        end = ScrollbarDefaults.ThumbWidth + Spacing.lg,
+                        top = Spacing.lg
+                    )
             )
         }
     }
@@ -447,7 +452,10 @@ private fun TrashEntryCard(
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors()
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(Spacing.cardPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (showThumbnail) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
@@ -459,7 +467,7 @@ private fun TrashEntryCard(
                         .width(56.dp)
                         .height(56.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(Spacing.lg))
             }
 
             Column(modifier = Modifier.weight(1f)) {
@@ -469,7 +477,7 @@ private fun TrashEntryCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
                     text = formatPath(entry.originalPath, showFullPath = true),
                     style = MaterialTheme.typography.bodySmall,
@@ -477,7 +485,7 @@ private fun TrashEntryCard(
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
                     text = "${formatBytesWithExact(entry.sizeBytes)} · Deleted ${formatDate(entry.deletedAtMillis)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -507,11 +515,11 @@ private fun TrashEntryDetailsDialog(
                     text = fileName,
                     style = MaterialTheme.typography.titleSmall
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Path: ${entry.originalPath}")
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Trashed: ${entry.trashedPath}")
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Deleted: ${formatDate(entry.deletedAtMillis)}")
                 Text("Size: ${formatBytesWithExact(entry.sizeBytes)}")
                 Text("Modified: ${formatDate(entry.lastModifiedMillis)}")
@@ -520,7 +528,7 @@ private fun TrashEntryDetailsDialog(
         confirmButton = {
             Row {
                 OutlinedButton(onClick = onOpen) { Text("Open") }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(Spacing.inlineGap))
                 OutlinedButton(
                     enabled = actionsEnabled,
                     onClick = onRestore
@@ -537,7 +545,7 @@ private fun TrashEntryDetailsDialog(
                 ) {
                     Text("Delete")
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(Spacing.inlineGap))
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
             }
         }

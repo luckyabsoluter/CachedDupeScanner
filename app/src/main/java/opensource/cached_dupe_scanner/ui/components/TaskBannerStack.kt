@@ -15,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import java.io.File
 import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 
@@ -31,8 +30,8 @@ fun TaskBannerStack(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = Spacing.screenPadding, vertical = Spacing.itemGap),
+        verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)
     ) {
         tasks.forEach { task ->
             Card(
@@ -41,8 +40,8 @@ fun TaskBannerStack(
                     .clickable { onOpenTask(task) }
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),

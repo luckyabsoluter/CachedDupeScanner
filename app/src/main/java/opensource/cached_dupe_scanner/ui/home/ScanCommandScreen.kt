@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.room.Room
 import java.io.File
 import java.util.UUID
@@ -116,11 +115,11 @@ fun ScanCommandScreen(
         Column(
             modifier = Modifier
                 .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
                 .verticalScroll(scrollState)
         ) {
             AppTopBar(title = "Scan command", onBack = onBack)
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.itemGap))
 
             if (targets.value.isEmpty()) {
                 Text("No scan targets yet. Add one first.")
@@ -128,9 +127,9 @@ fun ScanCommandScreen(
             }
 
             Text("Select a target:")
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(Spacing.compactGap))
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
                 targets.value.forEach { target ->
                     TargetScanRow(
                         target = target,
@@ -157,7 +156,7 @@ fun ScanCommandScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sectionGap))
             Button(
                 onClick = {
                     val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
@@ -184,16 +183,18 @@ fun ScanCommandScreen(
             }
 
             activeTask?.let { task ->
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(Spacing.sectionGap))
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(
+                        modifier = Modifier.padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
+                    ) {
                         Text(task.title, style = MaterialTheme.typography.titleSmall)
                         Text(task.detail)
                         Text("Scanned: ${task.processed ?: 0} / ${task.total?.toString() ?: "?"}")
                         task.currentPath?.let { current ->
                             Text("Current: $current")
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = { taskCoordinator.requestCancel(TaskArea.Scan) },
                             enabled = task.isCancellable,
@@ -211,7 +212,7 @@ fun ScanCommandScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .padding(end = 4.dp)
+                .padding(end = Spacing.xs)
         )
     }
 }
@@ -223,9 +224,11 @@ private fun TargetScanRow(
     onScan: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(
+            modifier = Modifier.padding(Spacing.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
+        ) {
             Text(text = target.path, style = MaterialTheme.typography.bodyMedium)
-            Spacer(modifier = Modifier.height(6.dp))
             Button(
                 onClick = onScan,
                 enabled = enabled,

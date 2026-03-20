@@ -27,7 +27,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -94,16 +93,16 @@ fun DbManagementScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
                 .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
         ) {
             AppTopBar(title = "DB management", onBack = onBack)
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
                 ) {
                     Text(
                         text = "Overview",
@@ -129,8 +128,8 @@ fun DbManagementScreen(
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)
                 ) {
                     Text(
                         text = "Duplicate group snapshot",
@@ -226,20 +225,20 @@ fun DbManagementScreen(
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(Spacing.cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
                 ) {
                     Text(
                         text = "File maintenance policies",
                         style = MaterialTheme.typography.titleSmall
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = deleteMissing.value,
                                 onCheckedChange = { deleteMissing.value = it }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
                             Text("Delete DB entries missing on storage")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -247,7 +246,7 @@ fun DbManagementScreen(
                                 checked = rehashStale.value,
                                 onCheckedChange = { rehashStale.value = it }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
                             Text("Rehash entries with stale size/date")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -255,7 +254,7 @@ fun DbManagementScreen(
                                 checked = rehashMissing.value,
                                 onCheckedChange = { rehashMissing.value = it }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
                             Text("Compute hash for missing entries")
                         }
                     }
@@ -362,7 +361,7 @@ fun DbManagementScreen(
                         } else {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(Spacing.compactGap))
                         Text(
                             text = task.detail,
                             style = MaterialTheme.typography.bodySmall,
@@ -404,7 +403,7 @@ fun DbManagementScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .padding(end = 4.dp)
+                .padding(end = Spacing.xs)
         )
     }
 
