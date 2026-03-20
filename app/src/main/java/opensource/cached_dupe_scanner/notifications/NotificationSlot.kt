@@ -1,13 +1,11 @@
 package opensource.cached_dupe_scanner.notifications
 
-internal enum class NotificationSlot {
-    Scan,
-    DbTask
-}
+import opensource.cached_dupe_scanner.tasks.TaskArea
 
-internal fun notificationIdFor(slot: NotificationSlot): Int {
-    return when (slot) {
-        NotificationSlot.Scan -> 1001
-        NotificationSlot.DbTask -> 1002
+internal fun notificationIdFor(area: TaskArea): Int {
+    return when (area) {
+        TaskArea.Scan -> 1001
+        TaskArea.Db -> 1002
+        TaskArea.Trash -> 1003
     }
 }

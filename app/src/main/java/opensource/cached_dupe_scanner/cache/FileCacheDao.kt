@@ -120,6 +120,9 @@ interface FileCacheDao {
     @Query("DELETE FROM cached_files WHERE normalizedPath = :normalizedPath")
     fun deleteByNormalizedPath(normalizedPath: String)
 
+    @Query("DELETE FROM cached_files WHERE normalizedPath IN (:normalizedPaths)")
+    fun deleteByNormalizedPaths(normalizedPaths: List<String>)
+
     @Query("DELETE FROM cached_files")
     fun clear()
 

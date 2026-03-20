@@ -5,8 +5,10 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.TrashEntryEntity
 import opensource.cached_dupe_scanner.core.Hashing
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -194,5 +196,107 @@ class TrashControllerTest {
 
         volumeRoot.deleteRecursively()
         database.close()
+    }
+
+    @Test
+    fun emptyTrashReportsProgressAndSupportsCancellation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        val volumeRoot = createTempDir(prefix = "volume_")
+        val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
+        try {
+            repeat(3) { index ->
+                val file = File(trashDir, "item$index.txt").apply { writeText("item-$index") }
+                database.trashDao().upsert(
+                    TrashEntryEntity(
+                        id = "id-$index",
+                        originalPath = "/origin/$index",
+                        trashedPath = file.absolutePath,
+                        sizeBytes = file.length(),
+                        lastModifiedMillis = file.lastModified(),
+                        hashHex = null,
+                        deletedAtMillis = 100L + index,
+                        volumeRoot = volumeRoot.absolutePath
+                    )
+                )
+            }
+
+            val controller = TrashController(
+                context = context,
+                database = database,
+                historyRepo = ScanHistoryRepository(database.fileCacheDao(), AppSettingsStore(context)),
+                trashRepo = TrashRepository(database.trashDao()),
+                storageRootProvider = FakeRootProvider(volumeRoot)
+            )
+
+            var progressCalls = 0
+            val summary = controller.emptyTrash(
+                shouldContinue = { progressCalls == 0 }
+            ) {
+                progressCalls += 1
+            }
+
+            assertTrue(summary.cancelled)
+            assertEquals(1, summary.processed)
+            assertEquals(1, summary.deleted)
+            assertEquals(2, database.trashDao().countAll())
+            assertEquals(1, progressCalls)
+        } finally {
+            volumeRoot.deleteRecursively()
+            database.close()
+        }
+    }
+
+    @Test
+    fun emptyTrashCountsDeletionFailuresAndKeepsEntry() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        val volumeRoot = createTempDir(prefix = "volume_")
+        val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
+        try {
+            val failingDir = File(trashDir, "blocked").apply {
+                mkdirs()
+                File(this, "child.txt").writeText("x")
+            }
+            database.trashDao().upsert(
+                TrashEntryEntity(
+                    id = "blocked",
+                    originalPath = "/origin/blocked",
+                    trashedPath = failingDir.absolutePath,
+                    sizeBytes = 0L,
+                    lastModifiedMillis = failingDir.lastModified(),
+                    hashHex = null,
+                    deletedAtMillis = 100L,
+                    volumeRoot = volumeRoot.absolutePath
+                )
+            )
+
+            val controller = TrashController(
+                context = context,
+                database = database,
+                historyRepo = ScanHistoryRepository(database.fileCacheDao(), AppSettingsStore(context)),
+                trashRepo = TrashRepository(database.trashDao()),
+                storageRootProvider = FakeRootProvider(volumeRoot)
+            )
+
+            val summary = controller.emptyTrash(
+                shouldContinue = { true }
+            ) { }
+
+            assertFalse(summary.cancelled)
+            assertEquals(1, summary.failed)
+            assertEquals(0, summary.deleted)
+            assertEquals(1, database.trashDao().countAll())
+            assertTrue(failingDir.exists())
+        } finally {
+            volumeRoot.deleteRecursively()
+            database.close()
+        }
     }
 }

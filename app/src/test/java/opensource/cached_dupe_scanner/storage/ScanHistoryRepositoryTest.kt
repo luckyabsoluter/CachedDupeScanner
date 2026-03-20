@@ -12,6 +12,7 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -420,7 +421,8 @@ class ScanHistoryRepositoryTest {
             val summary = repo.runMaintenance(
                 deleteMissing = true,
                 rehashStale = true,
-                rehashMissing = true
+                rehashMissing = true,
+                shouldContinue = { true }
             ) { progress ->
                 lastProgress = progress
             }
@@ -488,13 +490,100 @@ class ScanHistoryRepositoryTest {
             val summary = repo.runMaintenance(
                 deleteMissing = true,
                 rehashStale = false,
-                rehashMissing = false
+                rehashMissing = false,
+                shouldContinue = { true }
             ) { }
 
             assertEquals(1, summary.deleted)
             assertEquals(0, database.duplicateGroupDao().countGroups())
         } finally {
             existingFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun runMaintenanceStopsWhenCancellationIsRequested() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val fileA = File.createTempFile("cached", ".cancel-a")
+        val fileB = File.createTempFile("cached", ".cancel-b")
+        try {
+            fileA.writeText("alpha")
+            fileB.writeText("beta")
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(database.fileCacheDao(), settings)
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1,
+                    files = listOf(
+                        FileMetadata(fileA.absolutePath, fileA.absolutePath, fileA.length(), fileA.lastModified(), null),
+                        FileMetadata(fileB.absolutePath, fileB.absolutePath, fileB.length(), fileB.lastModified(), null)
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+
+            var allow = true
+            val summary = repo.runMaintenance(
+                deleteMissing = false,
+                rehashStale = false,
+                rehashMissing = true,
+                shouldContinue = { allow }
+            ) {
+                allow = false
+            }
+
+            assertEquals(1, summary.processed)
+            assertTrue(summary.cancelled)
+        } finally {
+            fileA.delete()
+            fileB.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun clearAllReportsProgressAndSupportsCancellation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata("/a", "/a", 10L, 1L, "h"),
+                        FileMetadata("/b", "/b", 10L, 1L, "h"),
+                        FileMetadata("/c", "/c", 20L, 1L, "x")
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+            assertEquals(3, database.fileCacheDao().countAll())
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            var allow = true
+            val summary = repo.clearAll(
+                shouldContinue = { allow }
+            ) {
+                allow = false
+            }
+
+            assertTrue(summary.cancelled)
+            assertTrue(summary.processed >= 1)
+            assertTrue(database.fileCacheDao().countAll() < 3 || database.duplicateGroupDao().countGroups() < 1)
+        } finally {
             database.close()
         }
     }

@@ -294,4 +294,33 @@ class ResultsDbRepositoryTest {
 
         db.close()
     }
+
+    @Test
+    fun rebuildGroupsSupportsCancellation() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        repeat(250) { index ->
+            insertDuplicateGroup(
+                fileDao = fileDao,
+                sizeBytes = (index + 1).toLong(),
+                hashHex = "hx$index",
+                count = 2,
+                pathPrefix = "cancel$index"
+            )
+        }
+
+        var allow = true
+        val summary = repo.rebuildGroups(
+            shouldContinue = { allow }
+        ) {
+            allow = false
+        }
+
+        assertTrue(summary.cancelled)
+        assertTrue(summary.processed in 1 until summary.total)
+
+        db.close()
+    }
 }

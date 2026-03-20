@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,34 +25,40 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.util.Log
 import opensource.cached_dupe_scanner.cache.CacheDatabase
-import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.cache.CacheMigrations
+import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.engine.ScanPhase
-import opensource.cached_dupe_scanner.notifications.ScanNotificationController
-import opensource.cached_dupe_scanner.storage.ScanTarget
-import opensource.cached_dupe_scanner.storage.ScanTargetStore
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanReport
 import opensource.cached_dupe_scanner.storage.ScanReportDurations
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
 import opensource.cached_dupe_scanner.storage.ScanReportTotals
+import opensource.cached_dupe_scanner.storage.ScanTarget
+import opensource.cached_dupe_scanner.storage.ScanTargetStore
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.scanTaskCancelledDetail
+import opensource.cached_dupe_scanner.tasks.scanTaskCompletedDetail
+import opensource.cached_dupe_scanner.tasks.scanTaskDetail
+import opensource.cached_dupe_scanner.tasks.scanTaskTitle
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
-import java.io.File
-import java.util.UUID
 
 @Composable
 fun ScanCommandScreen(
@@ -63,6 +70,8 @@ fun ScanCommandScreen(
     targetsVersion: Int,
     scanScope: CoroutineScope,
     onReportSaved: () -> Unit,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -71,12 +80,9 @@ fun ScanCommandScreen(
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
     val currentJob = remember { mutableStateOf<Job?>(null) }
-    val notificationController = remember { ScanNotificationController(context) }
     val cancelRequested = remember { mutableStateOf(false) }
-    val progressTarget = remember { mutableStateOf<String?>(null) }
-    val progressCurrent = remember { mutableStateOf<String?>(null) }
-    val progressSize = remember { mutableStateOf<Long?>(null) }
-    val progressPhase = remember { mutableStateOf(ScanPhase.Collecting) }
+    val activeTask = taskCoordinator.activeTask(TaskArea.Scan)
+    val isBusy = activeTask != null
 
     val database = remember {
         Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
@@ -128,25 +134,23 @@ fun ScanCommandScreen(
                 targets.value.forEach { target ->
                     TargetScanRow(
                         target = target,
+                        enabled = !isBusy,
                         onScan = {
                             val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
                             runScanForTarget(
-                                scanScope,
-                                scanner,
-                                state,
-                                target,
-                                onScanComplete,
-                                onScanCancelled,
-                                reportRepo,
-                                skipZeroSizeInDb,
-                                onReportSaved,
-                                notificationController,
-                                currentJob,
-                                cancelRequested,
-                                progressTarget,
-                                progressCurrent,
-                                progressSize,
-                                progressPhase
+                                scope = scanScope,
+                                scanner = scanner,
+                                state = state,
+                                target = target,
+                                onScanComplete = onScanComplete,
+                                onScanCancelled = onScanCancelled,
+                                reportRepo = reportRepo,
+                                skipZeroSizeInDb = skipZeroSizeInDb,
+                                onReportSaved = onReportSaved,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
+                                currentJob = currentJob,
+                                cancelRequested = cancelRequested
                             )
                         }
                     )
@@ -154,63 +158,45 @@ fun ScanCommandScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = {
-                val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
-                runScanForAllTargets(
-                    scanScope,
-                    scanner,
-                    state,
-                    targets.value,
-                    onScanComplete,
-                    onScanCancelled,
-                    reportRepo,
-                    skipZeroSizeInDb,
-                    onReportSaved,
-                    notificationController,
-                    currentJob,
-                    cancelRequested,
-                    progressTarget,
-                    progressCurrent,
-                    progressSize,
-                    progressPhase
-                )
-            }, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
+                    runScanForAllTargets(
+                        scope = scanScope,
+                        scanner = scanner,
+                        state = state,
+                        targets = targets.value,
+                        onScanComplete = onScanComplete,
+                        onScanCancelled = onScanCancelled,
+                        reportRepo = reportRepo,
+                        skipZeroSizeInDb = skipZeroSizeInDb,
+                        onReportSaved = onReportSaved,
+                        taskCoordinator = taskCoordinator,
+                        notificationController = notificationController,
+                        currentJob = currentJob,
+                        cancelRequested = cancelRequested
+                    )
+                },
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Scan all targets")
             }
 
-            if (state.value is ScanUiState.Scanning) {
+            activeTask?.let { task ->
                 Spacer(modifier = Modifier.height(12.dp))
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Progress", style = MaterialTheme.typography.titleSmall)
-                        val targetText = progressTarget.value ?: "-"
-                        val currentText = progressCurrent.value ?: "-"
-                        val phaseText = when (progressPhase.value) {
-                            ScanPhase.Collecting -> "Collecting files"
-                            ScanPhase.Detecting -> "Detecting hash candidates"
-                            ScanPhase.Hashing -> "Hashing"
-                            ScanPhase.Saving -> "Saving cache"
+                        Text(task.title, style = MaterialTheme.typography.titleSmall)
+                        Text(task.detail)
+                        Text("Scanned: ${task.processed ?: 0} / ${task.total?.toString() ?: "?"}")
+                        task.currentPath?.let { current ->
+                            Text("Current: $current")
                         }
-                        Text("Target: $targetText")
-                        Text("Phase: $phaseText")
-                        val progress = state.value as ScanUiState.Scanning
-                        val totalText = progress.total?.toString() ?: "?"
-                        Text("Scanned: ${progress.scanned} / $totalText")
-                        progressSize.value?.let { size ->
-                            Text("Size: ${size} bytes")
-                        }
-                        Text("Current: $currentText")
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
-                            onClick = {
-                                cancelRequested.value = true
-                                currentJob.value?.cancel()
-                                progressTarget.value = null
-                                progressCurrent.value = null
-                                progressSize.value = null
-                                notificationController.showCancelled()
-                                onScanCancelled()
-                            },
+                            onClick = { taskCoordinator.requestCancel(TaskArea.Scan) },
+                            enabled = task.isCancellable,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Stop scan")
@@ -231,12 +217,20 @@ fun ScanCommandScreen(
 }
 
 @Composable
-private fun TargetScanRow(target: ScanTarget, onScan: () -> Unit) {
+private fun TargetScanRow(
+    target: ScanTarget,
+    enabled: Boolean,
+    onScan: () -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = target.path, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(6.dp))
-            Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onScan,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Scan target")
             }
         }
@@ -244,7 +238,7 @@ private fun TargetScanRow(target: ScanTarget, onScan: () -> Unit) {
 }
 
 private fun runScanForTarget(
-    scope: kotlinx.coroutines.CoroutineScope,
+    scope: CoroutineScope,
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
@@ -253,18 +247,35 @@ private fun runScanForTarget(
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     onReportSaved: () -> Unit,
-    notificationController: ScanNotificationController,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     currentJob: MutableState<Job?>,
-    cancelRequested: MutableState<Boolean>,
-    progressTarget: MutableState<String?>,
-    progressCurrent: MutableState<String?>,
-    progressSize: MutableState<Long?>,
-    progressPhase: MutableState<ScanPhase>
+    cancelRequested: MutableState<Boolean>
 ) {
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Scan,
+        kind = TaskKind.ScanTarget,
+        title = scanTaskTitle(),
+        detail = scanTaskDetail(
+            phase = ScanPhase.Collecting,
+            scanned = 0,
+            total = null,
+            targetPath = target.path
+        ),
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.value = true
+            currentJob.value?.cancel()
+        }
+    ) ?: return
+    notificationController.showActive(started)
+
     var job: Job? = null
     job = scope.launch {
         cancelRequested.value = false
-        notificationController.showStarted(target.path)
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val startedAt = System.currentTimeMillis()
         var collectingStart = startedAt
@@ -280,9 +291,14 @@ private fun runScanForTarget(
         val targetFile = File(target.path)
         if (!targetFile.exists()) {
             state.value = ScanUiState.Error("Target path not found")
+            taskCoordinator.fail(
+                area = TaskArea.Scan,
+                title = "Scan failed",
+                detail = "Target path not found."
+            )?.let(notificationController::showTerminal)
             return@launch
         }
-        progressTarget.value = target.path
+
         val result = withContext(Dispatchers.IO) {
             scanner.scan(
                 targetFile,
@@ -294,9 +310,6 @@ private fun runScanForTarget(
                         lastPhase = phase
                     }
                     state.value = ScanUiState.Scanning(scanned = scanned, total = total)
-                    progressCurrent.value = current.normalizedPath
-                    progressSize.value = current.sizeBytes
-                    progressPhase.value = phase
                     when (phase) {
                         ScanPhase.Collecting -> {
                             if (collectingStart == 0L) collectingStart = System.currentTimeMillis()
@@ -317,17 +330,26 @@ private fun runScanForTarget(
                             if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                         }
                     }
-                    notificationController.showProgress(
-                        phase = phase,
-                        scanned = scanned,
-                        total = total,
-                        targetPath = target.path,
-                        currentPath = current.normalizedPath
-                    )
+                    taskCoordinator.update(TaskArea.Scan) { task ->
+                        task.copy(
+                            title = scanTaskTitle(),
+                            detail = scanTaskDetail(
+                                phase = phase,
+                                scanned = scanned,
+                                total = total,
+                                targetPath = target.path
+                            ),
+                            currentPath = current.normalizedPath,
+                            processed = scanned,
+                            total = total,
+                            indeterminate = total == null || total <= 0
+                        )
+                    }?.let(notificationController::showActive)
                 },
                 shouldContinue = { job?.isActive == true }
             )
         }
+
         hashingEnd = if (hashingStart > 0) System.currentTimeMillis() else hashingEnd
         detectingEnd = if (detectingStart > 0 && detectingEnd == 0L) System.currentTimeMillis() else detectingEnd
         collectingEnd = if (collectingEnd == 0L) System.currentTimeMillis() else collectingEnd
@@ -356,21 +378,34 @@ private fun runScanForTarget(
         }
         onReportSaved()
         if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
-            progressTarget.value = null
-            progressCurrent.value = null
-            progressSize.value = null
-            notificationController.showCancelled()
+            val snapshot = taskCoordinator.activeTask(TaskArea.Scan)
+            taskCoordinator.cancel(
+                area = TaskArea.Scan,
+                title = "Scan cancelled",
+                detail = scanTaskCancelledDetail(snapshot?.processed, snapshot?.total),
+                currentPath = snapshot?.currentPath,
+                processed = snapshot?.processed,
+                total = snapshot?.total,
+                indeterminate = snapshot?.indeterminate ?: true
+            )?.let(notificationController::showTerminal)
             onScanCancelled()
             return@launch
         }
-        notificationController.showCompleted(result)
+        taskCoordinator.complete(
+            area = TaskArea.Scan,
+            title = "Scan complete",
+            detail = scanTaskCompletedDetail(result),
+            processed = result.files.size,
+            total = result.files.size,
+            indeterminate = false
+        )?.let(notificationController::showTerminal)
         onScanComplete(result)
     }
     currentJob.value = job
 }
 
 private fun runScanForAllTargets(
-    scope: kotlinx.coroutines.CoroutineScope,
+    scope: CoroutineScope,
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
@@ -379,24 +414,41 @@ private fun runScanForAllTargets(
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
     onReportSaved: () -> Unit,
-    notificationController: ScanNotificationController,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     currentJob: MutableState<Job?>,
-    cancelRequested: MutableState<Boolean>,
-    progressTarget: MutableState<String?>,
-    progressCurrent: MutableState<String?>,
-    progressSize: MutableState<Long?>,
-    progressPhase: MutableState<ScanPhase>
+    cancelRequested: MutableState<Boolean>
 ) {
     if (targets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
-        notificationController.clear()
+        notificationController.clear(TaskArea.Scan)
         return
     }
+
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Scan,
+        kind = TaskKind.ScanAll,
+        title = scanTaskTitle(),
+        detail = scanTaskDetail(
+            phase = ScanPhase.Collecting,
+            scanned = 0,
+            total = null,
+            targetPath = null
+        ),
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.value = true
+            currentJob.value?.cancel()
+        }
+    ) ?: return
+    notificationController.showActive(started)
 
     var job: Job? = null
     job = scope.launch {
         cancelRequested.value = false
-        notificationController.showStarted(null)
         state.value = ScanUiState.Scanning(scanned = 0, total = null)
         val startedAt = System.currentTimeMillis()
         var collectingStart = startedAt
@@ -410,12 +462,12 @@ private fun runScanForAllTargets(
         var hashCandidates = 0
         var hashesComputed = 0
         val results = mutableListOf<ScanResult>()
+
         for (target in targets) {
             val targetFile = File(target.path)
             if (!targetFile.exists()) {
                 continue
             }
-            progressTarget.value = target.path
             val result = withContext(Dispatchers.IO) {
                 scanner.scan(
                     targetFile,
@@ -427,9 +479,6 @@ private fun runScanForAllTargets(
                             lastPhase = phase
                         }
                         state.value = ScanUiState.Scanning(scanned = scanned, total = total)
-                        progressCurrent.value = current.normalizedPath
-                        progressSize.value = current.sizeBytes
-                        progressPhase.value = phase
                         when (phase) {
                             ScanPhase.Collecting -> {
                                 if (collectingStart == 0L) collectingStart = System.currentTimeMillis()
@@ -450,22 +499,26 @@ private fun runScanForAllTargets(
                                 if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                             }
                         }
-                        notificationController.showProgress(
-                            phase = phase,
-                            scanned = scanned,
-                            total = total,
-                            targetPath = target.path,
-                            currentPath = current.normalizedPath
-                        )
+                        taskCoordinator.update(TaskArea.Scan) { task ->
+                            task.copy(
+                                title = scanTaskTitle(),
+                                detail = scanTaskDetail(
+                                    phase = phase,
+                                    scanned = scanned,
+                                    total = total,
+                                    targetPath = target.path
+                                ),
+                                currentPath = current.normalizedPath,
+                                processed = scanned,
+                                total = total,
+                                indeterminate = total == null || total <= 0
+                            )
+                        }?.let(notificationController::showActive)
                     },
                     shouldContinue = { job?.isActive == true }
                 )
             }
             if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
-                progressTarget.value = null
-                progressCurrent.value = null
-                progressSize.value = null
-                notificationController.showCancelled()
                 val finishedAt = System.currentTimeMillis()
                 val report = ScanReport(
                     id = UUID.randomUUID().toString(),
@@ -490,6 +543,16 @@ private fun runScanForAllTargets(
                     reportRepo.add(report)
                 }
                 onReportSaved()
+                val snapshot = taskCoordinator.activeTask(TaskArea.Scan)
+                taskCoordinator.cancel(
+                    area = TaskArea.Scan,
+                    title = "Scan cancelled",
+                    detail = scanTaskCancelledDetail(snapshot?.processed, snapshot?.total),
+                    currentPath = snapshot?.currentPath,
+                    processed = snapshot?.processed,
+                    total = snapshot?.total,
+                    indeterminate = snapshot?.indeterminate ?: true
+                )?.let(notificationController::showTerminal)
                 onScanCancelled()
                 return@launch
             }
@@ -498,6 +561,11 @@ private fun runScanForAllTargets(
 
         if (results.isEmpty()) {
             state.value = ScanUiState.Error("No valid targets to scan")
+            taskCoordinator.fail(
+                area = TaskArea.Scan,
+                title = "Scan failed",
+                detail = "No valid targets to scan."
+            )?.let(notificationController::showTerminal)
             return@launch
         }
 
@@ -532,7 +600,14 @@ private fun runScanForAllTargets(
             reportRepo.add(report)
         }
         onReportSaved()
-        notificationController.showCompleted(merged)
+        taskCoordinator.complete(
+            area = TaskArea.Scan,
+            title = "Scan complete",
+            detail = scanTaskCompletedDetail(merged),
+            processed = merged.files.size,
+            total = merged.files.size,
+            indeterminate = false
+        )?.let(notificationController::showTerminal)
         onScanComplete(merged)
     }
     currentJob.value = job

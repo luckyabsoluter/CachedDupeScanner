@@ -1,60 +1,64 @@
 package opensource.cached_dupe_scanner
 
-import android.os.Bundle
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Scaffold
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.Composable
-import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.saveable.SaveableStateHolder
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.CacheMigrations
+import opensource.cached_dupe_scanner.core.ResultSortKey
+import opensource.cached_dupe_scanner.core.ScanResult
+import opensource.cached_dupe_scanner.core.ScanResultViewFilter
+import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.PagedFileRepository
+import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
+import opensource.cached_dupe_scanner.storage.ScanReportRepository
+import opensource.cached_dupe_scanner.storage.TrashController
+import opensource.cached_dupe_scanner.storage.TrashRepository
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.ui.components.TaskBannerStack
+import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementUiState
 import opensource.cached_dupe_scanner.ui.home.FilesScreenDb
-import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.PermissionScreen
-import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ReportsScreen
+import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
-import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
-import opensource.cached_dupe_scanner.storage.AppSettingsStore
-import opensource.cached_dupe_scanner.storage.ResultsDbRepository
-import opensource.cached_dupe_scanner.storage.PagedFileRepository
-import opensource.cached_dupe_scanner.storage.ScanReportRepository
-import opensource.cached_dupe_scanner.storage.TrashController
-import opensource.cached_dupe_scanner.storage.TrashRepository
-import opensource.cached_dupe_scanner.cache.CacheDatabase
-import opensource.cached_dupe_scanner.cache.CacheMigrations
-import androidx.room.Room
-import opensource.cached_dupe_scanner.core.ScanResult
-import opensource.cached_dupe_scanner.core.ScanResultViewFilter
-import opensource.cached_dupe_scanner.core.ResultSortKey
-import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
-import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,135 +66,150 @@ class MainActivity : ComponentActivity() {
         updateSystemBars()
         setContent {
             CachedDupeScannerTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
-                    val deletedPaths = remember { mutableStateOf(setOf<String>()) }
-                    val displayResult = remember { mutableStateOf<ScanResult?>(null) }
-                    val sortSettingsVersion = remember { mutableStateOf(0) }
-                    val filesClearVersion = remember { mutableStateOf(0) }
-                    val filesRefreshVersion = remember { mutableStateOf(0) }
-                    val targetsVersion = remember { mutableStateOf(0) }
-                    val reportsRefreshVersion = remember { mutableStateOf(0) }
-                    val resultsRefreshVersion = remember { mutableStateOf(0) }
-                    val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
-                    val context = LocalContext.current
-                    val settingsStore = remember { AppSettingsStore(context) }
-                    val scope = rememberCoroutineScope()
-                    val dbManagementUiState = remember { DbManagementUiState() }
-                    val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                    val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                    val database = remember {
-                        Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-                            .addMigrations(
-                                CacheMigrations.MIGRATION_1_3,
-                                CacheMigrations.MIGRATION_2_3,
-                                CacheMigrations.MIGRATION_3_4,
-                                CacheMigrations.MIGRATION_4_5,
-                                CacheMigrations.MIGRATION_5_6,
-                                CacheMigrations.MIGRATION_6_7,
-                                CacheMigrations.MIGRATION_7_8,
-                                CacheMigrations.MIGRATION_8_9,
-                                CacheMigrations.MIGRATION_9_10,
-                                CacheMigrations.MIGRATION_10_11,
-                                CacheMigrations.MIGRATION_11_12
-                            )
-                            .build()
+                val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
+                val deletedPaths = remember { mutableStateOf(setOf<String>()) }
+                val displayResult = remember { mutableStateOf<ScanResult?>(null) }
+                val sortSettingsVersion = remember { mutableStateOf(0) }
+                val filesClearVersion = remember { mutableStateOf(0) }
+                val filesRefreshVersion = remember { mutableStateOf(0) }
+                val targetsVersion = remember { mutableStateOf(0) }
+                val reportsRefreshVersion = remember { mutableStateOf(0) }
+                val resultsRefreshVersion = remember { mutableStateOf(0) }
+                val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
+                val context = LocalContext.current
+                val settingsStore = remember { AppSettingsStore(context) }
+                val scope = rememberCoroutineScope()
+                val dbManagementUiState = remember { DbManagementUiState() }
+                val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
+                val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
+                val taskCoordinator = remember { TaskCoordinator() }
+                val notificationController = remember { TaskNotificationController(context) }
+                val database = remember {
+                    Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
+                        .addMigrations(
+                            CacheMigrations.MIGRATION_1_3,
+                            CacheMigrations.MIGRATION_2_3,
+                            CacheMigrations.MIGRATION_3_4,
+                            CacheMigrations.MIGRATION_4_5,
+                            CacheMigrations.MIGRATION_5_6,
+                            CacheMigrations.MIGRATION_6_7,
+                            CacheMigrations.MIGRATION_7_8,
+                            CacheMigrations.MIGRATION_8_9,
+                            CacheMigrations.MIGRATION_9_10,
+                            CacheMigrations.MIGRATION_10_11,
+                            CacheMigrations.MIGRATION_11_12
+                        )
+                        .build()
+                }
+                val historyRepo = remember {
+                    ScanHistoryRepository(
+                        dao = database.fileCacheDao(),
+                        settingsStore = settingsStore,
+                        groupDao = database.duplicateGroupDao(),
+                        database = database
+                    )
+                }
+                val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
+                val trashRepo = remember { TrashRepository(database.trashDao()) }
+                val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
+                val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
+                val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
+
+                LaunchedEffect(Unit) {
+                    // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
+                }
+
+                fun handleScanComplete(scan: ScanResult) {
+                    Log.d("MainActivity", "Scan complete callback received")
+                    state.value = ScanUiState.Success(scan)
+                    deletedPaths.value = emptySet()
+                    filesRefreshVersion.value += 1
+                    selectedResultsGroupIndex.value = null
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                Log.d("MainActivity", "Persisting scan to DB")
+                                historyRepo.recordScan(scan)
+                            }
+                        }.onFailure { error ->
+                            Log.e("MainActivity", "Failed to persist scan results", error)
+                        }
+                        resultsRefreshVersion.value += 1
                     }
-                    val historyRepo = remember {
-                        ScanHistoryRepository(
-                            dao = database.fileCacheDao(),
-                            settingsStore = settingsStore,
-                            groupDao = database.duplicateGroupDao(),
-                            database = database
+                }
+
+                LaunchedEffect(state.value, sortSettingsVersion.value) {
+                    val current = state.value
+                    if (current is ScanUiState.Success) {
+                        val settings = settingsStore.load()
+                        val sortKey = runCatching { ResultSortKey.valueOf(settings.resultSortKey) }
+                            .getOrDefault(ResultSortKey.Count)
+                        val sortDir = runCatching { SortDirection.valueOf(settings.resultSortDirection) }
+                            .getOrDefault(SortDirection.Desc)
+                        val base = ScanResult(
+                            scannedAtMillis = current.result.scannedAtMillis,
+                            files = current.result.files,
+                            duplicateGroups = emptyList()
+                        )
+                        val filtered = withContext(Dispatchers.Default) {
+                            ScanResultViewFilter.filterForDisplay(
+                                result = base,
+                                hideZeroSizeInResults = settings.hideZeroSizeInResults,
+                                sortKey = sortKey,
+                                sortDirection = sortDir
+                            )
+                        }
+                        displayResult.value = filtered
+                    } else {
+                        displayResult.value = null
+                    }
+                }
+
+                val restoreLastResult: () -> Unit = {
+                    scope.launch {
+                        val stored = withContext(Dispatchers.IO) {
+                            historyRepo.loadMergedHistory()
+                        }
+                        if (stored != null) {
+                            state.value = ScanUiState.Success(stored)
+                        } else {
+                            state.value = ScanUiState.Idle
+                        }
+                    }
+                    Unit
+                }
+
+                BackHandler {
+                    val current = backStack.lastOrNull()
+                    if (current == Screen.Results && selectedResultsGroupIndex.value != null) {
+                        selectedResultsGroupIndex.value = null
+                        return@BackHandler
+                    }
+                    if (backStack.size > 1) {
+                        pop(backStack)
+                    } else {
+                        finish()
+                    }
+                }
+
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        TaskBannerStack(
+                            tasks = taskCoordinator.activeTasks.toList(),
+                            onOpenTask = { task ->
+                                navigateTo(backStack, screenCache, screenForTaskArea(task.area))
+                            },
+                            onCancelTask = { task ->
+                                taskCoordinator.requestCancel(task.area)
+                            }
                         )
                     }
-                    val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
-                    val trashRepo = remember { TrashRepository(database.trashDao()) }
-                    val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
-                    val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
-                    val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
-
-                    LaunchedEffect(Unit) {
-                        // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
-                    }
-
-                    fun handleScanComplete(scan: ScanResult) {
-                        Log.d("MainActivity", "Scan complete callback received")
-                        state.value = ScanUiState.Success(scan)
-                        deletedPaths.value = emptySet()
-                        filesRefreshVersion.value += 1
-                        selectedResultsGroupIndex.value = null
-                        scope.launch {
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    Log.d("MainActivity", "Persisting scan to DB")
-                                    historyRepo.recordScan(scan)
-                                }
-                            }.onFailure { error ->
-                                Log.e("MainActivity", "Failed to persist scan results", error)
-                            }
-                            resultsRefreshVersion.value += 1
-                        }
-                    }
-
-                    LaunchedEffect(state.value, sortSettingsVersion.value) {
-                        val current = state.value
-                        if (current is ScanUiState.Success) {
-                            val settings = settingsStore.load()
-                            val sortKey = runCatching { ResultSortKey.valueOf(settings.resultSortKey) }
-                                .getOrDefault(ResultSortKey.Count)
-                            val sortDir = runCatching { SortDirection.valueOf(settings.resultSortDirection) }
-                                .getOrDefault(SortDirection.Desc)
-                            val base = ScanResult(
-                                scannedAtMillis = current.result.scannedAtMillis,
-                                files = current.result.files,
-                                duplicateGroups = emptyList()
-                            )
-                            val filtered = withContext(Dispatchers.Default) {
-                                ScanResultViewFilter.filterForDisplay(
-                                    result = base,
-                                    hideZeroSizeInResults = settings.hideZeroSizeInResults,
-                                    sortKey = sortKey,
-                                    sortDirection = sortDir
-                                )
-                            }
-                            displayResult.value = filtered
-                        } else {
-                            displayResult.value = null
-                        }
-                    }
-
+                ) { innerPadding ->
                     val navModifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                     val screenModifier = Modifier.fillMaxSize()
-
-                    val restoreLastResult: () -> Unit = {
-                        scope.launch {
-                            val stored = withContext(Dispatchers.IO) {
-                                historyRepo.loadMergedHistory()
-                            }
-                            if (stored != null) {
-                                state.value = ScanUiState.Success(stored)
-                            } else {
-                                state.value = ScanUiState.Idle
-                            }
-                        }
-                        Unit
-                    }
-
-                    BackHandler {
-                        val current = backStack.lastOrNull()
-                        if (current == Screen.Results && selectedResultsGroupIndex.value != null) {
-                            selectedResultsGroupIndex.value = null
-                            return@BackHandler
-                        }
-                        if (backStack.size > 1) {
-                            pop(backStack)
-                        } else {
-                            finish()
-                        }
-                    }
 
                     ScreenStack(
                         screens = screenCache,
@@ -211,15 +230,18 @@ class MainActivity : ComponentActivity() {
                                 onOpenAbout = { navigateTo(backStack, screenCache, Screen.About) },
                                 modifier = screenModifier
                             )
+
                             Screen.Permission -> PermissionScreen(
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.Targets -> TargetsScreen(
                                 onBack = { pop(backStack) },
                                 onTargetsChanged = { targetsVersion.value += 1 },
                                 modifier = screenModifier
                             )
+
                             Screen.Files -> FilesScreenDb(
                                 fileRepo = fileRepo,
                                 trashController = trashController,
@@ -229,19 +251,19 @@ class MainActivity : ComponentActivity() {
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.DbManagement -> DbManagementScreen(
                                 historyRepo = historyRepo,
                                 resultsRepo = resultsRepo,
                                 uiState = dbManagementUiState,
                                 appScope = scope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 onMaintenanceApplied = {
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
                                 },
-                                onClearAll = {
-                                    withContext(Dispatchers.IO) {
-                                        historyRepo.clearAll()
-                                    }
+                                onCacheCleared = {
                                     state.value = ScanUiState.Idle
                                     deletedPaths.value = emptySet()
                                     displayResult.value = null
@@ -253,6 +275,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.ScanCommand -> ScanCommandScreen(
                                 state = state,
                                 onScanComplete = { handleScanComplete(it) },
@@ -262,14 +285,20 @@ class MainActivity : ComponentActivity() {
                                 targetsVersion = targetsVersion.value,
                                 scanScope = scope,
                                 onReportSaved = { reportsRefreshVersion.value += 1 },
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.Results -> ResultsScreenDb(
                                 resultsRepo = resultsRepo,
                                 settingsStore = settingsStore,
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
+                                    if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
+                                        return@ResultsScreenDb false
+                                    }
                                     val ok = withContext(Dispatchers.IO) {
                                         trashController.moveToTrash(file.normalizedPath).success
                                     }
@@ -292,15 +321,18 @@ class MainActivity : ComponentActivity() {
                                 selectedGroupIndex = selectedResultsGroupIndex.value,
                                 modifier = screenModifier
                             )
+
                             Screen.Settings -> SettingsScreen(
                                 settingsStore = settingsStore,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.About -> AboutScreen(
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
+
                             Screen.Reports -> ReportsScreen(
                                 reportRepo = reportRepo,
                                 refreshVersion = reportsRefreshVersion.value,
@@ -310,6 +342,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = screenModifier
                             )
+
                             is Screen.ReportDetail -> ReportsScreen(
                                 reportRepo = reportRepo,
                                 refreshVersion = reportsRefreshVersion.value,
@@ -322,6 +355,8 @@ class MainActivity : ComponentActivity() {
                             Screen.Trash -> TrashScreen(
                                 trashRepo = trashRepo,
                                 trashController = trashController,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -391,6 +426,14 @@ private fun goDashboard(stack: MutableList<Screen>, cache: MutableList<Screen>) 
     }
     stack.clear()
     stack.add(Screen.Dashboard)
+}
+
+private fun screenForTaskArea(area: TaskArea): Screen {
+    return when (area) {
+        TaskArea.Scan -> Screen.ScanCommand
+        TaskArea.Db -> Screen.DbManagement
+        TaskArea.Trash -> Screen.Trash
+    }
 }
 
 private sealed class Screen {

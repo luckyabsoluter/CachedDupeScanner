@@ -1,6 +1,8 @@
 package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 
@@ -61,6 +63,9 @@ interface DuplicateGroupDao {
     )
     fun insertSingleGroupFromCache(sizeBytes: Long, hashHex: String, updatedAtMillis: Long)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertAll(groups: List<DuplicateGroupEntity>)
+
     @Transaction
     fun rebuildFromCache(updatedAtMillis: Long) {
         clearInternal()
@@ -76,6 +81,19 @@ interface DuplicateGroupDao {
 
     @Query("SELECT COUNT(*) FROM dupe_groups")
     fun countGroups(): Int
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT sizeBytes, hashHex
+            FROM cached_files
+            WHERE hashHex IS NOT NULL
+            GROUP BY sizeBytes, hashHex
+            HAVING COUNT(*) > 1
+        )
+        """
+    )
+    fun countGroupsFromCache(): Int
 
     @Query("SELECT MAX(updatedAtMillis) FROM dupe_groups")
     fun latestUpdatedAtMillis(): Long?
@@ -216,6 +234,33 @@ interface DuplicateGroupDao {
 
     @Query(
         """
+        SELECT *
+        FROM dupe_groups
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listPageByKey(limit: Int, offset: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex,
+            COUNT(*) as fileCount,
+            (COUNT(*) * sizeBytes) as totalBytes
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listGroupsFromCache(limit: Int, offset: Int): List<DuplicateGroupSnapshotRow>
+
+    @Query(
+        """
         SELECT COUNT(*)
         FROM cached_files
         WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
@@ -223,3 +268,10 @@ interface DuplicateGroupDao {
     )
     fun countMembers(sizeBytes: Long, hashHex: String): Int
 }
+
+data class DuplicateGroupSnapshotRow(
+    val sizeBytes: Long,
+    val hashHex: String,
+    val fileCount: Int,
+    val totalBytes: Long
+)
