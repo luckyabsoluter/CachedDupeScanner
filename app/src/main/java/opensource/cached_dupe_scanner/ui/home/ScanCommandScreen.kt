@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
 import opensource.cached_dupe_scanner.cache.CacheStore
@@ -259,6 +260,7 @@ private fun runScanForTarget(
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>
 ) {
+    val bubbleTotal = scanBubbleTotal(targetCount = 1)
     val started = taskCoordinator.tryStart(
         area = TaskArea.Scan,
         kind = TaskKind.ScanTarget,
@@ -272,6 +274,9 @@ private fun runScanForTarget(
         processed = 0,
         total = null,
         indeterminate = true,
+        bubbleProcessed = 0,
+        bubbleTotal = bubbleTotal,
+        bubbleIndeterminate = false,
         isCancellable = true,
         onCancel = {
             cancelRequested.value = true
@@ -338,6 +343,13 @@ private fun runScanForTarget(
                             if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                         }
                     }
+                    val bubbleProgress = scanBubbleProgress(
+                        phase = phase,
+                        scanned = scanned,
+                        total = total,
+                        targetIndex = 0,
+                        targetCount = 1
+                    )
                     taskCoordinator.update(TaskArea.Scan) { task ->
                         task.copy(
                             title = scanTaskTitle(),
@@ -350,7 +362,10 @@ private fun runScanForTarget(
                             currentPath = current.normalizedPath,
                             processed = scanned,
                             total = total,
-                            indeterminate = total == null || total <= 0
+                            indeterminate = total == null || total <= 0,
+                            bubbleProcessed = bubbleProgress.processed,
+                            bubbleTotal = bubbleProgress.total,
+                            bubbleIndeterminate = false
                         )
                     }?.let(notificationController::showActive)
                 },
@@ -428,12 +443,14 @@ private fun runScanForAllTargets(
     currentJob: MutableState<Job?>,
     cancelRequested: MutableState<Boolean>
 ) {
-    if (targets.isEmpty()) {
+    val validTargets = targets.filter { File(it.path).exists() }
+    if (validTargets.isEmpty()) {
         state.value = ScanUiState.Error("No scan targets")
         notificationController.clear(TaskArea.Scan)
         return
     }
 
+    val bubbleTotal = scanBubbleTotal(targetCount = validTargets.size)
     val started = taskCoordinator.tryStart(
         area = TaskArea.Scan,
         kind = TaskKind.ScanAll,
@@ -447,6 +464,9 @@ private fun runScanForAllTargets(
         processed = 0,
         total = null,
         indeterminate = true,
+        bubbleProcessed = 0,
+        bubbleTotal = bubbleTotal,
+        bubbleIndeterminate = false,
         isCancellable = true,
         onCancel = {
             cancelRequested.value = true
@@ -472,11 +492,8 @@ private fun runScanForAllTargets(
         var hashesComputed = 0
         val results = mutableListOf<ScanResult>()
 
-        for (target in targets) {
+        validTargets.forEachIndexed { targetIndex, target ->
             val targetFile = File(target.path)
-            if (!targetFile.exists()) {
-                continue
-            }
             val result = withContext(Dispatchers.IO) {
                 scanner.scan(
                     targetFile,
@@ -509,6 +526,13 @@ private fun runScanForAllTargets(
                                 if (hashingEnd == 0L) hashingEnd = System.currentTimeMillis()
                             }
                         }
+                        val bubbleProgress = scanBubbleProgress(
+                            phase = phase,
+                            scanned = scanned,
+                            total = total,
+                            targetIndex = targetIndex,
+                            targetCount = validTargets.size
+                        )
                         taskCoordinator.update(TaskArea.Scan) { task ->
                             task.copy(
                                 title = scanTaskTitle(),
@@ -521,7 +545,10 @@ private fun runScanForAllTargets(
                                 currentPath = current.normalizedPath,
                                 processed = scanned,
                                 total = total,
-                                indeterminate = total == null || total <= 0
+                                indeterminate = total == null || total <= 0,
+                                bubbleProcessed = bubbleProgress.processed,
+                                bubbleTotal = bubbleProgress.total,
+                                bubbleIndeterminate = false
                             )
                         }?.let(notificationController::showActive)
                     },
@@ -625,4 +652,58 @@ private fun runScanForAllTargets(
 
 private fun shouldIgnoreScanPath(file: File, skipTrashBinContentsInScan: Boolean): Boolean {
     return skipTrashBinContentsInScan && TrashPaths.isInTrashBin(file)
+}
+
+private data class ScanBubbleProgress(
+    val processed: Int,
+    val total: Int
+)
+
+private const val SCAN_BUBBLE_COLLECTING_WEIGHT = 250
+private const val SCAN_BUBBLE_DETECTING_WEIGHT = 250
+private const val SCAN_BUBBLE_HASHING_WEIGHT = 400
+private const val SCAN_BUBBLE_SAVING_WEIGHT = 100
+private const val SCAN_BUBBLE_TARGET_TOTAL =
+    SCAN_BUBBLE_COLLECTING_WEIGHT +
+        SCAN_BUBBLE_DETECTING_WEIGHT +
+        SCAN_BUBBLE_HASHING_WEIGHT +
+        SCAN_BUBBLE_SAVING_WEIGHT
+
+private fun scanBubbleTotal(targetCount: Int): Int {
+    return (targetCount.coerceAtLeast(1)) * SCAN_BUBBLE_TARGET_TOTAL
+}
+
+private fun scanBubbleProgress(
+    phase: ScanPhase,
+    scanned: Int,
+    total: Int?,
+    targetIndex: Int,
+    targetCount: Int
+): ScanBubbleProgress {
+    val phaseStart = when (phase) {
+        ScanPhase.Collecting -> 0
+        ScanPhase.Detecting -> SCAN_BUBBLE_COLLECTING_WEIGHT
+        ScanPhase.Hashing -> SCAN_BUBBLE_COLLECTING_WEIGHT + SCAN_BUBBLE_DETECTING_WEIGHT
+        ScanPhase.Saving -> SCAN_BUBBLE_COLLECTING_WEIGHT +
+            SCAN_BUBBLE_DETECTING_WEIGHT +
+            SCAN_BUBBLE_HASHING_WEIGHT
+    }
+    val phaseWeight = when (phase) {
+        ScanPhase.Collecting -> SCAN_BUBBLE_COLLECTING_WEIGHT
+        ScanPhase.Detecting -> SCAN_BUBBLE_DETECTING_WEIGHT
+        ScanPhase.Hashing -> SCAN_BUBBLE_HASHING_WEIGHT
+        ScanPhase.Saving -> SCAN_BUBBLE_SAVING_WEIGHT
+    }
+    val phaseFraction = if ((total ?: 0) > 0) {
+        (scanned.toFloat() / total!!.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val processed = (targetIndex * SCAN_BUBBLE_TARGET_TOTAL) +
+        phaseStart +
+        (phaseWeight * phaseFraction).roundToInt()
+    return ScanBubbleProgress(
+        processed = processed.coerceIn(0, scanBubbleTotal(targetCount)),
+        total = scanBubbleTotal(targetCount)
+    )
 }

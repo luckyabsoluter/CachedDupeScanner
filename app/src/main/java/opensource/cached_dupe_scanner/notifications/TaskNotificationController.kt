@@ -40,9 +40,9 @@ class TaskNotificationController(context: Context) {
                 title = content.title,
                 text = content.text,
                 subText = content.subText,
-                progress = effective.processed,
-                total = effective.total,
-                indeterminate = effective.indeterminate
+                progress = effective.bubbleProcessed,
+                total = effective.bubbleTotal,
+                indeterminate = effective.bubbleIndeterminate
             )
         )
     }

@@ -35,6 +35,9 @@ data class TaskSnapshot(
     val processed: Int?,
     val total: Int?,
     val indeterminate: Boolean,
+    val bubbleProcessed: Int? = processed,
+    val bubbleTotal: Int? = total,
+    val bubbleIndeterminate: Boolean = indeterminate,
     val startedAt: Long,
     val isCancellable: Boolean,
     val status: TaskStatus
@@ -83,6 +86,9 @@ class TaskCoordinator {
         processed: Int? = null,
         total: Int? = null,
         indeterminate: Boolean = total == null || total <= 0,
+        bubbleProcessed: Int? = processed,
+        bubbleTotal: Int? = total,
+        bubbleIndeterminate: Boolean = indeterminate,
         isCancellable: Boolean = false,
         onCancel: (() -> Unit)? = null
     ): TaskSnapshot? {
@@ -101,6 +107,9 @@ class TaskCoordinator {
                 processed = processed,
                 total = total,
                 indeterminate = indeterminate,
+                bubbleProcessed = bubbleProcessed,
+                bubbleTotal = bubbleTotal,
+                bubbleIndeterminate = bubbleIndeterminate,
                 startedAt = System.currentTimeMillis(),
                 isCancellable = isCancellable,
                 status = TaskStatus.Running

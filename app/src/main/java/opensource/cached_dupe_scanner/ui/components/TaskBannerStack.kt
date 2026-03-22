@@ -31,13 +31,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.File
+import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskSnapshot
+
+private val TaskBubbleFillColor = Color(0xFF36B8FF)
 
 @Composable
 fun TaskBannerStack(
@@ -48,12 +52,15 @@ fun TaskBannerStack(
 ) {
     var collapsed by rememberSaveable { mutableStateOf(false) }
     var lastSeenStartedAt by rememberSaveable { mutableLongStateOf(0L) }
+    var collapsedAreas by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
     if (tasks.isEmpty()) return
 
     val newestStartedAt = tasks.maxOfOrNull { it.startedAt } ?: 0L
+    val bubbleAreaOrder = collapsedAreas.toTaskAreas().ifEmpty { tasks.map { it.area } }
+    val bubbleSegments = tasks.toCollapsedBubbleSegments(bubbleAreaOrder)
     val collapsedProgress by animateFloatAsState(
-        targetValue = tasks.collapsedProgress(),
+        targetValue = bubbleSegments.overallProgress(),
         animationSpec = tween(durationMillis = 220),
         label = "taskBannerCollapsedProgress"
     )
@@ -76,11 +83,11 @@ fun TaskBannerStack(
                     .size(44.dp)
                     .clickable { collapsed = false },
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface,
+                color = Color.Black,
                 contentColor = if (collapsedProgress >= 0.45f) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    Color.White
                 } else {
-                    MaterialTheme.colorScheme.onSurface
+                    Color.White
                 },
                 tonalElevation = Spacing.xs
             ) {
@@ -88,9 +95,10 @@ fun TaskBannerStack(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
+                        .background(Color.Black)
                         .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.outline,
                             shape = CircleShape
                         )
                 ) {
@@ -99,8 +107,22 @@ fun TaskBannerStack(
                             .align(Alignment.BottomStart)
                             .fillMaxWidth()
                             .fillMaxHeight(collapsedProgress.coerceIn(0f, 1f))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .background(TaskBubbleFillColor)
                     )
+                    if (bubbleSegments.size > 1) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            repeat(bubbleSegments.size) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -134,7 +156,12 @@ fun TaskBannerStack(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (index == 0) {
-                                    OutlinedButton(onClick = { collapsed = true }) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            collapsedAreas = tasks.map { it.area.name }
+                                            collapsed = true
+                                        }
+                                    ) {
                                         Text("<")
                                     }
                                 }
@@ -191,19 +218,37 @@ fun TaskBannerStack(
     }
 }
 
-private fun List<TaskSnapshot>.collapsedProgress(): Float {
-    val progressValues = mapNotNull { task ->
-        if (task.indeterminate) {
-            null
-        } else {
-            val total = task.total ?: return@mapNotNull null
-            if (total <= 0) {
-                null
-            } else {
-                ((task.processed ?: 0).toFloat() / total.toFloat()).coerceIn(0f, 1f)
-            }
-        }
+private data class CollapsedBubbleSegment(
+    val area: TaskArea,
+    val progress: Float
+)
+
+private fun List<TaskSnapshot>.toCollapsedBubbleSegments(
+    collapsedAreas: List<TaskArea>
+): List<CollapsedBubbleSegment> {
+    if (collapsedAreas.isEmpty()) {
+        return listOf(CollapsedBubbleSegment(area = TaskArea.Scan, progress = 0f))
     }
-    if (progressValues.isEmpty()) return 0f
-    return (progressValues.sum() / progressValues.size.toFloat()).coerceIn(0f, 1f)
+    val activeByArea = associateBy { it.area }
+    return collapsedAreas.map { area ->
+        val task = activeByArea[area]
+        val progress = when {
+            task == null -> 1f
+            task.bubbleIndeterminate -> 0f
+            (task.bubbleTotal ?: 0) <= 0 -> 0f
+            else -> ((task.bubbleProcessed ?: 0).toFloat() / task.bubbleTotal!!.toFloat()).coerceIn(0f, 1f)
+        }
+        CollapsedBubbleSegment(area = area, progress = progress)
+    }
+}
+
+private fun List<CollapsedBubbleSegment>.overallProgress(): Float {
+    if (isEmpty()) return 0f
+    return (sumOf { it.progress.toDouble() } / size.toDouble()).toFloat().coerceIn(0f, 1f)
+}
+
+private fun List<String>.toTaskAreas(): List<TaskArea> {
+    return mapNotNull { areaName ->
+        TaskArea.entries.firstOrNull { it.name == areaName }
+    }
 }
