@@ -4,15 +4,16 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 
 ## Screenshots
 <img width="100" src="https://github.com/user-attachments/assets/e580c048-3c51-4356-a23c-88369d99d852" />
-<img width="100" src="https://github.com/user-attachments/assets/1eafa9b1-6de7-49f4-9416-ba556be9893a" />
+<img width="100" src="https://github.com/user-attachments/assets/2f5a4f87-a5a4-4963-af77-bf5a61379d65" />
 <img width="100" src="https://github.com/user-attachments/assets/2595b492-c63b-422d-b24d-bb2055c8f48a" />
-<img width="100" src="https://github.com/user-attachments/assets/c8105f4e-f16b-40e0-86e5-5660ece2a8fd" />
-<img width="100" src="https://github.com/user-attachments/assets/969a62d7-47e0-4b38-8922-dfe407e6f508" />
-<img width="100" src="https://github.com/user-attachments/assets/07f34db9-ca7d-4c06-8830-ac55964b09b4" />
-<img width="100" src="https://github.com/user-attachments/assets/fb076a13-605e-4c29-a2d9-af9d9d16ea33" />
-<img width="100" src="https://github.com/user-attachments/assets/d7f90d51-15af-4e53-9093-abe9971e373b" />
-<img width="100" src="https://github.com/user-attachments/assets/164d7c80-520c-4418-b9cc-42d31df34637" />
-<img width="100" src="https://github.com/user-attachments/assets/ab779d92-3887-49cd-ba74-6b7694f317ef" />
+<img width="100" src="https://github.com/user-attachments/assets/f6f92c3c-5ca2-4fdd-adde-de8d156307b0" />
+<img width="100" src="https://github.com/user-attachments/assets/0702e197-e71e-4bf5-8f04-7c5cdbbc1db9" />
+<img width="100" src="https://github.com/user-attachments/assets/acbfd65d-9d2a-4c9b-93e5-1548b58fff0d" />
+<img width="100" src="https://github.com/user-attachments/assets/5436087b-b117-43fe-915d-b62c2339659c" />
+<img width="100" src="https://github.com/user-attachments/assets/b41c374d-1f53-4dee-b04a-d124b8e56db3" />
+<img width="100" src="https://github.com/user-attachments/assets/1f5d904a-20c9-48e0-ab3d-2060b683b566" />
+<img width="100" src="https://github.com/user-attachments/assets/5a20d12b-7a55-4bf8-8304-f1ae85e1cc00" />
+<img width="100" src="https://github.com/user-attachments/assets/33dad9a5-377f-4ebc-a83e-094bc22f7d8e" />
 <img width="100" src="https://github.com/user-attachments/assets/9783eeb7-8ea3-4b4f-a5ec-ef7110a2883d" />
 <img width="100" src="https://github.com/user-attachments/assets/8808ceec-982e-4bba-a23c-65cc439f36e3" />
 
