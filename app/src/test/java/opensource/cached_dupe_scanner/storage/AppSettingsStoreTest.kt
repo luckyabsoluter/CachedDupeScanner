@@ -19,6 +19,7 @@ class AppSettingsStoreTest {
         val settings = store.load()
 
         assertTrue(settings.skipZeroSizeInDb)
+        assertTrue(settings.skipTrashBinContentsInScan)
         assertFalse(settings.hideZeroSizeInResults)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
@@ -36,6 +37,9 @@ class AppSettingsStoreTest {
 
         store.setSkipZeroSizeInDb(true)
         assertTrue(store.load().skipZeroSizeInDb)
+
+        store.setSkipTrashBinContentsInScan(false)
+        assertFalse(store.load().skipTrashBinContentsInScan)
 
         store.setHideZeroSizeInResults(true)
         assertTrue(store.load().hideZeroSizeInResults)
@@ -70,7 +74,9 @@ class AppSettingsStoreTest {
         val imported = store.importFromJson("{}")
 
         assertTrue(imported.skipZeroSizeInDb)
+        assertTrue(imported.skipTrashBinContentsInScan)
         assertTrue(store.load().skipZeroSizeInDb)
+        assertTrue(store.load().skipTrashBinContentsInScan)
     }
 
     @Test
@@ -79,6 +85,7 @@ class AppSettingsStoreTest {
         val store = AppSettingsStore(context)
 
         store.setSkipZeroSizeInDb(false)
+        store.setSkipTrashBinContentsInScan(false)
         store.setHideZeroSizeInResults(true)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -94,6 +101,7 @@ class AppSettingsStoreTest {
         val imported = importedStore.importFromJson(exported)
 
         assertFalse(imported.skipZeroSizeInDb)
+        assertFalse(imported.skipTrashBinContentsInScan)
         assertTrue(imported.hideZeroSizeInResults)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)

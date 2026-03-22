@@ -58,6 +58,7 @@ import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
+import opensource.cached_dupe_scanner.storage.TrashPaths
 
 @Composable
 fun ScanCommandScreen(
@@ -135,7 +136,7 @@ fun ScanCommandScreen(
                         target = target,
                         enabled = !isBusy,
                         onScan = {
-                            val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
+                            val settings = settingsStore.load()
                             runScanForTarget(
                                 scope = scanScope,
                                 scanner = scanner,
@@ -144,7 +145,8 @@ fun ScanCommandScreen(
                                 onScanComplete = onScanComplete,
                                 onScanCancelled = onScanCancelled,
                                 reportRepo = reportRepo,
-                                skipZeroSizeInDb = skipZeroSizeInDb,
+                                skipZeroSizeInDb = settings.skipZeroSizeInDb,
+                                skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
                                 onReportSaved = onReportSaved,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
@@ -159,7 +161,7 @@ fun ScanCommandScreen(
             Spacer(modifier = Modifier.height(Spacing.sectionGap))
             Button(
                 onClick = {
-                    val skipZeroSizeInDb = settingsStore.load().skipZeroSizeInDb
+                    val settings = settingsStore.load()
                     runScanForAllTargets(
                         scope = scanScope,
                         scanner = scanner,
@@ -168,7 +170,8 @@ fun ScanCommandScreen(
                         onScanComplete = onScanComplete,
                         onScanCancelled = onScanCancelled,
                         reportRepo = reportRepo,
-                        skipZeroSizeInDb = skipZeroSizeInDb,
+                        skipZeroSizeInDb = settings.skipZeroSizeInDb,
+                        skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
                         onReportSaved = onReportSaved,
                         taskCoordinator = taskCoordinator,
                         notificationController = notificationController,
@@ -249,6 +252,7 @@ private fun runScanForTarget(
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
+    skipTrashBinContentsInScan: Boolean,
     onReportSaved: () -> Unit,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
@@ -305,6 +309,7 @@ private fun runScanForTarget(
         val result = withContext(Dispatchers.IO) {
             scanner.scan(
                 targetFile,
+                ignore = { file -> shouldIgnoreScanPath(file, skipTrashBinContentsInScan) },
                 skipZeroSizeInDb = skipZeroSizeInDb,
                 onProgress = { scanned, total, current, phase ->
                     if (cancelRequested.value) return@scan
@@ -416,6 +421,7 @@ private fun runScanForAllTargets(
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
+    skipTrashBinContentsInScan: Boolean,
     onReportSaved: () -> Unit,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
@@ -474,6 +480,7 @@ private fun runScanForAllTargets(
             val result = withContext(Dispatchers.IO) {
                 scanner.scan(
                     targetFile,
+                    ignore = { file -> shouldIgnoreScanPath(file, skipTrashBinContentsInScan) },
                     skipZeroSizeInDb = skipZeroSizeInDb,
                     onProgress = { scanned, total, current, phase ->
                         if (cancelRequested.value) return@scan
@@ -614,4 +621,8 @@ private fun runScanForAllTargets(
         onScanComplete(merged)
     }
     currentJob.value = job
+}
+
+private fun shouldIgnoreScanPath(file: File, skipTrashBinContentsInScan: Boolean): Boolean {
+    return skipTrashBinContentsInScan && TrashPaths.isInTrashBin(file)
 }

@@ -50,6 +50,7 @@ fun SettingsScreen(
     val targetStore = remember { ScanTargetStore(context) }
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
+    val trashScanSection = trashScanSettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -118,10 +119,33 @@ fun SettingsScreen(
                                     settingsStore.setSkipZeroSizeInDb(enabled)
                                     settings.value = settings.value.copy(skipZeroSizeInDb = enabled)
                                 }
+                                ToggleSettingId.SkipTrashBinContentsInScan -> Unit
                                 ToggleSettingId.HideZeroSizeInResults -> {
                                     settingsStore.setHideZeroSizeInResults(enabled)
                                     settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
                                 }
+                            }
+                        }
+                    )
+                }
+            }
+
+            SettingsSectionCard(section = trashScanSection) {
+                trashScanSection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.SkipTrashBinContentsInScan -> {
+                                    settingsStore.setSkipTrashBinContentsInScan(enabled)
+                                    settings.value = settings.value.copy(skipTrashBinContentsInScan = enabled)
+                                }
+                                else -> Unit
                             }
                         }
                     )
@@ -244,6 +268,7 @@ internal data class ToggleSettingModel(
 
 internal enum class ToggleSettingId {
     SkipZeroSizeInDb,
+    SkipTrashBinContentsInScan,
     HideZeroSizeInResults
 }
 
@@ -263,6 +288,21 @@ internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionMode
                 title = "Hide zero-size in results",
                 description = "Do not display size 0 files in result lists.",
                 checked = settings.hideZeroSizeInResults
+            )
+        )
+    )
+}
+
+internal fun trashScanSettingsSection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Trash scan exclusion",
+        description = "Keep app-managed trash content out of scans unless you explicitly want to include it.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.SkipTrashBinContentsInScan,
+                title = "Skip trash contents in scan",
+                description = "Do not scan files inside .CachedDupeScanner/trashbin.",
+                checked = settings.skipTrashBinContentsInScan
             )
         )
     )

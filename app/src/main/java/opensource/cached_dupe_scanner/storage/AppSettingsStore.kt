@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
+    val skipTrashBinContentsInScan: Boolean,
     val hideZeroSizeInResults: Boolean,
     val resultSortKey: String,
     val resultSortDirection: String,
@@ -24,6 +25,10 @@ class AppSettingsStore(context: Context) {
 
     fun setSkipZeroSizeInDb(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SKIP_ZERO_SIZE_DB, enabled).apply()
+    }
+
+    fun setSkipTrashBinContentsInScan(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, enabled).apply()
     }
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
@@ -72,6 +77,10 @@ class AppSettingsStore(context: Context) {
     private fun readFromPreferences(): AppSettings {
         return AppSettings(
             skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, DEFAULT_SETTINGS.skipZeroSizeInDb),
+            skipTrashBinContentsInScan = prefs.getBoolean(
+                KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
+                DEFAULT_SETTINGS.skipTrashBinContentsInScan
+            ),
             hideZeroSizeInResults = prefs.getBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -99,6 +108,10 @@ class AppSettingsStore(context: Context) {
     private fun readFromJson(obj: org.json.JSONObject): AppSettings {
         return AppSettings(
             skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, DEFAULT_SETTINGS.skipZeroSizeInDb),
+            skipTrashBinContentsInScan = obj.optBoolean(
+                KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
+                DEFAULT_SETTINGS.skipTrashBinContentsInScan
+            ),
             hideZeroSizeInResults = obj.optBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -122,6 +135,7 @@ class AppSettingsStore(context: Context) {
     private fun writeToPreferences(settings: AppSettings) {
         prefs.edit()
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
+            .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
@@ -136,6 +150,7 @@ class AppSettingsStore(context: Context) {
     private fun toJson(settings: AppSettings): org.json.JSONObject {
         return org.json.JSONObject()
             .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
+            .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
@@ -149,6 +164,7 @@ class AppSettingsStore(context: Context) {
     companion object {
         private val DEFAULT_SETTINGS = AppSettings(
             skipZeroSizeInDb = true,
+            skipTrashBinContentsInScan = true,
             hideZeroSizeInResults = false,
             resultSortKey = "Count",
             resultSortDirection = "Desc",
@@ -160,6 +176,7 @@ class AppSettingsStore(context: Context) {
         )
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
+        private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"

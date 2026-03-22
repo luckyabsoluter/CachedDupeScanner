@@ -4,10 +4,22 @@ import java.io.File
 
 object TrashPaths {
     private const val APP_DIR = ".CachedDupeScanner"
+    private const val TRASH_DIR = "trashbin"
+    private const val TRASH_SEGMENT = "/$APP_DIR/$TRASH_DIR"
 
     fun appRoot(volumeRoot: File): File = File(volumeRoot, APP_DIR)
 
-    fun trashBinDir(volumeRoot: File): File = File(appRoot(volumeRoot), "trashbin")
+    fun trashBinDir(volumeRoot: File): File = File(appRoot(volumeRoot), TRASH_DIR)
+
+    fun isInTrashBin(file: File): Boolean {
+        val normalizedPath = file.absolutePath.replace('\\', '/')
+        val segmentIndex = normalizedPath.indexOf(TRASH_SEGMENT)
+        if (segmentIndex < 0) {
+            return false
+        }
+        val segmentEnd = segmentIndex + TRASH_SEGMENT.length
+        return segmentEnd == normalizedPath.length || normalizedPath[segmentEnd] == '/'
+    }
 
     /**
      * Ensures:
