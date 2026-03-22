@@ -22,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.room.Room
@@ -45,6 +46,7 @@ import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.TaskBannerStack
+import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.home.AboutScreen
 import opensource.cached_dupe_scanner.ui.home.DashboardScreen
 import opensource.cached_dupe_scanner.ui.home.DbManagementScreen
@@ -192,31 +194,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    topBar = {
-                        TaskBannerStack(
-                            tasks = taskCoordinator.activeTasks.toList(),
-                            onOpenTask = { task ->
-                                navigateTo(backStack, screenCache, screenForTaskArea(task.area))
-                            },
-                            onCancelTask = { task ->
-                                taskCoordinator.requestCancel(task.area)
-                            }
-                        )
-                    }
-                ) { innerPadding ->
-                    val navModifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val screenModifier = Modifier.fillMaxSize()
 
-                    ScreenStack(
-                        screens = screenCache,
-                        current = backStack.last(),
-                        modifier = navModifier
-                    ) { screen ->
-                        when (screen) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        ScreenStack(
+                            screens = screenCache,
+                            current = backStack.last(),
+                            modifier = Modifier.fillMaxSize()
+                        ) { screen ->
+                            when (screen) {
                             Screen.Dashboard -> DashboardScreen(
                                 onOpenPermission = { navigateTo(backStack, screenCache, Screen.Permission) },
                                 onOpenTargets = { navigateTo(backStack, screenCache, Screen.Targets) },
@@ -361,6 +352,20 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
                         }
+                    }
+
+                        TaskBannerStack(
+                            tasks = taskCoordinator.activeTasks.toList(),
+                            onOpenTask = { task ->
+                                navigateTo(backStack, screenCache, screenForTaskArea(task.area))
+                            },
+                            onCancelTask = { task ->
+                                taskCoordinator.requestCancel(task.area)
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = Spacing.itemGap)
+                        )
                     }
                 }
             }
