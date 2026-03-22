@@ -5,13 +5,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -29,19 +32,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.File
+import kotlin.math.roundToInt
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 
 private val TaskBubbleFillColor = Color(0xFF36B8FF)
+private val IntSizeSaver = listSaver<IntSize, Int>(
+    save = { listOf(it.width, it.height) },
+    restore = { restored -> IntSize(restored[0], restored[1]) }
+)
 
 @Composable
 fun TaskBannerStack(
@@ -53,6 +67,9 @@ fun TaskBannerStack(
     var collapsed by rememberSaveable { mutableStateOf(false) }
     var lastSeenStartedAt by rememberSaveable { mutableLongStateOf(0L) }
     var collapsedAreas by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var bubbleOffsetX by rememberSaveable { mutableStateOf(0f) }
+    var bubbleOffsetY by rememberSaveable { mutableStateOf(0f) }
+    var bubbleSize by rememberSaveable(stateSaver = IntSizeSaver) { mutableStateOf(IntSize.Zero) }
 
     if (tasks.isEmpty()) return
 
@@ -71,16 +88,36 @@ fun TaskBannerStack(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(horizontal = Spacing.screenPadding, vertical = Spacing.itemGap)
     ) {
+        val density = LocalDensity.current
+        val maxOffsetX = with(density) { maxWidth.toPx() } - bubbleSize.width.toFloat()
+        val maxOffsetY = with(density) { maxHeight.toPx() } - bubbleSize.height.toFloat()
+
         if (collapsed) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .offset {
+                        IntOffset(
+                            x = bubbleOffsetX.roundToInt(),
+                            y = bubbleOffsetY.roundToInt()
+                        )
+                    }
                     .size(44.dp)
+                    .onSizeChanged { bubbleSize = it }
+                    .pointerInput(maxOffsetX, maxOffsetY) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            bubbleOffsetX = (bubbleOffsetX + dragAmount.x)
+                                .coerceIn(0f, maxOffsetX.coerceAtLeast(0f))
+                            bubbleOffsetY = (bubbleOffsetY + dragAmount.y)
+                                .coerceIn(0f, maxOffsetY.coerceAtLeast(0f))
+                        }
+                    }
                     .clickable { collapsed = false },
                 shape = CircleShape,
                 color = Color.Black,
