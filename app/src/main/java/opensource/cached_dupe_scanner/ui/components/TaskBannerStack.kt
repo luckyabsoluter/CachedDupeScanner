@@ -131,6 +131,11 @@ fun TaskBannerStack(
         val density = LocalDensity.current
         val maxOffsetX = with(density) { maxWidth.toPx() } - bubbleSize.width.toFloat()
         val maxOffsetY = with(density) { maxHeight.toPx() } - bubbleSize.height.toFloat()
+        LaunchedEffect(maxOffsetX, maxOffsetY, bubbleSize, collapsed) {
+            if (!collapsed) return@LaunchedEffect
+            bubbleOffsetX = bubbleOffsetX.coerceIn(0f, maxOffsetX.coerceAtLeast(0f))
+            bubbleOffsetY = bubbleOffsetY.coerceIn(0f, maxOffsetY.coerceAtLeast(0f))
+        }
 
         if (collapsed) {
             Surface(
