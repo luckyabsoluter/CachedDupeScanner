@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-22
+
 ### Added
 
 - Database-backed duplicate-group browsing for large result sets.
