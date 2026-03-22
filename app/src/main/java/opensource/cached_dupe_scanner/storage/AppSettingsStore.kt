@@ -20,7 +20,7 @@ class AppSettingsStore(context: Context) {
 
     fun load(): AppSettings {
         return AppSettings(
-            skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, false),
+            skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, true),
             hideZeroSizeInResults = prefs.getBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
             resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, "Count") ?: "Count",
             resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, "Desc") ?: "Desc",
@@ -86,7 +86,7 @@ class AppSettingsStore(context: Context) {
     fun importFromJson(json: String): AppSettings {
         val obj = org.json.JSONObject(json)
         val settings = AppSettings(
-            skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, false),
+            skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, true),
             hideZeroSizeInResults = obj.optBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
             resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, "Count"),
             resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, "Desc"),

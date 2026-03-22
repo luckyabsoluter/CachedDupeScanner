@@ -18,7 +18,7 @@ class AppSettingsStoreTest {
 
         val settings = store.load()
 
-        assertFalse(settings.skipZeroSizeInDb)
+        assertTrue(settings.skipZeroSizeInDb)
         assertFalse(settings.hideZeroSizeInResults)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
@@ -60,5 +60,16 @@ class AppSettingsStoreTest {
         val fileSortSettings = store.load()
         assertEquals("Size", fileSortSettings.filesSortKey)
         assertEquals("Desc", fileSortSettings.filesSortDirection)
+    }
+
+    @Test
+    fun importUsesDefaultWhenSkipZeroSizeKeyIsMissing() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        val imported = store.importFromJson("{}")
+
+        assertTrue(imported.skipZeroSizeInDb)
+        assertTrue(store.load().skipZeroSizeInDb)
     }
 }
