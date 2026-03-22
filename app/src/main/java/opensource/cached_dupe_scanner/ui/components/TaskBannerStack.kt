@@ -1,10 +1,16 @@
 package opensource.cached_dupe_scanner.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,6 +52,11 @@ fun TaskBannerStack(
     if (tasks.isEmpty()) return
 
     val newestStartedAt = tasks.maxOfOrNull { it.startedAt } ?: 0L
+    val collapsedProgress by animateFloatAsState(
+        targetValue = tasks.collapsedProgress(),
+        animationSpec = tween(durationMillis = 220),
+        label = "taskBannerCollapsedProgress"
+    )
     LaunchedEffect(newestStartedAt) {
         if (newestStartedAt > lastSeenStartedAt) {
             collapsed = false
@@ -64,16 +76,41 @@ fun TaskBannerStack(
                     .size(44.dp)
                     .clickable { collapsed = false },
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = if (collapsedProgress >= 0.45f) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
                 tonalElevation = Spacing.xs
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = tasks.size.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = CircleShape
+                        )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .fillMaxHeight(collapsedProgress.coerceIn(0f, 1f))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
                     )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = tasks.size.toString(),
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         } else {
@@ -152,4 +189,21 @@ fun TaskBannerStack(
             }
         }
     }
+}
+
+private fun List<TaskSnapshot>.collapsedProgress(): Float {
+    val progressValues = mapNotNull { task ->
+        if (task.indeterminate) {
+            null
+        } else {
+            val total = task.total ?: return@mapNotNull null
+            if (total <= 0) {
+                null
+            } else {
+                ((task.processed ?: 0).toFloat() / total.toFloat()).coerceIn(0f, 1f)
+            }
+        }
+    }
+    if (progressValues.isEmpty()) return 0f
+    return (progressValues.sum() / progressValues.size.toFloat()).coerceIn(0f, 1f)
 }
