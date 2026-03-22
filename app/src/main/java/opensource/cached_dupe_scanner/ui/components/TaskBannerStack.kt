@@ -1,7 +1,12 @@
 package opensource.cached_dupe_scanner.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,9 +43,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +62,7 @@ import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 
 private val TaskBubbleFillColor = Color(0xFF36B8FF)
+private val TaskBubbleCometHeadColor = Color(0xFFF8FBFF)
 private val IntSizeSaver = listSaver<IntSize, Int>(
     save = { listOf(it.width, it.height) },
     restore = { restored -> IntSize(restored[0], restored[1]) }
@@ -80,6 +91,30 @@ fun TaskBannerStack(
         targetValue = bubbleSegments.overallProgress(),
         animationSpec = tween(durationMillis = 220),
         label = "taskBannerCollapsedProgress"
+    )
+    val outlineColor = MaterialTheme.colorScheme.outline
+    val borderRotation by rememberInfiniteTransition(label = "taskBubbleBorder")
+        .animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1100, easing = LinearEasing)
+            ),
+            label = "taskBubbleBorderRotation"
+        )
+    val bubbleInProgress = tasks.any { task ->
+        task.bubbleIndeterminate ||
+            ((task.bubbleProcessed ?: 0) < (task.bubbleTotal ?: 0).coerceAtLeast(1))
+    }
+    val cometBrush = Brush.sweepGradient(
+        0.00f to Color.Transparent,
+        0.72f to Color.Transparent,
+        0.84f to TaskBubbleCometHeadColor.copy(alpha = 0.10f),
+        0.91f to TaskBubbleCometHeadColor.copy(alpha = 0.22f),
+        0.96f to TaskBubbleCometHeadColor.copy(alpha = 0.48f),
+        0.985f to TaskBubbleCometHeadColor.copy(alpha = 0.80f),
+        0.997f to TaskBubbleCometHeadColor.copy(alpha = 0.98f),
+        1.00f to Color.Transparent
     )
     LaunchedEffect(newestStartedAt) {
         if (newestStartedAt > lastSeenStartedAt) {
@@ -133,11 +168,23 @@ fun TaskBannerStack(
                         .fillMaxSize()
                         .clip(CircleShape)
                         .background(Color.Black)
-                        .border(
-                            width = 2.dp,
-                            color = MaterialTheme.colorScheme.outline,
-                            shape = CircleShape
-                        )
+                        .drawWithContent {
+                            drawContent()
+                            val strokeWidth = 2.dp.toPx()
+                            val cometStrokeWidth = 3.6.dp.toPx()
+                            drawCircle(
+                                color = outlineColor,
+                                style = Stroke(width = strokeWidth)
+                            )
+                            if (bubbleInProgress) {
+                                rotate(borderRotation) {
+                                    drawCircle(
+                                        brush = cometBrush,
+                                        style = Stroke(width = cometStrokeWidth, cap = StrokeCap.Round)
+                                    )
+                                }
+                            }
+                        }
                 ) {
                     Box(
                         modifier = Modifier
