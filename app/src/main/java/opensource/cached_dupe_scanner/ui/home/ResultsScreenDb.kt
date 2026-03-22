@@ -101,6 +101,8 @@ internal enum class ResultGroupMemberSortKey(val label: String) {
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
     settingsStore: AppSettingsStore,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
@@ -116,7 +118,6 @@ fun ResultsScreenDb(
     val sortDialogOpen = remember { mutableStateOf(false) }
     val settingsSnapshot = remember { settingsStore.load() }
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
-    val keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory
 
     fun normalizeDbSortKey(key: ResultSortKey): ResultSortKey {
         return if (key == ResultSortKey.Name) ResultSortKey.Count else key
@@ -163,7 +164,6 @@ fun ResultsScreenDb(
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
     val membersCache = remember { mutableStateMapOf<String, MembersCacheEntry>() }
-    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
 
     val pageSize = 50
     val buffer = 20

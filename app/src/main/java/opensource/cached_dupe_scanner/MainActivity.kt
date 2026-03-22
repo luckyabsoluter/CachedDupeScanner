@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -24,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +85,7 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
+                val rememberedThumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
                 val scope = rememberCoroutineScope()
                 val dbManagementUiState = remember { DbManagementUiState() }
                 val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
@@ -122,6 +125,12 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(Unit) {
                     // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
+                }
+
+                LaunchedEffect(settingsSnapshot.keepLoadedThumbnailsInMemory) {
+                    if (!settingsSnapshot.keepLoadedThumbnailsInMemory) {
+                        rememberedThumbnailCache.clear()
+                    }
                 }
 
                 fun handleScanComplete(scan: ScanResult) {
@@ -240,6 +249,8 @@ class MainActivity : ComponentActivity() {
                                 fileRepo = fileRepo,
                                 trashController = trashController,
                                 settingsStore = settingsStore,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                rememberedPreviewCache = rememberedThumbnailCache,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
                                 onBack = { pop(backStack) },
@@ -288,6 +299,8 @@ class MainActivity : ComponentActivity() {
                             Screen.Results -> ResultsScreenDb(
                                 resultsRepo = resultsRepo,
                                 settingsStore = settingsStore,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                rememberedPreviewCache = rememberedThumbnailCache,
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
                                     if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {

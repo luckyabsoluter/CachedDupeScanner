@@ -30,7 +30,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -69,6 +68,8 @@ fun FilesScreenDb(
     fileRepo: PagedFileRepository,
     trashController: TrashController,
     settingsStore: AppSettingsStore,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -87,8 +88,6 @@ fun FilesScreenDb(
     }
 
     val settingsSnapshot = remember { settingsStore.load() }
-    val keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory
-    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val sortKey = remember {
         val key = runCatching { PagedFileRepository.SortKey.valueOf(settingsSnapshot.filesSortKey) }
             .getOrDefault(PagedFileRepository.SortKey.Name)
