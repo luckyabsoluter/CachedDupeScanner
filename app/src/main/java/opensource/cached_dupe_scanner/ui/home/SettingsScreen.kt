@@ -51,6 +51,7 @@ fun SettingsScreen(
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
     val trashScanSection = trashScanSettingsSection(settings.value)
+    val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -124,6 +125,7 @@ fun SettingsScreen(
                                     settingsStore.setHideZeroSizeInResults(enabled)
                                     settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
                                 }
+                                ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                             }
                         }
                     )
@@ -144,6 +146,30 @@ fun SettingsScreen(
                                 ToggleSettingId.SkipTrashBinContentsInScan -> {
                                     settingsStore.setSkipTrashBinContentsInScan(enabled)
                                     settings.value = settings.value.copy(skipTrashBinContentsInScan = enabled)
+                                }
+                                ToggleSettingId.SkipZeroSizeInDb -> Unit
+                                ToggleSettingId.HideZeroSizeInResults -> Unit
+                                ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
+                            }
+                        }
+                    )
+                }
+            }
+
+            SettingsSectionCard(section = thumbnailMemorySection) {
+                thumbnailMemorySection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.KeepLoadedThumbnailsInMemory -> {
+                                    settingsStore.setKeepLoadedThumbnailsInMemory(enabled)
+                                    settings.value = settings.value.copy(keepLoadedThumbnailsInMemory = enabled)
                                 }
                                 else -> Unit
                             }
@@ -269,7 +295,8 @@ internal data class ToggleSettingModel(
 internal enum class ToggleSettingId {
     SkipZeroSizeInDb,
     SkipTrashBinContentsInScan,
-    HideZeroSizeInResults
+    HideZeroSizeInResults,
+    KeepLoadedThumbnailsInMemory
 }
 
 internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionModel {
@@ -303,6 +330,21 @@ internal fun trashScanSettingsSection(settings: AppSettings): SettingsSectionMod
                 title = "Skip trash contents in scan",
                 description = "Do not scan files inside .CachedDupeScanner/trashbin.",
                 checked = settings.skipTrashBinContentsInScan
+            )
+        )
+    )
+}
+
+internal fun thumbnailMemorySettingsSection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Thumbnail memory",
+        description = "Keep already loaded thumbnails in RAM so scrolling back to earlier items can reuse them without decoding again.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.KeepLoadedThumbnailsInMemory,
+                title = "Keep loaded thumbnails in RAM",
+                description = "Uses more memory, but previously shown thumbnails stay available while the screen remains open.",
+                checked = settings.keepLoadedThumbnailsInMemory
             )
         )
     )

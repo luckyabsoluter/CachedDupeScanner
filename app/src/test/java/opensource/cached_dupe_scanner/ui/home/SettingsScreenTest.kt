@@ -14,6 +14,7 @@ class SettingsScreenTest {
                 skipZeroSizeInDb = true,
                 skipTrashBinContentsInScan = true,
                 hideZeroSizeInResults = false,
+                keepLoadedThumbnailsInMemory = false,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -39,6 +40,7 @@ class SettingsScreenTest {
                 skipZeroSizeInDb = true,
                 skipTrashBinContentsInScan = true,
                 hideZeroSizeInResults = false,
+                keepLoadedThumbnailsInMemory = false,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -52,6 +54,30 @@ class SettingsScreenTest {
         assertEquals("Trash scan exclusion", section.title)
         assertEquals(1, section.toggles.size)
         assertEquals(ToggleSettingId.SkipTrashBinContentsInScan, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun thumbnailMemorySectionExposesRamToggle() {
+        val section = thumbnailMemorySettingsSection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                keepLoadedThumbnailsInMemory = true,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Thumbnail memory", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.KeepLoadedThumbnailsInMemory, section.toggles[0].id)
         assertTrue(section.toggles[0].checked)
     }
 

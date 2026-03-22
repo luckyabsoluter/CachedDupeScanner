@@ -7,6 +7,7 @@ data class AppSettings(
     val skipZeroSizeInDb: Boolean,
     val skipTrashBinContentsInScan: Boolean,
     val hideZeroSizeInResults: Boolean,
+    val keepLoadedThumbnailsInMemory: Boolean,
     val resultSortKey: String,
     val resultSortDirection: String,
     val resultGroupSortKey: String,
@@ -33,6 +34,10 @@ class AppSettingsStore(context: Context) {
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, enabled).apply()
+    }
+
+    fun setKeepLoadedThumbnailsInMemory(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, enabled).apply()
     }
 
     fun setResultSortKey(value: String) {
@@ -85,6 +90,10 @@ class AppSettingsStore(context: Context) {
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
             ),
+            keepLoadedThumbnailsInMemory = prefs.getBoolean(
+                KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
+                DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
+            ),
             resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey)
                 ?: DEFAULT_SETTINGS.resultSortKey,
             resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection)
@@ -116,6 +125,10 @@ class AppSettingsStore(context: Context) {
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
             ),
+            keepLoadedThumbnailsInMemory = obj.optBoolean(
+                KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
+                DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
+            ),
             resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey),
             resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection),
             resultGroupSortKey = obj.optString(
@@ -137,6 +150,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .putString(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -152,6 +166,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -166,6 +181,7 @@ class AppSettingsStore(context: Context) {
             skipZeroSizeInDb = true,
             skipTrashBinContentsInScan = true,
             hideZeroSizeInResults = false,
+            keepLoadedThumbnailsInMemory = false,
             resultSortKey = "Count",
             resultSortDirection = "Desc",
             resultGroupSortKey = "Path",
@@ -178,6 +194,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
+        private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
         private const val KEY_RESULT_GROUP_SORT_KEY = "result_group_sort_key"

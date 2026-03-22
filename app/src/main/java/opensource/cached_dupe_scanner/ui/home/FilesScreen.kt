@@ -26,15 +26,15 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +81,8 @@ fun FilesScreen(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val settingsSnapshot = remember { settingsStore.load() }
+    val keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory
+    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val sortKey = remember {
         val key = runCatching { FileSortKey.valueOf(settingsSnapshot.filesSortKey) }
             .getOrDefault(FileSortKey.Name)
@@ -252,11 +254,12 @@ fun FilesScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (isMediaFile(file.normalizedPath)) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(java.io.File(file.normalizedPath))
-                                        .build(),
+                                RememberingAsyncThumbnail(
+                                    filePath = file.normalizedPath,
+                                    previewMemoryKey = file.normalizedPath,
+                                    rememberedPreviewCache = rememberedPreviewCache,
                                     imageLoader = imageLoader,
+                                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                                     contentDescription = "Thumbnail",
                                     modifier = Modifier.size(56.dp)
                                 )

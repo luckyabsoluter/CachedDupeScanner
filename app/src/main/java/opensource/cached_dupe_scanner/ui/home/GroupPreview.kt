@@ -47,11 +47,11 @@ internal fun activePreviewPath(
 }
 
 internal fun shouldUseRememberedPreview(
-    candidatePaths: List<String>,
-    failedPaths: Set<String>,
-    hasRememberedPreview: Boolean
+    activePath: String?,
+    hasRememberedPreview: Boolean,
+    keepLoadedInMemory: Boolean
 ): Boolean {
-    return hasRememberedPreview && activePreviewPath(candidatePaths, failedPaths) == null
+    return hasRememberedPreview && (keepLoadedInMemory || activePath == null)
 }
 
 @Composable
@@ -60,6 +60,7 @@ internal fun GroupPreviewThumbnail(
     previewMemoryKey: String,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     imageLoader: ImageLoader,
+    keepLoadedInMemory: Boolean,
     modifier: Modifier = Modifier,
     contentDescription: String = "Thumbnail"
 ) {
@@ -73,7 +74,7 @@ internal fun GroupPreviewThumbnail(
     }
     val rememberedPreview = rememberedPreviewCache[previewMemoryKey]
 
-    if (shouldUseRememberedPreview(candidatePaths, failedPaths, rememberedPreview != null)) {
+    if (shouldUseRememberedPreview(activePath, rememberedPreview != null, keepLoadedInMemory)) {
         Image(
             bitmap = rememberedPreview!!,
             contentDescription = contentDescription,
@@ -107,7 +108,53 @@ internal fun GroupPreviewThumbnail(
     )
 }
 
-private fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
+@Composable
+internal fun RememberingAsyncThumbnail(
+    filePath: String,
+    previewMemoryKey: String,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedInMemory: Boolean,
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Thumbnail"
+) {
+    val context = LocalContext.current
+    val rememberedPreview = rememberedPreviewCache[previewMemoryKey]
+    val activePath = filePath.takeIf { File(it).exists() }
+
+    if (shouldUseRememberedPreview(activePath, rememberedPreview != null, keepLoadedInMemory)) {
+        Image(
+            bitmap = rememberedPreview!!,
+            contentDescription = contentDescription,
+            modifier = modifier
+        )
+        return
+    }
+
+    if (activePath == null) {
+        MissingPreviewThumbnail(
+            modifier = modifier,
+            contentDescription = contentDescription
+        )
+        return
+    }
+
+    AsyncImage(
+        model = ImageRequest.Builder(context)
+            .data(File(activePath))
+            .build(),
+        imageLoader = imageLoader,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        onSuccess = { result ->
+            if (!keepLoadedInMemory) return@AsyncImage
+            val previewBitmap = rememberPreviewBitmap(result.result.drawable) ?: return@AsyncImage
+            rememberedPreviewCache[previewMemoryKey] = previewBitmap
+        }
+    )
+}
+
+internal fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
     val width = drawable.intrinsicWidth
         .takeIf { it > 0 }
         ?.let { min(it, MAX_REMEMBERED_PREVIEW_DIMENSION_PX) }
@@ -122,7 +169,7 @@ private fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
 private const val MAX_REMEMBERED_PREVIEW_DIMENSION_PX = 1024
 
 @Composable
-private fun MissingPreviewThumbnail(
+internal fun MissingPreviewThumbnail(
     modifier: Modifier,
     contentDescription: String
 ) {

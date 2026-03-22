@@ -21,6 +21,7 @@ class AppSettingsStoreTest {
         assertTrue(settings.skipZeroSizeInDb)
         assertTrue(settings.skipTrashBinContentsInScan)
         assertFalse(settings.hideZeroSizeInResults)
+        assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
@@ -43,6 +44,9 @@ class AppSettingsStoreTest {
 
         store.setHideZeroSizeInResults(true)
         assertTrue(store.load().hideZeroSizeInResults)
+
+        store.setKeepLoadedThumbnailsInMemory(true)
+        assertTrue(store.load().keepLoadedThumbnailsInMemory)
 
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -75,6 +79,7 @@ class AppSettingsStoreTest {
 
         assertTrue(imported.skipZeroSizeInDb)
         assertTrue(imported.skipTrashBinContentsInScan)
+        assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(store.load().skipZeroSizeInDb)
         assertTrue(store.load().skipTrashBinContentsInScan)
     }
@@ -87,6 +92,7 @@ class AppSettingsStoreTest {
         store.setSkipZeroSizeInDb(false)
         store.setSkipTrashBinContentsInScan(false)
         store.setHideZeroSizeInResults(true)
+        store.setKeepLoadedThumbnailsInMemory(true)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         store.setResultGroupSortKey("Modified")
@@ -103,6 +109,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.skipZeroSizeInDb)
         assertFalse(imported.skipTrashBinContentsInScan)
         assertTrue(imported.hideZeroSizeInResults)
+        assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)
         assertEquals("Modified", imported.resultGroupSortKey)
