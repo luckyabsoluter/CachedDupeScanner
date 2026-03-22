@@ -21,6 +21,7 @@ class AppSettingsStoreTest {
         assertTrue(settings.skipZeroSizeInDb)
         assertTrue(settings.skipTrashBinContentsInScan)
         assertFalse(settings.hideZeroSizeInResults)
+        assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
@@ -44,6 +45,9 @@ class AppSettingsStoreTest {
 
         store.setHideZeroSizeInResults(true)
         assertTrue(store.load().hideZeroSizeInResults)
+
+        store.setShowMemoryOverlay(true)
+        assertTrue(store.load().showMemoryOverlay)
 
         store.setKeepLoadedThumbnailsInMemory(true)
         assertTrue(store.load().keepLoadedThumbnailsInMemory)
@@ -79,6 +83,7 @@ class AppSettingsStoreTest {
 
         assertTrue(imported.skipZeroSizeInDb)
         assertTrue(imported.skipTrashBinContentsInScan)
+        assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(store.load().skipZeroSizeInDb)
         assertTrue(store.load().skipTrashBinContentsInScan)
@@ -92,6 +97,7 @@ class AppSettingsStoreTest {
         store.setSkipZeroSizeInDb(false)
         store.setSkipTrashBinContentsInScan(false)
         store.setHideZeroSizeInResults(true)
+        store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -109,6 +115,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.skipZeroSizeInDb)
         assertFalse(imported.skipTrashBinContentsInScan)
         assertTrue(imported.hideZeroSizeInResults)
+        assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)

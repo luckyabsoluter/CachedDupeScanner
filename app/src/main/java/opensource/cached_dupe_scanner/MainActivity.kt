@@ -45,6 +45,7 @@ import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.ui.components.MemoryUsageOverlay
 import opensource.cached_dupe_scanner.ui.components.TaskBannerStack
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.home.AboutScreen
@@ -77,9 +78,11 @@ class MainActivity : ComponentActivity() {
                 val targetsVersion = remember { mutableStateOf(0) }
                 val reportsRefreshVersion = remember { mutableStateOf(0) }
                 val resultsRefreshVersion = remember { mutableStateOf(0) }
+                val settingsVersion = remember { mutableStateOf(0) }
                 val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
                 val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
+                val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
                 val scope = rememberCoroutineScope()
                 val dbManagementUiState = remember { DbManagementUiState() }
                 val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
@@ -316,6 +319,7 @@ class MainActivity : ComponentActivity() {
                             Screen.Settings -> SettingsScreen(
                                 settingsStore = settingsStore,
                                 onBack = { pop(backStack) },
+                                onSettingsChanged = { settingsVersion.value += 1 },
                                 modifier = screenModifier
                             )
 
@@ -366,6 +370,10 @@ class MainActivity : ComponentActivity() {
                                 .align(Alignment.TopCenter)
                                 .padding(top = Spacing.itemGap)
                         )
+
+                        if (settingsSnapshot.showMemoryOverlay) {
+                            MemoryUsageOverlay()
+                        }
                     }
                 }
             }

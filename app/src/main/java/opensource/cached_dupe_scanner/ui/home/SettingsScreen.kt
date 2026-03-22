@@ -42,6 +42,7 @@ import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 fun SettingsScreen(
     settingsStore: AppSettingsStore,
     onBack: () -> Unit,
+    onSettingsChanged: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -51,6 +52,7 @@ fun SettingsScreen(
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
     val trashScanSection = trashScanSettingsSection(settings.value)
+    val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
@@ -89,6 +91,7 @@ fun SettingsScreen(
                 targetStore.importFromJson(obj.getJSONObject("scanTargets").toString())
             }
             settings.value = updated
+            onSettingsChanged?.invoke()
             message.value = "Settings + targets imported."
         }.onFailure {
             message.value = "Import failed."
@@ -119,12 +122,15 @@ fun SettingsScreen(
                                 ToggleSettingId.SkipZeroSizeInDb -> {
                                     settingsStore.setSkipZeroSizeInDb(enabled)
                                     settings.value = settings.value.copy(skipZeroSizeInDb = enabled)
+                                    onSettingsChanged?.invoke()
                                 }
                                 ToggleSettingId.SkipTrashBinContentsInScan -> Unit
                                 ToggleSettingId.HideZeroSizeInResults -> {
                                     settingsStore.setHideZeroSizeInResults(enabled)
                                     settings.value = settings.value.copy(hideZeroSizeInResults = enabled)
+                                    onSettingsChanged?.invoke()
                                 }
+                                ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                             }
                         }
@@ -146,10 +152,35 @@ fun SettingsScreen(
                                 ToggleSettingId.SkipTrashBinContentsInScan -> {
                                     settingsStore.setSkipTrashBinContentsInScan(enabled)
                                     settings.value = settings.value.copy(skipTrashBinContentsInScan = enabled)
+                                    onSettingsChanged?.invoke()
                                 }
                                 ToggleSettingId.SkipZeroSizeInDb -> Unit
                                 ToggleSettingId.HideZeroSizeInResults -> Unit
+                                ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
+                            }
+                        }
+                    )
+                }
+            }
+
+            SettingsSectionCard(section = memoryOverlaySection) {
+                memoryOverlaySection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.ShowMemoryOverlay -> {
+                                    settingsStore.setShowMemoryOverlay(enabled)
+                                    settings.value = settings.value.copy(showMemoryOverlay = enabled)
+                                    onSettingsChanged?.invoke()
+                                }
+                                else -> Unit
                             }
                         }
                     )
@@ -170,6 +201,7 @@ fun SettingsScreen(
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> {
                                     settingsStore.setKeepLoadedThumbnailsInMemory(enabled)
                                     settings.value = settings.value.copy(keepLoadedThumbnailsInMemory = enabled)
+                                    onSettingsChanged?.invoke()
                                 }
                                 else -> Unit
                             }
@@ -296,6 +328,7 @@ internal enum class ToggleSettingId {
     SkipZeroSizeInDb,
     SkipTrashBinContentsInScan,
     HideZeroSizeInResults,
+    ShowMemoryOverlay,
     KeepLoadedThumbnailsInMemory
 }
 
@@ -330,6 +363,21 @@ internal fun trashScanSettingsSection(settings: AppSettings): SettingsSectionMod
                 title = "Skip trash contents in scan",
                 description = "Do not scan files inside .CachedDupeScanner/trashbin.",
                 checked = settings.skipTrashBinContentsInScan
+            )
+        )
+    )
+}
+
+internal fun memoryOverlaySection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Memory overlay",
+        description = "Show the current heap allocation as a small overlay in the top-left corner of the app.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.ShowMemoryOverlay,
+                title = "Show RAM allocation overlay",
+                description = "Displays the current allocated and maximum heap size above screen content.",
+                checked = settings.showMemoryOverlay
             )
         )
     )

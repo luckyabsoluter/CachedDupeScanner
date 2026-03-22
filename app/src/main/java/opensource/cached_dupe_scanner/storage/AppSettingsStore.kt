@@ -7,6 +7,7 @@ data class AppSettings(
     val skipZeroSizeInDb: Boolean,
     val skipTrashBinContentsInScan: Boolean,
     val hideZeroSizeInResults: Boolean,
+    val showMemoryOverlay: Boolean,
     val keepLoadedThumbnailsInMemory: Boolean,
     val resultSortKey: String,
     val resultSortDirection: String,
@@ -34,6 +35,10 @@ class AppSettingsStore(context: Context) {
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, enabled).apply()
+    }
+
+    fun setShowMemoryOverlay(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_MEMORY_OVERLAY, enabled).apply()
     }
 
     fun setKeepLoadedThumbnailsInMemory(enabled: Boolean) {
@@ -90,6 +95,10 @@ class AppSettingsStore(context: Context) {
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
             ),
+            showMemoryOverlay = prefs.getBoolean(
+                KEY_SHOW_MEMORY_OVERLAY,
+                DEFAULT_SETTINGS.showMemoryOverlay
+            ),
             keepLoadedThumbnailsInMemory = prefs.getBoolean(
                 KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
@@ -125,6 +134,10 @@ class AppSettingsStore(context: Context) {
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
             ),
+            showMemoryOverlay = obj.optBoolean(
+                KEY_SHOW_MEMORY_OVERLAY,
+                DEFAULT_SETTINGS.showMemoryOverlay
+            ),
             keepLoadedThumbnailsInMemory = obj.optBoolean(
                 KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
@@ -150,6 +163,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
@@ -166,6 +180,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
@@ -181,6 +196,7 @@ class AppSettingsStore(context: Context) {
             skipZeroSizeInDb = true,
             skipTrashBinContentsInScan = true,
             hideZeroSizeInResults = false,
+            showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
             resultSortKey = "Count",
             resultSortDirection = "Desc",
@@ -194,6 +210,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
+        private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
