@@ -72,4 +72,36 @@ class AppSettingsStoreTest {
         assertTrue(imported.skipZeroSizeInDb)
         assertTrue(store.load().skipZeroSizeInDb)
     }
+
+    @Test
+    fun exportImportRoundTripPreservesNonDefaultValues() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setSkipZeroSizeInDb(false)
+        store.setHideZeroSizeInResults(true)
+        store.setResultSortKey("Name")
+        store.setResultSortDirection("Asc")
+        store.setResultGroupSortKey("Modified")
+        store.setResultGroupSortDirection("Desc")
+        store.setShowFullPaths(true)
+        store.setFilesSortKey("Size")
+        store.setFilesSortDirection("Desc")
+
+        val exported = store.exportToJson()
+
+        val importedStore = AppSettingsStore(context)
+        val imported = importedStore.importFromJson(exported)
+
+        assertFalse(imported.skipZeroSizeInDb)
+        assertTrue(imported.hideZeroSizeInResults)
+        assertEquals("Name", imported.resultSortKey)
+        assertEquals("Asc", imported.resultSortDirection)
+        assertEquals("Modified", imported.resultGroupSortKey)
+        assertEquals("Desc", imported.resultGroupSortDirection)
+        assertTrue(imported.showFullPaths)
+        assertEquals("Size", imported.filesSortKey)
+        assertEquals("Desc", imported.filesSortDirection)
+        assertEquals(imported, importedStore.load())
+    }
 }

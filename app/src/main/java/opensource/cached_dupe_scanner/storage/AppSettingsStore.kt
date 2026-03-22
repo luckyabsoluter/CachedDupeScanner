@@ -19,17 +19,7 @@ class AppSettingsStore(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): AppSettings {
-        return AppSettings(
-            skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, true),
-            hideZeroSizeInResults = prefs.getBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
-            resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, "Count") ?: "Count",
-            resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, "Desc") ?: "Desc",
-            resultGroupSortKey = prefs.getString(KEY_RESULT_GROUP_SORT_KEY, "Path") ?: "Path",
-            resultGroupSortDirection = prefs.getString(KEY_RESULT_GROUP_SORT_DIR, "Asc") ?: "Asc",
-            showFullPaths = prefs.getBoolean(KEY_SHOW_FULL_PATHS, false),
-            filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, "Name") ?: "Name",
-            filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, "Asc") ?: "Asc"
-        )
+        return readFromPreferences()
     }
 
     fun setSkipZeroSizeInDb(enabled: Boolean) {
@@ -69,33 +59,67 @@ class AppSettingsStore(context: Context) {
     }
 
     fun exportToJson(): String {
-        val settings = load()
-        return org.json.JSONObject()
-            .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
-            .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
-            .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
-            .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
-            .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
-            .put(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
-            .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
-            .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
-            .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
-            .toString()
+        return toJson(load()).toString()
     }
 
     fun importFromJson(json: String): AppSettings {
         val obj = org.json.JSONObject(json)
-        val settings = AppSettings(
-            skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, true),
-            hideZeroSizeInResults = obj.optBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, false),
-            resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, "Count"),
-            resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, "Desc"),
-            resultGroupSortKey = obj.optString(KEY_RESULT_GROUP_SORT_KEY, "Path"),
-            resultGroupSortDirection = obj.optString(KEY_RESULT_GROUP_SORT_DIR, "Asc"),
-            showFullPaths = obj.optBoolean(KEY_SHOW_FULL_PATHS, false),
-            filesSortKey = obj.optString(KEY_FILES_SORT_KEY, "Name"),
-            filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, "Asc")
+        val settings = readFromJson(obj)
+        writeToPreferences(settings)
+        return settings
+    }
+
+    private fun readFromPreferences(): AppSettings {
+        return AppSettings(
+            skipZeroSizeInDb = prefs.getBoolean(KEY_SKIP_ZERO_SIZE_DB, DEFAULT_SETTINGS.skipZeroSizeInDb),
+            hideZeroSizeInResults = prefs.getBoolean(
+                KEY_HIDE_ZERO_SIZE_RESULTS,
+                DEFAULT_SETTINGS.hideZeroSizeInResults
+            ),
+            resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey)
+                ?: DEFAULT_SETTINGS.resultSortKey,
+            resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection)
+                ?: DEFAULT_SETTINGS.resultSortDirection,
+            resultGroupSortKey = prefs.getString(
+                KEY_RESULT_GROUP_SORT_KEY,
+                DEFAULT_SETTINGS.resultGroupSortKey
+            ) ?: DEFAULT_SETTINGS.resultGroupSortKey,
+            resultGroupSortDirection = prefs.getString(
+                KEY_RESULT_GROUP_SORT_DIR,
+                DEFAULT_SETTINGS.resultGroupSortDirection
+            ) ?: DEFAULT_SETTINGS.resultGroupSortDirection,
+            showFullPaths = prefs.getBoolean(KEY_SHOW_FULL_PATHS, DEFAULT_SETTINGS.showFullPaths),
+            filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey)
+                ?: DEFAULT_SETTINGS.filesSortKey,
+            filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
+                ?: DEFAULT_SETTINGS.filesSortDirection
         )
+    }
+
+    private fun readFromJson(obj: org.json.JSONObject): AppSettings {
+        return AppSettings(
+            skipZeroSizeInDb = obj.optBoolean(KEY_SKIP_ZERO_SIZE_DB, DEFAULT_SETTINGS.skipZeroSizeInDb),
+            hideZeroSizeInResults = obj.optBoolean(
+                KEY_HIDE_ZERO_SIZE_RESULTS,
+                DEFAULT_SETTINGS.hideZeroSizeInResults
+            ),
+            resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey),
+            resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection),
+            resultGroupSortKey = obj.optString(
+                KEY_RESULT_GROUP_SORT_KEY,
+                DEFAULT_SETTINGS.resultGroupSortKey
+            ),
+            resultGroupSortDirection = obj.optString(
+                KEY_RESULT_GROUP_SORT_DIR,
+                DEFAULT_SETTINGS.resultGroupSortDirection
+            ),
+            showFullPaths = obj.optBoolean(KEY_SHOW_FULL_PATHS, DEFAULT_SETTINGS.showFullPaths),
+            filesSortKey = obj.optString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey),
+            filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
+        )
+    }
+
+    private fun writeToPreferences(settings: AppSettings) {
         prefs.edit()
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
@@ -107,10 +131,33 @@ class AppSettingsStore(context: Context) {
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .apply()
-        return settings
+    }
+
+    private fun toJson(settings: AppSettings): org.json.JSONObject {
+        return org.json.JSONObject()
+            .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
+            .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
+            .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
+            .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
+            .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
+            .put(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
+            .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
+            .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
+            .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
     }
 
     companion object {
+        private val DEFAULT_SETTINGS = AppSettings(
+            skipZeroSizeInDb = true,
+            hideZeroSizeInResults = false,
+            resultSortKey = "Count",
+            resultSortDirection = "Desc",
+            resultGroupSortKey = "Path",
+            resultGroupSortDirection = "Asc",
+            showFullPaths = false,
+            filesSortKey = "Name",
+            filesSortDirection = "Asc"
+        )
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
