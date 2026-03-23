@@ -18,28 +18,62 @@ object Hashing {
     }
 
     fun sha256(inputStream: InputStream, bufferSize: Int = DEFAULT_BUFFER_SIZE): ByteArray {
+        return requireNotNull(sha256(inputStream, bufferSize) { true })
+    }
+
+    fun sha256(
+        inputStream: InputStream,
+        bufferSize: Int = DEFAULT_BUFFER_SIZE,
+        shouldContinue: () -> Boolean
+    ): ByteArray? {
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(bufferSize)
         var read = inputStream.read(buffer)
         while (read > 0) {
+            if (!shouldContinue()) return null
             digest.update(buffer, 0, read)
             read = inputStream.read(buffer)
         }
+        if (!shouldContinue()) return null
         return digest.digest()
     }
 
     fun sha256Hex(inputStream: InputStream, bufferSize: Int = DEFAULT_BUFFER_SIZE): String {
-        return sha256(inputStream, bufferSize).toHex()
+        return requireNotNull(sha256Hex(inputStream, bufferSize) { true })
+    }
+
+    fun sha256Hex(
+        inputStream: InputStream,
+        bufferSize: Int = DEFAULT_BUFFER_SIZE,
+        shouldContinue: () -> Boolean
+    ): String? {
+        return sha256(inputStream, bufferSize, shouldContinue)?.toHex()
     }
 
     fun sha256(file: File, bufferSize: Int = DEFAULT_BUFFER_SIZE): ByteArray {
+        return requireNotNull(sha256(file, bufferSize) { true })
+    }
+
+    fun sha256(
+        file: File,
+        bufferSize: Int = DEFAULT_BUFFER_SIZE,
+        shouldContinue: () -> Boolean
+    ): ByteArray? {
         return file.inputStream().use { input ->
-            sha256(input, bufferSize)
+            sha256(input, bufferSize, shouldContinue)
         }
     }
 
     fun sha256Hex(file: File, bufferSize: Int = DEFAULT_BUFFER_SIZE): String {
-        return sha256(file, bufferSize).toHex()
+        return requireNotNull(sha256Hex(file, bufferSize) { true })
+    }
+
+    fun sha256Hex(
+        file: File,
+        bufferSize: Int = DEFAULT_BUFFER_SIZE,
+        shouldContinue: () -> Boolean
+    ): String? {
+        return sha256(file, bufferSize, shouldContinue)?.toHex()
     }
 }
 

@@ -224,6 +224,23 @@ class IncrementalScannerTest {
     }
 
     @Test
+    fun cancelledScanStopsDuringHashingWithoutPersistingPartialCache() {
+        val fileA = File(tempDir, "a.txt").apply { writeText("aa") }
+        val fileB = File(tempDir, "b.txt").apply { writeText("bb") }
+        var allow = true
+        val hasher = CancellingHasher { allow = false }
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        val result = scanner.scan(
+            tempDir,
+            shouldContinue = { allow }
+        )
+
+        assertEquals(0, result.files.size)
+        assertEquals(0, database.fileCacheDao().getAll().size)
+    }
+
+    @Test
     fun scanIgnoreCanExcludeTrashBinContents() {
         val regularFile = File(tempDir, "regular.txt").apply {
             writeText("hello")
@@ -249,7 +266,7 @@ class IncrementalScannerTest {
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 
-        override fun hash(file: File): String {
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
             val normalized = PathNormalizer.normalize(file.path)
             val next = (counts[normalized] ?: 0) + 1
             counts[normalized] = next
@@ -259,6 +276,19 @@ class IncrementalScannerTest {
         fun callsFor(file: File): Int {
             val normalized = PathNormalizer.normalize(file.path)
             return counts[normalized] ?: 0
+        }
+    }
+
+    private class CancellingHasher(
+        private val onHashStarted: () -> Unit
+    ) : FileHasher {
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
+            onHashStarted()
+            return if (shouldContinue()) {
+                "hash-${PathNormalizer.normalize(file.path)}"
+            } else {
+                null
+            }
         }
     }
 

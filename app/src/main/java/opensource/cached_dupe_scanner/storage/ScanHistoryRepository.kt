@@ -15,7 +15,10 @@ class ScanHistoryRepository(
     private val dao: FileCacheDao,
     private val settingsStore: AppSettingsStore,
     private val groupDao: DuplicateGroupDao? = null,
-    private val database: CacheDatabase? = null
+    private val database: CacheDatabase? = null,
+    private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
+        Hashing.sha256Hex(file, shouldContinue = shouldContinue)
+    }
 ) {
     fun recordScan(result: ScanResult) {
         val settings = settingsStore.load()
@@ -101,7 +104,7 @@ class ScanHistoryRepository(
             val size = file.length()
             val modified = file.lastModified()
             if (size != entity.sizeBytes || modified != entity.lastModifiedMillis) {
-                val hash = Hashing.sha256Hex(file)
+                val hash = requireNotNull(hashFile(file) { true })
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
@@ -124,7 +127,7 @@ class ScanHistoryRepository(
             val size = file.length()
             val modified = file.lastModified()
             if (size != entity.sizeBytes || modified != entity.lastModifiedMillis) {
-                val hash = Hashing.sha256Hex(file)
+                val hash = requireNotNull(hashFile(file) { true })
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
@@ -145,7 +148,7 @@ class ScanHistoryRepository(
             val path = entity.path.ifBlank { entity.normalizedPath }
             val file = File(path)
             if (!file.exists()) return@forEach
-            val hash = Hashing.sha256Hex(file)
+            val hash = requireNotNull(hashFile(file) { true })
             val updatedEntity = entity.copy(hashHex = hash)
             upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
             updated += 1
@@ -211,23 +214,34 @@ class ScanHistoryRepository(
                 val modified = file.lastModified()
                 val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
                 val isMissingHash = entity.hashHex.isNullOrBlank()
-                var shouldHash = false
-                if (rehashStale && isStale) {
-                    rehashed += 1
-                    shouldHash = true
-                }
-                if (rehashMissing && isMissingHash) {
-                    missingHashed += 1
-                    shouldHash = true
-                }
+                val shouldRehashStale = rehashStale && isStale
+                val shouldHashMissing = rehashMissing && isMissingHash
+                val shouldHash = shouldRehashStale || shouldHashMissing
                 if (shouldHash) {
-                    val hash = Hashing.sha256Hex(file)
+                    val hash = hashFile(file, shouldContinue)
+                    if (hash == null) {
+                        return DbMaintenanceSummary(
+                            total = total,
+                            processed = processed,
+                            deleted = deleted,
+                            rehashed = rehashed,
+                            missingHashed = missingHashed,
+                            cancelled = true,
+                            currentPath = currentPath
+                        )
+                    }
                     val updatedEntity = entity.copy(
                         sizeBytes = size,
                         lastModifiedMillis = modified,
                         hashHex = hash
                     )
                     upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
+                    if (shouldRehashStale) {
+                        rehashed += 1
+                    }
+                    if (shouldHashMissing) {
+                        missingHashed += 1
+                    }
                 }
 
                 processed += 1

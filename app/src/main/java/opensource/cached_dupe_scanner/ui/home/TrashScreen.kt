@@ -44,6 +44,7 @@ import coil.request.ImageRequest
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -51,7 +52,9 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.TrashEntryEntity
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.TrashController
+import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRepository
+import opensource.cached_dupe_scanner.storage.TrashRunSummary
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
@@ -84,8 +87,9 @@ fun TrashScreen(
     val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val confirmDeleteEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val restoreError = remember { mutableStateOf<String?>(null) }
+    val currentJob = remember { mutableStateOf<Job?>(null) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Trash)
-    val isBusy = activeTask != null
+    val isBusy = activeTask != null || currentJob.value != null
     val context = LocalContext.current
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -283,59 +287,14 @@ fun TrashScreen(
                     enabled = !isBusy,
                     onClick = {
                         confirmEmpty.value = false
-                        val cancelRequested = AtomicBoolean(false)
-                        val started = taskCoordinator.tryStart(
-                            area = TaskArea.Trash,
-                            kind = TaskKind.EmptyTrash,
-                            title = trashTaskTitle(),
-                            detail = "Preparing trash cleanup.",
-                            processed = 0,
-                            total = null,
-                            indeterminate = true,
-                            isCancellable = true,
-                            onCancel = { cancelRequested.set(true) }
-                        ) ?: return@OutlinedButton
-                        notificationController.showActive(started)
-                        scope.launch {
-                            val summary = withContext(Dispatchers.IO) {
-                                trashController.emptyTrash(
-                                    shouldContinue = { !cancelRequested.get() }
-                                ) { progress ->
-                                    taskCoordinator.update(TaskArea.Trash) { task ->
-                                        task.copy(
-                                            title = trashTaskTitle(),
-                                            detail = trashTaskDetail(progress),
-                                            currentPath = progress.currentPath,
-                                            processed = progress.processed,
-                                            total = progress.total,
-                                            indeterminate = progress.total <= 0
-                                        )
-                                    }?.let(notificationController::showActive)
-                                }
-                            }
-                            if (summary.cancelled) {
-                                taskCoordinator.cancel(
-                                    area = TaskArea.Trash,
-                                    title = "Trash empty cancelled",
-                                    detail = "Cancelled after ${summary.processed}/${summary.total} items.",
-                                    currentPath = summary.currentPath,
-                                    processed = summary.processed,
-                                    total = summary.total,
-                                    indeterminate = summary.total <= 0
-                                )?.let(notificationController::showTerminal)
-                            } else {
-                                taskCoordinator.complete(
-                                    area = TaskArea.Trash,
-                                    title = "Trash empty complete",
-                                    detail = trashTaskCompletedDetail(summary),
-                                    currentPath = summary.currentPath,
-                                    processed = summary.processed,
-                                    total = summary.total,
-                                    indeterminate = summary.total <= 0
-                                )?.let(notificationController::showTerminal)
-                            }
-                            resetAndLoad()
-                        }
+                        startEmptyTrashTask(
+                            trashController = trashController,
+                            scope = scope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onJobChanged = { job -> currentJob.value = job },
+                            resetAndLoad = ::resetAndLoad
+                        )
                     }
                 ) {
                     Text("Delete all")
@@ -436,6 +395,116 @@ fun TrashScreen(
             }
         )
     }
+}
+
+internal fun startEmptyTrashTask(
+    trashController: TrashController,
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onJobChanged: (Job?) -> Unit,
+    resetAndLoad: () -> Unit
+) {
+    startEmptyTrashTask(
+        scope = scope,
+        taskCoordinator = taskCoordinator,
+        notificationController = notificationController,
+        onJobChanged = onJobChanged,
+        resetAndLoad = resetAndLoad
+    ) { shouldContinue, onProgress ->
+        trashController.emptyTrash(shouldContinue = shouldContinue, onProgress = onProgress)
+    }
+}
+
+internal fun startEmptyTrashTask(
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onJobChanged: (Job?) -> Unit,
+    resetAndLoad: () -> Unit,
+    runEmptyTrash: ((() -> Boolean), (TrashProgress) -> Unit) -> TrashRunSummary
+) {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Trash,
+        kind = TaskKind.EmptyTrash,
+        title = trashTaskTitle(),
+        detail = "Preparing trash cleanup.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateTrashCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController
+            )
+        }
+    ) ?: return
+    notificationController.showActive(started)
+    val job = scope.launch {
+        try {
+            val summary = withContext(Dispatchers.IO) {
+                runEmptyTrash(
+                    { !cancelRequested.get() },
+                    { progress ->
+                        taskCoordinator.update(TaskArea.Trash) { task ->
+                            task.copy(
+                                title = trashTaskTitle(),
+                                detail = trashTaskDetail(progress),
+                                currentPath = progress.currentPath,
+                                processed = progress.processed,
+                                total = progress.total,
+                                indeterminate = progress.total <= 0
+                            )
+                        }?.let(notificationController::showActive)
+                    }
+                )
+            }
+            if (summary.cancelled) {
+                taskCoordinator.cancel(
+                    area = TaskArea.Trash,
+                    title = "Trash empty cancelled",
+                    detail = "Cancelled after ${summary.processed}/${summary.total} items.",
+                    currentPath = summary.currentPath,
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            } else {
+                taskCoordinator.complete(
+                    area = TaskArea.Trash,
+                    title = "Trash empty complete",
+                    detail = trashTaskCompletedDetail(summary),
+                    currentPath = summary.currentPath,
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            }
+            resetAndLoad()
+        } finally {
+            onJobChanged(null)
+        }
+    }
+    onJobChanged(job)
+}
+
+private fun requestImmediateTrashCancel(
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController
+) {
+    val snapshot = taskCoordinator.activeTask(TaskArea.Trash)
+    taskCoordinator.cancel(
+        area = TaskArea.Trash,
+        title = "Trash empty cancelled",
+        detail = "Cancelling trash cleanup.",
+        currentPath = snapshot?.currentPath,
+        processed = snapshot?.processed,
+        total = snapshot?.total,
+        indeterminate = snapshot?.indeterminate ?: true
+    )?.let(notificationController::showTerminal)
 }
 
 @Composable

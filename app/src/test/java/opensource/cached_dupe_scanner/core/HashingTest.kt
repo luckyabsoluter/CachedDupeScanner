@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
@@ -41,5 +42,20 @@ class HashingTest {
         } finally {
             Files.deleteIfExists(tempFile.toPath())
         }
+    }
+
+    @Test
+    fun streamingHashCanStopWhenCancellationIsRequested() {
+        val bytes = ByteArray(Hashing.DEFAULT_BUFFER_SIZE * 2) { 7 }
+        var checks = 0
+
+        val actual = ByteArrayInputStream(bytes).use { input ->
+            Hashing.sha256Hex(input, shouldContinue = {
+                checks += 1
+                checks < 2
+            })
+        }
+
+        assertNull(actual)
     }
 }

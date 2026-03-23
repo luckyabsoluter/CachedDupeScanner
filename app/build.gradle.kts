@@ -43,6 +43,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -65,6 +68,8 @@ dependencies {
     kapt(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.test.core)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)

@@ -546,6 +546,51 @@ class ScanHistoryRepositoryTest {
     }
 
     @Test
+    fun runMaintenanceStopsDuringHashingWhenCancellationIsRequested() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val file = File.createTempFile("cached", ".cancel-hash")
+        try {
+            file.writeText("alpha")
+            var allow = true
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                hashFile = { _, shouldContinue ->
+                    allow = false
+                    if (shouldContinue()) "hash" else null
+                }
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1,
+                    files = listOf(
+                        FileMetadata(file.absolutePath, file.absolutePath, file.length(), file.lastModified(), null)
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+
+            val summary = repo.runMaintenance(
+                deleteMissing = false,
+                rehashStale = false,
+                rehashMissing = true,
+                shouldContinue = { allow }
+            ) { }
+
+            assertEquals(0, summary.processed)
+            assertTrue(summary.cancelled)
+            assertNull(database.fileCacheDao().getAll().single().hashHex)
+        } finally {
+            file.delete()
+            database.close()
+        }
+    }
+
+    @Test
     fun clearAllReportsProgressAndSupportsCancellation() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)

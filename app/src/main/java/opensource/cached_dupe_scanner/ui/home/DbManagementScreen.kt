@@ -33,6 +33,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.storage.ClearCacheProgress
+import opensource.cached_dupe_scanner.storage.ClearCacheSummary
+import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
+import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
@@ -85,7 +89,7 @@ fun DbManagementScreen(
         refreshOverview()
     }
 
-    val isBusy = activeTask != null
+    val isBusy = activeTask != null || uiState.isRunning || uiState.isRebuilding || uiState.isClearing
     val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
 
     Box(modifier = modifier) {
@@ -142,71 +146,15 @@ fun DbManagementScreen(
                     )
                     OutlinedButton(
                         onClick = {
-                            val cancelRequested = AtomicBoolean(false)
-                            val started = taskCoordinator.tryStart(
-                                area = TaskArea.Db,
-                                kind = TaskKind.RebuildGroups,
-                                title = rebuildGroupsTaskTitle(),
-                                detail = "Preparing duplicate group rebuild.",
-                                processed = 0,
-                                total = null,
-                                indeterminate = true,
-                                isCancellable = true,
-                                onCancel = { cancelRequested.set(true) }
-                            ) ?: return@OutlinedButton
-                            notificationController.showActive(started)
-                            appScope.launch {
-                                uiState.startRebuild()
-                                runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        resultsRepo.rebuildGroups(
-                                            shouldContinue = { !cancelRequested.get() },
-                                            onProgress = { progress ->
-                                                taskCoordinator.update(TaskArea.Db) { task ->
-                                                    task.copy(
-                                                        title = rebuildGroupsTaskTitle(),
-                                                        detail = rebuildGroupsTaskDetail(progress),
-                                                        processed = progress.processed,
-                                                        total = progress.total,
-                                                        indeterminate = progress.total <= 0
-                                                    )
-                                                }?.let(notificationController::showActive)
-                                            }
-                                        )
-                                    }
-                                }.onSuccess { summary ->
-                                    if (summary.cancelled) {
-                                        uiState.cancelRebuild(summary)
-                                        taskCoordinator.cancel(
-                                            area = TaskArea.Db,
-                                            title = "Duplicate groups rebuild cancelled",
-                                            detail = "Cancelled after ${summary.processed}/${summary.total} duplicate groups.",
-                                            processed = summary.processed,
-                                            total = summary.total,
-                                            indeterminate = summary.total <= 0
-                                        )?.let(notificationController::showTerminal)
-                                    } else {
-                                        uiState.completeRebuild()
-                                        taskCoordinator.complete(
-                                            area = TaskArea.Db,
-                                            title = "Duplicate groups rebuilt",
-                                            detail = rebuildGroupsCompletedDetail(summary),
-                                            processed = summary.processed,
-                                            total = summary.total,
-                                            indeterminate = summary.total <= 0
-                                        )?.let(notificationController::showTerminal)
-                                    }
-                                    onMaintenanceApplied()
-                                    refreshOverview()
-                                }.onFailure {
-                                    uiState.failRebuild()
-                                    taskCoordinator.fail(
-                                        area = TaskArea.Db,
-                                        title = "Duplicate group rebuild failed",
-                                        detail = "The duplicate group snapshot could not be refreshed."
-                                    )?.let(notificationController::showTerminal)
-                                }
-                            }
+                            startRebuildGroupsTask(
+                                resultsRepo = resultsRepo,
+                                uiState = uiState,
+                                appScope = appScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
+                                onMaintenanceApplied = onMaintenanceApplied,
+                                refreshOverview = refreshOverview
+                            )
                         },
                         enabled = !isBusy,
                         modifier = Modifier.fillMaxWidth()
@@ -261,76 +209,18 @@ fun DbManagementScreen(
 
                     Button(
                         onClick = {
-                            val cancelRequested = AtomicBoolean(false)
-                            val started = taskCoordinator.tryStart(
-                                area = TaskArea.Db,
-                                kind = TaskKind.DbMaintenance,
-                                title = dbMaintenanceTaskTitle(),
-                                detail = "Preparing maintenance run.",
-                                processed = 0,
-                                total = null,
-                                indeterminate = true,
-                                isCancellable = true,
-                                onCancel = { cancelRequested.set(true) }
-                            ) ?: return@Button
-                            notificationController.showActive(started)
-                            appScope.launch {
-                                uiState.startMaintenance()
-                                runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        historyRepo.runMaintenance(
-                                            deleteMissing = deleteMissing.value,
-                                            rehashStale = rehashStale.value,
-                                            rehashMissing = rehashMissing.value,
-                                            shouldContinue = { !cancelRequested.get() }
-                                        ) { progress ->
-                                            uiState.applyMaintenanceProgress(progress)
-                                            taskCoordinator.update(TaskArea.Db) { task ->
-                                                task.copy(
-                                                    title = dbMaintenanceTaskTitle(),
-                                                    detail = dbMaintenanceTaskDetail(progress),
-                                                    currentPath = progress.currentPath,
-                                                    processed = progress.processed,
-                                                    total = progress.total,
-                                                    indeterminate = progress.total <= 0
-                                                )
-                                            }?.let(notificationController::showActive)
-                                        }
-                                    }
-                                }.onSuccess { summary ->
-                                    if (summary.cancelled) {
-                                        uiState.cancelMaintenance(summary)
-                                        taskCoordinator.cancel(
-                                            area = TaskArea.Db,
-                                            title = "DB maintenance cancelled",
-                                            detail = "Cancelled after ${summary.processed}/${summary.total} items.",
-                                            currentPath = summary.currentPath,
-                                            processed = summary.processed,
-                                            total = summary.total,
-                                            indeterminate = summary.total <= 0
-                                        )?.let(notificationController::showTerminal)
-                                    } else {
-                                        uiState.completeMaintenance(summary)
-                                        taskCoordinator.complete(
-                                            area = TaskArea.Db,
-                                            title = "DB maintenance complete",
-                                            detail = dbMaintenanceCompletedDetail(summary),
-                                            processed = summary.processed,
-                                            total = summary.total,
-                                            indeterminate = summary.total <= 0
-                                        )?.let(notificationController::showTerminal)
-                                    }
-                                    onMaintenanceApplied()
-                                    refreshOverview()
-                                }.onFailure {
-                                    uiState.failMaintenance()
-                                    taskCoordinator.fail(
-                                        area = TaskArea.Db,
-                                        title = "DB maintenance failed",
-                                        detail = "The maintenance run did not finish."
-                                    )?.let(notificationController::showTerminal)
-                                }
-                            }
+                            startDbMaintenanceTask(
+                                historyRepo = historyRepo,
+                                uiState = uiState,
+                                appScope = appScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
+                                deleteMissing = deleteMissing.value,
+                                rehashStale = rehashStale.value,
+                                rehashMissing = rehashMissing.value,
+                                onMaintenanceApplied = onMaintenanceApplied,
+                                refreshOverview = refreshOverview
+                            )
                         },
                         enabled = canRun,
                         modifier = Modifier.fillMaxWidth()
@@ -416,70 +306,15 @@ fun DbManagementScreen(
                 Button(
                     onClick = {
                         clearDialogOpen.value = false
-                        val cancelRequested = AtomicBoolean(false)
-                        val started = taskCoordinator.tryStart(
-                            area = TaskArea.Db,
-                            kind = TaskKind.ClearCache,
-                            title = clearCacheTaskTitle(),
-                            detail = "Preparing cache clear.",
-                            processed = 0,
-                            total = null,
-                            indeterminate = true,
-                            isCancellable = true,
-                            onCancel = { cancelRequested.set(true) }
-                        ) ?: return@Button
-                        notificationController.showActive(started)
-                        appScope.launch {
-                            uiState.startClearing()
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    historyRepo.clearAll(
-                                        shouldContinue = { !cancelRequested.get() }
-                                    ) { progress ->
-                                        taskCoordinator.update(TaskArea.Db) { task ->
-                                            task.copy(
-                                                title = clearCacheTaskTitle(),
-                                                detail = clearCacheTaskDetail(progress),
-                                                processed = progress.processed,
-                                                total = progress.total,
-                                                indeterminate = progress.total <= 0
-                                            )
-                                        }?.let(notificationController::showActive)
-                                    }
-                                }
-                            }.onSuccess { summary ->
-                                if (summary.cancelled) {
-                                    uiState.cancelClearing(summary)
-                                    taskCoordinator.cancel(
-                                        area = TaskArea.Db,
-                                        title = "Clear cached results cancelled",
-                                        detail = "Cancelled after ${summary.processed}/${summary.total} items.",
-                                        processed = summary.processed,
-                                        total = summary.total,
-                                        indeterminate = summary.total <= 0
-                                    )?.let(notificationController::showTerminal)
-                                } else {
-                                    uiState.completeClearing()
-                                    taskCoordinator.complete(
-                                        area = TaskArea.Db,
-                                        title = "Cached results cleared",
-                                        detail = clearCacheCompletedDetail(summary),
-                                        processed = summary.processed,
-                                        total = summary.total,
-                                        indeterminate = summary.total <= 0
-                                    )?.let(notificationController::showTerminal)
-                                }
-                                onCacheCleared()
-                                refreshOverview()
-                            }.onFailure {
-                                uiState.failClearing()
-                                taskCoordinator.fail(
-                                    area = TaskArea.Db,
-                                    title = "Clear cached results failed",
-                                    detail = "Cached files and duplicate groups could not be removed."
-                                )?.let(notificationController::showTerminal)
-                            }
-                        }
+                        startClearCacheTask(
+                            historyRepo = historyRepo,
+                            uiState = uiState,
+                            appScope = appScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onCacheCleared = onCacheCleared,
+                            refreshOverview = refreshOverview
+                        )
                     }
                 ) {
                     Text("Clear")
@@ -492,4 +327,324 @@ fun DbManagementScreen(
             }
         )
     }
+}
+
+internal fun startRebuildGroupsTask(
+    resultsRepo: ResultsDbRepository,
+    uiState: DbManagementUiState,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onMaintenanceApplied: () -> Unit,
+    refreshOverview: () -> Unit
+) {
+    startRebuildGroupsTask(
+        uiState = uiState,
+        appScope = appScope,
+        taskCoordinator = taskCoordinator,
+        notificationController = notificationController,
+        onMaintenanceApplied = onMaintenanceApplied,
+        refreshOverview = refreshOverview
+    ) { shouldContinue, onProgress ->
+        resultsRepo.rebuildGroups(shouldContinue = shouldContinue, onProgress = onProgress)
+    }
+}
+
+internal fun startRebuildGroupsTask(
+    uiState: DbManagementUiState,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onMaintenanceApplied: () -> Unit,
+    refreshOverview: () -> Unit,
+    runRebuildGroups: ((() -> Boolean), (RebuildGroupsProgress) -> Unit) -> RebuildGroupsSummary
+) {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Db,
+        kind = TaskKind.RebuildGroups,
+        title = rebuildGroupsTaskTitle(),
+        detail = "Preparing duplicate group rebuild.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateDbCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController,
+                title = "Duplicate groups rebuild cancelled",
+                detail = "Cancelling duplicate group rebuild."
+            )
+        }
+    ) ?: return
+    notificationController.showActive(started)
+    uiState.startRebuild()
+    appScope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                runRebuildGroups(
+                    { !cancelRequested.get() },
+                    { progress ->
+                        taskCoordinator.update(TaskArea.Db) { task ->
+                            task.copy(
+                                title = rebuildGroupsTaskTitle(),
+                                detail = rebuildGroupsTaskDetail(progress),
+                                processed = progress.processed,
+                                total = progress.total,
+                                indeterminate = progress.total <= 0
+                            )
+                        }?.let(notificationController::showActive)
+                    }
+                )
+            }
+        }.onSuccess { summary ->
+            if (summary.cancelled) {
+                uiState.cancelRebuild(summary)
+                taskCoordinator.cancel(
+                    area = TaskArea.Db,
+                    title = "Duplicate groups rebuild cancelled",
+                    detail = "Cancelled after ${summary.processed}/${summary.total} duplicate groups.",
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            } else {
+                uiState.completeRebuild()
+                taskCoordinator.complete(
+                    area = TaskArea.Db,
+                    title = "Duplicate groups rebuilt",
+                    detail = rebuildGroupsCompletedDetail(summary),
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            }
+            onMaintenanceApplied()
+            refreshOverview()
+        }.onFailure {
+            uiState.failRebuild()
+            taskCoordinator.fail(
+                area = TaskArea.Db,
+                title = "Duplicate group rebuild failed",
+                detail = "The duplicate group snapshot could not be refreshed."
+            )?.let(notificationController::showTerminal)
+        }
+    }
+}
+
+internal fun startClearCacheTask(
+    historyRepo: ScanHistoryRepository,
+    uiState: DbManagementUiState,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onCacheCleared: () -> Unit,
+    refreshOverview: () -> Unit
+) {
+    startClearCacheTask(
+        uiState = uiState,
+        appScope = appScope,
+        taskCoordinator = taskCoordinator,
+        notificationController = notificationController,
+        onCacheCleared = onCacheCleared,
+        refreshOverview = refreshOverview
+    ) { shouldContinue, onProgress ->
+        historyRepo.clearAll(shouldContinue = shouldContinue, onProgress = onProgress)
+    }
+}
+
+internal fun startClearCacheTask(
+    uiState: DbManagementUiState,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onCacheCleared: () -> Unit,
+    refreshOverview: () -> Unit,
+    runClearAll: ((() -> Boolean), (ClearCacheProgress) -> Unit) -> ClearCacheSummary
+) {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Db,
+        kind = TaskKind.ClearCache,
+        title = clearCacheTaskTitle(),
+        detail = "Preparing cache clear.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateDbCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController,
+                title = "Clear cached results cancelled",
+                detail = "Cancelling cache clear."
+            )
+        }
+    ) ?: return
+    notificationController.showActive(started)
+    uiState.startClearing()
+    appScope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                runClearAll(
+                    { !cancelRequested.get() },
+                    { progress ->
+                        taskCoordinator.update(TaskArea.Db) { task ->
+                            task.copy(
+                                title = clearCacheTaskTitle(),
+                                detail = clearCacheTaskDetail(progress),
+                                processed = progress.processed,
+                                total = progress.total,
+                                indeterminate = progress.total <= 0
+                            )
+                        }?.let(notificationController::showActive)
+                    }
+                )
+            }
+        }.onSuccess { summary ->
+            if (summary.cancelled) {
+                uiState.cancelClearing(summary)
+                taskCoordinator.cancel(
+                    area = TaskArea.Db,
+                    title = "Clear cached results cancelled",
+                    detail = "Cancelled after ${summary.processed}/${summary.total} items.",
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            } else {
+                uiState.completeClearing()
+                taskCoordinator.complete(
+                    area = TaskArea.Db,
+                    title = "Cached results cleared",
+                    detail = clearCacheCompletedDetail(summary),
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            }
+            onCacheCleared()
+            refreshOverview()
+        }.onFailure {
+            uiState.failClearing()
+            taskCoordinator.fail(
+                area = TaskArea.Db,
+                title = "Clear cached results failed",
+                detail = "Cached files and duplicate groups could not be removed."
+            )?.let(notificationController::showTerminal)
+        }
+    }
+}
+
+internal fun startDbMaintenanceTask(
+    historyRepo: ScanHistoryRepository,
+    uiState: DbManagementUiState,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    deleteMissing: Boolean,
+    rehashStale: Boolean,
+    rehashMissing: Boolean,
+    onMaintenanceApplied: () -> Unit,
+    refreshOverview: () -> Unit
+) {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Db,
+        kind = TaskKind.DbMaintenance,
+        title = dbMaintenanceTaskTitle(),
+        detail = "Preparing maintenance run.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateDbCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController,
+                title = "DB maintenance cancelled",
+                detail = "Cancelling maintenance run."
+            )
+        }
+    ) ?: return
+    notificationController.showActive(started)
+    appScope.launch {
+        uiState.startMaintenance()
+        runCatching {
+            withContext(Dispatchers.IO) {
+                historyRepo.runMaintenance(
+                    deleteMissing = deleteMissing,
+                    rehashStale = rehashStale,
+                    rehashMissing = rehashMissing,
+                    shouldContinue = { !cancelRequested.get() }
+                ) { progress ->
+                    uiState.applyMaintenanceProgress(progress)
+                    taskCoordinator.update(TaskArea.Db) { task ->
+                        task.copy(
+                            title = dbMaintenanceTaskTitle(),
+                            detail = dbMaintenanceTaskDetail(progress),
+                            currentPath = progress.currentPath,
+                            processed = progress.processed,
+                            total = progress.total,
+                            indeterminate = progress.total <= 0
+                        )
+                    }?.let(notificationController::showActive)
+                }
+            }
+        }.onSuccess { summary ->
+            if (summary.cancelled) {
+                uiState.cancelMaintenance(summary)
+                taskCoordinator.cancel(
+                    area = TaskArea.Db,
+                    title = "DB maintenance cancelled",
+                    detail = "Cancelled after ${summary.processed}/${summary.total} items.",
+                    currentPath = summary.currentPath,
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            } else {
+                uiState.completeMaintenance(summary)
+                taskCoordinator.complete(
+                    area = TaskArea.Db,
+                    title = "DB maintenance complete",
+                    detail = dbMaintenanceCompletedDetail(summary),
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            }
+            onMaintenanceApplied()
+            refreshOverview()
+        }.onFailure {
+            uiState.failMaintenance()
+            taskCoordinator.fail(
+                area = TaskArea.Db,
+                title = "DB maintenance failed",
+                detail = "The maintenance run did not finish."
+            )?.let(notificationController::showTerminal)
+        }
+    }
+}
+
+private fun requestImmediateDbCancel(
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    title: String,
+    detail: String
+) {
+    val snapshot = taskCoordinator.activeTask(TaskArea.Db)
+    taskCoordinator.cancel(
+        area = TaskArea.Db,
+        title = title,
+        detail = detail,
+        currentPath = snapshot?.currentPath,
+        processed = snapshot?.processed,
+        total = snapshot?.total,
+        indeterminate = snapshot?.indeterminate ?: true
+    )?.let(notificationController::showTerminal)
 }
