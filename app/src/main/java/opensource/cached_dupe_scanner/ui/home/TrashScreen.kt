@@ -61,6 +61,7 @@ import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.trashTaskCompletedDetail
 import opensource.cached_dupe_scanner.tasks.trashTaskDetail
 import opensource.cached_dupe_scanner.tasks.trashTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -450,13 +451,12 @@ internal fun startEmptyTrashTask(
                     { !cancelRequested.get() },
                     { progress ->
                         taskCoordinator.update(TaskArea.Trash) { task ->
-                            task.copy(
+                            task.withLinearProgress(
                                 title = trashTaskTitle(),
                                 detail = trashTaskDetail(progress),
                                 currentPath = progress.currentPath,
                                 processed = progress.processed,
-                                total = progress.total,
-                                indeterminate = progress.total <= 0
+                                total = progress.total
                             )
                         }?.let(notificationController::showActive)
                     }

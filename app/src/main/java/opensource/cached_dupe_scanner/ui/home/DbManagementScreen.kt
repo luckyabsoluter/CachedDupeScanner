@@ -51,6 +51,7 @@ import opensource.cached_dupe_scanner.tasks.dbMaintenanceTaskTitle
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsCompletedDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -388,12 +389,11 @@ internal fun startRebuildGroupsTask(
                     { !cancelRequested.get() },
                     { progress ->
                         taskCoordinator.update(TaskArea.Db) { task ->
-                            task.copy(
+                            task.withLinearProgress(
                                 title = rebuildGroupsTaskTitle(),
                                 detail = rebuildGroupsTaskDetail(progress),
                                 processed = progress.processed,
-                                total = progress.total,
-                                indeterminate = progress.total <= 0
+                                total = progress.total
                             )
                         }?.let(notificationController::showActive)
                     }
@@ -493,12 +493,11 @@ internal fun startClearCacheTask(
                     { !cancelRequested.get() },
                     { progress ->
                         taskCoordinator.update(TaskArea.Db) { task ->
-                            task.copy(
+                            task.withLinearProgress(
                                 title = clearCacheTaskTitle(),
                                 detail = clearCacheTaskDetail(progress),
                                 processed = progress.processed,
-                                total = progress.total,
-                                indeterminate = progress.total <= 0
+                                total = progress.total
                             )
                         }?.let(notificationController::showActive)
                     }
@@ -584,13 +583,12 @@ internal fun startDbMaintenanceTask(
                 ) { progress ->
                     uiState.applyMaintenanceProgress(progress)
                     taskCoordinator.update(TaskArea.Db) { task ->
-                        task.copy(
+                        task.withLinearProgress(
                             title = dbMaintenanceTaskTitle(),
                             detail = dbMaintenanceTaskDetail(progress),
                             currentPath = progress.currentPath,
                             processed = progress.processed,
-                            total = progress.total,
-                            indeterminate = progress.total <= 0
+                            total = progress.total
                         )
                     }?.let(notificationController::showActive)
                 }

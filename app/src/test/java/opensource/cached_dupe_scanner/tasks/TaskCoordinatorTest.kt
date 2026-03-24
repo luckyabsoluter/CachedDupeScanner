@@ -98,4 +98,34 @@ class TaskCoordinatorTest {
         assertTrue(requested)
         assertTrue(cancelled)
     }
+
+    @Test
+    fun withLinearProgressKeepsBubbleProgressInSync() {
+        val snapshot = TaskSnapshot(
+            area = TaskArea.Db,
+            kind = TaskKind.DbMaintenance,
+            title = "DB maintenance",
+            detail = "Preparing",
+            currentPath = null,
+            processed = 0,
+            total = null,
+            indeterminate = true,
+            startedAt = 1L,
+            isCancellable = true,
+            status = TaskStatus.Running
+        )
+
+        val updated = snapshot.withLinearProgress(
+            detail = "Processed 3/10",
+            processed = 3,
+            total = 10
+        )
+
+        assertEquals(3, updated.processed)
+        assertEquals(10, updated.total)
+        assertFalse(updated.indeterminate)
+        assertEquals(3, updated.bubbleProcessed)
+        assertEquals(10, updated.bubbleTotal)
+        assertFalse(updated.bubbleIndeterminate)
+    }
 }
