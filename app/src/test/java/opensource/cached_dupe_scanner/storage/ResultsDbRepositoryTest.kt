@@ -323,4 +323,26 @@ class ResultsDbRepositoryTest {
 
         db.close()
     }
+
+    @Test
+    fun listAllGroupMembersReadsEveryPageInOrder() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        insertDuplicateGroup(fileDao, sizeBytes = 10L, hashHex = "ha", count = 5, pathPrefix = "members")
+
+        val members = repo.listAllGroupMembers(
+            sizeBytes = 10L,
+            hashHex = "ha",
+            pageSize = 2
+        )
+
+        assertEquals(
+            listOf("/members1", "/members2", "/members3", "/members4", "/members5"),
+            members.map { it.normalizedPath }
+        )
+
+        db.close()
+    }
 }
