@@ -204,7 +204,7 @@ private fun matchesResultsFilterRule(
     }
 }
 
-private fun matchesTextOperator(
+internal fun matchesTextOperator(
     source: String,
     expected: String,
     operator: ResultsFilterTextOperator

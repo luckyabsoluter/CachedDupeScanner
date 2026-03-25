@@ -125,6 +125,8 @@ fun ResultsScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterDialogOpen = remember { mutableStateOf(false) }
+    val bulkDeleteCatalogOpen = remember { mutableStateOf(false) }
+    val bulkDeleteCommand = remember { mutableStateOf<ResultsBulkDeleteCommandType?>(null) }
     val settingsSnapshot = remember { settingsStore.load() }
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
     val initialFilterDefinition = remember(settingsSnapshot.resultsFilterDefinitionJson) {
@@ -523,6 +525,8 @@ fun ResultsScreenDb(
 
     val loadIndicatorText = when {
         selectedGroupIndex != null -> null
+        bulkDeleteCatalogOpen.value -> null
+        bulkDeleteCommand.value != null -> null
         filtersActive() -> filteredResultsLoadIndicatorText(
             filteredCurrentIndex = topVisibleGroupIndex.value,
             dbLoadedCount = filteredSourceOffset.value,
@@ -589,6 +593,14 @@ fun ResultsScreenDb(
                                 expanded = menuExpanded.value,
                                 onDismissRequest = { menuExpanded.value = false }
                             ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Bulk delete") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        bulkDeleteCatalogOpen.value = true
+                                        bulkDeleteCommand.value = null
+                                    }
+                                )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = {
                                         Text(
@@ -941,6 +953,39 @@ fun ResultsScreenDb(
                 refresh(reset = true, rebuild = false)
             }
         )
+    }
+
+    if (bulkDeleteCatalogOpen.value && bulkDeleteCommand.value == null) {
+        ResultsBulkDeleteCatalogScreen(
+            appliedFilter = appliedFilter.value,
+            onBack = {
+                bulkDeleteCatalogOpen.value = false
+            },
+            onOpenCommand = { command ->
+                bulkDeleteCommand.value = command
+            }
+        )
+    }
+
+    bulkDeleteCommand.value?.let { command ->
+        when (command) {
+            ResultsBulkDeleteCommandType.KeepOneNonMatch -> {
+                KeepOneNonMatchBulkDeleteScreen(
+                    resultsRepo = resultsRepo,
+                    sortKey = mapSort(sortKey.value, sortDirection.value),
+                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                    totalGroupCount = totalGroupCount.value,
+                    appliedFilter = appliedFilter.value,
+                    onDeleteFile = onDeleteFile,
+                    onBack = {
+                        bulkDeleteCommand.value = null
+                    },
+                    onResultsChanged = {
+                        refresh(reset = true, rebuild = false)
+                    }
+                )
+            }
+        }
     }
 }
 
