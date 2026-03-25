@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -623,12 +624,18 @@ fun ResultsScreenDb(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column {
-                        Text("Files scanned: ${fileCount.value}")
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
-                            if (filtersActive()) {
+                            text = "Files scanned: ${fileCount.value}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (filtersActive()) {
                                 if (filteredSourceExhausted.value) {
                                     "Duplicate groups: ${groupCount.value} filtered / ${totalGroupCount.value} total"
                                 } else {
@@ -636,21 +643,28 @@ fun ResultsScreenDb(
                                 }
                             } else {
                                 "Duplicate groups: ${groupCount.value}"
-                            }
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (appliedFilter.value.hasActiveRules()) {
                             Text(
                                 text = "Filters: ${summarizeResultsFilter(appliedFilter.value)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    OutlinedButton(onClick = {
-                        pendingSortKey.value = normalizeDbSortKey(sortKey.value)
-                        pendingSortDirection.value = sortDirection.value
-                        sortDialogOpen.value = true
-                    }) {
+                    OutlinedButton(
+                        modifier = Modifier.widthIn(min = 88.dp),
+                        onClick = {
+                            pendingSortKey.value = normalizeDbSortKey(sortKey.value)
+                            pendingSortDirection.value = sortDirection.value
+                            sortDialogOpen.value = true
+                        }
+                    ) {
                         Text("Sort")
                     }
                 }
