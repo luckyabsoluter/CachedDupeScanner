@@ -52,14 +52,15 @@ internal enum class ResultsBulkDeleteCommandType(
         title = "Delete matches, keep 1 non-match",
         description = "Find duplicate groups where exactly one file does not match the text rule, then delete the matching files."
     ),
-    KeepOldest(
-        title = "Keep oldest, delete newer",
-        description = "In each eligible duplicate group, keep the oldest modified file and delete the rest."
-    ),
-    KeepNewest(
-        title = "Keep newest, delete older",
-        description = "In each eligible duplicate group, keep the newest modified file and delete the rest."
+    KeepByModified(
+        title = "Keep by modified time",
+        description = "In each eligible duplicate group, choose whether to keep the oldest file or the newest file and delete the rest."
     )
+}
+
+internal enum class ResultsBulkDeleteModifiedKeepMode(val label: String) {
+    Oldest("Keep oldest"),
+    Newest("Keep newest")
 }
 
 internal enum class ResultsBulkDeleteTextTarget(val label: String) {
@@ -806,9 +807,6 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
 
 @Composable
 internal fun KeepByModifiedBulkDeleteScreen(
-    title: String,
-    description: String,
-    keepNewest: Boolean,
     resultsRepo: ResultsDbRepository,
     sortKey: DuplicateGroupSortKey,
     snapshotUpdatedAtMillis: Long?,
@@ -820,6 +818,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val keepMode = remember { mutableStateOf(ResultsBulkDeleteModifiedKeepMode.Oldest) }
     val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
     val progress = remember {
         mutableStateOf(
@@ -830,6 +829,13 @@ internal fun KeepByModifiedBulkDeleteScreen(
     val isExecuting = remember { mutableStateOf(false) }
     val confirmExecute = remember { mutableStateOf(false) }
     val message = remember { mutableStateOf<String?>(null) }
+
+    fun updateKeepMode(updated: ResultsBulkDeleteModifiedKeepMode) {
+        keepMode.value = updated
+        preview.value = null
+        progress.value = ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
+        message.value = null
+    }
 
     val currentPreview = preview.value
     val previewDeleteCount = currentPreview?.candidates?.sumOf { it.deleteTargets.size } ?: 0
@@ -858,11 +864,11 @@ internal fun KeepByModifiedBulkDeleteScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    AppTopBar(title = title, onBack = onBack)
+                    AppTopBar(title = "Keep by modified time", onBack = onBack)
                 }
                 item {
                     Text(
-                        text = description,
+                        text = "Scan the current DB snapshot, keep either the oldest file or the newest file in each eligible duplicate group, and delete the rest.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -898,8 +904,17 @@ internal fun KeepByModifiedBulkDeleteScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text("Command rule", style = MaterialTheme.typography.titleMedium)
+                            Text("Keep mode")
+                            BulkDeleteOptionButtons(
+                                options = ResultsBulkDeleteModifiedKeepMode.entries,
+                                selected = keepMode.value,
+                                label = { it.label },
+                                onSelect = { mode ->
+                                    updateKeepMode(mode)
+                                }
+                            )
                             Text(
-                                text = if (keepNewest) {
+                                text = if (keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest) {
                                     "The newest modified file survives in each eligible group. If modified times tie, normalized path order breaks the tie."
                                 } else {
                                     "The oldest modified file survives in each eligible group. If modified times tie, normalized path order breaks the tie."
@@ -937,7 +952,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                             snapshotUpdatedAtMillis = snapshot,
                                             totalGroupCount = totalGroupCount,
                                             filterDefinition = appliedFilter,
-                                            keepNewest = keepNewest,
+                                            keepNewest = keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest,
                                             onProgress = { updated ->
                                                 progress.value = updated
                                             }

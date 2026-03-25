@@ -986,31 +986,8 @@ fun ResultsScreenDb(
                 )
             }
 
-            ResultsBulkDeleteCommandType.KeepOldest -> {
+            ResultsBulkDeleteCommandType.KeepByModified -> {
                 KeepByModifiedBulkDeleteScreen(
-                    title = command.title,
-                    description = command.description,
-                    keepNewest = false,
-                    resultsRepo = resultsRepo,
-                    sortKey = mapSort(sortKey.value, sortDirection.value),
-                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
-                    totalGroupCount = totalGroupCount.value,
-                    appliedFilter = appliedFilter.value,
-                    onDeleteFile = onDeleteFile,
-                    onBack = {
-                        bulkDeleteCommand.value = null
-                    },
-                    onResultsChanged = {
-                        refresh(reset = true, rebuild = false)
-                    }
-                )
-            }
-
-            ResultsBulkDeleteCommandType.KeepNewest -> {
-                KeepByModifiedBulkDeleteScreen(
-                    title = command.title,
-                    description = command.description,
-                    keepNewest = true,
                     resultsRepo = resultsRepo,
                     sortKey = mapSort(sortKey.value, sortDirection.value),
                     snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
