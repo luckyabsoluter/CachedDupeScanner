@@ -1,59 +1,116 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
 @Composable
-internal fun ResultsFilterDialog(
+internal fun ResultsFilterScreen(
     definition: ResultsFilterDefinition,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onApply: () -> Unit
 ) {
-    val scrollState = rememberScrollState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Filter results") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(scrollState),
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.padding(Spacing.screenPadding),
+                contentPadding = PaddingValues(
+                    end = ScrollbarDefaults.ThumbWidth + 8.dp,
+                    bottom = 24.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "File name and folder rules match if any file inside the duplicate group matches the rule.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                item {
+                    AppTopBar(title = "Result filters", onBack = onBack)
+                }
+                item {
+                    Text(
+                        text = "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                item {
+                    Text(
+                        text = "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    Text(
+                        text = "File name and folder rules match if any file inside the duplicate group matches the rule.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    Card {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Current summary", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = summarizeResultsFilter(definition),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Text(
+                        text = if (definition.clusters.isEmpty()) {
+                            "No filter clusters yet."
+                        } else {
+                            "Clusters"
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
 
                 if (definition.clusters.isEmpty()) {
-                    Text("No filter clusters yet.")
+                    item { Text("No filter clusters yet.") }
                 } else {
-                    definition.clusters.forEachIndexed { clusterIndex, cluster ->
+                    itemsIndexed(definition.clusters, key = { _, cluster -> cluster.id }) { clusterIndex, cluster ->
                         ResultsFilterClusterEditor(
                             clusterIndex = clusterIndex,
                             cluster = cluster,
@@ -94,46 +151,59 @@ internal fun ResultsFilterDialog(
                                 )
                             }
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            onDefinitionChange(
-                                definition.copy(
-                                    clusters = definition.clusters + createResultsFilterCluster()
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                onDefinitionChange(
+                                    definition.copy(
+                                        clusters = definition.clusters + createResultsFilterCluster()
+                                    )
                                 )
-                            )
+                            }
+                        ) {
+                            Text("Add cluster")
                         }
-                    ) {
-                        Text("Add cluster")
+                        OutlinedButton(
+                            onClick = {
+                                onDefinitionChange(
+                                    ResultsFilterDefinition(
+                                        clusters = listOf(createResultsFilterCluster())
+                                    )
+                                )
+                            }
+                        ) {
+                            Text("Reset")
+                        }
                     }
-                    OutlinedButton(
-                        onClick = {
-                            onDefinitionChange(
-                                ResultsFilterDefinition(
-                                    clusters = listOf(createResultsFilterCluster())
-                                )
-                            )
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onApply) {
+                            Text("Apply")
                         }
-                    ) {
-                        Text("Reset")
+                        OutlinedButton(onClick = onBack) {
+                            Text("Cancel")
+                        }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onApply) {
-                Text("Apply")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            VerticalLazyScrollbar(
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+            )
         }
-    )
+    }
+
+    BackHandler(onBack = onBack)
 }
 
 @Composable

@@ -891,12 +891,12 @@ fun ResultsScreenDb(
     }
 
     if (filterDialogOpen.value) {
-        ResultsFilterDialog(
+        ResultsFilterScreen(
             definition = draftFilter.value,
             onDefinitionChange = { updated ->
                 draftFilter.value = updated
             },
-            onDismiss = {
+            onBack = {
                 filterDialogOpen.value = false
             },
             onApply = {
