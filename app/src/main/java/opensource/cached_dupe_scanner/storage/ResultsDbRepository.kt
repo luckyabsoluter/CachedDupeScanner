@@ -22,7 +22,52 @@ class ResultsDbRepository(
     fun countGroups(): Int = groupDao.countGroups()
 
     fun rebuildGroups(updatedAtMillis: Long = System.currentTimeMillis()) {
-        groupDao.rebuildFromCache(updatedAtMillis)
+        rebuildGroups(updatedAtMillis = updatedAtMillis, shouldContinue = { true }) { }
+    }
+
+    fun rebuildGroups(
+        updatedAtMillis: Long = System.currentTimeMillis(),
+        shouldContinue: () -> Boolean,
+        onProgress: (RebuildGroupsProgress) -> Unit
+    ): RebuildGroupsSummary {
+        val total = groupDao.countGroupsFromCache()
+        var processed = 0
+        var offset = 0
+        val batchSize = 200
+        groupDao.clearInternal()
+        while (processed < total) {
+            if (!shouldContinue()) {
+                break
+            }
+            val batch = groupDao.listGroupsFromCache(limit = batchSize, offset = offset)
+            if (batch.isEmpty()) {
+                break
+            }
+            groupDao.upsertAll(
+                batch.map { row ->
+                    DuplicateGroupEntity(
+                        sizeBytes = row.sizeBytes,
+                        hashHex = row.hashHex,
+                        fileCount = row.fileCount,
+                        totalBytes = row.totalBytes,
+                        updatedAtMillis = updatedAtMillis
+                    )
+                }
+            )
+            processed += batch.size
+            offset += batch.size
+            onProgress(
+                RebuildGroupsProgress(
+                    total = total,
+                    processed = processed
+                )
+            )
+        }
+        return RebuildGroupsSummary(
+            total = total,
+            processed = processed,
+            cancelled = processed < total
+        )
     }
 
     fun refreshSingleGroup(sizeBytes: Long, hashHex: String, updatedAtMillis: Long = System.currentTimeMillis()) {

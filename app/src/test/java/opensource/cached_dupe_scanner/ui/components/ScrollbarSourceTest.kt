@@ -34,5 +34,13 @@ class ScrollbarSourceTest {
             "Scrollbar drag handlers should read updated drag snapshots without restarting pointerInput",
             content.contains("rememberUpdatedState(")
         )
+        assertFalse(
+            "Lazy scrollbar drag should not use incremental scrollBy for quantum jumps",
+            content.contains("scrollBy(deltaScrollPx)")
+        )
+        assertTrue(
+            "Lazy scrollbar drag should jump with scrollToItem",
+            content.contains("listState.scrollToItem(")
+        )
     }
 }

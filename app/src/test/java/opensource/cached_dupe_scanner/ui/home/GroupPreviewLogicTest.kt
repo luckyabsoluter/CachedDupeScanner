@@ -17,9 +17,9 @@ class GroupPreviewLogicTest {
     @Test
     fun shouldUseRememberedPreviewWhenNoLoadableCandidateRemains() {
         val useRemembered = shouldUseRememberedPreview(
-            candidatePaths = listOf("/a/1.jpg", "/a/2.jpg"),
-            failedPaths = setOf("/a/1.jpg", "/a/2.jpg"),
-            hasRememberedPreview = true
+            activePath = null,
+            hasRememberedPreview = true,
+            keepLoadedInMemory = false
         )
 
         assertEquals(true, useRemembered)
@@ -28,11 +28,22 @@ class GroupPreviewLogicTest {
     @Test
     fun shouldNotUseRememberedPreviewWhileAnotherCandidateCanStillLoad() {
         val useRemembered = shouldUseRememberedPreview(
-            candidatePaths = listOf("/a/1.jpg", "/a/2.jpg"),
-            failedPaths = setOf("/a/1.jpg"),
-            hasRememberedPreview = true
+            activePath = "/a/2.jpg",
+            hasRememberedPreview = true,
+            keepLoadedInMemory = false
         )
 
         assertEquals(false, useRemembered)
+    }
+
+    @Test
+    fun shouldUseRememberedPreviewImmediatelyWhenMemoryRetentionIsEnabled() {
+        val useRemembered = shouldUseRememberedPreview(
+            activePath = "/a/1.jpg",
+            hasRememberedPreview = true,
+            keepLoadedInMemory = true
+        )
+
+        assertEquals(true, useRemembered)
     }
 }

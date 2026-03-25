@@ -7,6 +7,7 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.PathNormalizer
+import opensource.cached_dupe_scanner.storage.TrashPaths
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -222,10 +223,50 @@ class IncrementalScannerTest {
         assertEquals(0, database.fileCacheDao().getAll().size)
     }
 
+    @Test
+    fun cancelledScanStopsDuringHashingWithoutPersistingPartialCache() {
+        val fileA = File(tempDir, "a.txt").apply { writeText("aa") }
+        val fileB = File(tempDir, "b.txt").apply { writeText("bb") }
+        var allow = true
+        val hasher = CancellingHasher { allow = false }
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        val result = scanner.scan(
+            tempDir,
+            shouldContinue = { allow }
+        )
+
+        assertEquals(0, result.files.size)
+        assertEquals(0, database.fileCacheDao().getAll().size)
+    }
+
+    @Test
+    fun scanIgnoreCanExcludeTrashBinContents() {
+        val regularFile = File(tempDir, "regular.txt").apply {
+            writeText("hello")
+        }
+        val trashDir = TrashPaths.trashBinDir(tempDir).apply { mkdirs() }
+        File(trashDir, "trashed.txt").writeText("discard")
+        val scanner = IncrementalScanner(store, Sha256FileHasher(), FileWalker())
+
+        val result = scanner.scan(
+            tempDir,
+            ignore = TrashPaths::isInTrashBin
+        )
+
+        assertEquals(1, result.files.size)
+        assertEquals(PathNormalizer.normalize(regularFile.path), result.files.first().normalizedPath)
+        assertEquals(1, database.fileCacheDao().getAll().size)
+        assertEquals(
+            PathNormalizer.normalize(regularFile.path),
+            database.fileCacheDao().getAll().first().normalizedPath
+        )
+    }
+
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 
-        override fun hash(file: File): String {
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
             val normalized = PathNormalizer.normalize(file.path)
             val next = (counts[normalized] ?: 0) + 1
             counts[normalized] = next
@@ -235,6 +276,19 @@ class IncrementalScannerTest {
         fun callsFor(file: File): Int {
             val normalized = PathNormalizer.normalize(file.path)
             return counts[normalized] ?: 0
+        }
+    }
+
+    private class CancellingHasher(
+        private val onHashStarted: () -> Unit
+    ) : FileHasher {
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
+            onHashStarted()
+            return if (shouldContinue()) {
+                "hash-${PathNormalizer.normalize(file.path)}"
+            } else {
+                null
+            }
         }
     }
 

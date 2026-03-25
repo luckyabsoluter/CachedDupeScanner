@@ -34,15 +34,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
-import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
-import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -58,7 +57,6 @@ import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import java.io.File
 
 internal fun markDeletedPath(
     currentDeletedPaths: Set<String>,
@@ -70,6 +68,8 @@ fun FilesScreenDb(
     fileRepo: PagedFileRepository,
     trashController: TrashController,
     settingsStore: AppSettingsStore,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -267,11 +267,12 @@ fun FilesScreenDb(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (isMediaFile(file.normalizedPath)) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(File(file.normalizedPath))
-                                        .build(),
+                                RememberingAsyncThumbnail(
+                                    filePath = file.normalizedPath,
+                                    previewMemoryKey = file.normalizedPath,
+                                    rememberedPreviewCache = rememberedPreviewCache,
                                     imageLoader = imageLoader,
+                                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                                     contentDescription = "Thumbnail",
                                     modifier = Modifier
                                         .width(56.dp)

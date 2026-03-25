@@ -2,7 +2,6 @@ package opensource.cached_dupe_scanner.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -30,6 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.ScrollState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.max
@@ -43,6 +43,49 @@ private data class ScrollbarDragSnapshot(
     val maxScrollPx: Float,
     val maxThumbOffsetPx: Float
 )
+
+private data class LazyScrollbarDragSnapshot(
+    val maxScrollPx: Float,
+    val maxThumbOffsetPx: Float,
+    val thumbHeightPx: Float,
+    val typicalItemSizePx: Float,
+    val totalItems: Int
+)
+
+internal data class LazyListScrollTarget(
+    val index: Int,
+    val scrollOffsetPx: Int
+)
+
+internal fun estimateLazyListScrollTarget(
+    targetThumbOffsetPx: Float,
+    maxThumbOffsetPx: Float,
+    maxScrollPx: Float,
+    typicalItemSizePx: Float,
+    totalItems: Int
+): LazyListScrollTarget {
+    if (totalItems <= 0) {
+        return LazyListScrollTarget(index = 0, scrollOffsetPx = 0)
+    }
+    val safeTypicalItemSizePx = typicalItemSizePx.coerceAtLeast(1f)
+    val scrollFraction = if (maxThumbOffsetPx <= 0f) {
+        0f
+    } else {
+        (targetThumbOffsetPx / maxThumbOffsetPx).coerceIn(0f, 1f)
+    }
+    val targetScrollPx = (scrollFraction * maxScrollPx).coerceIn(0f, maxScrollPx.coerceAtLeast(0f))
+    val estimatedIndex = (targetScrollPx / safeTypicalItemSizePx)
+        .toInt()
+        .coerceIn(0, totalItems - 1)
+    val estimatedIndexStartPx = estimatedIndex * safeTypicalItemSizePx
+    val estimatedOffsetPx = (targetScrollPx - estimatedIndexStartPx)
+        .roundToInt()
+        .coerceAtLeast(0)
+    return LazyListScrollTarget(
+        index = estimatedIndex,
+        scrollOffsetPx = estimatedOffsetPx
+    )
+}
 
 @Composable
 fun VerticalScrollbar(
@@ -146,6 +189,8 @@ fun VerticalLazyScrollbar(
     val density = LocalDensity.current
     val isDragging = remember { mutableStateOf(false) }
     val trackHeightPxState = remember { mutableFloatStateOf(1f) }
+    val dragThumbOffsetPxState = remember { mutableFloatStateOf(0f) }
+    val dragJobState = remember { mutableStateOf<Job?>(null) }
     val itemSizePxByIndex: SnapshotStateMap<Int, Int> = remember { mutableStateMapOf() }
     val layoutInfo by remember {
         derivedStateOf { listState.layoutInfo }
@@ -248,9 +293,12 @@ fun VerticalLazyScrollbar(
     val thumbOffsetPx = maxThumbOffsetPx * scrollFraction
     val cornerRadiusPx = with(density) { (thumbWidth / 2).toPx() }
     val latestDragSnapshot = rememberUpdatedState(
-        ScrollbarDragSnapshot(
+        LazyScrollbarDragSnapshot(
             maxScrollPx = maxScrollPxEstimate,
-            maxThumbOffsetPx = maxThumbOffsetPx
+            maxThumbOffsetPx = maxThumbOffsetPx,
+            thumbHeightPx = thumbHeightPx,
+            typicalItemSizePx = typicalItemSizePx,
+            totalItems = totalItems
         )
     )
 
@@ -264,28 +312,49 @@ fun VerticalLazyScrollbar(
             }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = {
+                    onDragStart = { startOffset ->
                         isDragging.value = true
+                        val dragSnapshot = latestDragSnapshot.value
+                        val targetThumbOffsetPx = (startOffset.y - (dragSnapshot.thumbHeightPx / 2f))
+                            .coerceIn(0f, dragSnapshot.maxThumbOffsetPx)
+                        dragThumbOffsetPxState.floatValue = targetThumbOffsetPx
+                        val target = estimateLazyListScrollTarget(
+                            targetThumbOffsetPx = targetThumbOffsetPx,
+                            maxThumbOffsetPx = dragSnapshot.maxThumbOffsetPx,
+                            maxScrollPx = dragSnapshot.maxScrollPx,
+                            typicalItemSizePx = dragSnapshot.typicalItemSizePx,
+                            totalItems = dragSnapshot.totalItems
+                        )
+                        dragJobState.value?.cancel()
+                        dragJobState.value = scope.launch {
+                            listState.scrollToItem(target.index, target.scrollOffsetPx)
+                        }
                     },
                     onDragEnd = {
                         isDragging.value = false
+                        dragJobState.value = null
                     },
                     onDragCancel = {
                         isDragging.value = false
+                        dragJobState.value = null
                     }
                 ) { change, dragAmount ->
                     change.consume()
                     val dragSnapshot = latestDragSnapshot.value
                     if (dragSnapshot.maxScrollPx <= 0f) return@detectDragGestures
-                    val deltaScrollPx = if (dragSnapshot.maxThumbOffsetPx <= 0f) {
-                        0f
-                    } else {
-                        (dragAmount.y / dragSnapshot.maxThumbOffsetPx) * dragSnapshot.maxScrollPx
-                    }
-                    scope.launch {
-                        listState.scroll {
-                            scrollBy(deltaScrollPx)
-                        }
+                    val targetThumbOffsetPx = (dragThumbOffsetPxState.floatValue + dragAmount.y)
+                        .coerceIn(0f, dragSnapshot.maxThumbOffsetPx)
+                    dragThumbOffsetPxState.floatValue = targetThumbOffsetPx
+                    val target = estimateLazyListScrollTarget(
+                        targetThumbOffsetPx = targetThumbOffsetPx,
+                        maxThumbOffsetPx = dragSnapshot.maxThumbOffsetPx,
+                        maxScrollPx = dragSnapshot.maxScrollPx,
+                        typicalItemSizePx = dragSnapshot.typicalItemSizePx,
+                        totalItems = dragSnapshot.totalItems
+                    )
+                    dragJobState.value?.cancel()
+                    dragJobState.value = scope.launch {
+                        listState.scrollToItem(target.index, target.scrollOffsetPx)
                     }
                 }
             }

@@ -5,6 +5,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import opensource.cached_dupe_scanner.storage.DbMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
+import opensource.cached_dupe_scanner.storage.ClearCacheSummary
+import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 
 class DbManagementUiState {
     var isRunning by mutableStateOf(false)
@@ -57,6 +60,12 @@ class DbManagementUiState {
         groupStatusMessage = "Failed to rebuild duplicate groups."
     }
 
+    fun cancelRebuild(summary: RebuildGroupsSummary) {
+        isRebuilding = false
+        groupStatusMessage =
+            "Duplicate group rebuild cancelled after ${summary.processed}/${summary.total} groups."
+    }
+
     fun startMaintenance() {
         isRunning = true
         progressTotal = 0
@@ -76,16 +85,41 @@ class DbManagementUiState {
         progressCurrentPath = progress.currentPath
     }
 
-    fun completeMaintenance(summary: DbMaintenanceProgress) {
+    fun completeMaintenance(summary: DbMaintenanceSummary) {
         isRunning = false
         maintenanceStatusMessage =
             "Maintenance complete. Deleted ${summary.deleted}, rehashed ${summary.rehashed}, missing hashes ${summary.missingHashed}."
-        applyMaintenanceProgress(summary)
+        applyMaintenanceProgress(
+            DbMaintenanceProgress(
+                total = summary.total,
+                processed = summary.processed,
+                deleted = summary.deleted,
+                rehashed = summary.rehashed,
+                missingHashed = summary.missingHashed,
+                currentPath = summary.currentPath
+            )
+        )
     }
 
     fun failMaintenance() {
         isRunning = false
         maintenanceStatusMessage = "Failed to run maintenance."
+    }
+
+    fun cancelMaintenance(summary: DbMaintenanceSummary) {
+        isRunning = false
+        maintenanceStatusMessage =
+            "Maintenance cancelled after ${summary.processed}/${summary.total} items."
+        applyMaintenanceProgress(
+            DbMaintenanceProgress(
+                total = summary.total,
+                processed = summary.processed,
+                deleted = summary.deleted,
+                rehashed = summary.rehashed,
+                missingHashed = summary.missingHashed,
+                currentPath = summary.currentPath
+            )
+        )
     }
 
     fun startClearing() {
@@ -107,5 +141,11 @@ class DbManagementUiState {
     fun failClearing() {
         isClearing = false
         maintenanceStatusMessage = "Failed to clear cached results."
+    }
+
+    fun cancelClearing(summary: ClearCacheSummary) {
+        isClearing = false
+        maintenanceStatusMessage =
+            "Clear cached results cancelled after ${summary.processed}/${summary.total} items."
     }
 }

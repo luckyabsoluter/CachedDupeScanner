@@ -14,49 +14,65 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.TrashEntryEntity
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.TrashController
+import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRepository
+import opensource.cached_dupe_scanner.storage.TrashRunSummary
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.trashTaskCompletedDetail
+import opensource.cached_dupe_scanner.tasks.trashTaskDetail
+import opensource.cached_dupe_scanner.tasks.trashTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import java.io.File
 
 @Composable
 fun TrashScreen(
     trashRepo: TrashRepository,
     trashController: TrashController,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -72,6 +88,9 @@ fun TrashScreen(
     val selectedEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val confirmDeleteEntry = remember { mutableStateOf<TrashEntryEntity?>(null) }
     val restoreError = remember { mutableStateOf<String?>(null) }
+    val currentJob = remember { mutableStateOf<Job?>(null) }
+    val activeTask = taskCoordinator.activeTask(TaskArea.Trash)
+    val isBusy = activeTask != null || currentJob.value != null
     val context = LocalContext.current
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -134,7 +153,6 @@ fun TrashScreen(
         }
     }
 
-    // Infinite scroll auto paging (legacy behavior).
     LaunchedEffect(totalCount.value, entries.value.size) {
         if (totalCount.value <= 0) return@LaunchedEffect
         snapshotFlow {
@@ -154,7 +172,7 @@ fun TrashScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.padding(Spacing.screenPadding),
-            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
         ) {
             item {
                 AppTopBar(
@@ -164,12 +182,13 @@ fun TrashScreen(
                         IconButton(onClick = { menuOpen.value = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
                         }
-                        androidx.compose.material3.DropdownMenu(
+                        DropdownMenu(
                             expanded = menuOpen.value,
                             onDismissRequest = { menuOpen.value = false }
                         ) {
-                            androidx.compose.material3.DropdownMenuItem(
+                            DropdownMenuItem(
                                 text = { Text("Empty trash") },
+                                enabled = !isBusy,
                                 onClick = {
                                     menuOpen.value = false
                                     confirmEmpty.value = true
@@ -180,7 +199,36 @@ fun TrashScreen(
                 )
             }
 
-            item { Spacer(modifier = Modifier.height(8.dp)) }
+            item { Spacer(modifier = Modifier.height(Spacing.itemGap)) }
+
+            activeTask?.let { task ->
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(Spacing.cardPadding),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.itemGap)
+                        ) {
+                            Text(task.title, style = MaterialTheme.typography.titleSmall)
+                            Text(task.detail)
+                            task.currentPath?.let { current ->
+                                Text(
+                                    text = current,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { taskCoordinator.requestCancel(TaskArea.Trash) },
+                                enabled = task.isCancellable,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.itemGap))
+                }
+            }
 
             if (entries.value.isEmpty()) {
                 item { Text("Trash is empty.") }
@@ -191,7 +239,7 @@ fun TrashScreen(
                         imageLoader = imageLoader,
                         onClick = { selectedEntry.value = entry }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(Spacing.itemGap))
                 }
 
                 if (isLoading.value && entries.value.isNotEmpty()) {
@@ -212,7 +260,7 @@ fun TrashScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .padding(end = 4.dp)
+                .padding(end = Spacing.xs)
         )
 
         overlayText?.let { indicator ->
@@ -222,7 +270,10 @@ fun TrashScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(end = ScrollbarDefaults.ThumbWidth + 12.dp, top = 12.dp)
+                    .padding(
+                        end = ScrollbarDefaults.ThumbWidth + Spacing.lg,
+                        top = Spacing.lg
+                    )
             )
         }
     }
@@ -233,15 +284,20 @@ fun TrashScreen(
             title = { Text("Empty trash?") },
             text = { Text("This will permanently delete all items in trash.") },
             confirmButton = {
-                OutlinedButton(onClick = {
-                    confirmEmpty.value = false
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            trashController.emptyTrash()
-                        }
-                        resetAndLoad()
+                OutlinedButton(
+                    enabled = !isBusy,
+                    onClick = {
+                        confirmEmpty.value = false
+                        startEmptyTrashTask(
+                            trashController = trashController,
+                            scope = scope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onJobChanged = { job -> currentJob.value = job },
+                            resetAndLoad = ::resetAndLoad
+                        )
                     }
-                }) {
+                ) {
                     Text("Delete all")
                 }
             },
@@ -256,6 +312,7 @@ fun TrashScreen(
     selectedEntry.value?.let { entry ->
         TrashEntryDetailsDialog(
             entry = entry,
+            actionsEnabled = !isBusy,
             onOpen = {
                 openFile(context, entry.trashedPath)
                 selectedEntry.value = null
@@ -317,15 +374,18 @@ fun TrashScreen(
             title = { Text("Delete permanently?") },
             text = { Text(entry.originalPath) },
             confirmButton = {
-                OutlinedButton(onClick = {
-                    confirmDeleteEntry.value = null
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            trashController.deletePermanently(entry)
+                OutlinedButton(
+                    enabled = !isBusy,
+                    onClick = {
+                        confirmDeleteEntry.value = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                trashController.deletePermanently(entry)
+                            }
+                            resetAndLoad()
                         }
-                        resetAndLoad()
                     }
-                }) {
+                ) {
                     Text("Delete")
                 }
             },
@@ -336,6 +396,115 @@ fun TrashScreen(
             }
         )
     }
+}
+
+internal fun startEmptyTrashTask(
+    trashController: TrashController,
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onJobChanged: (Job?) -> Unit,
+    resetAndLoad: () -> Unit
+) {
+    startEmptyTrashTask(
+        scope = scope,
+        taskCoordinator = taskCoordinator,
+        notificationController = notificationController,
+        onJobChanged = onJobChanged,
+        resetAndLoad = resetAndLoad
+    ) { shouldContinue, onProgress ->
+        trashController.emptyTrash(shouldContinue = shouldContinue, onProgress = onProgress)
+    }
+}
+
+internal fun startEmptyTrashTask(
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onJobChanged: (Job?) -> Unit,
+    resetAndLoad: () -> Unit,
+    runEmptyTrash: ((() -> Boolean), (TrashProgress) -> Unit) -> TrashRunSummary
+) {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Trash,
+        kind = TaskKind.EmptyTrash,
+        title = trashTaskTitle(),
+        detail = "Preparing trash cleanup.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateTrashCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController
+            )
+        }
+    ) ?: return
+    notificationController.showActive(started)
+    val job = scope.launch {
+        try {
+            val summary = withContext(Dispatchers.IO) {
+                runEmptyTrash(
+                    { !cancelRequested.get() },
+                    { progress ->
+                        taskCoordinator.update(TaskArea.Trash) { task ->
+                            task.withLinearProgress(
+                                title = trashTaskTitle(),
+                                detail = trashTaskDetail(progress),
+                                currentPath = progress.currentPath,
+                                processed = progress.processed,
+                                total = progress.total
+                            )
+                        }?.let(notificationController::showActive)
+                    }
+                )
+            }
+            if (summary.cancelled) {
+                taskCoordinator.cancel(
+                    area = TaskArea.Trash,
+                    title = "Trash empty cancelled",
+                    detail = "Cancelled after ${summary.processed}/${summary.total} items.",
+                    currentPath = summary.currentPath,
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            } else {
+                taskCoordinator.complete(
+                    area = TaskArea.Trash,
+                    title = "Trash empty complete",
+                    detail = trashTaskCompletedDetail(summary),
+                    currentPath = summary.currentPath,
+                    processed = summary.processed,
+                    total = summary.total,
+                    indeterminate = summary.total <= 0
+                )?.let(notificationController::showTerminal)
+            }
+            resetAndLoad()
+        } finally {
+            onJobChanged(null)
+        }
+    }
+    onJobChanged(job)
+}
+
+private fun requestImmediateTrashCancel(
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController
+) {
+    val snapshot = taskCoordinator.activeTask(TaskArea.Trash)
+    taskCoordinator.cancel(
+        area = TaskArea.Trash,
+        title = "Trash empty cancelled",
+        detail = "Cancelling trash cleanup.",
+        currentPath = snapshot?.currentPath,
+        processed = snapshot?.processed,
+        total = snapshot?.total,
+        indeterminate = snapshot?.indeterminate ?: true
+    )?.let(notificationController::showTerminal)
 }
 
 @Composable
@@ -352,7 +521,10 @@ private fun TrashEntryCard(
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors()
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(Spacing.cardPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (showThumbnail) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
@@ -364,7 +536,7 @@ private fun TrashEntryCard(
                         .width(56.dp)
                         .height(56.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(Spacing.lg))
             }
 
             Column(modifier = Modifier.weight(1f)) {
@@ -374,7 +546,7 @@ private fun TrashEntryCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
                     text = formatPath(entry.originalPath, showFullPath = true),
                     style = MaterialTheme.typography.bodySmall,
@@ -382,7 +554,7 @@ private fun TrashEntryCard(
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
                     text = "${formatBytesWithExact(entry.sizeBytes)} · Deleted ${formatDate(entry.deletedAtMillis)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -396,6 +568,7 @@ private fun TrashEntryCard(
 @Composable
 private fun TrashEntryDetailsDialog(
     entry: TrashEntryEntity,
+    actionsEnabled: Boolean,
     onOpen: () -> Unit,
     onRestore: () -> Unit,
     onDeleteForeverRequest: () -> Unit,
@@ -411,11 +584,11 @@ private fun TrashEntryDetailsDialog(
                     text = fileName,
                     style = MaterialTheme.typography.titleSmall
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Path: ${entry.originalPath}")
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Trashed: ${entry.trashedPath}")
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
                 Text("Deleted: ${formatDate(entry.deletedAtMillis)}")
                 Text("Size: ${formatBytesWithExact(entry.sizeBytes)}")
                 Text("Modified: ${formatDate(entry.lastModifiedMillis)}")
@@ -424,14 +597,24 @@ private fun TrashEntryDetailsDialog(
         confirmButton = {
             Row {
                 OutlinedButton(onClick = onOpen) { Text("Open") }
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedButton(onClick = onRestore) { Text("Restore") }
+                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                OutlinedButton(
+                    enabled = actionsEnabled,
+                    onClick = onRestore
+                ) {
+                    Text("Restore")
+                }
             }
         },
         dismissButton = {
             Row {
-                OutlinedButton(onClick = onDeleteForeverRequest) { Text("Delete") }
-                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedButton(
+                    enabled = actionsEnabled,
+                    onClick = onDeleteForeverRequest
+                ) {
+                    Text("Delete")
+                }
+                Spacer(modifier = Modifier.width(Spacing.inlineGap))
                 OutlinedButton(onClick = onDismiss) { Text("Close") }
             }
         }

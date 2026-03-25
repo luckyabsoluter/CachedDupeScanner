@@ -15,7 +15,10 @@ class ScanHistoryRepository(
     private val dao: FileCacheDao,
     private val settingsStore: AppSettingsStore,
     private val groupDao: DuplicateGroupDao? = null,
-    private val database: CacheDatabase? = null
+    private val database: CacheDatabase? = null,
+    private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
+        Hashing.sha256Hex(file, shouldContinue = shouldContinue)
+    }
 ) {
     fun recordScan(result: ScanResult) {
         val settings = settingsStore.load()
@@ -101,7 +104,7 @@ class ScanHistoryRepository(
             val size = file.length()
             val modified = file.lastModified()
             if (size != entity.sizeBytes || modified != entity.lastModifiedMillis) {
-                val hash = Hashing.sha256Hex(file)
+                val hash = requireNotNull(hashFile(file) { true })
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
@@ -124,7 +127,7 @@ class ScanHistoryRepository(
             val size = file.length()
             val modified = file.lastModified()
             if (size != entity.sizeBytes || modified != entity.lastModifiedMillis) {
-                val hash = Hashing.sha256Hex(file)
+                val hash = requireNotNull(hashFile(file) { true })
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
@@ -145,7 +148,7 @@ class ScanHistoryRepository(
             val path = entity.path.ifBlank { entity.normalizedPath }
             val file = File(path)
             if (!file.exists()) return@forEach
-            val hash = Hashing.sha256Hex(file)
+            val hash = requireNotNull(hashFile(file) { true })
             val updatedEntity = entity.copy(hashHex = hash)
             upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
             updated += 1
@@ -157,8 +160,9 @@ class ScanHistoryRepository(
         deleteMissing: Boolean,
         rehashStale: Boolean,
         rehashMissing: Boolean,
+        shouldContinue: () -> Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
-    ): DbMaintenanceProgress {
+    ): DbMaintenanceSummary {
         val total = dao.countAll()
         var processed = 0
         var deleted = 0
@@ -166,11 +170,25 @@ class ScanHistoryRepository(
         var missingHashed = 0
         val batchSize = 200
         var lastPath = ""
+        var currentPath: String? = null
         while (true) {
+            if (!shouldContinue()) break
             val batch = dao.getPageAfter(lastPath, batchSize)
             if (batch.isEmpty()) break
-            batch.forEach { entity ->
+            for (entity in batch) {
+                if (!shouldContinue()) {
+                    return DbMaintenanceSummary(
+                        total = total,
+                        processed = processed,
+                        deleted = deleted,
+                        rehashed = rehashed,
+                        missingHashed = missingHashed,
+                        cancelled = true,
+                        currentPath = currentPath
+                    )
+                }
                 val path = entity.path.ifBlank { entity.normalizedPath }
+                currentPath = path
                 val file = File(path)
                 if (!file.exists()) {
                     if (deleteMissing) {
@@ -189,30 +207,41 @@ class ScanHistoryRepository(
                         )
                     )
                     lastPath = entity.normalizedPath
-                    return@forEach
+                    continue
                 }
 
                 val size = file.length()
                 val modified = file.lastModified()
                 val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
                 val isMissingHash = entity.hashHex.isNullOrBlank()
-                var shouldHash = false
-                if (rehashStale && isStale) {
-                    rehashed += 1
-                    shouldHash = true
-                }
-                if (rehashMissing && isMissingHash) {
-                    missingHashed += 1
-                    shouldHash = true
-                }
+                val shouldRehashStale = rehashStale && isStale
+                val shouldHashMissing = rehashMissing && isMissingHash
+                val shouldHash = shouldRehashStale || shouldHashMissing
                 if (shouldHash) {
-                    val hash = Hashing.sha256Hex(file)
+                    val hash = hashFile(file, shouldContinue)
+                    if (hash == null) {
+                        return DbMaintenanceSummary(
+                            total = total,
+                            processed = processed,
+                            deleted = deleted,
+                            rehashed = rehashed,
+                            missingHashed = missingHashed,
+                            cancelled = true,
+                            currentPath = currentPath
+                        )
+                    }
                     val updatedEntity = entity.copy(
                         sizeBytes = size,
                         lastModifiedMillis = modified,
                         hashHex = hash
                     )
                     upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
+                    if (shouldRehashStale) {
+                        rehashed += 1
+                    }
+                    if (shouldHashMissing) {
+                        missingHashed += 1
+                    }
                 }
 
                 processed += 1
@@ -229,21 +258,86 @@ class ScanHistoryRepository(
                 lastPath = entity.normalizedPath
             }
         }
-        return DbMaintenanceProgress(
+        return DbMaintenanceSummary(
             total = total,
             processed = processed,
             deleted = deleted,
             rehashed = rehashed,
             missingHashed = missingHashed,
-            currentPath = null
+            cancelled = processed < total,
+            currentPath = currentPath
         )
     }
 
     fun clearAll() {
-        runInConsistencyTransaction {
-            dao.clear()
-            groupDao?.clear()
+        clearAll(shouldContinue = { true }) { }
+    }
+
+    fun clearAll(
+        shouldContinue: () -> Boolean,
+        onProgress: (ClearCacheProgress) -> Unit
+    ): ClearCacheSummary {
+        val totalFiles = dao.countAll()
+        val totalGroups = groupDao?.countGroups() ?: 0
+        val total = totalFiles + totalGroups
+        var processed = 0
+        var clearedFiles = 0
+        var clearedGroups = 0
+        val batchSize = 200
+        var lastPath = ""
+
+        while (true) {
+            if (!shouldContinue()) break
+            val batch = dao.getPageAfter(lastPath, batchSize)
+            if (batch.isEmpty()) break
+            val paths = batch.map { it.normalizedPath }
+            runInConsistencyTransaction {
+                dao.deleteByNormalizedPaths(paths)
+            }
+            clearedFiles += batch.size
+            processed += batch.size
+            lastPath = batch.last().normalizedPath
+            onProgress(
+                ClearCacheProgress(
+                    total = total,
+                    processed = processed,
+                    clearedFiles = clearedFiles,
+                    clearedGroups = clearedGroups
+                )
+            )
         }
+
+        val groups = groupDao
+        if (groups != null) {
+            while (true) {
+                if (!shouldContinue()) break
+                val batch = groups.listPageByKey(limit = batchSize, offset = 0)
+                if (batch.isEmpty()) break
+                runInConsistencyTransaction {
+                    batch.forEach { group ->
+                        groups.delete(group.sizeBytes, group.hashHex)
+                    }
+                }
+                clearedGroups += batch.size
+                processed += batch.size
+                onProgress(
+                    ClearCacheProgress(
+                        total = total,
+                        processed = processed,
+                        clearedFiles = clearedFiles,
+                        clearedGroups = clearedGroups
+                    )
+                )
+            }
+        }
+
+        return ClearCacheSummary(
+            total = total,
+            processed = processed,
+            clearedFiles = clearedFiles,
+            clearedGroups = clearedGroups,
+            cancelled = processed < total
+        )
     }
 
     fun deleteByNormalizedPath(normalizedPath: String) {
@@ -351,15 +445,6 @@ private fun PathGroupKey.toGroupKey(): GroupKey? {
 
 private const val RECORD_SCAN_CHUNK_SIZE = 500
 private const val PATH_QUERY_CHUNK_SIZE = 800
-
-data class DbMaintenanceProgress(
-    val total: Int,
-    val processed: Int,
-    val deleted: Int,
-    val rehashed: Int,
-    val missingHashed: Int,
-    val currentPath: String?
-)
 
 private fun CachedFileEntity.toMetadata(): FileMetadata {
     return FileMetadata(

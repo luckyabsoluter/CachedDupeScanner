@@ -71,7 +71,7 @@ fun DashboardScreen(
 
             DashboardCard(
                 title = "Scan results",
-                description = "View duplicates and export results.",
+                description = "View duplicates.",
                 actionLabel = "Open results",
                 onAction = onOpenResults
             )

@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.storage.DbMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,12 +39,13 @@ class DbManagementUiStateTest {
 
         state.startMaintenance()
         state.completeMaintenance(
-            DbMaintenanceProgress(
+            DbMaintenanceSummary(
                 total = 10,
                 processed = 10,
                 deleted = 2,
                 rehashed = 5,
                 missingHashed = 1,
+                cancelled = false,
                 currentPath = null
             )
         )

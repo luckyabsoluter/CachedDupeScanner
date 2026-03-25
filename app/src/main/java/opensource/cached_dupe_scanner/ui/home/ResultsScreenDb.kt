@@ -101,6 +101,8 @@ internal enum class ResultGroupMemberSortKey(val label: String) {
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
     settingsStore: AppSettingsStore,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
@@ -162,7 +164,6 @@ fun ResultsScreenDb(
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
     val membersCache = remember { mutableStateMapOf<String, MembersCacheEntry>() }
-    val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
 
     val pageSize = 50
     val buffer = 20
@@ -490,6 +491,7 @@ fun ResultsScreenDb(
                         deletedPaths = deletedPaths,
                         showFullPaths = showFullPaths.value,
                         imageLoader = imageLoader,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                         rememberedPreviewCache = rememberedPreviewCache,
                         membersCache = membersCache,
                         onOpen = {
@@ -597,6 +599,7 @@ fun ResultsScreenDb(
                             onDeleteFile = onDeleteFile,
                             onGroupEdited = { _ -> },
                             imageLoader = imageLoader,
+                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                             rememberedPreviewCache = rememberedPreviewCache,
                             cacheEntry = entry,
                             detailScrollState = detailScrollState,
@@ -707,6 +710,7 @@ private fun DuplicateGroupCardDb(
     deletedPaths: Set<String>,
     showFullPaths: Boolean,
     imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     membersCache: MutableMap<String, MembersCacheEntry>,
     onOpen: () -> Unit
@@ -769,6 +773,7 @@ private fun DuplicateGroupCardDb(
                     previewMemoryKey = cacheKey,
                     rememberedPreviewCache = rememberedPreviewCache,
                     imageLoader = imageLoader,
+                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                     contentDescription = "Thumbnail",
                     modifier = Modifier
                         .height(72.dp)
@@ -826,6 +831,7 @@ private fun GroupDetailDb(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onGroupEdited: (rebuildSucceeded: Boolean) -> Unit,
     imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     cacheEntry: MembersCacheEntry?,
     detailScrollState: ScrollState,
@@ -948,6 +954,7 @@ private fun GroupDetailDb(
             previewMemoryKey = previewMemoryKey,
             rememberedPreviewCache = rememberedPreviewCache,
             imageLoader = imageLoader,
+            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
             contentDescription = "Thumbnail",
             modifier = Modifier
                 .fillMaxWidth()

@@ -12,7 +12,10 @@ class SettingsScreenTest {
         val section = zeroSizeSettingsSection(
             settings = AppSettings(
                 skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
                 hideZeroSizeInResults = false,
+                showMemoryOverlay = false,
+                keepLoadedThumbnailsInMemory = false,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -29,6 +32,81 @@ class SettingsScreenTest {
         assertEquals(ToggleSettingId.HideZeroSizeInResults, section.toggles[1].id)
         assertTrue(section.toggles[0].checked)
         assertFalse(section.toggles[1].checked)
+    }
+
+    @Test
+    fun trashScanSettingsSectionDefaultsToCheckedToggle() {
+        val section = trashScanSettingsSection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                showMemoryOverlay = false,
+                keepLoadedThumbnailsInMemory = false,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Trash scan exclusion", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.SkipTrashBinContentsInScan, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun memoryOverlaySectionExposesTopLeftOverlayToggle() {
+        val section = memoryOverlaySection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                showMemoryOverlay = true,
+                keepLoadedThumbnailsInMemory = false,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Memory overlay", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.ShowMemoryOverlay, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun thumbnailMemorySectionExposesRamToggle() {
+        val section = thumbnailMemorySettingsSection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                showMemoryOverlay = false,
+                keepLoadedThumbnailsInMemory = true,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Thumbnail memory", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.KeepLoadedThumbnailsInMemory, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
     }
 
     @Test

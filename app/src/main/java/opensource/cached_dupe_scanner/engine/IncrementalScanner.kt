@@ -113,8 +113,15 @@ class IncrementalScanner(
                         cached.cached.hashHex
                     }
                     else -> {
+                        val computed = fileHasher.hash(File(current.path), shouldContinue)
+                        if (computed == null) {
+                            return ScanResult(
+                                scannedAtMillis = scannedAtMillis,
+                                files = files,
+                                duplicateGroups = emptyList()
+                            )
+                        }
                         hashCount += 1
-                        val computed = fileHasher.hash(File(current.path))
                         onProgress(hashCount, totalHash, current, ScanPhase.Hashing)
                         computed
                     }

@@ -95,7 +95,8 @@ fun ResultsScreen(
     }
     val rememberedPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val settingsSnapshot = remember { settingsStore.load() }
-        val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
+    val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
+    val keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory
     val sortKey = remember {
         val key = runCatching { ResultSortKey.valueOf(settingsSnapshot.resultSortKey) }
             .getOrDefault(ResultSortKey.Count)
@@ -313,6 +314,7 @@ fun ResultsScreen(
                                             previewMemoryKey = previewMemoryKey,
                                             rememberedPreviewCache = rememberedPreviewCache,
                                             imageLoader = imageLoader,
+                                            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                                             contentDescription = "Thumbnail",
                                             modifier = Modifier.size(72.dp)
                                         )
@@ -386,6 +388,7 @@ fun ResultsScreen(
                                 group = group,
                                 deletedPaths = deletedPaths,
                                 imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                                 rememberedPreviewCache = rememberedPreviewCache,
                                 onDeleteFile = { file ->
                                     val handler = onDeleteFile ?: return@GroupDetailContent false
@@ -515,6 +518,7 @@ private fun GroupDetailContent(
     group: DuplicateGroup,
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
@@ -540,6 +544,7 @@ private fun GroupDetailContent(
             previewMemoryKey = previewMemoryKey,
             rememberedPreviewCache = rememberedPreviewCache,
             imageLoader = imageLoader,
+            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
             contentDescription = "Thumbnail",
             modifier = Modifier
                 .fillMaxWidth()

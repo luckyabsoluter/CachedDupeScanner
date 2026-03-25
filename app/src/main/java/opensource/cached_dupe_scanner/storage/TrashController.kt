@@ -143,14 +143,54 @@ class TrashController(
     }
 
     fun emptyTrash(): Int {
+        return emptyTrash(shouldContinue = { true }) { }.deleted
+    }
+
+    fun emptyTrash(
+        shouldContinue: () -> Boolean,
+        onProgress: (TrashProgress) -> Unit
+    ): TrashRunSummary {
         val entries = trashRepo.listAll()
         var deletedCount = 0
-        entries.forEach { entry ->
+        var failedCount = 0
+        var processed = 0
+        var currentPath: String? = null
+        for (entry in entries) {
+            if (!shouldContinue()) {
+                return TrashRunSummary(
+                    total = entries.size,
+                    processed = processed,
+                    deleted = deletedCount,
+                    failed = failedCount,
+                    cancelled = true,
+                    currentPath = currentPath
+                )
+            }
+            currentPath = entry.originalPath
             if (deletePermanently(entry)) {
                 deletedCount += 1
+            } else {
+                failedCount += 1
             }
+            processed += 1
+            onProgress(
+                TrashProgress(
+                    total = entries.size,
+                    processed = processed,
+                    deleted = deletedCount,
+                    failed = failedCount,
+                    currentPath = currentPath
+                )
+            )
         }
-        return deletedCount
+        return TrashRunSummary(
+            total = entries.size,
+            processed = processed,
+            deleted = deletedCount,
+            failed = failedCount,
+            cancelled = processed < entries.size,
+            currentPath = currentPath
+        )
     }
 
     private fun moveFile(source: File, dest: File): Boolean {

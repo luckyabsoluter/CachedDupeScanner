@@ -19,7 +19,10 @@ class AppSettingsStoreTest {
         val settings = store.load()
 
         assertTrue(settings.skipZeroSizeInDb)
+        assertTrue(settings.skipTrashBinContentsInScan)
         assertFalse(settings.hideZeroSizeInResults)
+        assertFalse(settings.showMemoryOverlay)
+        assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
@@ -37,8 +40,17 @@ class AppSettingsStoreTest {
         store.setSkipZeroSizeInDb(true)
         assertTrue(store.load().skipZeroSizeInDb)
 
+        store.setSkipTrashBinContentsInScan(false)
+        assertFalse(store.load().skipTrashBinContentsInScan)
+
         store.setHideZeroSizeInResults(true)
         assertTrue(store.load().hideZeroSizeInResults)
+
+        store.setShowMemoryOverlay(true)
+        assertTrue(store.load().showMemoryOverlay)
+
+        store.setKeepLoadedThumbnailsInMemory(true)
+        assertTrue(store.load().keepLoadedThumbnailsInMemory)
 
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -70,6 +82,48 @@ class AppSettingsStoreTest {
         val imported = store.importFromJson("{}")
 
         assertTrue(imported.skipZeroSizeInDb)
+        assertTrue(imported.skipTrashBinContentsInScan)
+        assertFalse(imported.showMemoryOverlay)
+        assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(store.load().skipZeroSizeInDb)
+        assertTrue(store.load().skipTrashBinContentsInScan)
+    }
+
+    @Test
+    fun exportImportRoundTripPreservesNonDefaultValues() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setSkipZeroSizeInDb(false)
+        store.setSkipTrashBinContentsInScan(false)
+        store.setHideZeroSizeInResults(true)
+        store.setShowMemoryOverlay(true)
+        store.setKeepLoadedThumbnailsInMemory(true)
+        store.setResultSortKey("Name")
+        store.setResultSortDirection("Asc")
+        store.setResultGroupSortKey("Modified")
+        store.setResultGroupSortDirection("Desc")
+        store.setShowFullPaths(true)
+        store.setFilesSortKey("Size")
+        store.setFilesSortDirection("Desc")
+
+        val exported = store.exportToJson()
+
+        val importedStore = AppSettingsStore(context)
+        val imported = importedStore.importFromJson(exported)
+
+        assertFalse(imported.skipZeroSizeInDb)
+        assertFalse(imported.skipTrashBinContentsInScan)
+        assertTrue(imported.hideZeroSizeInResults)
+        assertTrue(imported.showMemoryOverlay)
+        assertTrue(imported.keepLoadedThumbnailsInMemory)
+        assertEquals("Name", imported.resultSortKey)
+        assertEquals("Asc", imported.resultSortDirection)
+        assertEquals("Modified", imported.resultGroupSortKey)
+        assertEquals("Desc", imported.resultGroupSortDirection)
+        assertTrue(imported.showFullPaths)
+        assertEquals("Size", imported.filesSortKey)
+        assertEquals("Desc", imported.filesSortDirection)
+        assertEquals(imported, importedStore.load())
     }
 }
