@@ -976,6 +976,9 @@ fun ResultsScreenDb(
                     snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
                     totalGroupCount = totalGroupCount.value,
                     appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    rememberedPreviewCache = rememberedPreviewCache,
                     onDeleteFile = onDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null
@@ -993,6 +996,9 @@ fun ResultsScreenDb(
                     snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
                     totalGroupCount = totalGroupCount.value,
                     appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    rememberedPreviewCache = rememberedPreviewCache,
                     onDeleteFile = onDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null

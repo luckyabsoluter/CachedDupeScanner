@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -29,9 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.ImageLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -438,6 +442,9 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     snapshotUpdatedAtMillis: Long?,
     totalGroupCount: Int,
     appliedFilter: ResultsFilterDefinition,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -693,7 +700,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             items = builtPreview.candidates,
                             key = { candidate -> "${candidate.group.sizeBytes}:${candidate.group.hashHex}" }
                         ) { candidate ->
-                            ResultsBulkDeleteCandidateCard(candidate = candidate)
+                            ResultsBulkDeleteCandidateCard(
+                                candidate = candidate,
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                rememberedPreviewCache = rememberedPreviewCache
+                            )
                         }
                         item {
                             Button(
@@ -812,6 +824,9 @@ internal fun KeepByModifiedBulkDeleteScreen(
     snapshotUpdatedAtMillis: Long?,
     totalGroupCount: Int,
     appliedFilter: ResultsFilterDefinition,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -1049,7 +1064,12 @@ internal fun KeepByModifiedBulkDeleteScreen(
                             items = builtPreview.candidates,
                             key = { candidate -> "${candidate.group.sizeBytes}:${candidate.group.hashHex}" }
                         ) { candidate ->
-                            ResultsBulkDeleteCandidateCard(candidate = candidate)
+                            ResultsBulkDeleteCandidateCard(
+                                candidate = candidate,
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                rememberedPreviewCache = rememberedPreviewCache
+                            )
                         }
                         item {
                             Button(
@@ -1162,7 +1182,25 @@ internal fun KeepByModifiedBulkDeleteScreen(
 }
 
 @Composable
-private fun ResultsBulkDeleteCandidateCard(candidate: ResultsBulkDeleteCandidate) {
+private fun ResultsBulkDeleteCandidateCard(
+    candidate: ResultsBulkDeleteCandidate,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>
+) {
+    val previewFiles = remember(candidate.group.sizeBytes, candidate.group.hashHex) {
+        listOf(candidate.survivor) + candidate.deleteTargets
+    }
+    val previewCandidates = remember(previewFiles) {
+        mediaPreviewCandidates(
+            files = previewFiles,
+            deletedPaths = emptySet()
+        )
+    }
+    val previewMemoryKey = remember(candidate.group.sizeBytes, candidate.group.hashHex) {
+        "bulk:${candidate.group.sizeBytes}:${candidate.group.hashHex}"
+    }
+
     Card {
         Column(
             modifier = Modifier
@@ -1170,6 +1208,19 @@ private fun ResultsBulkDeleteCandidateCard(candidate: ResultsBulkDeleteCandidate
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            if (previewCandidates.isNotEmpty()) {
+                GroupPreviewThumbnail(
+                    candidatePaths = previewCandidates,
+                    previewMemoryKey = previewMemoryKey,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    imageLoader = imageLoader,
+                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                    contentDescription = "Bulk delete preview thumbnail",
+                    modifier = Modifier
+                        .height(72.dp)
+                        .width(72.dp)
+                )
+            }
             Text(
                 text = "${candidate.group.fileCount} files · Total ${formatBytes(candidate.group.totalBytes)}",
                 style = MaterialTheme.typography.titleMedium
