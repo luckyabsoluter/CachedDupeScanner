@@ -75,6 +75,46 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
+    fun buildKeepModifiedBulkDeleteCandidateKeepsOldestFile() {
+        val candidate = buildKeepModifiedBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 3),
+            members = listOf(
+                file("/keep/oldest.mkv", modified = 10L),
+                file("/keep/middle.mkv", modified = 20L),
+                file("/keep/newest.mkv", modified = 30L)
+            ),
+            keepNewest = false
+        )
+
+        requireNotNull(candidate)
+        assertEquals("/keep/oldest.mkv", candidate.survivor.normalizedPath)
+        assertEquals(
+            listOf("/keep/middle.mkv", "/keep/newest.mkv"),
+            candidate.deleteTargets.map { it.normalizedPath }
+        )
+    }
+
+    @Test
+    fun buildKeepModifiedBulkDeleteCandidateKeepsNewestFile() {
+        val candidate = buildKeepModifiedBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 3),
+            members = listOf(
+                file("/keep/oldest.mkv", modified = 10L),
+                file("/keep/middle.mkv", modified = 20L),
+                file("/keep/newest.mkv", modified = 30L)
+            ),
+            keepNewest = true
+        )
+
+        requireNotNull(candidate)
+        assertEquals("/keep/newest.mkv", candidate.survivor.normalizedPath)
+        assertEquals(
+            listOf("/keep/oldest.mkv", "/keep/middle.mkv"),
+            candidate.deleteTargets.map { it.normalizedPath }
+        )
+    }
+
+    @Test
     fun collectKeepOneNonMatchBulkDeleteCandidatesHonorsCurrentResultsFilter() {
         val candidates = collectKeepOneNonMatchBulkDeleteCandidates(
             groupsWithMembers = listOf(
@@ -116,12 +156,50 @@ class ResultsScreenDbBulkDeleteTest {
         assertEquals("10:a", "${candidates.single().group.sizeBytes}:${candidates.single().group.hashHex}")
     }
 
-    private fun file(path: String): FileMetadata {
+    @Test
+    fun collectKeepModifiedBulkDeleteCandidatesHonorsCurrentResultsFilter() {
+        val candidates = collectKeepModifiedBulkDeleteCandidates(
+            groupsWithMembers = listOf(
+                group(size = 10L, hash = "a", count = 3) to listOf(
+                    file("/show/episode-old.mkv", modified = 10L),
+                    file("/show/episode-mid.mkv", modified = 20L),
+                    file("/show/episode-new.mkv", modified = 30L)
+                ),
+                group(size = 10L, hash = "b", count = 3) to listOf(
+                    file("/movie/old.mkv", modified = 10L),
+                    file("/movie/mid.mkv", modified = 20L),
+                    file("/movie/new.mkv", modified = 30L)
+                )
+            ),
+            filterDefinition = ResultsFilterDefinition(
+                clusters = listOf(
+                    ResultsFilterCluster(
+                        id = "cluster_1",
+                        name = "Episode only",
+                        rules = listOf(
+                            ResultsFilterRule(
+                                id = "rule_1",
+                                target = ResultsFilterTarget.FileName,
+                                textOperator = ResultsFilterTextOperator.Contains,
+                                value = "episode"
+                            )
+                        )
+                    )
+                )
+            ),
+            keepNewest = true
+        )
+
+        assertEquals(1, candidates.size)
+        assertEquals("/show/episode-new.mkv", candidates.single().survivor.normalizedPath)
+    }
+
+    private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
             sizeBytes = 10L,
-            lastModifiedMillis = 1L,
+            lastModifiedMillis = modified,
             hashHex = "hash"
         )
     }
