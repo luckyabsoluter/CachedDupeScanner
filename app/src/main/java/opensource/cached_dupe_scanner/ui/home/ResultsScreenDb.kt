@@ -127,8 +127,21 @@ fun ResultsScreenDb(
     val filterDialogOpen = remember { mutableStateOf(false) }
     val settingsSnapshot = remember { settingsStore.load() }
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
-    val appliedFilter = remember { mutableStateOf(ResultsFilterDefinition()) }
-    val draftFilter = remember { mutableStateOf(ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))) }
+    val initialFilterDefinition = remember(settingsSnapshot.resultsFilterDefinitionJson) {
+        resultsFilterDefinitionFromJson(settingsSnapshot.resultsFilterDefinitionJson)
+    }
+    val appliedFilter = remember {
+        mutableStateOf(initialFilterDefinition)
+    }
+    val draftFilter = remember {
+        mutableStateOf(
+            if (initialFilterDefinition.clusters.isEmpty()) {
+                ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+            } else {
+                initialFilterDefinition
+            }
+        )
+    }
 
     fun normalizeDbSortKey(key: ResultSortKey): ResultSortKey {
         return if (key == ResultSortKey.Name) ResultSortKey.Count else key
@@ -915,6 +928,9 @@ fun ResultsScreenDb(
             },
             onApply = {
                 appliedFilter.value = draftFilter.value
+                settingsStore.setResultsFilterDefinitionJson(
+                    resultsFilterDefinitionToJson(draftFilter.value)
+                )
                 filterDialogOpen.value = false
                 refresh(reset = true, rebuild = false)
             }

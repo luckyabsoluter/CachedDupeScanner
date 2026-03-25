@@ -14,6 +14,7 @@ data class AppSettings(
     val resultGroupSortKey: String,
     val resultGroupSortDirection: String,
     val showFullPaths: Boolean,
+    val resultsFilterDefinitionJson: String,
     val filesSortKey: String,
     val filesSortDirection: String
 )
@@ -63,6 +64,10 @@ class AppSettingsStore(context: Context) {
 
     fun setShowFullPaths(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_FULL_PATHS, enabled).apply()
+    }
+
+    fun setResultsFilterDefinitionJson(value: String) {
+        prefs.edit().putString(KEY_RESULTS_FILTER_DEFINITION_JSON, value).apply()
     }
 
     fun setFilesSortKey(value: String) {
@@ -116,6 +121,10 @@ class AppSettingsStore(context: Context) {
                 DEFAULT_SETTINGS.resultGroupSortDirection
             ) ?: DEFAULT_SETTINGS.resultGroupSortDirection,
             showFullPaths = prefs.getBoolean(KEY_SHOW_FULL_PATHS, DEFAULT_SETTINGS.showFullPaths),
+            resultsFilterDefinitionJson = prefs.getString(
+                KEY_RESULTS_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.resultsFilterDefinitionJson
+            ) ?: DEFAULT_SETTINGS.resultsFilterDefinitionJson,
             filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey)
                 ?: DEFAULT_SETTINGS.filesSortKey,
             filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
@@ -153,6 +162,10 @@ class AppSettingsStore(context: Context) {
                 DEFAULT_SETTINGS.resultGroupSortDirection
             ),
             showFullPaths = obj.optBoolean(KEY_SHOW_FULL_PATHS, DEFAULT_SETTINGS.showFullPaths),
+            resultsFilterDefinitionJson = obj.optString(
+                KEY_RESULTS_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.resultsFilterDefinitionJson
+            ),
             filesSortKey = obj.optString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey),
             filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
         )
@@ -170,6 +183,7 @@ class AppSettingsStore(context: Context) {
             .putString(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
             .putString(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
             .putBoolean(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
+            .putString(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .apply()
@@ -187,6 +201,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
             .put(KEY_RESULT_GROUP_SORT_DIR, settings.resultGroupSortDirection)
             .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
+            .put(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
     }
@@ -203,6 +218,7 @@ class AppSettingsStore(context: Context) {
             resultGroupSortKey = "Path",
             resultGroupSortDirection = "Asc",
             showFullPaths = false,
+            resultsFilterDefinitionJson = "",
             filesSortKey = "Name",
             filesSortDirection = "Asc"
         )
@@ -217,6 +233,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_RESULT_GROUP_SORT_KEY = "result_group_sort_key"
         private const val KEY_RESULT_GROUP_SORT_DIR = "result_group_sort_dir"
         private const val KEY_SHOW_FULL_PATHS = "show_full_paths"
+        private const val KEY_RESULTS_FILTER_DEFINITION_JSON = "results_filter_definition_json"
         private const val KEY_FILES_SORT_KEY = "files_sort_key"
         private const val KEY_FILES_SORT_DIR = "files_sort_dir"
     }

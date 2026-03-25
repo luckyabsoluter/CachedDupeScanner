@@ -28,6 +28,7 @@ class AppSettingsStoreTest {
         assertEquals("Path", settings.resultGroupSortKey)
         assertEquals("Asc", settings.resultGroupSortDirection)
         assertFalse(settings.showFullPaths)
+        assertEquals("", settings.resultsFilterDefinitionJson)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
     }
@@ -67,6 +68,12 @@ class AppSettingsStoreTest {
         store.setShowFullPaths(true)
         assertTrue(store.load().showFullPaths)
 
+        store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\"}]}")
+        assertEquals(
+            "{\"clusters\":[{\"id\":\"cluster_1\"}]}",
+            store.load().resultsFilterDefinitionJson
+        )
+
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         val fileSortSettings = store.load()
@@ -85,6 +92,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.skipTrashBinContentsInScan)
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
+        assertEquals("", imported.resultsFilterDefinitionJson)
         assertTrue(store.load().skipZeroSizeInDb)
         assertTrue(store.load().skipTrashBinContentsInScan)
     }
@@ -104,6 +112,7 @@ class AppSettingsStoreTest {
         store.setResultGroupSortKey("Modified")
         store.setResultGroupSortDirection("Desc")
         store.setShowFullPaths(true)
+        store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}")
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
 
@@ -122,6 +131,7 @@ class AppSettingsStoreTest {
         assertEquals("Modified", imported.resultGroupSortKey)
         assertEquals("Desc", imported.resultGroupSortDirection)
         assertTrue(imported.showFullPaths)
+        assertEquals("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}", imported.resultsFilterDefinitionJson)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals(imported, importedStore.load())

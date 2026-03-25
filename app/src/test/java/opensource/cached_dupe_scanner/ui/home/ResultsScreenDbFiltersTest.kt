@@ -206,6 +206,80 @@ class ResultsScreenDbFiltersTest {
         assertEquals("C:/Users/test", folderPathFromPath("C:\\Users\\test\\image.png"))
     }
 
+    @Test
+    fun resultsFilterDefinitionJsonRoundTripPreservesConfiguredRules() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_4",
+                    name = "Saved",
+                    enabled = true,
+                    mode = ResultsFilterClusterMode.Any,
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_7",
+                            enabled = true,
+                            target = ResultsFilterTarget.GroupItemCount,
+                            countOperator = ResultsFilterCountOperator.AtMost,
+                            value = "9"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_8",
+                            enabled = false,
+                            target = ResultsFilterTarget.FileName,
+                            textOperator = ResultsFilterTextOperator.EndsWith,
+                            value = ".jpg"
+                        )
+                    )
+                )
+            )
+        )
+
+        val restored = resultsFilterDefinitionFromJson(
+            resultsFilterDefinitionToJson(definition)
+        )
+
+        assertEquals(definition, restored)
+    }
+
+    @Test
+    fun resultsFilterDefinitionFromJsonReturnsEmptyWhenJsonIsInvalid() {
+        val restored = resultsFilterDefinitionFromJson("{invalid")
+
+        assertEquals(ResultsFilterDefinition(), restored)
+    }
+
+    @Test
+    fun resultsFilterDefinitionFromJsonAdvancesIdsBeyondPersistedOnes() {
+        resultsFilterDefinitionFromJson(
+            resultsFilterDefinitionToJson(
+                ResultsFilterDefinition(
+                    clusters = listOf(
+                        ResultsFilterCluster(
+                            id = "cluster_12",
+                            name = "Saved",
+                            rules = listOf(
+                                ResultsFilterRule(
+                                    id = "rule_21",
+                                    target = ResultsFilterTarget.FileName,
+                                    value = "keep"
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val cluster = createResultsFilterCluster()
+        val rule = createResultsFilterRule()
+
+        assertTrue(cluster.id.startsWith("cluster_"))
+        assertTrue(rule.id.startsWith("rule_"))
+        assertTrue(cluster.id.substringAfterLast('_').toLong() > 12L)
+        assertTrue(rule.id.substringAfterLast('_').toLong() > 21L)
+    }
+
     private fun file(path: String): FileMetadata {
         return FileMetadata(
             path = path,

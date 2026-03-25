@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import java.util.Base64
 
 internal enum class ResultsFilterTarget(val label: String) {
     GroupItemCount("Group count"),
@@ -55,6 +56,13 @@ private object ResultsFilterIdGenerator {
         val current = nextId
         nextId += 1
         return "${prefix}_$current"
+    }
+
+    fun observePersistedId(id: String) {
+        val persisted = id.substringAfterLast('_', "").toLongOrNull() ?: return
+        if (persisted >= nextId) {
+            nextId = persisted + 1
+        }
     }
 }
 
@@ -221,4 +229,155 @@ internal fun folderPathFromPath(path: String): String {
     val normalized = path.replace('\\', '/')
     val lastSlash = normalized.lastIndexOf('/')
     return if (lastSlash >= 0) normalized.substring(0, lastSlash) else ""
+}
+
+internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition): String {
+    return buildString {
+        append("v1\n")
+        definition.clusters.forEach { cluster ->
+            append(
+                listOf(
+                    "cluster",
+                    cluster.id,
+                    cluster.enabled.toString(),
+                    cluster.mode.name,
+                    encodeFilterToken(cluster.name)
+                ).joinToString("\t")
+            )
+            append('\n')
+            cluster.rules.forEach { rule ->
+                append(
+                    listOf(
+                        "rule",
+                        cluster.id,
+                        rule.id,
+                        rule.enabled.toString(),
+                        rule.target.name,
+                        rule.textOperator.name,
+                        rule.countOperator.name,
+                        encodeFilterToken(rule.value)
+                    ).joinToString("\t")
+                )
+                append('\n')
+            }
+        }
+    }
+}
+
+internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefinition {
+    if (json.isNullOrBlank()) {
+        return ResultsFilterDefinition()
+    }
+    return runCatching {
+        val lines = json.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+        if (lines.isEmpty()) {
+            return@runCatching ResultsFilterDefinition()
+        }
+        if (lines.first() != "v1") {
+            return@runCatching ResultsFilterDefinition()
+        }
+        val clusterRecords = mutableListOf<FilterClusterRecord>()
+        val rulesByClusterId = linkedMapOf<String, MutableList<ResultsFilterRule>>()
+
+        lines.drop(1).forEach { line ->
+            val parts = line.split('\t')
+            when (parts.firstOrNull()) {
+                "cluster" -> {
+                    if (parts.size < 5) return@forEach
+                    val clusterId = parts[1].ifBlank {
+                        ResultsFilterIdGenerator.next("cluster")
+                    }
+                    ResultsFilterIdGenerator.observePersistedId(clusterId)
+                    clusterRecords.add(
+                        FilterClusterRecord(
+                            id = clusterId,
+                            enabled = parts[2].toBoolean(),
+                            mode = parseResultsFilterClusterMode(parts[3]),
+                            name = decodeFilterToken(parts[4])
+                                .ifBlank { "Cluster ${clusterRecords.size + 1}" }
+                        )
+                    )
+                }
+                "rule" -> {
+                    if (parts.size < 8) return@forEach
+                    val clusterId = parts[1]
+                    val ruleId = parts[2].ifBlank {
+                        ResultsFilterIdGenerator.next("rule")
+                    }
+                    ResultsFilterIdGenerator.observePersistedId(ruleId)
+                    rulesByClusterId.getOrPut(clusterId) { mutableListOf() }
+                        .add(
+                            ResultsFilterRule(
+                                id = ruleId,
+                                enabled = parts[3].toBoolean(),
+                                target = parseResultsFilterTarget(parts[4]),
+                                textOperator = parseResultsFilterTextOperator(parts[5]),
+                                countOperator = parseResultsFilterCountOperator(parts[6]),
+                                value = decodeFilterToken(parts[7])
+                            )
+                        )
+                }
+            }
+        }
+
+        val clusters = buildList {
+            clusterRecords.forEachIndexed { index, cluster ->
+                val rules = rulesByClusterId[cluster.id].orEmpty()
+                add(
+                    ResultsFilterCluster(
+                        id = cluster.id,
+                        name = cluster.name.ifBlank { "Cluster ${index + 1}" },
+                        enabled = cluster.enabled,
+                        mode = cluster.mode,
+                        rules = if (rules.isEmpty()) listOf(createResultsFilterRule()) else rules
+                    )
+                )
+            }
+        }
+        ResultsFilterDefinition(clusters = clusters)
+    }.getOrDefault(ResultsFilterDefinition())
+}
+
+private fun parseResultsFilterTarget(value: String): ResultsFilterTarget {
+    return runCatching { ResultsFilterTarget.valueOf(value) }
+        .getOrDefault(ResultsFilterTarget.FileName)
+}
+
+private fun parseResultsFilterClusterMode(value: String): ResultsFilterClusterMode {
+    return runCatching { ResultsFilterClusterMode.valueOf(value) }
+        .getOrDefault(ResultsFilterClusterMode.All)
+}
+
+private fun parseResultsFilterTextOperator(value: String): ResultsFilterTextOperator {
+    return runCatching { ResultsFilterTextOperator.valueOf(value) }
+        .getOrDefault(ResultsFilterTextOperator.Contains)
+}
+
+private fun parseResultsFilterCountOperator(value: String): ResultsFilterCountOperator {
+    return runCatching { ResultsFilterCountOperator.valueOf(value) }
+        .getOrDefault(ResultsFilterCountOperator.AtLeast)
+}
+
+private data class FilterClusterRecord(
+    val id: String,
+    val enabled: Boolean,
+    val mode: ResultsFilterClusterMode,
+    val name: String
+)
+
+private fun encodeFilterToken(value: String): String {
+    if (value.isEmpty()) return "-"
+    return Base64.getUrlEncoder()
+        .withoutPadding()
+        .encodeToString(value.toByteArray(Charsets.UTF_8))
+}
+
+private fun decodeFilterToken(token: String): String {
+    if (token == "-") return ""
+    return runCatching {
+        String(Base64.getUrlDecoder().decode(token), Charsets.UTF_8)
+    }.getOrDefault("")
 }
