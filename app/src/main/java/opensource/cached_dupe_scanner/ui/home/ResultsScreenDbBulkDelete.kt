@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1202,11 +1203,11 @@ private fun ResultsBulkDeleteCandidateCard(
     }
 
     Card {
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             if (previewCandidates.isNotEmpty()) {
                 GroupPreviewThumbnail(
@@ -1220,23 +1221,29 @@ private fun ResultsBulkDeleteCandidateCard(
                         .height(72.dp)
                         .width(72.dp)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
             }
-            Text(
-                text = "${candidate.group.fileCount} files · Total ${formatBytes(candidate.group.totalBytes)}",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "Keep: ${candidate.survivor.normalizedPath}",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            candidate.deleteTargets.forEach { target ->
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(
-                    text = "Delete: ${target.normalizedPath}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    text = "${candidate.group.fileCount} files · Total ${formatBytes(candidate.group.totalBytes)}",
+                    style = MaterialTheme.typography.titleMedium
                 )
+                Text(
+                    text = "Keep: ${candidate.survivor.normalizedPath}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                candidate.deleteTargets.forEach { target ->
+                    Text(
+                        text = "Delete: ${target.normalizedPath}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
