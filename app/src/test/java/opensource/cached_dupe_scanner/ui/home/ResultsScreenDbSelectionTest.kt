@@ -207,23 +207,37 @@ class ResultsScreenDbSelectionTest {
     @Test
     fun filteredResultsLoadIndicatorTextShowsDbProgressAndMatchedCount() {
         val text = filteredResultsLoadIndicatorText(
+            filteredCurrentIndex = 4,
             dbLoadedCount = 120,
             totalDbGroupCount = 1000,
             matchedGroupCount = 37
         )
 
-        assertEquals("DB loaded 120/1000\nFilter matched 37", text)
+        assertEquals("5/37 - 120/1000", text)
     }
 
     @Test
     fun filteredResultsLoadIndicatorTextReturnsNullWhenNoDbGroupsExist() {
         val text = filteredResultsLoadIndicatorText(
+            filteredCurrentIndex = 0,
             dbLoadedCount = 0,
             totalDbGroupCount = 0,
             matchedGroupCount = 0
         )
 
         assertEquals(null, text)
+    }
+
+    @Test
+    fun filteredResultsLoadIndicatorTextUsesZeroCurrentWhenNoMatchExists() {
+        val text = filteredResultsLoadIndicatorText(
+            filteredCurrentIndex = 7,
+            dbLoadedCount = 120,
+            totalDbGroupCount = 1000,
+            matchedGroupCount = 0
+        )
+
+        assertEquals("0/0 - 120/1000", text)
     }
 
     @Test

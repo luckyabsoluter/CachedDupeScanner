@@ -524,6 +524,7 @@ fun ResultsScreenDb(
     val loadIndicatorText = when {
         selectedGroupIndex != null -> null
         filtersActive() -> filteredResultsLoadIndicatorText(
+            filteredCurrentIndex = topVisibleGroupIndex.value,
             dbLoadedCount = filteredSourceOffset.value,
             totalDbGroupCount = totalGroupCount.value,
             matchedGroupCount = groups.value.size
@@ -1798,6 +1799,7 @@ internal fun uniqueGroupsToAppend(
 }
 
 internal fun filteredResultsLoadIndicatorText(
+    filteredCurrentIndex: Int,
     dbLoadedCount: Int,
     totalDbGroupCount: Int,
     matchedGroupCount: Int
@@ -1805,7 +1807,12 @@ internal fun filteredResultsLoadIndicatorText(
     if (totalDbGroupCount <= 0) return null
     val safeLoaded = dbLoadedCount.coerceIn(0, totalDbGroupCount)
     val safeMatched = matchedGroupCount.coerceAtLeast(0)
-    return "DB loaded ${safeLoaded}/${totalDbGroupCount}\nFilter matched ${safeMatched}"
+    val safeCurrent = if (safeMatched <= 0) {
+        0
+    } else {
+        (filteredCurrentIndex + 1).coerceIn(1, safeMatched)
+    }
+    return "${safeCurrent}/${safeMatched} - ${safeLoaded}/${totalDbGroupCount}"
 }
 
 internal fun loadFilteredGroupsPage(
