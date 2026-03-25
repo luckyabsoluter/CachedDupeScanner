@@ -74,7 +74,7 @@ internal fun ResultsFilterScreen(
                 }
                 item {
                     Text(
-                        text = "File name and folder rules match if any file inside the duplicate group matches the rule.",
+                        text = "File name and folder rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -362,6 +362,12 @@ private fun ResultsFilterRuleEditor(
                     label = { Text("Item count") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            } else if (rule.target == ResultsFilterTarget.SameFolder) {
+                Text(
+                    text = "Matches only when every file in the duplicate group is inside the same folder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text("Operator")

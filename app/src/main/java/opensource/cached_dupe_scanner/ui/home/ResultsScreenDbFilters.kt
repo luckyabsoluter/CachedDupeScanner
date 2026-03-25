@@ -7,7 +7,8 @@ import java.util.Base64
 internal enum class ResultsFilterTarget(val label: String) {
     GroupItemCount("Group count"),
     FileName("File name"),
-    FolderPath("Folder")
+    FolderPath("Folder"),
+    SameFolder("All same folder")
 }
 
 internal enum class ResultsFilterClusterMode(val label: String) {
@@ -166,6 +167,7 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.GroupItemCount -> rule.value.trim().toIntOrNull() != null
         ResultsFilterTarget.FileName -> rule.value.isNotBlank()
         ResultsFilterTarget.FolderPath -> rule.value.isNotBlank()
+        ResultsFilterTarget.SameFolder -> true
     }
 }
 
@@ -199,6 +201,15 @@ private fun matchesResultsFilterRule(
                     expected = rule.value,
                     operator = rule.textOperator
                 )
+            }
+        }
+        ResultsFilterTarget.SameFolder -> {
+            if (members.isEmpty()) {
+                false
+            } else {
+                members.map { folderPathFromPath(it.normalizedPath).lowercase() }
+                    .distinct()
+                    .size == 1
             }
         }
     }

@@ -136,6 +136,45 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun matchesResultsFilterUsesSameFolderRule() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same folder",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.SameFolder
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = listOf(
+                    file("/storage/camera/a.jpg"),
+                    file("/storage/camera/b.jpg")
+                )
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = listOf(
+                    file("/storage/camera/a.jpg"),
+                    file("/storage/screenshots/b.jpg")
+                )
+            )
+        )
+    }
+
+    @Test
     fun hasActiveRulesIgnoresIncompleteOrDisabledRules() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
@@ -161,6 +200,27 @@ class ResultsScreenDbFiltersTest {
 
         assertFalse(definition.hasActiveRules())
         assertEquals("No filters", summarizeResultsFilter(definition))
+    }
+
+    @Test
+    fun hasActiveRulesTreatsSameFolderRuleAsConfiguredWithoutValue() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same folder",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.SameFolder
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(definition.hasActiveRules())
+        assertEquals("1 active rule", summarizeResultsFilter(definition))
     }
 
     @Test
