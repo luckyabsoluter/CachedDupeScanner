@@ -205,6 +205,28 @@ class ResultsScreenDbSelectionTest {
     }
 
     @Test
+    fun filteredResultsLoadIndicatorTextShowsDbProgressAndMatchedCount() {
+        val text = filteredResultsLoadIndicatorText(
+            dbLoadedCount = 120,
+            totalDbGroupCount = 1000,
+            matchedGroupCount = 37
+        )
+
+        assertEquals("DB loaded 120/1000\nFilter matched 37", text)
+    }
+
+    @Test
+    fun filteredResultsLoadIndicatorTextReturnsNullWhenNoDbGroupsExist() {
+        val text = filteredResultsLoadIndicatorText(
+            dbLoadedCount = 0,
+            totalDbGroupCount = 0,
+            matchedGroupCount = 0
+        )
+
+        assertEquals(null, text)
+    }
+
+    @Test
     fun sortGroupMembersSortsByPathAsc() {
         val members = listOf(
             file("/b/file2.jpg", modified = 2L),

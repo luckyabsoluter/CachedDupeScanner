@@ -521,19 +521,24 @@ fun ResultsScreenDb(
             .collect { topVisibleGroupIndex.value = it }
     }
 
-    val loadIndicatorText = if (selectedGroupIndex != null || groupCount.value == 0) {
-        null
-    } else if (filtersActive() && !filteredSourceExhausted.value) {
-        "Matched ${groups.value.size} · scanned ${filteredSourceOffset.value}/${totalGroupCount.value}"
-    } else {
-        val totalGroups = groupCount.value
-        val loaded = visibleCount.value.coerceAtMost(totalGroups)
-        val current = if (loaded <= 0) 1 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
-        formatLoadProgressText(
-            current = current,
-            loaded = loaded,
-            total = totalGroups
+    val loadIndicatorText = when {
+        selectedGroupIndex != null -> null
+        filtersActive() -> filteredResultsLoadIndicatorText(
+            dbLoadedCount = filteredSourceOffset.value,
+            totalDbGroupCount = totalGroupCount.value,
+            matchedGroupCount = groups.value.size
         )
+        groupCount.value == 0 -> null
+        else -> {
+            val totalGroups = groupCount.value
+            val loaded = visibleCount.value.coerceAtMost(totalGroups)
+            val current = if (loaded <= 0) 1 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+            formatLoadProgressText(
+                current = current,
+                loaded = loaded,
+                total = totalGroups
+            )
+        }
     }
 
     // Auto-load next page as user scrolls (legacy behavior).
@@ -1790,6 +1795,17 @@ internal fun uniqueGroupsToAppend(
         appended.add(group)
     }
     return appended
+}
+
+internal fun filteredResultsLoadIndicatorText(
+    dbLoadedCount: Int,
+    totalDbGroupCount: Int,
+    matchedGroupCount: Int
+): String? {
+    if (totalDbGroupCount <= 0) return null
+    val safeLoaded = dbLoadedCount.coerceIn(0, totalDbGroupCount)
+    val safeMatched = matchedGroupCount.coerceAtLeast(0)
+    return "DB loaded ${safeLoaded}/${totalDbGroupCount}\nFilter matched ${safeMatched}"
 }
 
 internal fun loadFilteredGroupsPage(
