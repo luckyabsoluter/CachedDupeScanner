@@ -15,8 +15,8 @@ android {
         applicationId = "opensource.cached_dupe_scanner"
         minSdk = 24
         targetSdk = 36
-        versionCode = 11000
-        versionName = "1.1.0"
+        versionCode = 11200
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
