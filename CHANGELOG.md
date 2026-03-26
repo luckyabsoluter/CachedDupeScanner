@@ -6,6 +6,28 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- System-wide floating task banner and draggable task bubble for monitoring long-running operations across scans, DB, and trash.
+- Memory usage overlay and RAM thumbnail retention options in settings.
+- Default scan exclusion for the app's trash bin.
+
+### Changed
+
+- Unified cancellation handling and linear task progress across all long-running tasks.
+- Centralized AppSettingsStore defaults and serialization.
+- Simplified scan results card description and aligned task surfaces with shared spacing tokens.
+
+### Fixed
+
+- Stabilized discontinuous navigation using direct lazy scrollbar jumps.
+- Constrained task bubble placement reliably after viewport changes.
+- Kept task bubble animations, progress states, and notifications synchronized and monotonic.
+
+### Performance
+
+- Remembered thumbnail cache is now shared seamlessly across screens.
+
 ## [1.1.0] - 2026-03-22
 
 ### Added
@@ -21,6 +43,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Result and detail screens now follow a more consistent loading model with clearer indicators and automatic follow-up loading.
 - DB management now treats duplicate-group rebuild as a separate workflow from general file maintenance.
 - Settings are organized more coherently, and the targets screen no longer exposes sample target creation.
+- The skip-zero-size setting is now enabled by default.
 
 ### Fixed
 
