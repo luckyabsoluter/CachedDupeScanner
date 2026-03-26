@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-26
+
 ### Added
 
 - System-wide floating task banner and draggable task bubble for monitoring long-running operations across scans, DB, and trash.
