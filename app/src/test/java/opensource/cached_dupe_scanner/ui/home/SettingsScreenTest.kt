@@ -22,6 +22,7 @@ class SettingsScreenTest {
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
                 resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -50,6 +51,7 @@ class SettingsScreenTest {
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
                 resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -76,6 +78,7 @@ class SettingsScreenTest {
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
                 resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -102,6 +105,7 @@ class SettingsScreenTest {
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
                 resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )

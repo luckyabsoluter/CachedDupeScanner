@@ -40,6 +40,56 @@ internal fun ResultsFilterScreen(
     onBack: () -> Unit,
     onApply: () -> Unit
 ) {
+    FilterEditorScreen(
+        title = "Result filters",
+        summaryTitle = "Current summary",
+        introLines = listOf(
+            "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
+            "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
+            "File name and folder rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group."
+        ),
+        definition = definition,
+        supportedTargets = ResultsFilterTarget.entries.toSet(),
+        onDefinitionChange = onDefinitionChange,
+        onBack = onBack,
+        onApply = onApply
+    )
+}
+
+@Composable
+internal fun FileFilterScreen(
+    definition: ResultsFilterDefinition,
+    onDefinitionChange: (ResultsFilterDefinition) -> Unit,
+    onBack: () -> Unit,
+    onApply: () -> Unit
+) {
+    FilterEditorScreen(
+        title = "File filters",
+        summaryTitle = "Current summary",
+        introLines = listOf(
+            "Filter the file manager list by matching file names or folder paths before items are added to the visible page.",
+            "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
+            "Only file name and folder path rules are used on this screen."
+        ),
+        definition = definition,
+        supportedTargets = FILE_FILTER_TARGETS,
+        onDefinitionChange = onDefinitionChange,
+        onBack = onBack,
+        onApply = onApply
+    )
+}
+
+@Composable
+private fun FilterEditorScreen(
+    title: String,
+    summaryTitle: String,
+    introLines: List<String>,
+    definition: ResultsFilterDefinition,
+    supportedTargets: Set<ResultsFilterTarget>,
+    onDefinitionChange: (ResultsFilterDefinition) -> Unit,
+    onBack: () -> Unit,
+    onApply: () -> Unit
+) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     Surface(
@@ -57,27 +107,17 @@ internal fun ResultsFilterScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    AppTopBar(title = "Result filters", onBack = onBack)
+                    // AppTopBar(title = "Result filters", onBack = onBack)
+                    AppTopBar(title = title, onBack = onBack)
                 }
-                item {
-                    Text(
-                        text = "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                item {
-                    Text(
-                        text = "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                item {
-                    Text(
-                        text = "File name and folder rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                introLines.forEachIndexed { index, line ->
+                    item {
+                        Text(
+                            text = line,
+                            style = if (index == 0) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                            color = if (index == 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 item {
                     Card {
@@ -87,9 +127,9 @@ internal fun ResultsFilterScreen(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Current summary", style = MaterialTheme.typography.titleMedium)
+                            Text(summaryTitle, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = summarizeResultsFilter(definition),
+                                text = summarizeResultsFilter(definition, supportedTargets),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -98,11 +138,7 @@ internal fun ResultsFilterScreen(
 
                 item {
                     Text(
-                        text = if (definition.clusters.isEmpty()) {
-                            "No filter clusters yet."
-                        } else {
-                            "Clusters"
-                        },
+                        text = if (definition.clusters.isEmpty()) "No filter clusters yet." else "Clusters",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -115,6 +151,7 @@ internal fun ResultsFilterScreen(
                             clusterIndex = clusterIndex,
                             cluster = cluster,
                             canRemove = definition.clusters.size > 1,
+                            supportedTargets = supportedTargets,
                             onClusterChange = { updatedCluster ->
                                 onDefinitionChange(
                                     definition.updateCluster(
@@ -124,11 +161,12 @@ internal fun ResultsFilterScreen(
                                 )
                             },
                             onAddRule = {
+                                val defaultTarget = supportedTargets.firstOrNull() ?: ResultsFilterTarget.FileName
                                 onDefinitionChange(
                                     definition.updateCluster(
                                         clusterId = cluster.id,
                                         updatedCluster = cluster.copy(
-                                            rules = cluster.rules + createResultsFilterRule()
+                                            rules = cluster.rules + createResultsFilterRule(defaultTarget)
                                         )
                                     )
                                 )
@@ -211,6 +249,7 @@ private fun ResultsFilterClusterEditor(
     clusterIndex: Int,
     cluster: ResultsFilterCluster,
     canRemove: Boolean,
+    supportedTargets: Set<ResultsFilterTarget>,
     onClusterChange: (ResultsFilterCluster) -> Unit,
     onAddRule: () -> Unit,
     onRemoveRule: (String) -> Unit,
@@ -271,6 +310,7 @@ private fun ResultsFilterClusterEditor(
                         ruleIndex = ruleIndex,
                         rule = rule,
                         canRemove = cluster.rules.size > 1,
+                        supportedTargets = supportedTargets,
                         onRuleChange = { updatedRule ->
                             onClusterChange(
                                 cluster.copy(
@@ -297,6 +337,7 @@ private fun ResultsFilterRuleEditor(
     ruleIndex: Int,
     rule: ResultsFilterRule,
     canRemove: Boolean,
+    supportedTargets: Set<ResultsFilterTarget>,
     onRuleChange: (ResultsFilterRule) -> Unit,
     onRemove: () -> Unit
 ) {
@@ -330,7 +371,7 @@ private fun ResultsFilterRuleEditor(
 
             Text("Target")
             FilterOptionButtons(
-                options = ResultsFilterTarget.entries,
+                options = supportedTargets.toList(),
                 selected = rule.target,
                 label = { it.label },
                 onSelect = { target ->

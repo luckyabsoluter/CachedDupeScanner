@@ -53,7 +53,6 @@ import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
-import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -80,6 +79,7 @@ fun FilesScreenDb(
     val listState = rememberLazyListState()
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
+    val filterScreenOpen = remember { mutableStateOf(false) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -100,9 +100,23 @@ fun FilesScreenDb(
     }
     val pendingSortKey = remember { mutableStateOf(sortKey.value) }
     val pendingSortDirection = remember { mutableStateOf(sortDirection.value) }
+    val initialFilterDefinition = remember(settingsSnapshot.filesFilterDefinitionJson) {
+        resultsFilterDefinitionFromJson(settingsSnapshot.filesFilterDefinitionJson)
+    }
+    val appliedFilter = remember { mutableStateOf(initialFilterDefinition) }
+    val draftFilter = remember {
+        mutableStateOf(
+            if (initialFilterDefinition.clusters.isEmpty()) {
+                ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+            } else {
+                initialFilterDefinition
+            }
+        )
+    }
 
     val items = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
     val cursor = remember { mutableStateOf<PagedFileRepository.Cursor>(PagedFileRepository.Cursor.Start) }
+    val filterSourceExhausted = remember { mutableStateOf(false) }
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
@@ -113,18 +127,36 @@ fun FilesScreenDb(
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
 
+    fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules(FILE_FILTER_TARGETS)
+
     fun resetAndLoad() {
         items.value = emptyList()
         cursor.value = PagedFileRepository.Cursor.Start
+        filterSourceExhausted.value = false
         visibleCount.value = 0
         scope.launch {
             isLoading.value = true
             total.value = withContext(Dispatchers.IO) { fileRepo.countAll() }
             val page = withContext(Dispatchers.IO) {
-                fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                if (filtersActive()) {
+                    loadFilteredFilesPage(
+                        fileRepo = fileRepo,
+                        sortKey = sortKey.value,
+                        direction = sortDirection.value,
+                        cursor = PagedFileRepository.Cursor.Start,
+                        definition = appliedFilter.value,
+                        minMatches = pageSize,
+                        sourcePageSize = pageSize
+                    )
+                } else {
+                    FilteredFilesPage.fromUnfiltered(
+                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                    )
+                }
             }
             items.value = page.items
             cursor.value = page.nextCursor ?: cursor.value
+            filterSourceExhausted.value = page.exhausted
             visibleCount.value = page.items.size
             isLoading.value = false
         }
@@ -132,16 +164,32 @@ fun FilesScreenDb(
 
     fun loadMore() {
         if (isLoading.value) return
+        if (filtersActive() && filterSourceExhausted.value) return
         scope.launch {
             isLoading.value = true
             val page = withContext(Dispatchers.IO) {
-                fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                if (filtersActive()) {
+                    loadFilteredFilesPage(
+                        fileRepo = fileRepo,
+                        sortKey = sortKey.value,
+                        direction = sortDirection.value,
+                        cursor = cursor.value,
+                        definition = appliedFilter.value,
+                        minMatches = pageSize,
+                        sourcePageSize = pageSize
+                    )
+                } else {
+                    FilteredFilesPage.fromUnfiltered(
+                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                    )
+                }
             }
             if (page.items.isNotEmpty()) {
                 items.value = items.value + page.items
                 cursor.value = page.nextCursor ?: cursor.value
                 visibleCount.value = items.value.size
             }
+            filterSourceExhausted.value = page.exhausted
             isLoading.value = false
         }
     }
@@ -166,12 +214,16 @@ fun FilesScreenDb(
         val totalCount = total.value
         if (totalCount <= 0) {
             null
+        } else if (filtersActive()) {
+            val matchedCount = items.value.size
+            val current = if (matchedCount <= 0) 0 else (topVisibleIndex.value + 1).coerceAtMost(matchedCount)
+            "$current/$matchedCount - ${matchedCount.coerceAtMost(totalCount)}/$totalCount"
         } else {
-            formatLoadProgressText(
-                current = (topVisibleIndex.value + 1),
-                loaded = items.value.size.coerceAtMost(totalCount),
-                total = totalCount
-            )
+            val loaded = items.value.size.coerceAtMost(totalCount).coerceAtLeast(1)
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / totalCount.toDouble()) * 100).toInt()
+            "$current/$loaded/$totalCount (${currentPercent}%/${loadedPercent}%)"
         }
     }
 
@@ -220,6 +272,18 @@ fun FilesScreenDb(
                                 }
                             )
                             androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Filter") },
+                                onClick = {
+                                    menuExpanded.value = false
+                                    draftFilter.value = if (appliedFilter.value.clusters.isEmpty()) {
+                                        ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+                                    } else {
+                                        appliedFilter.value
+                                    }
+                                    filterScreenOpen.value = true
+                                }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
                                 text = { Text("Sort") },
                                 onClick = {
                                     menuExpanded.value = false
@@ -236,7 +300,11 @@ fun FilesScreenDb(
             item { Spacer(modifier = Modifier.height(8.dp)) }
             item {
                 Text(
-                    text = "Loaded ${items.value.size}/${total.value}",
+                    text = if (filtersActive()) {
+                        "${summarizeResultsFilter(appliedFilter.value, FILE_FILTER_TARGETS)} · matched ${items.value.size}/${total.value}"
+                    } else {
+                        "Loaded ${items.value.size}/${total.value}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -438,4 +506,82 @@ fun FilesScreenDb(
             }
         )
     }
+
+    if (filterScreenOpen.value) {
+        FileFilterScreen(
+            definition = draftFilter.value,
+            onDefinitionChange = { draftFilter.value = it },
+            onBack = { filterScreenOpen.value = false },
+            onApply = {
+                appliedFilter.value = draftFilter.value
+                settingsStore.setFilesFilterDefinitionJson(
+                    resultsFilterDefinitionToJson(appliedFilter.value)
+                )
+                filterScreenOpen.value = false
+                resetAndLoad()
+            }
+        )
+    }
+}
+
+internal data class FilteredFilesPage(
+    val items: List<FileMetadata>,
+    val nextCursor: PagedFileRepository.Cursor?,
+    val exhausted: Boolean
+) {
+    companion object {
+        fun fromUnfiltered(page: PagedFileRepository.Page): FilteredFilesPage {
+            return FilteredFilesPage(
+                items = page.items,
+                nextCursor = page.nextCursor,
+                exhausted = page.items.isEmpty()
+            )
+        }
+    }
+}
+
+internal fun loadFilteredFilesPage(
+    fileRepo: PagedFileRepository,
+    sortKey: PagedFileRepository.SortKey,
+    direction: PagedFileRepository.SortDirection,
+    cursor: PagedFileRepository.Cursor,
+    definition: ResultsFilterDefinition,
+    minMatches: Int,
+    sourcePageSize: Int
+): FilteredFilesPage {
+    if (sourcePageSize <= 0 || minMatches <= 0) {
+        return FilteredFilesPage(
+            items = emptyList(),
+            nextCursor = cursor,
+            exhausted = true
+        )
+    }
+
+    val matchedItems = mutableListOf<FileMetadata>()
+    var nextCursor: PagedFileRepository.Cursor? = cursor
+    var exhausted = false
+
+    while (matchedItems.size < minMatches && !exhausted) {
+        val page = fileRepo.loadPage(
+            sortKey = sortKey,
+            direction = direction,
+            cursor = nextCursor ?: cursor,
+            limit = sourcePageSize
+        )
+        if (page.items.isEmpty()) {
+            exhausted = true
+            nextCursor = null
+            break
+        }
+        matchedItems += page.items.filter { file ->
+            matchesFileFilter(definition, file)
+        }
+        nextCursor = page.nextCursor
+    }
+
+    return FilteredFilesPage(
+        items = matchedItems.take(minMatches),
+        nextCursor = nextCursor,
+        exhausted = exhausted
+    )
 }

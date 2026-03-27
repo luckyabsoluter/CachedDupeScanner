@@ -50,6 +50,11 @@ internal data class ResultsFilterDefinition(
     val clusters: List<ResultsFilterCluster> = emptyList()
 )
 
+internal val FILE_FILTER_TARGETS: Set<ResultsFilterTarget> = setOf(
+    ResultsFilterTarget.FileName,
+    ResultsFilterTarget.FolderPath
+)
+
 private object ResultsFilterIdGenerator {
     private var nextId = 1L
 
@@ -88,8 +93,14 @@ internal fun createResultsFilterCluster(
 }
 
 internal fun ResultsFilterDefinition.hasActiveRules(): Boolean {
+    return hasActiveRules(supportedTargets = ResultsFilterTarget.entries.toSet())
+}
+
+internal fun ResultsFilterDefinition.hasActiveRules(
+    supportedTargets: Set<ResultsFilterTarget>
+): Boolean {
     return clusters.any { cluster ->
-        cluster.enabled && configuredRules(cluster).isNotEmpty()
+        cluster.enabled && configuredRules(cluster, supportedTargets).isNotEmpty()
     }
 }
 
@@ -102,24 +113,46 @@ internal fun ResultsFilterDefinition.requiresGroupMembers(): Boolean {
 }
 
 internal fun ResultsFilterDefinition.activeClusterCount(): Int {
+    return activeClusterCount(supportedTargets = ResultsFilterTarget.entries.toSet())
+}
+
+internal fun ResultsFilterDefinition.activeClusterCount(
+    supportedTargets: Set<ResultsFilterTarget>
+): Int {
     return clusters.count { cluster ->
-        cluster.enabled && configuredRules(cluster).isNotEmpty()
+        cluster.enabled && configuredRules(cluster, supportedTargets).isNotEmpty()
     }
 }
 
 internal fun ResultsFilterDefinition.activeRuleCount(): Int {
+    return activeRuleCount(supportedTargets = ResultsFilterTarget.entries.toSet())
+}
+
+internal fun ResultsFilterDefinition.activeRuleCount(
+    supportedTargets: Set<ResultsFilterTarget>
+): Int {
     return clusters.sumOf { cluster ->
         if (!cluster.enabled) {
             0
         } else {
-            configuredRules(cluster).size
+            configuredRules(cluster, supportedTargets).size
         }
     }
 }
 
 internal fun summarizeResultsFilter(definition: ResultsFilterDefinition): String {
-    val clusterCount = definition.activeClusterCount()
-    val ruleCount = definition.activeRuleCount()
+    return summarizeResultsFilter(
+        definition = definition,
+        supportedTargets = ResultsFilterTarget.entries.toSet()
+    )
+}
+
+internal fun summarizeResultsFilter(
+    definition: ResultsFilterDefinition,
+    supportedTargets: Set<ResultsFilterTarget>
+): String {
+    val clusterCount = definition.activeClusterCount(supportedTargets)
+    val ruleCount = definition.activeRuleCount(supportedTargets)
     return when {
         clusterCount <= 0 -> "No filters"
         ruleCount == 1 -> "1 active rule"
@@ -156,9 +189,14 @@ internal fun matchesResultsFilter(
     }
 }
 
-private fun configuredRules(cluster: ResultsFilterCluster): List<ResultsFilterRule> {
+private fun configuredRules(
+    cluster: ResultsFilterCluster,
+    supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
+): List<ResultsFilterRule> {
     return cluster.rules.filter { rule ->
-        rule.enabled && isResultsFilterRuleConfigured(rule)
+        rule.enabled &&
+            supportedTargets.contains(rule.target) &&
+            isResultsFilterRuleConfigured(rule)
     }
 }
 
@@ -227,6 +265,48 @@ internal fun matchesTextOperator(
         ResultsFilterTextOperator.EndsWith -> source.endsWith(term, ignoreCase = true)
         ResultsFilterTextOperator.Contains -> source.contains(term, ignoreCase = true)
         ResultsFilterTextOperator.Equals -> source.equals(term, ignoreCase = true)
+    }
+}
+
+internal fun matchesFileFilter(
+    definition: ResultsFilterDefinition,
+    file: FileMetadata
+): Boolean {
+    val activeClusters = definition.clusters.mapNotNull { cluster ->
+        if (!cluster.enabled) {
+            null
+        } else {
+            val rules = configuredRules(cluster, FILE_FILTER_TARGETS)
+            if (rules.isEmpty()) null else cluster to rules
+        }
+    }
+    if (activeClusters.isEmpty()) return true
+    return activeClusters.all { (cluster, rules) ->
+        val results = rules.map { rule ->
+            when (rule.target) {
+                ResultsFilterTarget.FileName -> {
+                    matchesTextOperator(
+                        source = fileNameFromPath(file.normalizedPath),
+                        expected = rule.value,
+                        operator = rule.textOperator
+                    )
+                }
+
+                ResultsFilterTarget.FolderPath -> {
+                    matchesTextOperator(
+                        source = folderPathFromPath(file.normalizedPath),
+                        expected = rule.value,
+                        operator = rule.textOperator
+                    )
+                }
+
+                else -> false
+            }
+        }
+        when (cluster.mode) {
+            ResultsFilterClusterMode.All -> results.all { it }
+            ResultsFilterClusterMode.Any -> results.any { it }
+        }
     }
 }
 
