@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 val dbManagementUiState = remember { DbManagementUiState() }
                 val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                 val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                val taskCoordinator = remember { TaskCoordinator() }
+                val taskCoordinator = remember { TaskCoordinator(context) }
                 val notificationController = remember { TaskNotificationController(context) }
                 val database = remember {
                     Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")

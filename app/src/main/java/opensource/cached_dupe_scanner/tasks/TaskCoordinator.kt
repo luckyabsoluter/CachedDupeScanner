@@ -1,5 +1,7 @@
 package opensource.cached_dupe_scanner.tasks
 
+import android.content.Context
+import android.os.PowerManager
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -57,8 +59,10 @@ data class TaskTerminalSummary(
     val status: TaskStatus
 )
 
-class TaskCoordinator {
+class TaskCoordinator(context: Context? = null) {
     private val cancelActions = linkedMapOf<TaskArea, () -> Unit>()
+    private val wakeLocks = mutableMapOf<TaskArea, PowerManager.WakeLock>()
+    private val powerManager = context?.getSystemService(Context.POWER_SERVICE) as? PowerManager
 
     val activeTasks = mutableStateListOf<TaskSnapshot>()
     val terminalSummaries = mutableStateMapOf<TaskArea, TaskTerminalSummary>()
@@ -119,6 +123,15 @@ class TaskCoordinator {
                 cancelActions[area] = onCancel
             } else {
                 cancelActions.remove(area)
+            }
+            if (!wakeLocks.containsKey(area) && powerManager != null) {
+                try {
+                    val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CachedDupeScanner:TaskWrapper:${area.name}")
+                    wakeLock.acquire(10 * 60 * 60 * 1000L) // 10 hrs max limit
+                    wakeLocks[area] = wakeLock
+                } catch (e: Exception) {
+                    // Ignore WakeLock acquire failures
+                }
             }
             started = snapshot
         }
@@ -252,6 +265,15 @@ class TaskCoordinator {
             )
             terminalSummaries[area] = terminal
             summary = terminal
+        }
+        wakeLocks.remove(area)?.let {
+            if (it.isHeld) {
+                try {
+                    it.release()
+                } catch (e: Exception) {
+                    // Ignore RuntimeExceptions from release
+                }
+            }
         }
         return summary
     }
