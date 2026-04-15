@@ -9,6 +9,7 @@ data class AppSettings(
     val hideZeroSizeInResults: Boolean,
     val showMemoryOverlay: Boolean,
     val keepLoadedThumbnailsInMemory: Boolean,
+    val keepLoadedVideoPreviewsInMemory: Boolean,
     val resultSortKey: String,
     val resultSortDirection: String,
     val resultGroupSortKey: String,
@@ -45,6 +46,10 @@ class AppSettingsStore(context: Context) {
 
     fun setKeepLoadedThumbnailsInMemory(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, enabled).apply()
+    }
+
+    fun setKeepLoadedVideoPreviewsInMemory(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, enabled).apply()
     }
 
     fun setResultSortKey(value: String) {
@@ -113,6 +118,10 @@ class AppSettingsStore(context: Context) {
                 KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
             ),
+            keepLoadedVideoPreviewsInMemory = prefs.getBoolean(
+                KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY,
+                DEFAULT_SETTINGS.keepLoadedVideoPreviewsInMemory
+            ),
             resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey)
                 ?: DEFAULT_SETTINGS.resultSortKey,
             resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection)
@@ -160,6 +169,10 @@ class AppSettingsStore(context: Context) {
                 KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedThumbnailsInMemory
             ),
+            keepLoadedVideoPreviewsInMemory = obj.optBoolean(
+                KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY,
+                DEFAULT_SETTINGS.keepLoadedVideoPreviewsInMemory
+            ),
             resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey),
             resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection),
             resultGroupSortKey = obj.optString(
@@ -191,6 +204,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
+            .putBoolean(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .putString(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -210,6 +224,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
+            .put(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -228,6 +243,7 @@ class AppSettingsStore(context: Context) {
             hideZeroSizeInResults = false,
             showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
+            keepLoadedVideoPreviewsInMemory = true,
             resultSortKey = "Count",
             resultSortDirection = "Desc",
             resultGroupSortKey = "Path",
@@ -244,6 +260,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
+        private const val KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY = "keep_loaded_video_previews_in_memory"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
         private const val KEY_RESULT_GROUP_SORT_KEY = "result_group_sort_key"

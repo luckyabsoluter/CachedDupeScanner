@@ -4,25 +4,34 @@ import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.HideImage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.request.videoFramePercent
 import opensource.cached_dupe_scanner.core.FileMetadata
 import java.io.File
 import kotlin.math.min
@@ -52,6 +61,71 @@ internal fun shouldUseRememberedPreview(
     keepLoadedInMemory: Boolean
 ): Boolean {
     return hasRememberedPreview && (keepLoadedInMemory || activePath == null)
+}
+
+internal data class VideoTimelineFrame(
+    val percent: Float,
+    val keySuffix: String
+)
+
+internal fun buildVideoTimelineFrames(frameCount: Int = DEFAULT_VIDEO_TIMELINE_FRAME_COUNT): List<VideoTimelineFrame> {
+    if (frameCount <= 0) return emptyList()
+    if (frameCount == 1) return listOf(VideoTimelineFrame(percent = 0f, keySuffix = "start"))
+
+    val lastIndex = frameCount - 1
+    return List(frameCount) { index ->
+        val rawPercent = index.toFloat() / lastIndex.toFloat()
+        val clampedPercent = rawPercent.coerceIn(0f, VIDEO_TIMELINE_END_PERCENT)
+        val keySuffix = when (index) {
+            0 -> "start"
+            lastIndex / 2 -> "middle"
+            lastIndex -> "end"
+            else -> "p$index"
+        }
+        VideoTimelineFrame(percent = clampedPercent, keySuffix = keySuffix)
+    }
+}
+
+@Composable
+internal fun VideoTimelinePreviewStrip(
+    filePath: String,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedInMemory: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val frameSpecs = remember { buildVideoTimelineFrames() }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Start - ... - Middle - ... - End",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            frameSpecs.forEach { frame ->
+                RememberingVideoFrameThumbnail(
+                    filePath = filePath,
+                    framePercent = frame.percent,
+                    previewMemoryKey = "$filePath#timeline#${frame.keySuffix}",
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    imageLoader = imageLoader,
+                    keepLoadedInMemory = keepLoadedInMemory,
+                    contentDescription = "Timeline frame ${frame.keySuffix}",
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .clip(MaterialTheme.shapes.small)
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -154,6 +228,54 @@ internal fun RememberingAsyncThumbnail(
     )
 }
 
+@Composable
+internal fun RememberingVideoFrameThumbnail(
+    filePath: String,
+    framePercent: Float,
+    previewMemoryKey: String,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedInMemory: Boolean,
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Video frame"
+) {
+    val context = LocalContext.current
+    val rememberedPreview = rememberedPreviewCache[previewMemoryKey]
+    val activePath = filePath.takeIf { File(it).exists() }
+
+    if (shouldUseRememberedPreview(activePath, rememberedPreview != null, keepLoadedInMemory)) {
+        Image(
+            bitmap = rememberedPreview!!,
+            contentDescription = contentDescription,
+            modifier = modifier
+        )
+        return
+    }
+
+    if (activePath == null) {
+        MissingPreviewThumbnail(
+            modifier = modifier,
+            contentDescription = contentDescription
+        )
+        return
+    }
+
+    AsyncImage(
+        model = ImageRequest.Builder(context)
+            .data(File(activePath))
+            .videoFramePercent(framePercent.toDouble())
+            .build(),
+        imageLoader = imageLoader,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        onSuccess = { result ->
+            if (!keepLoadedInMemory) return@AsyncImage
+            val previewBitmap = rememberPreviewBitmap(result.result.drawable) ?: return@AsyncImage
+            rememberedPreviewCache[previewMemoryKey] = previewBitmap
+        }
+    )
+}
+
 internal fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
     val width = drawable.intrinsicWidth
         .takeIf { it > 0 }
@@ -167,6 +289,8 @@ internal fun rememberPreviewBitmap(drawable: Drawable): ImageBitmap? {
 }
 
 private const val MAX_REMEMBERED_PREVIEW_DIMENSION_PX = 1024
+private const val DEFAULT_VIDEO_TIMELINE_FRAME_COUNT = 7
+private const val VIDEO_TIMELINE_END_PERCENT = 0.98f
 
 @Composable
 internal fun MissingPreviewThumbnail(

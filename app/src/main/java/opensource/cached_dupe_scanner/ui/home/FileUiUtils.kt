@@ -10,6 +10,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
+private val VIDEO_EXTENSIONS = setOf("mp4", "mkv", "mov", "webm")
+
 fun formatBytes(bytes: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     var value = bytes.toDouble()
@@ -48,10 +51,12 @@ fun formatPath(path: String, showFullPath: Boolean): String {
 
 fun isMediaFile(path: String): Boolean {
     val extension = File(path).extension.lowercase(Locale.getDefault())
-    return extension in setOf(
-        "jpg", "jpeg", "png", "webp", "gif", "bmp",
-        "mp4", "mkv", "mov", "webm"
-    )
+    return extension in IMAGE_EXTENSIONS || extension in VIDEO_EXTENSIONS
+}
+
+fun isVideoFile(path: String): Boolean {
+    val extension = File(path).extension.lowercase(Locale.getDefault())
+    return extension in VIDEO_EXTENSIONS
 }
 
 fun openFile(context: android.content.Context, path: String) {

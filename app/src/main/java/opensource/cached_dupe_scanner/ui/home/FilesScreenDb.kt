@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,13 +63,20 @@ internal fun markDeletedPath(
     deletedPath: String
 ): Set<String> = currentDeletedPaths + deletedPath
 
+private enum class FilesPreviewMode {
+    Compact,
+    VideoTimeline
+}
+
 @Composable
 fun FilesScreenDb(
     fileRepo: PagedFileRepository,
     trashController: TrashController,
     settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
-    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    rememberedThumbnailCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -80,6 +88,7 @@ fun FilesScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterScreenOpen = remember { mutableStateOf(false) }
+    val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -126,6 +135,10 @@ fun FilesScreenDb(
     val pageSize = 200
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
+
+    fun isVideoTimelinePreviewEnabled(): Boolean {
+        return previewMode.value == FilesPreviewMode.VideoTimeline.name
+    }
 
     fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules(FILE_FILTER_TARGETS)
 
@@ -292,6 +305,23 @@ fun FilesScreenDb(
                                     sortDialogOpen.value = true
                                 }
                             )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Video preview") },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = isVideoTimelinePreviewEnabled(),
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    previewMode.value = if (isVideoTimelinePreviewEnabled()) {
+                                        FilesPreviewMode.Compact.name
+                                    } else {
+                                        FilesPreviewMode.VideoTimeline.name
+                                    }
+                                    menuExpanded.value = false
+                                }
+                            )
                         }
                     }
                 )
@@ -304,6 +334,10 @@ fun FilesScreenDb(
                         "${summarizeResultsFilter(appliedFilter.value, FILE_FILTER_TARGETS)} · matched ${items.value.size}/${total.value}"
                     } else {
                         "Loaded ${items.value.size}/${total.value}"
+                    } + if (isVideoTimelinePreviewEnabled()) {
+                        " · Video preview"
+                    } else {
+                        ""
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -328,59 +362,74 @@ fun FilesScreenDb(
                             CardDefaults.cardColors()
                         }
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .padding(12.dp)
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                                .fillMaxWidth()
                         ) {
-                            if (isMediaFile(file.normalizedPath)) {
-                                RememberingAsyncThumbnail(
-                                    filePath = file.normalizedPath,
-                                    previewMemoryKey = file.normalizedPath,
-                                    rememberedPreviewCache = rememberedPreviewCache,
-                                    imageLoader = imageLoader,
-                                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-                                    contentDescription = "Thumbnail",
-                                    modifier = Modifier
-                                        .width(56.dp)
-                                        .height(56.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isMediaFile(file.normalizedPath)) {
+                                    RememberingAsyncThumbnail(
+                                        filePath = file.normalizedPath,
+                                        previewMemoryKey = file.normalizedPath,
+                                        rememberedPreviewCache = rememberedThumbnailCache,
+                                        imageLoader = imageLoader,
+                                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                                        contentDescription = "Thumbnail",
+                                        modifier = Modifier
+                                            .width(56.dp)
+                                            .height(56.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = formatPath(file.normalizedPath, showFullPath = false),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = file.normalizedPath,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
                             }
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = formatPath(file.normalizedPath, showFullPath = false),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = file.normalizedPath,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
+
+                            if (isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                VideoTimelinePreviewStrip(
+                                    filePath = file.normalizedPath,
+                                    rememberedPreviewCache = rememberedVideoPreviewCache,
+                                    imageLoader = imageLoader,
+                                    keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }

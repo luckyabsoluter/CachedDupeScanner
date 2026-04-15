@@ -23,6 +23,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.hideZeroSizeInResults)
         assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
+        assertTrue(settings.keepLoadedVideoPreviewsInMemory)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
@@ -53,6 +54,9 @@ class AppSettingsStoreTest {
 
         store.setKeepLoadedThumbnailsInMemory(true)
         assertTrue(store.load().keepLoadedThumbnailsInMemory)
+
+        store.setKeepLoadedVideoPreviewsInMemory(false)
+        assertFalse(store.load().keepLoadedVideoPreviewsInMemory)
 
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -99,6 +103,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.skipTrashBinContentsInScan)
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
+        assertTrue(imported.keepLoadedVideoPreviewsInMemory)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
         assertTrue(store.load().skipZeroSizeInDb)
@@ -115,6 +120,7 @@ class AppSettingsStoreTest {
         store.setHideZeroSizeInResults(true)
         store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
+        store.setKeepLoadedVideoPreviewsInMemory(false)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         store.setResultGroupSortKey("Modified")
@@ -135,6 +141,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.hideZeroSizeInResults)
         assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
+        assertFalse(imported.keepLoadedVideoPreviewsInMemory)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)
         assertEquals("Modified", imported.resultGroupSortKey)

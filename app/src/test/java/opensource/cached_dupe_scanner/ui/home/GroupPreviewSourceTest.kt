@@ -40,5 +40,14 @@ class GroupPreviewSourceTest {
             "GroupPreviewThumbnail should not keep remembered preview only in local remember state",
             groupPreviewBlock.contains("var rememberedPreview by remember")
         )
+        assertTrue(
+            "GroupPreview should provide a timeline preview strip with start/middle/end guidance",
+            content.contains("VideoTimelinePreviewStrip(") &&
+                content.contains("Start - ... - Middle - ... - End")
+        )
+        assertTrue(
+            "GroupPreview timeline should use a fixed multi-frame default count",
+            content.contains("DEFAULT_VIDEO_TIMELINE_FRAME_COUNT = 7")
+        )
     }
 }

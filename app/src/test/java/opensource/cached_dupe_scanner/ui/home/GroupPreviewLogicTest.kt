@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GroupPreviewLogicTest {
@@ -45,5 +46,24 @@ class GroupPreviewLogicTest {
         )
 
         assertEquals(true, useRemembered)
+    }
+
+    @Test
+    fun timelineFramesIncludeStartMiddleAndEndMarkers() {
+        val frames = buildVideoTimelineFrames(frameCount = 7)
+
+        assertEquals(7, frames.size)
+        assertEquals("start", frames.first().keySuffix)
+        assertEquals("middle", frames[3].keySuffix)
+        assertEquals("end", frames.last().keySuffix)
+    }
+
+    @Test
+    fun timelineFramesStayWithinSupportedPercentRange() {
+        val frames = buildVideoTimelineFrames(frameCount = 9)
+
+        assertEquals(0f, frames.first().percent)
+        assertTrue(frames.last().percent <= 0.98f)
+        assertTrue(frames.zipWithNext().all { (prev, next) -> next.percent >= prev.percent })
     }
 }
