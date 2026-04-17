@@ -53,6 +53,7 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -236,7 +237,7 @@ fun FilesScreenDb(
         if (totalCount <= 0) {
             null
         } else if (filtersActive()) {
-            filteredFilesLoadIndicatorText(
+            formatFilteredLoadProgressText(
                 filteredCurrentIndex = topVisibleIndex.value,
                 matchedCount = items.value.size,
                 sourceLoadedCount = filteredSourceLoadedCount.value,
@@ -582,23 +583,6 @@ fun FilesScreenDb(
             }
         )
     }
-}
-
-internal fun filteredFilesLoadIndicatorText(
-    filteredCurrentIndex: Int,
-    matchedCount: Int,
-    sourceLoadedCount: Int,
-    totalCount: Int
-): String? {
-    if (totalCount <= 0) return null
-    val safeLoaded = sourceLoadedCount.coerceIn(0, totalCount)
-    val safeMatched = matchedCount.coerceAtLeast(0)
-    val safeCurrent = if (safeMatched <= 0) {
-        0
-    } else {
-        (filteredCurrentIndex + 1).coerceIn(1, safeMatched)
-    }
-    return "${safeCurrent}/${safeMatched} - ${safeLoaded}/${totalCount}"
 }
 
 internal data class FilteredFilesPage(

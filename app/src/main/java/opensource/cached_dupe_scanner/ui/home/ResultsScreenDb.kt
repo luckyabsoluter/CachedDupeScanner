@@ -74,6 +74,7 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 private class MembersCacheEntry {
     val members = mutableStateListOf<FileMetadata>()
@@ -1872,15 +1873,12 @@ internal fun filteredResultsLoadIndicatorText(
     totalDbGroupCount: Int,
     matchedGroupCount: Int
 ): String? {
-    if (totalDbGroupCount <= 0) return null
-    val safeLoaded = dbLoadedCount.coerceIn(0, totalDbGroupCount)
-    val safeMatched = matchedGroupCount.coerceAtLeast(0)
-    val safeCurrent = if (safeMatched <= 0) {
-        0
-    } else {
-        (filteredCurrentIndex + 1).coerceIn(1, safeMatched)
-    }
-    return "${safeCurrent}/${safeMatched} - ${safeLoaded}/${totalDbGroupCount}"
+    return formatFilteredLoadProgressText(
+        filteredCurrentIndex = filteredCurrentIndex,
+        matchedCount = matchedGroupCount,
+        sourceLoadedCount = dbLoadedCount,
+        totalCount = totalDbGroupCount
+    )
 }
 
 internal fun loadFilteredGroupsPage(
