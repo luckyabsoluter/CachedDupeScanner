@@ -6,6 +6,23 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Timeline video preview mode with a dedicated RAM cache policy.
+- Saved filters functionality with a dedicated filter editing screen, persisting definitions across sessions.
+- Comprehensive bulk delete command catalog including "keep-oldest" and "keep-newest" commands, and a preview flow with thumbnails.
+- Same-folder duplicate group filter rule.
+
+### Changed
+
+- Merged modified-time bulk delete operations into one configurable command.
+
+### Fixed
+
+- Handled partial WakeLocks to ensure tasks keep running smoothly during active operations.
+- Improved progress overlay to display raw DB loaded progress, current count, and filtered match counts.
+- Reserved space for the sort button in the summary row to prevent layout shifting.
+
 ## [1.2.0] - 2026-03-26
 
 ### Added
