@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-17
+
 ### Added
 
 - Timeline video preview mode with a dedicated RAM cache policy.
