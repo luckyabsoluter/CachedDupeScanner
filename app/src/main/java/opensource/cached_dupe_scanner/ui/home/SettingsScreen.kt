@@ -54,6 +54,7 @@ fun SettingsScreen(
     val trashScanSection = trashScanSettingsSection(settings.value)
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
+    val videoPreviewMemorySection = videoPreviewMemorySettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -132,6 +133,7 @@ fun SettingsScreen(
                                 }
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
+                                ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
                             }
                         }
                     )
@@ -158,6 +160,7 @@ fun SettingsScreen(
                                 ToggleSettingId.HideZeroSizeInResults -> Unit
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
+                                ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
                             }
                         }
                     )
@@ -201,6 +204,30 @@ fun SettingsScreen(
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> {
                                     settingsStore.setKeepLoadedThumbnailsInMemory(enabled)
                                     settings.value = settings.value.copy(keepLoadedThumbnailsInMemory = enabled)
+                                    onSettingsChanged?.invoke()
+                                }
+                                ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
+                                else -> Unit
+                            }
+                        }
+                    )
+                }
+            }
+
+            SettingsSectionCard(section = videoPreviewMemorySection) {
+                videoPreviewMemorySection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> {
+                                    settingsStore.setKeepLoadedVideoPreviewsInMemory(enabled)
+                                    settings.value = settings.value.copy(keepLoadedVideoPreviewsInMemory = enabled)
                                     onSettingsChanged?.invoke()
                                 }
                                 else -> Unit
@@ -329,7 +356,8 @@ internal enum class ToggleSettingId {
     SkipTrashBinContentsInScan,
     HideZeroSizeInResults,
     ShowMemoryOverlay,
-    KeepLoadedThumbnailsInMemory
+    KeepLoadedThumbnailsInMemory,
+    KeepLoadedVideoPreviewsInMemory
 }
 
 internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionModel {
@@ -393,6 +421,21 @@ internal fun thumbnailMemorySettingsSection(settings: AppSettings): SettingsSect
                 title = "Keep loaded thumbnails in RAM",
                 description = "Uses more memory, but previously shown thumbnails stay available while the screen remains open.",
                 checked = settings.keepLoadedThumbnailsInMemory
+            )
+        )
+    )
+}
+
+internal fun videoPreviewMemorySettingsSection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview memory",
+        description = "Keep generated video timeline preview frames in RAM for faster revisit while browsing files. Enabled by default.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.KeepLoadedVideoPreviewsInMemory,
+                title = "Keep video previews in RAM",
+                description = "Caches start/middle/end timeline frames for video preview mode in the file list.",
+                checked = settings.keepLoadedVideoPreviewsInMemory
             )
         )
     )

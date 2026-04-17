@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -73,6 +74,7 @@ import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 private class MembersCacheEntry {
     val members = mutableStateListOf<FileMetadata>()
@@ -90,6 +92,13 @@ private data class GroupListScrollAnchor(
     val index: Int,
     val offset: Int,
     val key: String?
+)
+
+internal data class FilteredGroupsPage(
+    val matchedGroups: List<DuplicateGroupEntity>,
+    val previewMembersByGroupKey: Map<String, List<FileMetadata>>,
+    val nextSourceOffset: Int,
+    val exhausted: Boolean
 )
 
 internal enum class ResultGroupMemberSortKey(val label: String) {
@@ -116,8 +125,26 @@ fun ResultsScreenDb(
     val listState = rememberLazyListState()
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
+    val filterDialogOpen = remember { mutableStateOf(false) }
+    val bulkDeleteCatalogOpen = remember { mutableStateOf(false) }
+    val bulkDeleteCommand = remember { mutableStateOf<ResultsBulkDeleteCommandType?>(null) }
     val settingsSnapshot = remember { settingsStore.load() }
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
+    val initialFilterDefinition = remember(settingsSnapshot.resultsFilterDefinitionJson) {
+        resultsFilterDefinitionFromJson(settingsSnapshot.resultsFilterDefinitionJson)
+    }
+    val appliedFilter = remember {
+        mutableStateOf(initialFilterDefinition)
+    }
+    val draftFilter = remember {
+        mutableStateOf(
+            if (initialFilterDefinition.clusters.isEmpty()) {
+                ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+            } else {
+                initialFilterDefinition
+            }
+        )
+    }
 
     fun normalizeDbSortKey(key: ResultSortKey): ResultSortKey {
         return if (key == ResultSortKey.Name) ResultSortKey.Count else key
@@ -155,11 +182,14 @@ fun ResultsScreenDb(
     val groups = remember { mutableStateOf<List<DuplicateGroupEntity>>(emptyList()) }
     val fileCount = remember { mutableStateOf(0) }
     val groupCount = remember { mutableStateOf(0) }
+    val totalGroupCount = remember { mutableStateOf(0) }
     val isRefreshing = remember { mutableStateOf(false) }
     val isPaging = remember { mutableStateOf(false) }
     val loadError = remember { mutableStateOf<String?>(null) }
     val snapshotUpdatedAtMillis = remember { mutableStateOf<Long?>(null) }
     val queryCoordinator = remember { ResultsScreenDbQueryCoordinator() }
+    val filteredSourceOffset = remember { mutableStateOf(0) }
+    val filteredSourceExhausted = remember { mutableStateOf(false) }
 
     // Keep already loaded group members in RAM so opening a detail screen is instant after first load.
     // Key: "<sizeBytes>:<hashHex>"
@@ -194,6 +224,19 @@ fun ResultsScreenDb(
             ResultSortKey.Name -> {
                 if (direction == SortDirection.Asc) DuplicateGroupSortKey.CountAsc
                 else DuplicateGroupSortKey.CountDesc
+            }
+        }
+    }
+
+    fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules()
+
+    fun seedPreviewMembers(previewMembersByGroupKey: Map<String, List<FileMetadata>>) {
+        previewMembersByGroupKey.forEach { (groupKey, members) ->
+            val entry = membersCache.getOrPut(groupKey) { MembersCacheEntry() }
+            if (entry.members.isEmpty()) {
+                entry.members.addAll(members)
+                entry.cursor.value = members.lastOrNull()?.normalizedPath
+                entry.isComplete.value = false
             }
         }
     }
@@ -234,6 +277,10 @@ fun ResultsScreenDb(
             visibleCount.value = 0
             topVisibleGroupIndex.value = 0
             snapshotUpdatedAtMillis.value = null
+            groupCount.value = 0
+            totalGroupCount.value = 0
+            filteredSourceOffset.value = 0
+            filteredSourceExhausted.value = false
         }
         scope.launch {
             isRefreshing.value = true
@@ -260,9 +307,63 @@ fun ResultsScreenDb(
                 }
                 if (!queryCoordinator.isRefreshTokenValid(requestToken)) return@launch
                 fileCount.value = snapshot.fileCount
-                groupCount.value = snapshot.groupCount
+                totalGroupCount.value = snapshot.groupCount
                 snapshotUpdatedAtMillis.value = snapshot.updatedAtMillis
-                if (reset) {
+                if (filtersActive()) {
+                    val filteredTarget = if (reset && preserveScroll) {
+                        visibleCount.value.coerceAtLeast(pageSize)
+                    } else {
+                        pageSize
+                    }
+                    val filteredPage = withContext(Dispatchers.IO) {
+                        if (snapshot.updatedAtMillis == null) {
+                            FilteredGroupsPage(
+                                matchedGroups = emptyList(),
+                                previewMembersByGroupKey = emptyMap(),
+                                nextSourceOffset = 0,
+                                exhausted = true
+                            )
+                        } else {
+                            loadFilteredGroupsPage(
+                                resultsRepo = resultsRepo,
+                                sortKey = sortForQuery,
+                                snapshotUpdatedAtMillis = snapshot.updatedAtMillis,
+                                definition = appliedFilter.value,
+                                startOffset = 0,
+                                minMatches = filteredTarget,
+                                sourcePageSize = pageSize
+                            )
+                        }
+                    }
+                    if (!queryCoordinator.isRefreshTokenValid(requestToken)) return@launch
+                    filteredSourceOffset.value = filteredPage.nextSourceOffset
+                    filteredSourceExhausted.value = filteredPage.exhausted
+                    groups.value = filteredPage.matchedGroups
+                    groupCount.value = filteredPage.matchedGroups.size
+                    visibleCount.value = if (filteredPage.exhausted) {
+                        filteredPage.matchedGroups.size
+                    } else {
+                        filteredTarget.coerceAtMost(filteredPage.matchedGroups.size)
+                    }
+                    seedPreviewMembers(filteredPage.previewMembersByGroupKey)
+                    if (preserveScroll) {
+                        val targetIndex = findIndexByGroupKeyOrFallback(
+                            groups = filteredPage.matchedGroups,
+                            key = anchorKey,
+                            fallbackIndex = anchorIndex
+                        )
+                        topVisibleGroupIndex.value = targetIndex
+                        if (filteredPage.matchedGroups.isNotEmpty()) {
+                            val targetOffset = if (targetIndex == anchorIndex) anchorOffset.coerceAtLeast(0) else 0
+                            listState.scrollToItem(targetIndex, targetOffset)
+                        }
+                    } else {
+                        topVisibleGroupIndex.value = 0
+                    }
+                } else if (reset) {
+                    groupCount.value = snapshot.groupCount
+                    filteredSourceOffset.value = snapshot.firstPage.size
+                    filteredSourceExhausted.value = snapshot.firstPage.size >= snapshot.groupCount
                     groups.value = snapshot.firstPage
                     visibleCount.value = snapshot.firstPage.size
                     if (preserveScroll) {
@@ -291,6 +392,57 @@ fun ResultsScreenDb(
     fun loadMoreIfNeeded() {
         if (isRefreshing.value || isPaging.value) return
         val snapshotUpdatedAt = snapshotUpdatedAtMillis.value ?: return
+        if (filtersActive()) {
+            val needed = visibleCount.value.coerceAtLeast(0)
+            if (groups.value.size >= needed) return
+            if (filteredSourceExhausted.value) return
+            scope.launch {
+                isPaging.value = true
+                loadError.value = null
+                val requestToken = queryCoordinator.beginPaging()
+                var needsRefresh = false
+                try {
+                    val snapshotChangedBeforePaging = withContext(Dispatchers.IO) {
+                        resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                    }
+                    if (snapshotChangedBeforePaging) {
+                        needsRefresh = true
+                        return@launch
+                    }
+                    val next = withContext(Dispatchers.IO) {
+                        loadFilteredGroupsPage(
+                            resultsRepo = resultsRepo,
+                            sortKey = mapSort(sortKey.value, sortDirection.value),
+                            snapshotUpdatedAtMillis = snapshotUpdatedAt,
+                            definition = appliedFilter.value,
+                            startOffset = filteredSourceOffset.value,
+                            minMatches = (needed - groups.value.size).coerceAtLeast(1),
+                            sourcePageSize = pageSize
+                        )
+                    }
+                    if (!queryCoordinator.isPagingTokenValid(requestToken)) return@launch
+                    val existingKeys = groups.value.mapTo(hashSetOf()) { groupStableKey(it) }
+                    val toAppend = next.matchedGroups.filterNot { group ->
+                        existingKeys.contains(groupStableKey(group))
+                    }
+                    if (toAppend.isNotEmpty()) {
+                        groups.value = groups.value + toAppend
+                    }
+                    filteredSourceOffset.value = next.nextSourceOffset
+                    filteredSourceExhausted.value = next.exhausted
+                    groupCount.value = groups.value.size
+                    seedPreviewMembers(next.previewMembersByGroupKey)
+                } catch (_: Exception) {
+                    loadError.value = "필터가 적용된 결과를 이어서 불러오지 못했습니다. 새로고침해 주세요."
+                } finally {
+                    isPaging.value = false
+                    if (needsRefresh && !isRefreshing.value) {
+                        refresh(reset = true, rebuild = false)
+                    }
+                }
+            }
+            return
+        }
         val needed = visibleCount.value.coerceAtMost(groupCount.value)
         if (groups.value.size >= needed) return
         val offset = groups.value.size
@@ -372,35 +524,54 @@ fun ResultsScreenDb(
             .collect { topVisibleGroupIndex.value = it }
     }
 
-    val loadIndicatorText = if (selectedGroupIndex != null || groupCount.value == 0) {
-        null
-    } else {
-        val totalGroups = groupCount.value
-        val loaded = visibleCount.value.coerceAtMost(totalGroups)
-        val current = if (loaded <= 0) 1 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
-        formatLoadProgressText(
-            current = current,
-            loaded = loaded,
-            total = totalGroups
+    val loadIndicatorText = when {
+        selectedGroupIndex != null -> null
+        bulkDeleteCatalogOpen.value -> null
+        bulkDeleteCommand.value != null -> null
+        filtersActive() -> filteredResultsLoadIndicatorText(
+            filteredCurrentIndex = topVisibleGroupIndex.value,
+            dbLoadedCount = filteredSourceOffset.value,
+            totalDbGroupCount = totalGroupCount.value,
+            matchedGroupCount = groups.value.size
         )
+        groupCount.value == 0 -> null
+        else -> {
+            val totalGroups = groupCount.value
+            val loaded = visibleCount.value.coerceAtMost(totalGroups)
+            val current = if (loaded <= 0) 1 else (topVisibleGroupIndex.value + 1).coerceAtLeast(1)
+            formatLoadProgressText(
+                current = current,
+                loaded = loaded,
+                total = totalGroups
+            )
+        }
     }
 
     // Auto-load next page as user scrolls (legacy behavior).
     LaunchedEffect(groupCount.value, groups.value.size) {
-        if (groupCount.value <= 0) return@LaunchedEffect
+        if (!filtersActive() && groupCount.value <= 0) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = layoutInfo.totalItemsCount
-            val remainingToTarget = groupCount.value - visibleCount.value
             val closeToEnd = lastVisible >= (totalItems - buffer)
-            closeToEnd && remainingToTarget > 0
+            if (filtersActive()) {
+                val hasMore = groups.value.size > visibleCount.value || !filteredSourceExhausted.value
+                closeToEnd && hasMore
+            } else {
+                val remainingToTarget = groupCount.value - visibleCount.value
+                closeToEnd && remainingToTarget > 0
+            }
         }
             .distinctUntilChanged()
             .filter { it }
             .collect {
-                visibleCount.value = (visibleCount.value + pageSize)
-                    .coerceAtMost(groupCount.value)
+                visibleCount.value = if (filtersActive()) {
+                    visibleCount.value + pageSize
+                } else {
+                    (visibleCount.value + pageSize)
+                        .coerceAtMost(groupCount.value)
+                }
             }
     }
 
@@ -423,6 +594,34 @@ fun ResultsScreenDb(
                                 expanded = menuExpanded.value,
                                 onDismissRequest = { menuExpanded.value = false }
                             ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Bulk delete") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        bulkDeleteCatalogOpen.value = true
+                                        bulkDeleteCommand.value = null
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (appliedFilter.value.hasActiveRules()) {
+                                                "Filters (${appliedFilter.value.activeRuleCount()})"
+                                            } else {
+                                                "Filters"
+                                            }
+                                        )
+                                    },
+                                    onClick = {
+                                        draftFilter.value = if (appliedFilter.value.clusters.isEmpty()) {
+                                            ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+                                        } else {
+                                            appliedFilter.value
+                                        }
+                                        menuExpanded.value = false
+                                        filterDialogOpen.value = true
+                                    }
+                                )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text("Refresh") },
                                     leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
@@ -457,17 +656,47 @@ fun ResultsScreenDb(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column {
-                        Text("Files scanned: ${fileCount.value}")
-                        Text("Duplicate groups: ${groupCount.value}")
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Files scanned: ${fileCount.value}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (filtersActive()) {
+                                if (filteredSourceExhausted.value) {
+                                    "Duplicate groups: ${groupCount.value} filtered / ${totalGroupCount.value} total"
+                                } else {
+                                    "Duplicate groups: ${groups.value.size} matched so far · scanned ${filteredSourceOffset.value}/${totalGroupCount.value}"
+                                }
+                            } else {
+                                "Duplicate groups: ${groupCount.value}"
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (appliedFilter.value.hasActiveRules()) {
+                            Text(
+                                text = "Filters: ${summarizeResultsFilter(appliedFilter.value)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
-                    OutlinedButton(onClick = {
-                        pendingSortKey.value = normalizeDbSortKey(sortKey.value)
-                        pendingSortDirection.value = sortDirection.value
-                        sortDialogOpen.value = true
-                    }) {
+                    OutlinedButton(
+                        modifier = Modifier.widthIn(min = 88.dp),
+                        onClick = {
+                            pendingSortKey.value = normalizeDbSortKey(sortKey.value)
+                            pendingSortDirection.value = sortDirection.value
+                            sortDialogOpen.value = true
+                        }
+                    ) {
                         Text("Sort")
                     }
                 }
@@ -478,8 +707,13 @@ fun ResultsScreenDb(
             if (groupCount.value == 0) {
                 item {
                     Text(
-                        if (isRefreshing.value) "Loading results..."
-                        else "No duplicates found."
+                        when {
+                            isRefreshing.value || isPaging.value -> {
+                                if (filtersActive()) "Filtering results..." else "Loading results..."
+                            }
+                            filtersActive() -> "No duplicate groups matched the current filters."
+                            else -> "No duplicates found."
+                        }
                     )
                 }
             } else {
@@ -700,6 +934,82 @@ fun ResultsScreenDb(
                 }
             }
         )
+    }
+
+    if (filterDialogOpen.value) {
+        ResultsFilterScreen(
+            definition = draftFilter.value,
+            onDefinitionChange = { updated ->
+                draftFilter.value = updated
+            },
+            onBack = {
+                filterDialogOpen.value = false
+            },
+            onApply = {
+                appliedFilter.value = draftFilter.value
+                settingsStore.setResultsFilterDefinitionJson(
+                    resultsFilterDefinitionToJson(draftFilter.value)
+                )
+                filterDialogOpen.value = false
+                refresh(reset = true, rebuild = false)
+            }
+        )
+    }
+
+    if (bulkDeleteCatalogOpen.value && bulkDeleteCommand.value == null) {
+        ResultsBulkDeleteCatalogScreen(
+            appliedFilter = appliedFilter.value,
+            onBack = {
+                bulkDeleteCatalogOpen.value = false
+            },
+            onOpenCommand = { command ->
+                bulkDeleteCommand.value = command
+            }
+        )
+    }
+
+    bulkDeleteCommand.value?.let { command ->
+        when (command) {
+            ResultsBulkDeleteCommandType.KeepOneNonMatch -> {
+                KeepOneNonMatchBulkDeleteScreen(
+                    resultsRepo = resultsRepo,
+                    sortKey = mapSort(sortKey.value, sortDirection.value),
+                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                    totalGroupCount = totalGroupCount.value,
+                    appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    onDeleteFile = onDeleteFile,
+                    onBack = {
+                        bulkDeleteCommand.value = null
+                    },
+                    onResultsChanged = {
+                        refresh(reset = true, rebuild = false)
+                    }
+                )
+            }
+
+            ResultsBulkDeleteCommandType.KeepByModified -> {
+                KeepByModifiedBulkDeleteScreen(
+                    resultsRepo = resultsRepo,
+                    sortKey = mapSort(sortKey.value, sortDirection.value),
+                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                    totalGroupCount = totalGroupCount.value,
+                    appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    onDeleteFile = onDeleteFile,
+                    onBack = {
+                        bulkDeleteCommand.value = null
+                    },
+                    onResultsChanged = {
+                        refresh(reset = true, rebuild = false)
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -1555,4 +1865,83 @@ internal fun uniqueGroupsToAppend(
         appended.add(group)
     }
     return appended
+}
+
+internal fun filteredResultsLoadIndicatorText(
+    filteredCurrentIndex: Int,
+    dbLoadedCount: Int,
+    totalDbGroupCount: Int,
+    matchedGroupCount: Int
+): String? {
+    return formatFilteredLoadProgressText(
+        filteredCurrentIndex = filteredCurrentIndex,
+        matchedCount = matchedGroupCount,
+        sourceLoadedCount = dbLoadedCount,
+        totalCount = totalDbGroupCount
+    )
+}
+
+internal fun loadFilteredGroupsPage(
+    resultsRepo: ResultsDbRepository,
+    sortKey: DuplicateGroupSortKey,
+    snapshotUpdatedAtMillis: Long,
+    definition: ResultsFilterDefinition,
+    startOffset: Int,
+    minMatches: Int,
+    sourcePageSize: Int
+): FilteredGroupsPage {
+    if (sourcePageSize <= 0) {
+        return FilteredGroupsPage(
+            matchedGroups = emptyList(),
+            previewMembersByGroupKey = emptyMap(),
+            nextSourceOffset = startOffset,
+            exhausted = true
+        )
+    }
+
+    val matchedGroups = mutableListOf<DuplicateGroupEntity>()
+    val previewMembersByGroupKey = linkedMapOf<String, List<FileMetadata>>()
+    val needsMembers = definition.requiresGroupMembers()
+    var sourceOffset = startOffset
+    var exhausted = false
+
+    while (matchedGroups.size < minMatches && !exhausted) {
+        val page = resultsRepo.loadPageAtSnapshot(
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+            offset = sourceOffset,
+            limit = sourcePageSize
+        )
+        if (page.isEmpty()) {
+            exhausted = true
+            break
+        }
+        sourceOffset += page.size
+        page.forEach { group ->
+            val members = if (needsMembers) {
+                resultsRepo.listAllGroupMembers(
+                    sizeBytes = group.sizeBytes,
+                    hashHex = group.hashHex
+                )
+            } else {
+                emptyList()
+            }
+            if (matchesResultsFilter(definition, group, members)) {
+                matchedGroups.add(group)
+                if (members.isNotEmpty()) {
+                    previewMembersByGroupKey[groupStableKey(group)] = members.take(10)
+                }
+            }
+        }
+        if (page.size < sourcePageSize) {
+            exhausted = true
+        }
+    }
+
+    return FilteredGroupsPage(
+        matchedGroups = matchedGroups,
+        previewMembersByGroupKey = previewMembersByGroupKey,
+        nextSourceOffset = sourceOffset,
+        exhausted = exhausted
+    )
 }

@@ -18,6 +18,23 @@ fun formatLoadProgressText(current: Int, loaded: Int, total: Int): String? {
     return "$safeCurrent/$safeLoaded/$total (${currentPercent}%/${loadedPercent}%)"
 }
 
+fun formatFilteredLoadProgressText(
+    filteredCurrentIndex: Int,
+    matchedCount: Int,
+    sourceLoadedCount: Int,
+    totalCount: Int
+): String? {
+    if (totalCount <= 0) return null
+    val safeLoaded = sourceLoadedCount.coerceIn(0, totalCount)
+    val safeMatched = matchedCount.coerceAtLeast(0)
+    val safeCurrent = if (safeMatched <= 0) {
+        0
+    } else {
+        (filteredCurrentIndex + 1).coerceIn(1, safeMatched)
+    }
+    return "${safeCurrent}/${safeMatched} - ${safeLoaded}/${totalCount}"
+}
+
 @Composable
 fun BoxScope.TopRightLoadIndicator(
     text: String?,

@@ -23,11 +23,14 @@ class AppSettingsStoreTest {
         assertFalse(settings.hideZeroSizeInResults)
         assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
+        assertTrue(settings.keepLoadedVideoPreviewsInMemory)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
         assertEquals("Asc", settings.resultGroupSortDirection)
         assertFalse(settings.showFullPaths)
+        assertEquals("", settings.resultsFilterDefinitionJson)
+        assertEquals("", settings.filesFilterDefinitionJson)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
     }
@@ -52,6 +55,9 @@ class AppSettingsStoreTest {
         store.setKeepLoadedThumbnailsInMemory(true)
         assertTrue(store.load().keepLoadedThumbnailsInMemory)
 
+        store.setKeepLoadedVideoPreviewsInMemory(false)
+        assertFalse(store.load().keepLoadedVideoPreviewsInMemory)
+
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         val loaded = store.load()
@@ -66,6 +72,18 @@ class AppSettingsStoreTest {
 
         store.setShowFullPaths(true)
         assertTrue(store.load().showFullPaths)
+
+        store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\"}]}")
+        assertEquals(
+            "{\"clusters\":[{\"id\":\"cluster_1\"}]}",
+            store.load().resultsFilterDefinitionJson
+        )
+
+        store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\"}]}")
+        assertEquals(
+            "{\"clusters\":[{\"id\":\"cluster_2\"}]}",
+            store.load().filesFilterDefinitionJson
+        )
 
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
@@ -85,6 +103,9 @@ class AppSettingsStoreTest {
         assertTrue(imported.skipTrashBinContentsInScan)
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
+        assertTrue(imported.keepLoadedVideoPreviewsInMemory)
+        assertEquals("", imported.resultsFilterDefinitionJson)
+        assertEquals("", imported.filesFilterDefinitionJson)
         assertTrue(store.load().skipZeroSizeInDb)
         assertTrue(store.load().skipTrashBinContentsInScan)
     }
@@ -99,11 +120,14 @@ class AppSettingsStoreTest {
         store.setHideZeroSizeInResults(true)
         store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
+        store.setKeepLoadedVideoPreviewsInMemory(false)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         store.setResultGroupSortKey("Modified")
         store.setResultGroupSortDirection("Desc")
         store.setShowFullPaths(true)
+        store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}")
+        store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}")
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
 
@@ -117,11 +141,14 @@ class AppSettingsStoreTest {
         assertTrue(imported.hideZeroSizeInResults)
         assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
+        assertFalse(imported.keepLoadedVideoPreviewsInMemory)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)
         assertEquals("Modified", imported.resultGroupSortKey)
         assertEquals("Desc", imported.resultGroupSortDirection)
         assertTrue(imported.showFullPaths)
+        assertEquals("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}", imported.resultsFilterDefinitionJson)
+        assertEquals("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}", imported.filesFilterDefinitionJson)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals(imported, importedStore.load())

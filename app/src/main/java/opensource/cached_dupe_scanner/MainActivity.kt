@@ -86,11 +86,12 @@ class MainActivity : ComponentActivity() {
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
                 val rememberedThumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
+                val rememberedVideoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
                 val scope = rememberCoroutineScope()
                 val dbManagementUiState = remember { DbManagementUiState() }
                 val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
                 val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                val taskCoordinator = remember { TaskCoordinator() }
+                val taskCoordinator = remember { TaskCoordinator(context) }
                 val notificationController = remember { TaskNotificationController(context) }
                 val database = remember {
                     Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
@@ -130,6 +131,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(settingsSnapshot.keepLoadedThumbnailsInMemory) {
                     if (!settingsSnapshot.keepLoadedThumbnailsInMemory) {
                         rememberedThumbnailCache.clear()
+                    }
+                }
+
+                LaunchedEffect(settingsSnapshot.keepLoadedVideoPreviewsInMemory) {
+                    if (!settingsSnapshot.keepLoadedVideoPreviewsInMemory) {
+                        rememberedVideoPreviewCache.clear()
                     }
                 }
 
@@ -250,7 +257,9 @@ class MainActivity : ComponentActivity() {
                                 trashController = trashController,
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
-                                rememberedPreviewCache = rememberedThumbnailCache,
+                                keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                rememberedThumbnailCache = rememberedThumbnailCache,
+                                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
                                 onBack = { pop(backStack) },

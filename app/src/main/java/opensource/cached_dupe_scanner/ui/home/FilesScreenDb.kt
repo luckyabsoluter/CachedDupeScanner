@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,8 +53,8 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
-import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -63,13 +64,20 @@ internal fun markDeletedPath(
     deletedPath: String
 ): Set<String> = currentDeletedPaths + deletedPath
 
+private enum class FilesPreviewMode {
+    Compact,
+    VideoTimeline
+}
+
 @Composable
 fun FilesScreenDb(
     fileRepo: PagedFileRepository,
     trashController: TrashController,
     settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
-    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    rememberedThumbnailCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -80,6 +88,8 @@ fun FilesScreenDb(
     val listState = rememberLazyListState()
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
+    val filterScreenOpen = remember { mutableStateOf(false) }
+    val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -100,31 +110,69 @@ fun FilesScreenDb(
     }
     val pendingSortKey = remember { mutableStateOf(sortKey.value) }
     val pendingSortDirection = remember { mutableStateOf(sortDirection.value) }
+    val initialFilterDefinition = remember(settingsSnapshot.filesFilterDefinitionJson) {
+        resultsFilterDefinitionFromJson(settingsSnapshot.filesFilterDefinitionJson)
+    }
+    val appliedFilter = remember { mutableStateOf(initialFilterDefinition) }
+    val draftFilter = remember {
+        mutableStateOf(
+            if (initialFilterDefinition.clusters.isEmpty()) {
+                ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+            } else {
+                initialFilterDefinition
+            }
+        )
+    }
 
     val items = remember { mutableStateOf<List<FileMetadata>>(emptyList()) }
     val cursor = remember { mutableStateOf<PagedFileRepository.Cursor>(PagedFileRepository.Cursor.Start) }
+    val filterSourceExhausted = remember { mutableStateOf(false) }
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val deletedPaths = rememberSaveable { mutableStateOf(setOf<String>()) }
     val topVisibleIndex = remember { mutableStateOf(0) }
+    val filteredSourceLoadedCount = remember { mutableStateOf(0) }
 
     val pageSize = 200
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
 
+    fun isVideoTimelinePreviewEnabled(): Boolean {
+        return previewMode.value == FilesPreviewMode.VideoTimeline.name
+    }
+
+    fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules(FILE_FILTER_TARGETS)
+
     fun resetAndLoad() {
         items.value = emptyList()
         cursor.value = PagedFileRepository.Cursor.Start
+        filterSourceExhausted.value = false
         visibleCount.value = 0
         scope.launch {
             isLoading.value = true
             total.value = withContext(Dispatchers.IO) { fileRepo.countAll() }
             val page = withContext(Dispatchers.IO) {
-                fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                if (filtersActive()) {
+                    loadFilteredFilesPage(
+                        fileRepo = fileRepo,
+                        sortKey = sortKey.value,
+                        direction = sortDirection.value,
+                        cursor = PagedFileRepository.Cursor.Start,
+                        definition = appliedFilter.value,
+                        minMatches = pageSize,
+                        sourcePageSize = pageSize
+                    )
+                } else {
+                    FilteredFilesPage.fromUnfiltered(
+                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                    )
+                }
             }
             items.value = page.items
             cursor.value = page.nextCursor ?: cursor.value
+            filterSourceExhausted.value = page.exhausted
+            filteredSourceLoadedCount.value = page.sourceLoadedCount
             visibleCount.value = page.items.size
             isLoading.value = false
         }
@@ -132,16 +180,37 @@ fun FilesScreenDb(
 
     fun loadMore() {
         if (isLoading.value) return
+        if (filtersActive() && filterSourceExhausted.value) return
         scope.launch {
             isLoading.value = true
             val page = withContext(Dispatchers.IO) {
-                fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                if (filtersActive()) {
+                    loadFilteredFilesPage(
+                        fileRepo = fileRepo,
+                        sortKey = sortKey.value,
+                        direction = sortDirection.value,
+                        cursor = cursor.value,
+                        definition = appliedFilter.value,
+                        minMatches = pageSize,
+                        sourcePageSize = pageSize
+                    )
+                } else {
+                    FilteredFilesPage.fromUnfiltered(
+                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
+                    )
+                }
+            }
+            if (filtersActive()) {
+                filteredSourceLoadedCount.value =
+                    (filteredSourceLoadedCount.value + page.sourceLoadedCount)
+                        .coerceAtMost(total.value)
             }
             if (page.items.isNotEmpty()) {
                 items.value = items.value + page.items
                 cursor.value = page.nextCursor ?: cursor.value
                 visibleCount.value = items.value.size
             }
+            filterSourceExhausted.value = page.exhausted
             isLoading.value = false
         }
     }
@@ -154,6 +223,7 @@ fun FilesScreenDb(
         deletedPaths.value = emptySet()
         cursor.value = PagedFileRepository.Cursor.Start
         visibleCount.value = 0
+        filteredSourceLoadedCount.value = 0
     }
 
     LaunchedEffect(Unit) {
@@ -166,12 +236,19 @@ fun FilesScreenDb(
         val totalCount = total.value
         if (totalCount <= 0) {
             null
-        } else {
-            formatLoadProgressText(
-                current = (topVisibleIndex.value + 1),
-                loaded = items.value.size.coerceAtMost(totalCount),
-                total = totalCount
+        } else if (filtersActive()) {
+            formatFilteredLoadProgressText(
+                filteredCurrentIndex = topVisibleIndex.value,
+                matchedCount = items.value.size,
+                sourceLoadedCount = filteredSourceLoadedCount.value,
+                totalCount = totalCount
             )
+        } else {
+            val loaded = items.value.size.coerceAtMost(totalCount).coerceAtLeast(1)
+            val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
+            val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
+            val loadedPercent = ((loaded.toDouble() / totalCount.toDouble()) * 100).toInt()
+            "$current/$loaded/$totalCount (${currentPercent}%/${loadedPercent}%)"
         }
     }
 
@@ -220,12 +297,41 @@ fun FilesScreenDb(
                                 }
                             )
                             androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Filter") },
+                                onClick = {
+                                    menuExpanded.value = false
+                                    draftFilter.value = if (appliedFilter.value.clusters.isEmpty()) {
+                                        ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+                                    } else {
+                                        appliedFilter.value
+                                    }
+                                    filterScreenOpen.value = true
+                                }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
                                 text = { Text("Sort") },
                                 onClick = {
                                     menuExpanded.value = false
                                     pendingSortKey.value = sortKey.value
                                     pendingSortDirection.value = sortDirection.value
                                     sortDialogOpen.value = true
+                                }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Video preview") },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = isVideoTimelinePreviewEnabled(),
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    previewMode.value = if (isVideoTimelinePreviewEnabled()) {
+                                        FilesPreviewMode.Compact.name
+                                    } else {
+                                        FilesPreviewMode.VideoTimeline.name
+                                    }
+                                    menuExpanded.value = false
                                 }
                             )
                         }
@@ -236,7 +342,15 @@ fun FilesScreenDb(
             item { Spacer(modifier = Modifier.height(8.dp)) }
             item {
                 Text(
-                    text = "Loaded ${items.value.size}/${total.value}",
+                    text = if (filtersActive()) {
+                        "${summarizeResultsFilter(appliedFilter.value, FILE_FILTER_TARGETS)} · matched ${items.value.size}/${total.value}"
+                    } else {
+                        "Loaded ${items.value.size}/${total.value}"
+                    } + if (isVideoTimelinePreviewEnabled()) {
+                        " · Video preview"
+                    } else {
+                        ""
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -260,59 +374,74 @@ fun FilesScreenDb(
                             CardDefaults.cardColors()
                         }
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .padding(12.dp)
-                                .fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                                .fillMaxWidth()
                         ) {
-                            if (isMediaFile(file.normalizedPath)) {
-                                RememberingAsyncThumbnail(
-                                    filePath = file.normalizedPath,
-                                    previewMemoryKey = file.normalizedPath,
-                                    rememberedPreviewCache = rememberedPreviewCache,
-                                    imageLoader = imageLoader,
-                                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-                                    contentDescription = "Thumbnail",
-                                    modifier = Modifier
-                                        .width(56.dp)
-                                        .height(56.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isMediaFile(file.normalizedPath)) {
+                                    RememberingAsyncThumbnail(
+                                        filePath = file.normalizedPath,
+                                        previewMemoryKey = file.normalizedPath,
+                                        rememberedPreviewCache = rememberedThumbnailCache,
+                                        imageLoader = imageLoader,
+                                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                                        contentDescription = "Thumbnail",
+                                        modifier = Modifier
+                                            .width(56.dp)
+                                            .height(56.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = formatPath(file.normalizedPath, showFullPath = false),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = file.normalizedPath,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isDeleted) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
                             }
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = formatPath(file.normalizedPath, showFullPath = false),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = file.normalizedPath,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "${formatBytesWithExact(file.sizeBytes)} · ${formatDate(file.lastModifiedMillis)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isDeleted) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
+
+                            if (isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                VideoTimelinePreviewStrip(
+                                    filePath = file.normalizedPath,
+                                    rememberedPreviewCache = rememberedVideoPreviewCache,
+                                    imageLoader = imageLoader,
+                                    keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
@@ -438,4 +567,88 @@ fun FilesScreenDb(
             }
         )
     }
+
+    if (filterScreenOpen.value) {
+        FileFilterScreen(
+            definition = draftFilter.value,
+            onDefinitionChange = { draftFilter.value = it },
+            onBack = { filterScreenOpen.value = false },
+            onApply = {
+                appliedFilter.value = draftFilter.value
+                settingsStore.setFilesFilterDefinitionJson(
+                    resultsFilterDefinitionToJson(appliedFilter.value)
+                )
+                filterScreenOpen.value = false
+                resetAndLoad()
+            }
+        )
+    }
+}
+
+internal data class FilteredFilesPage(
+    val items: List<FileMetadata>,
+    val nextCursor: PagedFileRepository.Cursor?,
+    val exhausted: Boolean,
+    val sourceLoadedCount: Int
+) {
+    companion object {
+        fun fromUnfiltered(page: PagedFileRepository.Page): FilteredFilesPage {
+            return FilteredFilesPage(
+                items = page.items,
+                nextCursor = page.nextCursor,
+                exhausted = page.items.isEmpty(),
+                sourceLoadedCount = page.items.size
+            )
+        }
+    }
+}
+
+internal fun loadFilteredFilesPage(
+    fileRepo: PagedFileRepository,
+    sortKey: PagedFileRepository.SortKey,
+    direction: PagedFileRepository.SortDirection,
+    cursor: PagedFileRepository.Cursor,
+    definition: ResultsFilterDefinition,
+    minMatches: Int,
+    sourcePageSize: Int
+): FilteredFilesPage {
+    if (sourcePageSize <= 0 || minMatches <= 0) {
+        return FilteredFilesPage(
+            items = emptyList(),
+            nextCursor = cursor,
+            exhausted = true,
+            sourceLoadedCount = 0
+        )
+    }
+
+    val matchedItems = mutableListOf<FileMetadata>()
+    var sourceLoaded = 0
+    var nextCursor: PagedFileRepository.Cursor? = cursor
+    var exhausted = false
+
+    while (matchedItems.size < minMatches && !exhausted) {
+        val page = fileRepo.loadPage(
+            sortKey = sortKey,
+            direction = direction,
+            cursor = nextCursor ?: cursor,
+            limit = sourcePageSize
+        )
+        if (page.items.isEmpty()) {
+            exhausted = true
+            nextCursor = null
+            break
+        }
+        sourceLoaded += page.items.size
+        matchedItems += page.items.filter { file ->
+            matchesFileFilter(definition, file)
+        }
+        nextCursor = page.nextCursor
+    }
+
+    return FilteredFilesPage(
+        items = matchedItems.take(minMatches),
+        nextCursor = nextCursor,
+        exhausted = exhausted,
+        sourceLoadedCount = sourceLoaded
+    )
 }

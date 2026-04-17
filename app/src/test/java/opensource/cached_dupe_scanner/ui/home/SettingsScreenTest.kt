@@ -16,11 +16,14 @@ class SettingsScreenTest {
                 hideZeroSizeInResults = false,
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = true,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -43,11 +46,14 @@ class SettingsScreenTest {
                 hideZeroSizeInResults = false,
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = true,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -68,11 +74,14 @@ class SettingsScreenTest {
                 hideZeroSizeInResults = false,
                 showMemoryOverlay = true,
                 keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = true,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -93,11 +102,14 @@ class SettingsScreenTest {
                 hideZeroSizeInResults = false,
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = true,
+                keepLoadedVideoPreviewsInMemory = true,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
                 resultGroupSortDirection = "Asc",
                 showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
                 filesSortKey = "Name",
                 filesSortDirection = "Asc"
             )
@@ -106,6 +118,34 @@ class SettingsScreenTest {
         assertEquals("Thumbnail memory", section.title)
         assertEquals(1, section.toggles.size)
         assertEquals(ToggleSettingId.KeepLoadedThumbnailsInMemory, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun videoPreviewMemorySectionExposesDedicatedRamToggle() {
+        val section = videoPreviewMemorySettingsSection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                showMemoryOverlay = false,
+                keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = true,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Video preview memory", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.KeepLoadedVideoPreviewsInMemory, section.toggles[0].id)
         assertTrue(section.toggles[0].checked)
     }
 

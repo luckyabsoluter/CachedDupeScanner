@@ -155,6 +155,29 @@ class ResultsDbRepository(
         }
         return entities.map { it.toMetadata() }
     }
+
+    fun listAllGroupMembers(sizeBytes: Long, hashHex: String, pageSize: Int = 200): List<FileMetadata> {
+        if (pageSize <= 0) return emptyList()
+        val allMembers = mutableListOf<FileMetadata>()
+        var afterPath: String? = null
+        while (true) {
+            val page = listGroupMembers(
+                sizeBytes = sizeBytes,
+                hashHex = hashHex,
+                afterPath = afterPath,
+                limit = pageSize
+            )
+            if (page.isEmpty()) {
+                break
+            }
+            allMembers.addAll(page)
+            if (page.size < pageSize) {
+                break
+            }
+            afterPath = page.last().normalizedPath
+        }
+        return allMembers
+    }
 }
 
 private fun CachedFileEntity.toMetadata(): FileMetadata {
