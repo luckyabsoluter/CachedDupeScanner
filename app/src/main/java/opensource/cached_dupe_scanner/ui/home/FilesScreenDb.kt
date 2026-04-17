@@ -131,6 +131,7 @@ fun FilesScreenDb(
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val deletedPaths = rememberSaveable { mutableStateOf(setOf<String>()) }
     val topVisibleIndex = remember { mutableStateOf(0) }
+    val filteredSourceLoadedCount = remember { mutableStateOf(0) }
 
     val pageSize = 200
     val buffer = 50
@@ -170,6 +171,7 @@ fun FilesScreenDb(
             items.value = page.items
             cursor.value = page.nextCursor ?: cursor.value
             filterSourceExhausted.value = page.exhausted
+            filteredSourceLoadedCount.value = page.sourceLoadedCount
             visibleCount.value = page.items.size
             isLoading.value = false
         }
@@ -197,6 +199,11 @@ fun FilesScreenDb(
                     )
                 }
             }
+            if (filtersActive()) {
+                filteredSourceLoadedCount.value =
+                    (filteredSourceLoadedCount.value + page.sourceLoadedCount)
+                        .coerceAtMost(total.value)
+            }
             if (page.items.isNotEmpty()) {
                 items.value = items.value + page.items
                 cursor.value = page.nextCursor ?: cursor.value
@@ -215,6 +222,7 @@ fun FilesScreenDb(
         deletedPaths.value = emptySet()
         cursor.value = PagedFileRepository.Cursor.Start
         visibleCount.value = 0
+        filteredSourceLoadedCount.value = 0
     }
 
     LaunchedEffect(Unit) {
@@ -228,9 +236,12 @@ fun FilesScreenDb(
         if (totalCount <= 0) {
             null
         } else if (filtersActive()) {
-            val matchedCount = items.value.size
-            val current = if (matchedCount <= 0) 0 else (topVisibleIndex.value + 1).coerceAtMost(matchedCount)
-            "$current/$matchedCount - ${matchedCount.coerceAtMost(totalCount)}/$totalCount"
+            filteredFilesLoadIndicatorText(
+                filteredCurrentIndex = topVisibleIndex.value,
+                matchedCount = items.value.size,
+                sourceLoadedCount = filteredSourceLoadedCount.value,
+                totalCount = totalCount
+            )
         } else {
             val loaded = items.value.size.coerceAtMost(totalCount).coerceAtLeast(1)
             val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
@@ -573,17 +584,36 @@ fun FilesScreenDb(
     }
 }
 
+internal fun filteredFilesLoadIndicatorText(
+    filteredCurrentIndex: Int,
+    matchedCount: Int,
+    sourceLoadedCount: Int,
+    totalCount: Int
+): String? {
+    if (totalCount <= 0) return null
+    val safeLoaded = sourceLoadedCount.coerceIn(0, totalCount)
+    val safeMatched = matchedCount.coerceAtLeast(0)
+    val safeCurrent = if (safeMatched <= 0) {
+        0
+    } else {
+        (filteredCurrentIndex + 1).coerceIn(1, safeMatched)
+    }
+    return "${safeCurrent}/${safeMatched} - ${safeLoaded}/${totalCount}"
+}
+
 internal data class FilteredFilesPage(
     val items: List<FileMetadata>,
     val nextCursor: PagedFileRepository.Cursor?,
-    val exhausted: Boolean
+    val exhausted: Boolean,
+    val sourceLoadedCount: Int
 ) {
     companion object {
         fun fromUnfiltered(page: PagedFileRepository.Page): FilteredFilesPage {
             return FilteredFilesPage(
                 items = page.items,
                 nextCursor = page.nextCursor,
-                exhausted = page.items.isEmpty()
+                exhausted = page.items.isEmpty(),
+                sourceLoadedCount = page.items.size
             )
         }
     }
@@ -602,11 +632,13 @@ internal fun loadFilteredFilesPage(
         return FilteredFilesPage(
             items = emptyList(),
             nextCursor = cursor,
-            exhausted = true
+            exhausted = true,
+            sourceLoadedCount = 0
         )
     }
 
     val matchedItems = mutableListOf<FileMetadata>()
+    var sourceLoaded = 0
     var nextCursor: PagedFileRepository.Cursor? = cursor
     var exhausted = false
 
@@ -622,6 +654,7 @@ internal fun loadFilteredFilesPage(
             nextCursor = null
             break
         }
+        sourceLoaded += page.items.size
         matchedItems += page.items.filter { file ->
             matchesFileFilter(definition, file)
         }
@@ -631,6 +664,7 @@ internal fun loadFilteredFilesPage(
     return FilteredFilesPage(
         items = matchedItems.take(minMatches),
         nextCursor = nextCursor,
-        exhausted = exhausted
+        exhausted = exhausted,
+        sourceLoadedCount = sourceLoaded
     )
 }
