@@ -29,7 +29,11 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Scan reports**: timings, phase durations, hash candidate counts.
 - **Export**: JSON/CSV utilities for results.
 - **System-wide task monitoring**: floating banners and draggable bubble UI to track long-running operations (scans, DB, trash) across screens.
+- **Background reliability**: Uses partial WakeLocks to ensure tasks run smoothly without interruption.
 - **Performance controls**: optional memory usage overlay and shared RAM thumbnail retention for heavy workloads.
+- **Rich media previews**: Timeline video preview mode with a dedicated RAM cache policy.
+- **Smart filters**: Saved filters, filter editing, and "same-folder" duplicate rules that persist across sessions.
+- **Advanced bulk delete**: "Keep-oldest" and "keep-newest" configurable commands mapped to a preview flow with thumbnails.
 - **DB maintenance**: purge missing files, re-hash stale or missing entries, and rebuild duplicate groups. Actionable via notification-backed execution.
 
 ## How scanning works
