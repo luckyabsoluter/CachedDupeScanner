@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.ui.home
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.ui.unit.dp
 
 class GroupPreviewLogicTest {
     @Test
@@ -65,5 +66,25 @@ class GroupPreviewLogicTest {
         assertEquals(0f, frames.first().percent)
         assertTrue(frames.last().percent <= 0.98f)
         assertTrue(frames.zipWithNext().all { (prev, next) -> next.percent >= prev.percent })
+    }
+
+    @Test
+    fun dynamicTimelineFrameCountUsesAvailableWidth() {
+        val count = dynamicTimelineFrameCount(
+            containerWidth = 300.dp,
+            frameHeight = 44.dp
+        )
+
+        assertEquals(4, count)
+    }
+
+    @Test
+    fun dynamicTimelineFrameCountKeepsMinimumOneFrame() {
+        val count = dynamicTimelineFrameCount(
+            containerWidth = 1.dp,
+            frameHeight = 44.dp
+        )
+
+        assertEquals(1, count)
     }
 }

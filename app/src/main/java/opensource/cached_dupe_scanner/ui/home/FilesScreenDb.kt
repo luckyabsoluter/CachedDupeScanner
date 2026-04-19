@@ -368,6 +368,7 @@ fun FilesScreenDb(
             } else {
                 items(items.value, key = { it.normalizedPath }) { file ->
                     val isDeleted = deletedPaths.value.contains(file.normalizedPath)
+                    val isVideo = isVideoFile(file.normalizedPath)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -440,7 +441,7 @@ fun FilesScreenDb(
                                 }
                             }
 
-                            if (isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)) {
+                            if (isVideoTimelinePreviewEnabled() && isVideo) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 VideoTimelinePreviewStrip(
                                     filePath = file.normalizedPath,

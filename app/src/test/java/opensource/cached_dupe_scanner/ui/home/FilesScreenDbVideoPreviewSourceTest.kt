@@ -40,7 +40,7 @@ class FilesScreenDbVideoPreviewSourceTest {
         val content = sourceFile!!.readText()
         assertTrue(
             "Video timeline strip should only be shown in video preview mode for video files",
-            content.contains("isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)") &&
+            content.contains("isVideoTimelinePreviewEnabled() && isVideo") &&
                 content.contains("VideoTimelinePreviewStrip(")
         )
         assertTrue(

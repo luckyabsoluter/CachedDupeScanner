@@ -49,5 +49,10 @@ class GroupPreviewSourceTest {
             "GroupPreview timeline should use a fixed multi-frame default count",
             content.contains("DEFAULT_VIDEO_TIMELINE_FRAME_COUNT = 7")
         )
+        assertTrue(
+            "GroupPreview timeline should compute frame count dynamically from available width",
+            content.contains("dynamicTimelineFrameCount(") &&
+                content.contains("BoxWithConstraints(")
+        )
     }
 }
