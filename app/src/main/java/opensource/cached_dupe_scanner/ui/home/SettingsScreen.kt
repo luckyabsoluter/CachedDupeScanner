@@ -60,6 +60,7 @@ fun SettingsScreen(
     val videoPreviewMemorySection = videoPreviewMemorySettingsSection(settings.value)
     val thumbnailSizeSection = thumbnailSizeSettingsSection()
     val videoPreviewSizeSection = videoPreviewSizeSettingsSection()
+    val videoPreviewSnapSection = videoPreviewSnapSettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -139,6 +140,7 @@ fun SettingsScreen(
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                                 ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> Unit
                             }
                         }
                     )
@@ -166,6 +168,7 @@ fun SettingsScreen(
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                                 ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> Unit
                             }
                         }
                     )
@@ -262,6 +265,29 @@ fun SettingsScreen(
                         onSettingsChanged?.invoke()
                     }
                 )
+            }
+
+            SettingsSectionCard(section = videoPreviewSnapSection) {
+                videoPreviewSnapSection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> {
+                                    settingsStore.setSnapVideoPreviewFramesToWidth(enabled)
+                                    settings.value = settings.value.copy(snapVideoPreviewFramesToWidth = enabled)
+                                    onSettingsChanged?.invoke()
+                                }
+                                else -> Unit
+                            }
+                        }
+                    )
+                }
             }
 
             SettingsSectionCard(section = backupSection) {
@@ -475,7 +501,8 @@ internal enum class ToggleSettingId {
     HideZeroSizeInResults,
     ShowMemoryOverlay,
     KeepLoadedThumbnailsInMemory,
-    KeepLoadedVideoPreviewsInMemory
+    KeepLoadedVideoPreviewsInMemory,
+    SnapVideoPreviewFramesToWidth
 }
 
 internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionModel {
@@ -570,6 +597,21 @@ internal fun videoPreviewSizeSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview size",
         description = "Choose the timeline frame size used in the video preview mode on the files screen."
+    )
+}
+
+internal fun videoPreviewSnapSettingsSection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview width snap",
+        description = "Snap timeline frames so each row expands to exactly fill the available width.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.SnapVideoPreviewFramesToWidth,
+                title = "Snap and expand to full width",
+                description = "Keeps frame count based on target ratio, then expands each frame width so the row fits edge to edge.",
+                checked = settings.snapVideoPreviewFramesToWidth
+            )
+        )
     )
 }
 

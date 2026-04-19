@@ -54,5 +54,10 @@ class GroupPreviewSourceTest {
             content.contains("dynamicTimelineFrameCount(") &&
                 content.contains("BoxWithConstraints(")
         )
+        assertTrue(
+            "GroupPreview timeline should support snap-to-width expansion",
+            content.contains("snapToFillWidth") &&
+                content.contains("snappedTimelineFrameWidth(")
+        )
     }
 }

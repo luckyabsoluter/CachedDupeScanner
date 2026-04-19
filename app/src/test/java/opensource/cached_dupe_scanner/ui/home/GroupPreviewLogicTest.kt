@@ -87,4 +87,15 @@ class GroupPreviewLogicTest {
 
         assertEquals(1, count)
     }
+
+    @Test
+    fun snappedTimelineFrameWidthFillsContainerWithSpacing() {
+        val width = snappedTimelineFrameWidth(
+            containerWidth = 300.dp,
+            frameCount = 4,
+            frameSpacing = 4.dp
+        )
+
+        assertEquals(72.dp, width)
+    }
 }

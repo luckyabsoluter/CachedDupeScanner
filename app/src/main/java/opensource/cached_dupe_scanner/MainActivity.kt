@@ -258,6 +258,7 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
                                 rememberedThumbnailCache = rememberedThumbnailCache,

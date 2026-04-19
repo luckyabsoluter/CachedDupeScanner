@@ -49,6 +49,10 @@ class FilesScreenDbVideoPreviewSourceTest {
                 content.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory")
         )
         assertTrue(
+            "Video timeline strip should receive width snap option",
+            content.contains("snapToFillWidth = snapVideoPreviewFramesToWidth")
+        )
+        assertTrue(
             "Video timeline strip should use configurable frame height",
             content.contains("frameHeight = videoPreviewFrameHeightDp")
         )

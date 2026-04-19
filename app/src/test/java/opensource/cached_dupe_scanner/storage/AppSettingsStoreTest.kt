@@ -24,6 +24,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
+        assertFalse(settings.snapVideoPreviewFramesToWidth)
         assertEquals(100, settings.thumbnailSizePercent)
         assertEquals(100, settings.videoPreviewSizePercent)
         assertEquals("Count", settings.resultSortKey)
@@ -59,6 +60,9 @@ class AppSettingsStoreTest {
 
         store.setKeepLoadedVideoPreviewsInMemory(false)
         assertFalse(store.load().keepLoadedVideoPreviewsInMemory)
+
+        store.setSnapVideoPreviewFramesToWidth(true)
+        assertTrue(store.load().snapVideoPreviewFramesToWidth)
 
         store.setThumbnailSizePercent(125)
         assertEquals(125, store.load().thumbnailSizePercent)
@@ -112,6 +116,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
+        assertFalse(imported.snapVideoPreviewFramesToWidth)
         assertEquals(100, imported.thumbnailSizePercent)
         assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
@@ -131,6 +136,7 @@ class AppSettingsStoreTest {
         store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setKeepLoadedVideoPreviewsInMemory(false)
+        store.setSnapVideoPreviewFramesToWidth(true)
         store.setThumbnailSizePercent(125)
         store.setVideoPreviewSizePercent(80)
         store.setResultSortKey("Name")
@@ -154,6 +160,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
+        assertTrue(imported.snapVideoPreviewFramesToWidth)
         assertEquals(125, imported.thumbnailSizePercent)
         assertEquals(80, imported.videoPreviewSizePercent)
         assertEquals("Name", imported.resultSortKey)

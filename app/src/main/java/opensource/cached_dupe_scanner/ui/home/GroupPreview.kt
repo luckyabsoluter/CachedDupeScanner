@@ -85,6 +85,18 @@ internal fun dynamicTimelineFrameCount(
     return count.coerceAtLeast(1)
 }
 
+internal fun snappedTimelineFrameWidth(
+    containerWidth: Dp,
+    frameCount: Int,
+    frameSpacing: Dp = VIDEO_TIMELINE_FRAME_SPACING
+): Dp {
+    if (frameCount <= 0 || containerWidth <= 0.dp) return 1.dp
+
+    val spacingTotal = frameSpacing * (frameCount - 1)
+    val availableWidth = (containerWidth - spacingTotal).coerceAtLeast(1.dp)
+    return availableWidth / frameCount
+}
+
 internal fun buildVideoTimelineFrames(frameCount: Int = DEFAULT_VIDEO_TIMELINE_FRAME_COUNT): List<VideoTimelineFrame> {
     if (frameCount <= 0) return emptyList()
     if (frameCount == 1) return listOf(VideoTimelineFrame(percent = 0f, keySuffix = "start"))
@@ -109,6 +121,7 @@ internal fun VideoTimelinePreviewStrip(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     imageLoader: ImageLoader,
     keepLoadedInMemory: Boolean,
+    snapToFillWidth: Boolean = false,
     frameHeight: Dp = 44.dp,
     modifier: Modifier = Modifier
 ) {
@@ -131,7 +144,16 @@ internal fun VideoTimelinePreviewStrip(
             val frameSpecs = remember(frameCount) {
                 buildVideoTimelineFrames(frameCount = frameCount)
             }
-            val frameWidth = frameHeight * VIDEO_TIMELINE_FRAME_WIDTH_RATIO
+            val frameWidth = remember(maxWidth, frameHeight, frameCount, snapToFillWidth) {
+                if (snapToFillWidth) {
+                    snappedTimelineFrameWidth(
+                        containerWidth = maxWidth,
+                        frameCount = frameCount
+                    )
+                } else {
+                    frameHeight * VIDEO_TIMELINE_FRAME_WIDTH_RATIO
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

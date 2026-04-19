@@ -7,6 +7,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 - Fine-grained settings to adjust thumbnail size and video timeline preview frame size (exact % input, no upper cap), applied across files/results/bulk-delete previews.
+- Optional video timeline snap mode that expands frames to fill each row width while preserving ratio-driven frame count.
 
 ## [1.3.0] - 2026-04-17
 
