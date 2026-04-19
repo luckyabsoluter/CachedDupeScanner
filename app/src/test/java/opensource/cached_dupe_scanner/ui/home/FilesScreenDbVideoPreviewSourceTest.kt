@@ -53,6 +53,10 @@ class FilesScreenDbVideoPreviewSourceTest {
             content.contains("snapToFillWidth = snapVideoPreviewFramesToWidth")
         )
         assertTrue(
+            "Video timeline strip should receive configured line count",
+            content.contains("lineCount = videoPreviewLineCount")
+        )
+        assertTrue(
             "Video timeline strip should use configurable frame height",
             content.contains("frameHeight = videoPreviewFrameHeightDp")
         )

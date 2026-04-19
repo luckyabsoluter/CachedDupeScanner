@@ -18,6 +18,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -51,6 +52,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -82,6 +84,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -113,6 +116,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = true,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -144,6 +148,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -203,6 +208,7 @@ class SettingsScreenTest {
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
                 snapVideoPreviewFramesToWidth = true,
+                videoPreviewLineCount = 1,
                 thumbnailSizePercent = 100,
                 videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
@@ -221,5 +227,14 @@ class SettingsScreenTest {
         assertEquals(1, section.toggles.size)
         assertEquals(ToggleSettingId.SnapVideoPreviewFramesToWidth, section.toggles[0].id)
         assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun videoPreviewLineCountSectionExplainsMultiRowPreview() {
+        val section = videoPreviewLineCountSettingsSection()
+
+        assertEquals("Video preview lines", section.title)
+        assertTrue(section.description.contains("rows"))
+        assertTrue(section.toggles.isEmpty())
     }
 }

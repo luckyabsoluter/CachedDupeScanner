@@ -98,4 +98,28 @@ class GroupPreviewLogicTest {
 
         assertEquals(72.dp, width)
     }
+
+    @Test
+    fun totalTimelineFrameCountUsesConfiguredLineCount() {
+        val total = totalTimelineFrameCount(
+            framesPerRow = 4,
+            lineCount = 3
+        )
+
+        assertEquals(12, total)
+    }
+
+    @Test
+    fun timelineFrameRowsSplitsFramesPerRow() {
+        val frames = buildVideoTimelineFrames(frameCount = 10)
+        val rows = timelineFrameRows(
+            frameSpecs = frames,
+            framesPerRow = 4
+        )
+
+        assertEquals(3, rows.size)
+        assertEquals(4, rows[0].size)
+        assertEquals(4, rows[1].size)
+        assertEquals(2, rows[2].size)
+    }
 }

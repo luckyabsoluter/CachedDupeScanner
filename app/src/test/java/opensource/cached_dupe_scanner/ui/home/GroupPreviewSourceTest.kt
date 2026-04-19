@@ -59,5 +59,11 @@ class GroupPreviewSourceTest {
             content.contains("snapToFillWidth") &&
                 content.contains("snappedTimelineFrameWidth(")
         )
+        assertTrue(
+            "GroupPreview timeline should support configurable multi-line rendering",
+            content.contains("lineCount") &&
+                content.contains("totalTimelineFrameCount(") &&
+                content.contains("timelineFrameRows(")
+        )
     }
 }

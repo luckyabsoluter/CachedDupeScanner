@@ -60,6 +60,7 @@ fun SettingsScreen(
     val videoPreviewMemorySection = videoPreviewMemorySettingsSection(settings.value)
     val thumbnailSizeSection = thumbnailSizeSettingsSection()
     val videoPreviewSizeSection = videoPreviewSizeSettingsSection()
+    val videoPreviewLineCountSection = videoPreviewLineCountSettingsSection()
     val videoPreviewSnapSection = videoPreviewSnapSettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
@@ -262,6 +263,17 @@ fun SettingsScreen(
                     onPercentSelected = { percent ->
                         settingsStore.setVideoPreviewSizePercent(percent)
                         settings.value = settings.value.copy(videoPreviewSizePercent = percent)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = videoPreviewLineCountSection) {
+                PreviewLineCountSettingControl(
+                    selectedCount = settings.value.videoPreviewLineCount,
+                    onCountSelected = { count ->
+                        settingsStore.setVideoPreviewLineCount(count)
+                        settings.value = settings.value.copy(videoPreviewLineCount = count)
                         onSettingsChanged?.invoke()
                     }
                 )
@@ -482,6 +494,85 @@ private fun PreviewSizeSettingControl(
     }
 }
 
+@Composable
+private fun PreviewLineCountSettingControl(
+    selectedCount: Int,
+    onCountSelected: (Int) -> Unit
+) {
+    val draftCount = remember(selectedCount) { mutableStateOf(selectedCount) }
+    val inputValue = remember(selectedCount) { mutableStateOf(selectedCount.toString()) }
+
+    fun applyCount(value: Int) {
+        val normalized = value.coerceAtLeast(1)
+        draftCount.value = normalized
+        inputValue.value = normalized.toString()
+        if (normalized != selectedCount) {
+            onCountSelected(normalized)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(
+                onClick = { applyCount(draftCount.value - 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("-1 line")
+            }
+            Text(
+                text = "${draftCount.value} lines",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(
+                onClick = { applyCount(draftCount.value + 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("+1 line")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = inputValue.value,
+                onValueChange = { raw ->
+                    val digits = raw.filter { it.isDigit() }
+                    inputValue.value = digits
+                    digits.toIntOrNull()?.let { parsed ->
+                        draftCount.value = parsed.coerceAtLeast(1)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                label = { Text("Exact line count") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedButton(
+                onClick = {
+                    val parsed = inputValue.value.toIntOrNull() ?: selectedCount
+                    applyCount(parsed)
+                }
+            ) {
+                Text("Apply")
+            }
+        }
+
+        Text(
+            text = "Current: ${selectedCount} lines",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 internal data class SettingsSectionModel(
     val title: String,
     val description: String,
@@ -597,6 +688,13 @@ internal fun videoPreviewSizeSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview size",
         description = "Choose the timeline frame size used in the video preview mode on the files screen."
+    )
+}
+
+internal fun videoPreviewLineCountSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview lines",
+        description = "Choose how many timeline rows are rendered for each video preview card."
     )
 }
 

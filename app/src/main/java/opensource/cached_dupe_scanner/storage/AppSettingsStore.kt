@@ -13,6 +13,7 @@ data class AppSettings(
     val keepLoadedThumbnailsInMemory: Boolean,
     val keepLoadedVideoPreviewsInMemory: Boolean,
     val snapVideoPreviewFramesToWidth: Boolean,
+    val videoPreviewLineCount: Int,
     val thumbnailSizePercent: Int,
     val videoPreviewSizePercent: Int,
     val resultSortKey: String,
@@ -59,6 +60,10 @@ class AppSettingsStore(context: Context) {
 
     fun setSnapVideoPreviewFramesToWidth(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH, enabled).apply()
+    }
+
+    fun setVideoPreviewLineCount(value: Int) {
+        prefs.edit().putInt(KEY_VIDEO_PREVIEW_LINE_COUNT, sanitizeVideoPreviewLineCount(value)).apply()
     }
 
     fun setThumbnailSizePercent(value: Int) {
@@ -153,6 +158,9 @@ class AppSettingsStore(context: Context) {
                 KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH,
                 DEFAULT_SETTINGS.snapVideoPreviewFramesToWidth
             ),
+            videoPreviewLineCount = sanitizeVideoPreviewLineCount(
+                prefs.getInt(KEY_VIDEO_PREVIEW_LINE_COUNT, DEFAULT_SETTINGS.videoPreviewLineCount)
+            ),
             thumbnailSizePercent = sanitizePreviewSizePercent(
                 prefs.getInt(KEY_THUMBNAIL_SIZE_PERCENT, DEFAULT_SETTINGS.thumbnailSizePercent)
             ),
@@ -214,6 +222,9 @@ class AppSettingsStore(context: Context) {
                 KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH,
                 DEFAULT_SETTINGS.snapVideoPreviewFramesToWidth
             ),
+            videoPreviewLineCount = sanitizeVideoPreviewLineCount(
+                obj.optInt(KEY_VIDEO_PREVIEW_LINE_COUNT, DEFAULT_SETTINGS.videoPreviewLineCount)
+            ),
             thumbnailSizePercent = sanitizePreviewSizePercent(
                 obj.optInt(KEY_THUMBNAIL_SIZE_PERCENT, DEFAULT_SETTINGS.thumbnailSizePercent)
             ),
@@ -253,6 +264,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .putBoolean(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
             .putBoolean(KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH, settings.snapVideoPreviewFramesToWidth)
+            .putInt(KEY_VIDEO_PREVIEW_LINE_COUNT, settings.videoPreviewLineCount)
             .putInt(KEY_THUMBNAIL_SIZE_PERCENT, settings.thumbnailSizePercent)
             .putInt(KEY_VIDEO_PREVIEW_SIZE_PERCENT, settings.videoPreviewSizePercent)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
@@ -276,6 +288,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .put(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
             .put(KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH, settings.snapVideoPreviewFramesToWidth)
+            .put(KEY_VIDEO_PREVIEW_LINE_COUNT, settings.videoPreviewLineCount)
             .put(KEY_THUMBNAIL_SIZE_PERCENT, settings.thumbnailSizePercent)
             .put(KEY_VIDEO_PREVIEW_SIZE_PERCENT, settings.videoPreviewSizePercent)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
@@ -293,6 +306,10 @@ class AppSettingsStore(context: Context) {
         return value.coerceAtLeast(0)
     }
 
+    private fun sanitizeVideoPreviewLineCount(value: Int): Int {
+        return value.coerceAtLeast(1)
+    }
+
     companion object {
         private val DEFAULT_SETTINGS = AppSettings(
             skipZeroSizeInDb = true,
@@ -302,6 +319,7 @@ class AppSettingsStore(context: Context) {
             keepLoadedThumbnailsInMemory = false,
             keepLoadedVideoPreviewsInMemory = true,
             snapVideoPreviewFramesToWidth = false,
+            videoPreviewLineCount = 1,
             thumbnailSizePercent = DEFAULT_PREVIEW_SIZE_PERCENT,
             videoPreviewSizePercent = DEFAULT_PREVIEW_SIZE_PERCENT,
             resultSortKey = "Count",
@@ -322,6 +340,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
         private const val KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY = "keep_loaded_video_previews_in_memory"
         private const val KEY_SNAP_VIDEO_PREVIEW_FRAMES_TO_WIDTH = "snap_video_preview_frames_to_width"
+        private const val KEY_VIDEO_PREVIEW_LINE_COUNT = "video_preview_line_count"
         private const val KEY_THUMBNAIL_SIZE_PERCENT = "thumbnail_size_percent"
         private const val KEY_VIDEO_PREVIEW_SIZE_PERCENT = "video_preview_size_percent"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"

@@ -97,6 +97,20 @@ internal fun snappedTimelineFrameWidth(
     return availableWidth / frameCount
 }
 
+internal fun totalTimelineFrameCount(
+    framesPerRow: Int,
+    lineCount: Int
+): Int {
+    return framesPerRow.coerceAtLeast(1) * lineCount.coerceAtLeast(1)
+}
+
+internal fun timelineFrameRows(
+    frameSpecs: List<VideoTimelineFrame>,
+    framesPerRow: Int
+): List<List<VideoTimelineFrame>> {
+    return frameSpecs.chunked(framesPerRow.coerceAtLeast(1))
+}
+
 internal fun buildVideoTimelineFrames(frameCount: Int = DEFAULT_VIDEO_TIMELINE_FRAME_COUNT): List<VideoTimelineFrame> {
     if (frameCount <= 0) return emptyList()
     if (frameCount == 1) return listOf(VideoTimelineFrame(percent = 0f, keySuffix = "start"))
@@ -122,9 +136,12 @@ internal fun VideoTimelinePreviewStrip(
     imageLoader: ImageLoader,
     keepLoadedInMemory: Boolean,
     snapToFillWidth: Boolean = false,
+    lineCount: Int = 1,
     frameHeight: Dp = 44.dp,
     modifier: Modifier = Modifier
 ) {
+    val safeLineCount = lineCount.coerceAtLeast(1)
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -135,44 +152,60 @@ internal fun VideoTimelinePreviewStrip(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val frameCount = remember(maxWidth, frameHeight) {
+            val framesPerRow = remember(maxWidth, frameHeight) {
                 dynamicTimelineFrameCount(
                     containerWidth = maxWidth,
                     frameHeight = frameHeight
                 )
             }
-            val frameSpecs = remember(frameCount) {
-                buildVideoTimelineFrames(frameCount = frameCount)
+            val totalFrameCount = remember(framesPerRow, safeLineCount) {
+                totalTimelineFrameCount(
+                    framesPerRow = framesPerRow,
+                    lineCount = safeLineCount
+                )
             }
-            val frameWidth = remember(maxWidth, frameHeight, frameCount, snapToFillWidth) {
+            val frameSpecs = remember(totalFrameCount) {
+                buildVideoTimelineFrames(frameCount = totalFrameCount)
+            }
+            val frameRows = remember(frameSpecs, framesPerRow) {
+                timelineFrameRows(
+                    frameSpecs = frameSpecs,
+                    framesPerRow = framesPerRow
+                )
+            }
+            val frameWidth = remember(maxWidth, frameHeight, framesPerRow, snapToFillWidth) {
                 if (snapToFillWidth) {
                     snappedTimelineFrameWidth(
                         containerWidth = maxWidth,
-                        frameCount = frameCount
+                        frameCount = framesPerRow
                     )
                 } else {
                     frameHeight * VIDEO_TIMELINE_FRAME_WIDTH_RATIO
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(VIDEO_TIMELINE_FRAME_SPACING)
-            ) {
-                frameSpecs.forEach { frame ->
-                    RememberingVideoFrameThumbnail(
-                        filePath = filePath,
-                        framePercent = frame.percent,
-                        previewMemoryKey = "$filePath#timeline#${frame.keySuffix}",
-                        rememberedPreviewCache = rememberedPreviewCache,
-                        imageLoader = imageLoader,
-                        keepLoadedInMemory = keepLoadedInMemory,
-                        contentDescription = "Timeline frame ${frame.keySuffix}",
-                        modifier = Modifier
-                            .width(frameWidth)
-                            .height(frameHeight)
-                            .clip(MaterialTheme.shapes.small)
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(VIDEO_TIMELINE_ROW_SPACING)) {
+                frameRows.forEach { rowFrames ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(VIDEO_TIMELINE_FRAME_SPACING)
+                    ) {
+                        rowFrames.forEach { frame ->
+                            RememberingVideoFrameThumbnail(
+                                filePath = filePath,
+                                framePercent = frame.percent,
+                                previewMemoryKey = "$filePath#timeline#${frame.keySuffix}",
+                                rememberedPreviewCache = rememberedPreviewCache,
+                                imageLoader = imageLoader,
+                                keepLoadedInMemory = keepLoadedInMemory,
+                                contentDescription = "Timeline frame ${frame.keySuffix}",
+                                modifier = Modifier
+                                    .width(frameWidth)
+                                    .height(frameHeight)
+                                    .clip(MaterialTheme.shapes.small)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -344,6 +377,7 @@ private const val DEFAULT_VIDEO_TIMELINE_FRAME_COUNT = 7
 private const val VIDEO_TIMELINE_FRAME_WIDTH_RATIO = 1.6f
 private const val VIDEO_TIMELINE_END_PERCENT = 0.98f
 private val VIDEO_TIMELINE_FRAME_SPACING = 4.dp
+private val VIDEO_TIMELINE_ROW_SPACING = 4.dp
 
 @Composable
 internal fun MissingPreviewThumbnail(

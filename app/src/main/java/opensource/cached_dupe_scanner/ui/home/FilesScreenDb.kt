@@ -77,6 +77,7 @@ fun FilesScreenDb(
     keepLoadedThumbnailsInMemory: Boolean,
     keepLoadedVideoPreviewsInMemory: Boolean,
     snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
     thumbnailSizeScale: Float,
     videoPreviewSizeScale: Float,
     rememberedThumbnailCache: MutableMap<String, ImageBitmap>,
@@ -450,6 +451,7 @@ fun FilesScreenDb(
                                     imageLoader = imageLoader,
                                     keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
                                     snapToFillWidth = snapVideoPreviewFramesToWidth,
+                                    lineCount = videoPreviewLineCount,
                                     frameHeight = videoPreviewFrameHeightDp,
                                     modifier = Modifier.fillMaxWidth()
                                 )
