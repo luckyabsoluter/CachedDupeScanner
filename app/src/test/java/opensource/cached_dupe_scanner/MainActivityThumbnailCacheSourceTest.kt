@@ -44,9 +44,15 @@ class MainActivityThumbnailCacheSourceTest {
                 content.contains("keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory")
         )
         assertTrue(
-            "ResultsScreenDb should receive the shared thumbnail cache",
+            "FilesScreenDb should receive thumbnail and video preview size scales from settings",
+            content.contains("thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f") &&
+                content.contains("videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f")
+        )
+        assertTrue(
+            "ResultsScreenDb should receive the shared thumbnail cache and thumbnail size scale",
             content.contains("Screen.Results -> ResultsScreenDb(") &&
-                content.contains("rememberedPreviewCache = rememberedThumbnailCache")
+                content.contains("rememberedPreviewCache = rememberedThumbnailCache") &&
+                content.contains("thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f")
         )
     }
 }

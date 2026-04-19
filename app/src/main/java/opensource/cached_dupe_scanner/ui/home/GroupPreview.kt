@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.ImageLoader
@@ -92,6 +93,7 @@ internal fun VideoTimelinePreviewStrip(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     imageLoader: ImageLoader,
     keepLoadedInMemory: Boolean,
+    frameHeight: Dp = 44.dp,
     modifier: Modifier = Modifier
 ) {
     val frameSpecs = remember { buildVideoTimelineFrames() }
@@ -120,7 +122,7 @@ internal fun VideoTimelinePreviewStrip(
                     contentDescription = "Timeline frame ${frame.keySuffix}",
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
+                        .height(frameHeight)
                         .clip(MaterialTheme.shapes.small)
                 )
             }

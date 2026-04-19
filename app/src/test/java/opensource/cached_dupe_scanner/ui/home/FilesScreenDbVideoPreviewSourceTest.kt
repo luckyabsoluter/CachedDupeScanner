@@ -49,9 +49,18 @@ class FilesScreenDbVideoPreviewSourceTest {
                 content.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory")
         )
         assertTrue(
+            "Video timeline strip should use configurable frame height",
+            content.contains("frameHeight = videoPreviewFrameHeightDp")
+        )
+        assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",
             content.contains("rememberedPreviewCache = rememberedThumbnailCache") &&
                 content.contains("keepLoadedInMemory = keepLoadedThumbnailsInMemory")
+        )
+        assertTrue(
+            "Primary thumbnail should use configurable thumbnail size",
+            content.contains(".width(thumbnailSizeDp)") &&
+                content.contains(".height(thumbnailSizeDp)")
         )
     }
 }

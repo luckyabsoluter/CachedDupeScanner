@@ -17,6 +17,8 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -47,6 +49,8 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -75,6 +79,8 @@ class SettingsScreenTest {
                 showMemoryOverlay = true,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -103,6 +109,8 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = true,
                 keepLoadedVideoPreviewsInMemory = true,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -131,6 +139,8 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -156,6 +166,24 @@ class SettingsScreenTest {
         assertEquals("Settings backup", section.title)
         assertTrue(section.description.contains("Export current preferences"))
         assertTrue(section.description.contains("import a saved backup"))
+        assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun thumbnailSizeSectionExplainsGlobalPreviewSizing() {
+        val section = thumbnailSizeSettingsSection()
+
+        assertEquals("Thumbnail size", section.title)
+        assertTrue(section.description.contains("file thumbnails"))
+        assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun videoPreviewSizeSectionExplainsTimelineSizing() {
+        val section = videoPreviewSizeSettingsSection()
+
+        assertEquals("Video preview size", section.title)
+        assertTrue(section.description.contains("timeline"))
         assertTrue(section.toggles.isEmpty())
     }
 }

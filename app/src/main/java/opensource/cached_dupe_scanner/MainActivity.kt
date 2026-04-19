@@ -258,6 +258,8 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
                                 rememberedThumbnailCache = rememberedThumbnailCache,
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 clearVersion = filesClearVersion.value,
@@ -309,6 +311,7 @@ class MainActivity : ComponentActivity() {
                                 resultsRepo = resultsRepo,
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->

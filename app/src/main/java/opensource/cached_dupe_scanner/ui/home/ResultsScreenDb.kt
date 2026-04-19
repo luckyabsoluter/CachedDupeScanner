@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
@@ -111,6 +112,7 @@ fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
     settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
@@ -205,6 +207,9 @@ fun ResultsScreenDb(
             .components { add(VideoFrameDecoder.Factory()) }
             .build()
     }
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
+    val groupCardThumbnailSizeDp = 72.dp * normalizedThumbnailScale
+    val groupDetailPreviewHeightDp = 180.dp * normalizedThumbnailScale
 
     fun mapSort(key: ResultSortKey, direction: SortDirection): DuplicateGroupSortKey {
         val normalizedKey = normalizeDbSortKey(key)
@@ -726,6 +731,7 @@ fun ResultsScreenDb(
                         showFullPaths = showFullPaths.value,
                         imageLoader = imageLoader,
                         keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        previewThumbnailSizeDp = groupCardThumbnailSizeDp,
                         rememberedPreviewCache = rememberedPreviewCache,
                         membersCache = membersCache,
                         onOpen = {
@@ -834,6 +840,7 @@ fun ResultsScreenDb(
                             onGroupEdited = { _ -> },
                             imageLoader = imageLoader,
                             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                            groupPreviewHeightDp = groupDetailPreviewHeightDp,
                             rememberedPreviewCache = rememberedPreviewCache,
                             cacheEntry = entry,
                             detailScrollState = detailScrollState,
@@ -979,6 +986,7 @@ fun ResultsScreenDb(
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
                     onDeleteFile = onDeleteFile,
                     onBack = {
@@ -999,6 +1007,7 @@ fun ResultsScreenDb(
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
                     onDeleteFile = onDeleteFile,
                     onBack = {
@@ -1021,6 +1030,7 @@ private fun DuplicateGroupCardDb(
     showFullPaths: Boolean,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    previewThumbnailSizeDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     membersCache: MutableMap<String, MembersCacheEntry>,
     onOpen: () -> Unit
@@ -1086,8 +1096,8 @@ private fun DuplicateGroupCardDb(
                     keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                     contentDescription = "Thumbnail",
                     modifier = Modifier
-                        .height(72.dp)
-                        .width(72.dp)
+                        .height(previewThumbnailSizeDp)
+                        .width(previewThumbnailSizeDp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
@@ -1142,6 +1152,7 @@ private fun GroupDetailDb(
     onGroupEdited: (rebuildSucceeded: Boolean) -> Unit,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    groupPreviewHeightDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     cacheEntry: MembersCacheEntry?,
     detailScrollState: ScrollState,
@@ -1268,7 +1279,7 @@ private fun GroupDetailDb(
             contentDescription = "Thumbnail",
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp)
+                .height(groupPreviewHeightDp)
         )
         Spacer(modifier = Modifier.height(8.dp))
     }

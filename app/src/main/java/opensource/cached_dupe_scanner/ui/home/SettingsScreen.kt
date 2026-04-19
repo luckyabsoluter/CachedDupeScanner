@@ -20,6 +20,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,14 +31,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.MAX_PREVIEW_SIZE_PERCENT
+import opensource.cached_dupe_scanner.storage.MIN_PREVIEW_SIZE_PERCENT
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import androidx.compose.foundation.text.KeyboardOptions
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -55,6 +62,8 @@ fun SettingsScreen(
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
     val videoPreviewMemorySection = videoPreviewMemorySettingsSection(settings.value)
+    val thumbnailSizeSection = thumbnailSizeSettingsSection()
+    val videoPreviewSizeSection = videoPreviewSizeSettingsSection()
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -237,6 +246,28 @@ fun SettingsScreen(
                 }
             }
 
+            SettingsSectionCard(section = thumbnailSizeSection) {
+                PreviewSizeSettingControl(
+                    selectedPercent = settings.value.thumbnailSizePercent,
+                    onPercentSelected = { percent ->
+                        settingsStore.setThumbnailSizePercent(percent)
+                        settings.value = settings.value.copy(thumbnailSizePercent = percent)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = videoPreviewSizeSection) {
+                PreviewSizeSettingControl(
+                    selectedPercent = settings.value.videoPreviewSizePercent,
+                    onPercentSelected = { percent ->
+                        settingsStore.setVideoPreviewSizePercent(percent)
+                        settings.value = settings.value.copy(videoPreviewSizePercent = percent)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
             SettingsSectionCard(section = backupSection) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -334,6 +365,114 @@ private fun ToggleSettingRow(
         Switch(
             checked = checked,
             onCheckedChange = null
+        )
+    }
+}
+
+@Composable
+private fun PreviewSizeSettingControl(
+    selectedPercent: Int,
+    onPercentSelected: (Int) -> Unit
+) {
+    val draftPercent = remember(selectedPercent) { mutableStateOf(selectedPercent) }
+    val inputValue = remember(selectedPercent) { mutableStateOf(selectedPercent.toString()) }
+
+    fun applyPercent(value: Int) {
+        val clamped = value.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+        draftPercent.value = clamped
+        inputValue.value = clamped.toString()
+        if (clamped != selectedPercent) {
+            onPercentSelected(clamped)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Slider(
+            value = draftPercent.value.toFloat(),
+            onValueChange = { value ->
+                val updated = value.roundToInt().coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+                draftPercent.value = updated
+                inputValue.value = updated.toString()
+            },
+            onValueChangeFinished = {
+                applyPercent(draftPercent.value)
+            },
+            valueRange = MIN_PREVIEW_SIZE_PERCENT.toFloat()..MAX_PREVIEW_SIZE_PERCENT.toFloat(),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${MIN_PREVIEW_SIZE_PERCENT}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "${draftPercent.value}%",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "${MAX_PREVIEW_SIZE_PERCENT}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = inputValue.value,
+                onValueChange = { raw ->
+                    val digits = raw.filter { it.isDigit() }.take(3)
+                    inputValue.value = digits
+                    digits.toIntOrNull()?.let { parsed ->
+                        draftPercent.value = parsed.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                label = { Text("Exact size (%)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedButton(
+                onClick = {
+                    val parsed = inputValue.value.toIntOrNull() ?: selectedPercent
+                    applyPercent(parsed)
+                }
+            ) {
+                Text("Apply")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value - 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("-1%")
+            }
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value + 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("+1%")
+            }
+        }
+
+        Text(
+            text = "Current: ${selectedPercent}%",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -438,6 +577,20 @@ internal fun videoPreviewMemorySettingsSection(settings: AppSettings): SettingsS
                 checked = settings.keepLoadedVideoPreviewsInMemory
             )
         )
+    )
+}
+
+internal fun thumbnailSizeSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Thumbnail size",
+        description = "Choose how large file thumbnails appear across files, results, and bulk-delete previews."
+    )
+}
+
+internal fun videoPreviewSizeSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview size",
+        description = "Choose the timeline frame size used in the video preview mode on the files screen."
     )
 }
 

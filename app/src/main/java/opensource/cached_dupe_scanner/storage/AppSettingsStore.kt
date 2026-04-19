@@ -3,6 +3,10 @@ package opensource.cached_dupe_scanner.storage
 import android.content.Context
 import android.content.SharedPreferences
 
+internal const val DEFAULT_PREVIEW_SIZE_PERCENT = 100
+internal const val MIN_PREVIEW_SIZE_PERCENT = 50
+internal const val MAX_PREVIEW_SIZE_PERCENT = 200
+
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
     val skipTrashBinContentsInScan: Boolean,
@@ -10,6 +14,8 @@ data class AppSettings(
     val showMemoryOverlay: Boolean,
     val keepLoadedThumbnailsInMemory: Boolean,
     val keepLoadedVideoPreviewsInMemory: Boolean,
+    val thumbnailSizePercent: Int,
+    val videoPreviewSizePercent: Int,
     val resultSortKey: String,
     val resultSortDirection: String,
     val resultGroupSortKey: String,
@@ -50,6 +56,24 @@ class AppSettingsStore(context: Context) {
 
     fun setKeepLoadedVideoPreviewsInMemory(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, enabled).apply()
+    }
+
+    fun setThumbnailSizePercent(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_THUMBNAIL_SIZE_PERCENT,
+                sanitizePreviewSizePercent(value)
+            )
+            .apply()
+    }
+
+    fun setVideoPreviewSizePercent(value: Int) {
+        prefs.edit()
+            .putInt(
+                KEY_VIDEO_PREVIEW_SIZE_PERCENT,
+                sanitizePreviewSizePercent(value)
+            )
+            .apply()
     }
 
     fun setResultSortKey(value: String) {
@@ -122,6 +146,12 @@ class AppSettingsStore(context: Context) {
                 KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedVideoPreviewsInMemory
             ),
+            thumbnailSizePercent = sanitizePreviewSizePercent(
+                prefs.getInt(KEY_THUMBNAIL_SIZE_PERCENT, DEFAULT_SETTINGS.thumbnailSizePercent)
+            ),
+            videoPreviewSizePercent = sanitizePreviewSizePercent(
+                prefs.getInt(KEY_VIDEO_PREVIEW_SIZE_PERCENT, DEFAULT_SETTINGS.videoPreviewSizePercent)
+            ),
             resultSortKey = prefs.getString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey)
                 ?: DEFAULT_SETTINGS.resultSortKey,
             resultSortDirection = prefs.getString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection)
@@ -173,6 +203,12 @@ class AppSettingsStore(context: Context) {
                 KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY,
                 DEFAULT_SETTINGS.keepLoadedVideoPreviewsInMemory
             ),
+            thumbnailSizePercent = sanitizePreviewSizePercent(
+                obj.optInt(KEY_THUMBNAIL_SIZE_PERCENT, DEFAULT_SETTINGS.thumbnailSizePercent)
+            ),
+            videoPreviewSizePercent = sanitizePreviewSizePercent(
+                obj.optInt(KEY_VIDEO_PREVIEW_SIZE_PERCENT, DEFAULT_SETTINGS.videoPreviewSizePercent)
+            ),
             resultSortKey = obj.optString(KEY_RESULT_SORT_KEY, DEFAULT_SETTINGS.resultSortKey),
             resultSortDirection = obj.optString(KEY_RESULT_SORT_DIR, DEFAULT_SETTINGS.resultSortDirection),
             resultGroupSortKey = obj.optString(
@@ -205,6 +241,8 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .putBoolean(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
+            .putInt(KEY_THUMBNAIL_SIZE_PERCENT, settings.thumbnailSizePercent)
+            .putInt(KEY_VIDEO_PREVIEW_SIZE_PERCENT, settings.videoPreviewSizePercent)
             .putString(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .putString(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .putString(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -225,6 +263,8 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
             .put(KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY, settings.keepLoadedVideoPreviewsInMemory)
+            .put(KEY_THUMBNAIL_SIZE_PERCENT, settings.thumbnailSizePercent)
+            .put(KEY_VIDEO_PREVIEW_SIZE_PERCENT, settings.videoPreviewSizePercent)
             .put(KEY_RESULT_SORT_KEY, settings.resultSortKey)
             .put(KEY_RESULT_SORT_DIR, settings.resultSortDirection)
             .put(KEY_RESULT_GROUP_SORT_KEY, settings.resultGroupSortKey)
@@ -236,6 +276,10 @@ class AppSettingsStore(context: Context) {
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
     }
 
+    private fun sanitizePreviewSizePercent(value: Int): Int {
+        return value.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+    }
+
     companion object {
         private val DEFAULT_SETTINGS = AppSettings(
             skipZeroSizeInDb = true,
@@ -244,6 +288,8 @@ class AppSettingsStore(context: Context) {
             showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
             keepLoadedVideoPreviewsInMemory = true,
+            thumbnailSizePercent = DEFAULT_PREVIEW_SIZE_PERCENT,
+            videoPreviewSizePercent = DEFAULT_PREVIEW_SIZE_PERCENT,
             resultSortKey = "Count",
             resultSortDirection = "Desc",
             resultGroupSortKey = "Path",
@@ -261,6 +307,8 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
         private const val KEY_KEEP_LOADED_VIDEO_PREVIEWS_IN_MEMORY = "keep_loaded_video_previews_in_memory"
+        private const val KEY_THUMBNAIL_SIZE_PERCENT = "thumbnail_size_percent"
+        private const val KEY_VIDEO_PREVIEW_SIZE_PERCENT = "video_preview_size_percent"
         private const val KEY_RESULT_SORT_KEY = "result_sort_key"
         private const val KEY_RESULT_SORT_DIR = "result_sort_dir"
         private const val KEY_RESULT_GROUP_SORT_KEY = "result_group_sort_key"

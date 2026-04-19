@@ -24,6 +24,8 @@ class AppSettingsStoreTest {
         assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
+        assertEquals(100, settings.thumbnailSizePercent)
+        assertEquals(100, settings.videoPreviewSizePercent)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
@@ -57,6 +59,12 @@ class AppSettingsStoreTest {
 
         store.setKeepLoadedVideoPreviewsInMemory(false)
         assertFalse(store.load().keepLoadedVideoPreviewsInMemory)
+
+        store.setThumbnailSizePercent(125)
+        assertEquals(125, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(80)
+        assertEquals(80, store.load().videoPreviewSizePercent)
 
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -104,6 +112,8 @@ class AppSettingsStoreTest {
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
+        assertEquals(100, imported.thumbnailSizePercent)
+        assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
         assertTrue(store.load().skipZeroSizeInDb)
@@ -121,6 +131,8 @@ class AppSettingsStoreTest {
         store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setKeepLoadedVideoPreviewsInMemory(false)
+        store.setThumbnailSizePercent(125)
+        store.setVideoPreviewSizePercent(80)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         store.setResultGroupSortKey("Modified")
@@ -142,6 +154,8 @@ class AppSettingsStoreTest {
         assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
+        assertEquals(125, imported.thumbnailSizePercent)
+        assertEquals(80, imported.videoPreviewSizePercent)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)
         assertEquals("Modified", imported.resultGroupSortKey)
@@ -152,5 +166,23 @@ class AppSettingsStoreTest {
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals(imported, importedStore.load())
+    }
+
+    @Test
+    fun previewSizeSupportsFineGrainedValuesAndClampsOutOfRange() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setThumbnailSizePercent(137)
+        assertEquals(137, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(163)
+        assertEquals(163, store.load().videoPreviewSizePercent)
+
+        store.setThumbnailSizePercent(0)
+        assertEquals(MIN_PREVIEW_SIZE_PERCENT, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(999)
+        assertEquals(MAX_PREVIEW_SIZE_PERCENT, store.load().videoPreviewSizePercent)
     }
 }

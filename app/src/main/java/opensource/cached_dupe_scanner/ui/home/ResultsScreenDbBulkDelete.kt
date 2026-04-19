@@ -445,6 +445,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     appliedFilter: ResultsFilterDefinition,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
@@ -705,6 +706,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 candidate = candidate,
                                 imageLoader = imageLoader,
                                 keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = thumbnailSizeScale,
                                 rememberedPreviewCache = rememberedPreviewCache
                             )
                         }
@@ -827,6 +829,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
     appliedFilter: ResultsFilterDefinition,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
@@ -1069,6 +1072,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 candidate = candidate,
                                 imageLoader = imageLoader,
                                 keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = thumbnailSizeScale,
                                 rememberedPreviewCache = rememberedPreviewCache
                             )
                         }
@@ -1187,8 +1191,11 @@ private fun ResultsBulkDeleteCandidateCard(
     candidate: ResultsBulkDeleteCandidate,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>
 ) {
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
+    val thumbnailSizeDp = 72.dp * normalizedThumbnailScale
     val previewFiles = remember(candidate.group.sizeBytes, candidate.group.hashHex) {
         listOf(candidate.survivor) + candidate.deleteTargets
     }
@@ -1218,8 +1225,8 @@ private fun ResultsBulkDeleteCandidateCard(
                     keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                     contentDescription = "Bulk delete preview thumbnail",
                     modifier = Modifier
-                        .height(72.dp)
-                        .width(72.dp)
+                        .height(thumbnailSizeDp)
+                        .width(thumbnailSizeDp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }

@@ -76,6 +76,8 @@ fun FilesScreenDb(
     settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
     keepLoadedVideoPreviewsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    videoPreviewSizeScale: Float,
     rememberedThumbnailCache: MutableMap<String, ImageBitmap>,
     rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
@@ -137,6 +139,10 @@ fun FilesScreenDb(
     val pageSize = 200
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
+    val normalizedVideoPreviewScale = videoPreviewSizeScale.coerceIn(0.5f, 2f)
+    val thumbnailSizeDp = 56.dp * normalizedThumbnailScale
+    val videoPreviewFrameHeightDp = 44.dp * normalizedVideoPreviewScale
 
     fun isVideoTimelinePreviewEnabled(): Boolean {
         return previewMode.value == FilesPreviewMode.VideoTimeline.name
@@ -392,8 +398,8 @@ fun FilesScreenDb(
                                         keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                                         contentDescription = "Thumbnail",
                                         modifier = Modifier
-                                            .width(56.dp)
-                                            .height(56.dp)
+                                            .width(thumbnailSizeDp)
+                                            .height(thumbnailSizeDp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
@@ -441,6 +447,7 @@ fun FilesScreenDb(
                                     rememberedPreviewCache = rememberedVideoPreviewCache,
                                     imageLoader = imageLoader,
                                     keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                                    frameHeight = videoPreviewFrameHeightDp,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
