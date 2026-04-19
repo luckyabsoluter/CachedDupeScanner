@@ -21,7 +21,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,15 +34,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
-import opensource.cached_dupe_scanner.storage.MAX_PREVIEW_SIZE_PERCENT
-import opensource.cached_dupe_scanner.storage.MIN_PREVIEW_SIZE_PERCENT
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import androidx.compose.foundation.text.KeyboardOptions
-import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -378,48 +374,49 @@ private fun PreviewSizeSettingControl(
     val inputValue = remember(selectedPercent) { mutableStateOf(selectedPercent.toString()) }
 
     fun applyPercent(value: Int) {
-        val clamped = value.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
-        draftPercent.value = clamped
-        inputValue.value = clamped.toString()
-        if (clamped != selectedPercent) {
-            onPercentSelected(clamped)
+        val normalized = value.coerceAtLeast(0)
+        draftPercent.value = normalized
+        inputValue.value = normalized.toString()
+        if (normalized != selectedPercent) {
+            onPercentSelected(normalized)
         }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Slider(
-            value = draftPercent.value.toFloat(),
-            onValueChange = { value ->
-                val updated = value.roundToInt().coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
-                draftPercent.value = updated
-                inputValue.value = updated.toString()
-            },
-            onValueChangeFinished = {
-                applyPercent(draftPercent.value)
-            },
-            valueRange = MIN_PREVIEW_SIZE_PERCENT.toFloat()..MAX_PREVIEW_SIZE_PERCENT.toFloat(),
-            modifier = Modifier.fillMaxWidth()
-        )
-
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "${MIN_PREVIEW_SIZE_PERCENT}%",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value - 10) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("-10%")
+            }
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value - 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("-1%")
+            }
             Text(
                 text = "${draftPercent.value}%",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
             )
-            Text(
-                text = "${MAX_PREVIEW_SIZE_PERCENT}%",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value + 1) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("+1%")
+            }
+            OutlinedButton(
+                onClick = { applyPercent(draftPercent.value + 10) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("+10%")
+            }
         }
 
         Row(
@@ -430,10 +427,10 @@ private fun PreviewSizeSettingControl(
             OutlinedTextField(
                 value = inputValue.value,
                 onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }.take(3)
+                    val digits = raw.filter { it.isDigit() }
                     inputValue.value = digits
                     digits.toIntOrNull()?.let { parsed ->
-                        draftPercent.value = parsed.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+                        draftPercent.value = parsed
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -448,24 +445,6 @@ private fun PreviewSizeSettingControl(
                 }
             ) {
                 Text("Apply")
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value - 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("-1%")
-            }
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value + 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("+1%")
             }
         }
 

@@ -169,7 +169,7 @@ class AppSettingsStoreTest {
     }
 
     @Test
-    fun previewSizeSupportsFineGrainedValuesAndClampsOutOfRange() {
+    fun previewSizeSupportsFineGrainedValuesWithoutUpperCap() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = AppSettingsStore(context)
 
@@ -179,10 +179,16 @@ class AppSettingsStoreTest {
         store.setVideoPreviewSizePercent(163)
         assertEquals(163, store.load().videoPreviewSizePercent)
 
-        store.setThumbnailSizePercent(0)
-        assertEquals(MIN_PREVIEW_SIZE_PERCENT, store.load().thumbnailSizePercent)
+        store.setThumbnailSizePercent(10000)
+        assertEquals(10000, store.load().thumbnailSizePercent)
 
-        store.setVideoPreviewSizePercent(999)
-        assertEquals(MAX_PREVIEW_SIZE_PERCENT, store.load().videoPreviewSizePercent)
+        store.setVideoPreviewSizePercent(7500)
+        assertEquals(7500, store.load().videoPreviewSizePercent)
+
+        store.setThumbnailSizePercent(-1)
+        assertEquals(0, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(-25)
+        assertEquals(0, store.load().videoPreviewSizePercent)
     }
 }

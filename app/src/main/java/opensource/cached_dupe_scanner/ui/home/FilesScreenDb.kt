@@ -139,8 +139,8 @@ fun FilesScreenDb(
     val pageSize = 200
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
-    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
-    val normalizedVideoPreviewScale = videoPreviewSizeScale.coerceIn(0.5f, 2f)
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
+    val normalizedVideoPreviewScale = videoPreviewSizeScale.coerceAtLeast(0f)
     val thumbnailSizeDp = 56.dp * normalizedThumbnailScale
     val videoPreviewFrameHeightDp = 44.dp * normalizedVideoPreviewScale
 

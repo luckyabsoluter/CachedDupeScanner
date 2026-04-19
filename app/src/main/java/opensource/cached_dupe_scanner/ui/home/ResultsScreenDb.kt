@@ -207,7 +207,7 @@ fun ResultsScreenDb(
             .components { add(VideoFrameDecoder.Factory()) }
             .build()
     }
-    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
     val groupCardThumbnailSizeDp = 72.dp * normalizedThumbnailScale
     val groupDetailPreviewHeightDp = 180.dp * normalizedThumbnailScale
 

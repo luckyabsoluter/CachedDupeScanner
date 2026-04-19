@@ -1194,7 +1194,7 @@ private fun ResultsBulkDeleteCandidateCard(
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>
 ) {
-    val normalizedThumbnailScale = thumbnailSizeScale.coerceIn(0.5f, 2f)
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
     val thumbnailSizeDp = 72.dp * normalizedThumbnailScale
     val previewFiles = remember(candidate.group.sizeBytes, candidate.group.hashHex) {
         listOf(candidate.survivor) + candidate.deleteTargets

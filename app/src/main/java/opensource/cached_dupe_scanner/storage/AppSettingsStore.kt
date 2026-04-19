@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 
 internal const val DEFAULT_PREVIEW_SIZE_PERCENT = 100
-internal const val MIN_PREVIEW_SIZE_PERCENT = 50
-internal const val MAX_PREVIEW_SIZE_PERCENT = 200
 
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
@@ -277,7 +275,7 @@ class AppSettingsStore(context: Context) {
     }
 
     private fun sanitizePreviewSizePercent(value: Int): Int {
-        return value.coerceIn(MIN_PREVIEW_SIZE_PERCENT, MAX_PREVIEW_SIZE_PERCENT)
+        return value.coerceAtLeast(0)
     }
 
     companion object {
