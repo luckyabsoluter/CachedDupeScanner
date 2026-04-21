@@ -503,6 +503,164 @@ class ScanHistoryRepositoryTest {
     }
 
     @Test
+    fun runMaintenanceWithOnlyDuplicateDetectedDeletesOnlyMissingDuplicateEntries() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val duplicateExisting = File.createTempFile("cached", ".dup-existing")
+        val duplicateMissing = File.createTempFile("cached", ".dup-missing")
+        val singleMissing = File.createTempFile("cached", ".single-missing")
+        try {
+            duplicateExisting.writeText("same-content")
+            duplicateMissing.writeText("same-content")
+            singleMissing.writeText("single")
+            val duplicateHash = Hashing.sha256Hex(duplicateExisting)
+            val singleHash = Hashing.sha256Hex(singleMissing)
+            val duplicateSize = duplicateExisting.length()
+            val singleSize = singleMissing.length()
+            duplicateMissing.delete()
+            singleMissing.delete()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata(
+                            duplicateExisting.absolutePath,
+                            duplicateExisting.absolutePath,
+                            duplicateSize,
+                            duplicateExisting.lastModified(),
+                            duplicateHash
+                        ),
+                        FileMetadata(
+                            duplicateMissing.absolutePath,
+                            duplicateMissing.absolutePath,
+                            duplicateSize,
+                            1L,
+                            duplicateHash
+                        ),
+                        FileMetadata(
+                            singleMissing.absolutePath,
+                            singleMissing.absolutePath,
+                            singleSize,
+                            1L,
+                            singleHash
+                        )
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+
+            val summary = repo.runMaintenance(
+                deleteMissing = true,
+                rehashStale = false,
+                rehashMissing = false,
+                onlyDuplicateDetected = true,
+                shouldContinue = { true }
+            ) { }
+
+            assertEquals(2, summary.total)
+            assertEquals(2, summary.processed)
+            assertEquals(1, summary.deleted)
+            assertNull(database.fileCacheDao().getByNormalizedPath(duplicateMissing.absolutePath))
+            assertNotNull(database.fileCacheDao().getByNormalizedPath(singleMissing.absolutePath))
+        } finally {
+            duplicateExisting.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun runMaintenanceWithOnlyDuplicateDetectedRehashesOnlyDuplicateEntries() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val duplicateA = File.createTempFile("cached", ".dup-a")
+        val duplicateB = File.createTempFile("cached", ".dup-b")
+        val singleFile = File.createTempFile("cached", ".single")
+        try {
+            duplicateA.writeText("same-content")
+            duplicateB.writeText("same-content")
+            singleFile.writeText("unique-content")
+            val duplicateHash = Hashing.sha256Hex(duplicateA)
+            val singleHash = Hashing.sha256Hex(singleFile)
+            val duplicateALastModified = duplicateA.lastModified()
+            val singleLastModified = singleFile.lastModified()
+
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata(
+                            duplicateA.absolutePath,
+                            duplicateA.absolutePath,
+                            duplicateA.length(),
+                            duplicateA.lastModified(),
+                            duplicateHash
+                        ),
+                        FileMetadata(
+                            duplicateB.absolutePath,
+                            duplicateB.absolutePath,
+                            duplicateB.length(),
+                            duplicateB.lastModified(),
+                            duplicateHash
+                        ),
+                        FileMetadata(
+                            singleFile.absolutePath,
+                            singleFile.absolutePath,
+                            singleFile.length(),
+                            singleFile.lastModified(),
+                            singleHash
+                        )
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+
+            duplicateA.writeText("same-content-updated")
+            singleFile.writeText("unique-content-updated")
+            duplicateA.setLastModified(duplicateALastModified + 2_000L)
+            singleFile.setLastModified(singleLastModified + 2_000L)
+
+            val summary = repo.runMaintenance(
+                deleteMissing = false,
+                rehashStale = true,
+                rehashMissing = false,
+                onlyDuplicateDetected = true,
+                shouldContinue = { true }
+            ) { }
+
+            assertEquals(2, summary.total)
+            assertEquals(2, summary.processed)
+            assertEquals(1, summary.rehashed)
+            assertEquals(Hashing.sha256Hex(duplicateA), database.fileCacheDao().getByNormalizedPath(duplicateA.absolutePath)?.hashHex)
+            assertEquals(duplicateB.length(), database.fileCacheDao().getByNormalizedPath(duplicateB.absolutePath)?.sizeBytes)
+            assertEquals(singleHash, database.fileCacheDao().getByNormalizedPath(singleFile.absolutePath)?.hashHex)
+        } finally {
+            duplicateA.delete()
+            duplicateB.delete()
+            singleFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
     fun runMaintenanceStopsWhenCancellationIsRequested() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)

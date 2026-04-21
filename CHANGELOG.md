@@ -9,6 +9,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Fine-grained settings to adjust thumbnail size and video timeline preview frame size (exact % input, no upper cap), applied across files/results/bulk-delete previews.
 - Optional video timeline snap mode that expands frames to fill each row width while preserving ratio-driven frame count.
 - Configurable video timeline line count to render multiple preview rows per file card.
+- DB maintenance option to validate and apply file-maintenance checks only to entries that are currently part of detected duplicate groups.
 
 ## [1.3.0] - 2026-04-17
 
