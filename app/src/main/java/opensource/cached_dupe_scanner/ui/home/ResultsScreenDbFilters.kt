@@ -37,7 +37,7 @@ internal enum class ResultsFilterCountOperator(val label: String) {
 internal enum class ResultsFilterTimeOperator(val label: String) {
     OnOrAfter("On or after"),
     OnOrBefore("On or before"),
-    OnDate("On date")
+    OnDate("At date/time")
 }
 
 internal data class ResultsFilterRule(

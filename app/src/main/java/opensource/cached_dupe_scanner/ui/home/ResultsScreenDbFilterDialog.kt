@@ -419,7 +419,8 @@ private fun ResultsFilterRuleEditor(
                     value = rule.value,
                     onValueChange = { value -> onRuleChange(rule.copy(value = value)) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Modified time (UTC yyyy-MM-dd)") },
+                    label = { Text("Modified time (UTC)") },
+                    placeholder = { Text("2026-04-20 13:45:00") },
                     singleLine = true
                 )
             } else if (rule.target == ResultsFilterTarget.SameFolder) {

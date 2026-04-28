@@ -241,6 +241,43 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun modifiedTimeRuleMatchesEnteredUtcTimePrecision() {
+        val parsedMinute = parseResultsFilterTimeValue("2026-04-20 13:45")
+        val parsedSecond = parseResultsFilterTimeValue("2026-04-20 13:45:30")
+
+        assertTrue(parsedMinute != null)
+        assertTrue(parsedSecond != null)
+        assertTrue(
+            matchesTimeOperator(
+                sourceMillis = 1_776_692_700_000L,
+                expected = parsedMinute!!,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+        assertFalse(
+            matchesTimeOperator(
+                sourceMillis = 1_776_692_760_000L,
+                expected = parsedMinute,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+        assertTrue(
+            matchesTimeOperator(
+                sourceMillis = 1_776_692_730_000L,
+                expected = parsedSecond!!,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+        assertFalse(
+            matchesTimeOperator(
+                sourceMillis = 1_776_692_731_000L,
+                expected = parsedSecond,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+    }
+
+    @Test
     fun hasActiveRulesIgnoresIncompleteOrDisabledRules() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
