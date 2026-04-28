@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -39,7 +41,6 @@ import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
-import androidx.compose.foundation.text.KeyboardOptions
 
 @Composable
 fun SettingsScreen(
@@ -408,90 +409,26 @@ private fun PreviewSizeSettingControl(
     selectedPercent: Int,
     onPercentSelected: (Int) -> Unit
 ) {
-    val draftPercent = remember(selectedPercent) { mutableStateOf(selectedPercent) }
     val inputValue = remember(selectedPercent) { mutableStateOf(selectedPercent.toString()) }
 
-    fun applyPercent(value: Int) {
-        val normalized = value.coerceAtLeast(0)
-        draftPercent.value = normalized
-        inputValue.value = normalized.toString()
-        if (normalized != selectedPercent) {
-            onPercentSelected(normalized)
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value - 10) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("-10%")
-            }
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value - 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("-1%")
-            }
-            Text(
-                text = "${draftPercent.value}%",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
+    DraftNumberSettingControl(
+        currentValue = selectedPercent,
+        currentText = "${selectedPercent}%",
+        inputValue = inputValue.value,
+        inputLabel = "Editing (%)",
+        stepLabels = listOf("-10%" to -10, "-1%" to -1, "+1%" to 1, "+10%" to 10),
+        minValue = 0,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedPercent,
+                delta = delta,
+                minValue = 0
             )
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value + 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("+1%")
-            }
-            OutlinedButton(
-                onClick = { applyPercent(draftPercent.value + 10) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("+10%")
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = inputValue.value,
-                onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }
-                    inputValue.value = digits
-                    digits.toIntOrNull()?.let { parsed ->
-                        draftPercent.value = parsed
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                label = { Text("Exact size (%)") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            OutlinedButton(
-                onClick = {
-                    val parsed = inputValue.value.toIntOrNull() ?: selectedPercent
-                    applyPercent(parsed)
-                }
-            ) {
-                Text("Apply")
-            }
-        }
-
-        Text(
-            text = "Current: ${selectedPercent}%",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+        },
+        onApply = { value -> onPercentSelected(value) }
+    )
 }
 
 @Composable
@@ -499,42 +436,53 @@ private fun PreviewLineCountSettingControl(
     selectedCount: Int,
     onCountSelected: (Int) -> Unit
 ) {
-    val draftCount = remember(selectedCount) { mutableStateOf(selectedCount) }
     val inputValue = remember(selectedCount) { mutableStateOf(selectedCount.toString()) }
 
-    fun applyCount(value: Int) {
-        val normalized = value.coerceAtLeast(1)
-        draftCount.value = normalized
-        inputValue.value = normalized.toString()
-        if (normalized != selectedCount) {
-            onCountSelected(normalized)
-        }
-    }
+    DraftNumberSettingControl(
+        currentValue = selectedCount,
+        currentText = "$selectedCount lines",
+        inputValue = inputValue.value,
+        inputLabel = "Editing lines",
+        stepLabels = listOf("-1 line" to -1, "+1 line" to 1),
+        minValue = 1,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedCount,
+                delta = delta,
+                minValue = 1
+            )
+        },
+        onApply = { value -> onCountSelected(value) }
+    )
+}
+
+@Composable
+private fun DraftNumberSettingControl(
+    currentValue: Int,
+    currentText: String,
+    inputValue: String,
+    inputLabel: String,
+    stepLabels: List<Pair<String, Int>>,
+    minValue: Int,
+    onInputValueChange: (String) -> Unit,
+    onStep: (Int) -> Unit,
+    onApply: (Int) -> Unit
+) {
+    val draftValue = normalizedDraftValue(
+        input = inputValue,
+        fallback = currentValue,
+        minValue = minValue
+    )
+    val canApply = inputValue.isNotBlank() && draftValue != currentValue
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(
-                onClick = { applyCount(draftCount.value - 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("-1 line")
-            }
-            Text(
-                text = "${draftCount.value} lines",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedButton(
-                onClick = { applyCount(draftCount.value + 1) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("+1 line")
-            }
-        }
+        Text(
+            text = "Current setting: $currentText",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -542,35 +490,60 @@ private fun PreviewLineCountSettingControl(
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
-                value = inputValue.value,
-                onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }
-                    inputValue.value = digits
-                    digits.toIntOrNull()?.let { parsed ->
-                        draftCount.value = parsed.coerceAtLeast(1)
-                    }
-                },
+                value = inputValue,
+                onValueChange = onInputValueChange,
                 modifier = Modifier.weight(1f),
-                label = { Text("Exact line count") },
+                label = { Text(inputLabel) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
-            OutlinedButton(
-                onClick = {
-                    val parsed = inputValue.value.toIntOrNull() ?: selectedCount
-                    applyCount(parsed)
-                }
+            Button(
+                onClick = { onApply(draftValue) },
+                enabled = canApply,
+                modifier = Modifier.widthIn(min = 88.dp)
             ) {
                 Text("Apply")
             }
         }
 
-        Text(
-            text = "Current: ${selectedCount} lines",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            stepLabels.chunked(2).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { (label, delta) ->
+                        OutlinedButton(
+                            onClick = { onStep(delta) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(label)
+                        }
+                    }
+                    if (rowItems.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
     }
+}
+
+internal fun sanitizeNumberDraftInput(raw: String): String {
+    return raw.filter { it.isDigit() }
+}
+
+internal fun normalizedDraftValue(input: String, fallback: Int, minValue: Int): Int {
+    return (input.toIntOrNull() ?: fallback).coerceAtLeast(minValue)
+}
+
+internal fun adjustedDraftInput(input: String, fallback: Int, delta: Int, minValue: Int): String {
+    val next = normalizedDraftValue(
+        input = input,
+        fallback = fallback,
+        minValue = minValue
+    ) + delta
+    return next.coerceAtLeast(minValue).toString()
 }
 
 internal data class SettingsSectionModel(

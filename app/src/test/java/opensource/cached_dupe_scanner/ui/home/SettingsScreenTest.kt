@@ -237,4 +237,23 @@ class SettingsScreenTest {
         assertTrue(section.description.contains("rows"))
         assertTrue(section.toggles.isEmpty())
     }
+
+    @Test
+    fun numberDraftInputKeepsOnlyDigits() {
+        assertEquals("120", sanitizeNumberDraftInput(" 1a2%0 "))
+    }
+
+    @Test
+    fun normalizedDraftValueUsesFallbackUntilDraftIsValid() {
+        assertEquals(80, normalizedDraftValue(input = "", fallback = 80, minValue = 0))
+        assertEquals(1, normalizedDraftValue(input = "0", fallback = 3, minValue = 1))
+        assertEquals(125, normalizedDraftValue(input = "125", fallback = 80, minValue = 0))
+    }
+
+    @Test
+    fun adjustedDraftInputChangesDraftWithoutRequiringAppliedValueChange() {
+        assertEquals("90", adjustedDraftInput(input = "100", fallback = 100, delta = -10, minValue = 0))
+        assertEquals("1", adjustedDraftInput(input = "1", fallback = 1, delta = -1, minValue = 1))
+        assertEquals("6", adjustedDraftInput(input = "", fallback = 5, delta = 1, minValue = 1))
+    }
 }

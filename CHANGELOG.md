@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Configured the Gradle daemon JVM criteria to use JetBrains JDK 21 through Gradle toolchain resolution.
 - Moved the Trash item dialog Open action after Restore so Open stays in the same position as other item dialogs.
+- Reworked preview size and video preview line controls so edits stay pending until Apply and the layout avoids cramped repeated values.
 
 ### Fixed
 
