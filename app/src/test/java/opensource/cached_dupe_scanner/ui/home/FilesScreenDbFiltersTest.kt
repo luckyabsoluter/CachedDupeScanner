@@ -64,12 +64,38 @@ class FilesScreenDbFiltersTest {
         assertEquals("1 active rule", summarizeResultsFilter(definition, FILE_FILTER_TARGETS))
     }
 
-    private fun file(path: String): FileMetadata {
+    @Test
+    fun matchesFileFilterUsesModifiedTimeRule() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Older",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.ModifiedTime,
+                            timeOperator = ResultsFilterTimeOperator.OnOrBefore,
+                            value = "2026-04-20"
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(matchesFileFilter(definition, file("/storage/old.jpg", modified = 1_776_729_599_999L)))
+        assertFalse(matchesFileFilter(definition, file("/storage/new.jpg", modified = 1_776_729_600_000L)))
+    }
+
+    private fun file(
+        path: String,
+        modified: Long = 1L
+    ): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
             sizeBytes = 10L,
-            lastModifiedMillis = 1L,
+            lastModifiedMillis = modified,
             hashHex = "hash"
         )
     }

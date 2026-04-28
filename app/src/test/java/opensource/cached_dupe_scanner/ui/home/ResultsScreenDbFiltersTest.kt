@@ -175,6 +175,72 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun matchesResultsFilterUsesModifiedTimeRule() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Recent",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.ModifiedTime,
+                            timeOperator = ResultsFilterTimeOperator.OnOrAfter,
+                            value = "2026-04-20"
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = listOf(
+                    file("/storage/camera/old.jpg", modified = 1_776_643_199_999L),
+                    file("/storage/camera/new.jpg", modified = 1_776_643_200_000L)
+                )
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 1),
+                members = listOf(file("/storage/camera/old.jpg", modified = 1_776_643_199_999L))
+            )
+        )
+    }
+
+    @Test
+    fun modifiedTimeRuleMatchesWholeUtcDate() {
+        val parsed = parseResultsFilterTimeValue("2026-04-20")
+
+        assertTrue(parsed != null)
+        assertTrue(
+            matchesTimeOperator(
+                sourceMillis = 1_776_643_200_000L,
+                expected = parsed!!,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+        assertTrue(
+            matchesTimeOperator(
+                sourceMillis = 1_776_729_599_999L,
+                expected = parsed,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+        assertFalse(
+            matchesTimeOperator(
+                sourceMillis = 1_776_729_600_000L,
+                expected = parsed,
+                operator = ResultsFilterTimeOperator.OnDate
+            )
+        )
+    }
+
+    @Test
     fun hasActiveRulesIgnoresIncompleteOrDisabledRules() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
@@ -289,6 +355,12 @@ class ResultsScreenDbFiltersTest {
                             target = ResultsFilterTarget.FileName,
                             textOperator = ResultsFilterTextOperator.EndsWith,
                             value = ".jpg"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_9",
+                            target = ResultsFilterTarget.ModifiedTime,
+                            timeOperator = ResultsFilterTimeOperator.OnOrBefore,
+                            value = "2026-04-20 12:30"
                         )
                     )
                 )
@@ -340,12 +412,15 @@ class ResultsScreenDbFiltersTest {
         assertTrue(rule.id.substringAfterLast('_').toLong() > 21L)
     }
 
-    private fun file(path: String): FileMetadata {
+    private fun file(
+        path: String,
+        modified: Long = 1L
+    ): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
             sizeBytes = 10L,
-            lastModifiedMillis = 1L,
+            lastModifiedMillis = modified,
             hashHex = "hash"
         )
     }

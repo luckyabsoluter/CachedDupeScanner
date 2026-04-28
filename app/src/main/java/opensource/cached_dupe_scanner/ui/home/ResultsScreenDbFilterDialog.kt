@@ -46,7 +46,7 @@ internal fun ResultsFilterScreen(
         introLines = listOf(
             "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name and folder rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group."
+            "File name, folder, and modified-time rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group."
         ),
         definition = definition,
         supportedTargets = ResultsFilterTarget.entries.toSet(),
@@ -67,9 +67,9 @@ internal fun FileFilterScreen(
         title = "File filters",
         summaryTitle = "Current summary",
         introLines = listOf(
-            "Filter the file manager list by matching file names or folder paths before items are added to the visible page.",
+            "Filter the file manager list by matching file names, folder paths, or modified times before items are added to the visible page.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "Only file name and folder path rules are used on this screen."
+            "File name, folder path, and modified-time rules are used on this screen."
         ),
         definition = definition,
         supportedTargets = FILE_FILTER_TARGETS,
@@ -380,7 +380,8 @@ private fun ResultsFilterRuleEditor(
                             target = target,
                             value = "",
                             textOperator = ResultsFilterTextOperator.Contains,
-                            countOperator = ResultsFilterCountOperator.AtLeast
+                            countOperator = ResultsFilterCountOperator.AtLeast,
+                            timeOperator = ResultsFilterTimeOperator.OnOrAfter
                         )
                     )
                 }
@@ -403,6 +404,23 @@ private fun ResultsFilterRuleEditor(
                     label = { Text("Item count") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            } else if (rule.target == ResultsFilterTarget.ModifiedTime) {
+                Text("Operator")
+                FilterOptionButtons(
+                    options = ResultsFilterTimeOperator.entries,
+                    selected = rule.timeOperator,
+                    label = { it.label },
+                    onSelect = { operator ->
+                        onRuleChange(rule.copy(timeOperator = operator))
+                    }
+                )
+                OutlinedTextField(
+                    value = rule.value,
+                    onValueChange = { value -> onRuleChange(rule.copy(value = value)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Modified time (UTC yyyy-MM-dd)") },
+                    singleLine = true
                 )
             } else if (rule.target == ResultsFilterTarget.SameFolder) {
                 Text(

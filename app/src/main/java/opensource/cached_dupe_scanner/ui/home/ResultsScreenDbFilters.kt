@@ -2,12 +2,17 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import java.text.ParsePosition
+import java.text.SimpleDateFormat
 import java.util.Base64
+import java.util.Locale
+import java.util.TimeZone
 
 internal enum class ResultsFilterTarget(val label: String) {
     GroupItemCount("Group count"),
     FileName("File name"),
     FolderPath("Folder"),
+    ModifiedTime("Modified time"),
     SameFolder("All same folder")
 }
 
@@ -29,12 +34,19 @@ internal enum class ResultsFilterCountOperator(val label: String) {
     Equals("Equals")
 }
 
+internal enum class ResultsFilterTimeOperator(val label: String) {
+    OnOrAfter("On or after"),
+    OnOrBefore("On or before"),
+    OnDate("On date")
+}
+
 internal data class ResultsFilterRule(
     val id: String,
     val enabled: Boolean = true,
     val target: ResultsFilterTarget = ResultsFilterTarget.FileName,
     val textOperator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val countOperator: ResultsFilterCountOperator = ResultsFilterCountOperator.AtLeast,
+    val timeOperator: ResultsFilterTimeOperator = ResultsFilterTimeOperator.OnOrAfter,
     val value: String = ""
 )
 
@@ -52,7 +64,8 @@ internal data class ResultsFilterDefinition(
 
 internal val FILE_FILTER_TARGETS: Set<ResultsFilterTarget> = setOf(
     ResultsFilterTarget.FileName,
-    ResultsFilterTarget.FolderPath
+    ResultsFilterTarget.FolderPath,
+    ResultsFilterTarget.ModifiedTime
 )
 
 private object ResultsFilterIdGenerator {
@@ -205,6 +218,7 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.GroupItemCount -> rule.value.trim().toIntOrNull() != null
         ResultsFilterTarget.FileName -> rule.value.isNotBlank()
         ResultsFilterTarget.FolderPath -> rule.value.isNotBlank()
+        ResultsFilterTarget.ModifiedTime -> parseResultsFilterTimeValue(rule.value) != null
         ResultsFilterTarget.SameFolder -> true
     }
 }
@@ -238,6 +252,16 @@ private fun matchesResultsFilterRule(
                     source = folderPathFromPath(member.normalizedPath),
                     expected = rule.value,
                     operator = rule.textOperator
+                )
+            }
+        }
+        ResultsFilterTarget.ModifiedTime -> {
+            val timeValue = parseResultsFilterTimeValue(rule.value) ?: return false
+            members.any { member ->
+                matchesTimeOperator(
+                    sourceMillis = member.lastModifiedMillis,
+                    expected = timeValue,
+                    operator = rule.timeOperator
                 )
             }
         }
@@ -300,6 +324,15 @@ internal fun matchesFileFilter(
                     )
                 }
 
+                ResultsFilterTarget.ModifiedTime -> {
+                    val timeValue = parseResultsFilterTimeValue(rule.value) ?: return@map false
+                    matchesTimeOperator(
+                        sourceMillis = file.lastModifiedMillis,
+                        expected = timeValue,
+                        operator = rule.timeOperator
+                    )
+                }
+
                 else -> false
             }
         }
@@ -320,6 +353,42 @@ internal fun folderPathFromPath(path: String): String {
     val normalized = path.replace('\\', '/')
     val lastSlash = normalized.lastIndexOf('/')
     return if (lastSlash >= 0) normalized.substring(0, lastSlash) else ""
+}
+
+internal data class ResultsFilterTimeValue(
+    val startMillis: Long,
+    val endMillisExclusive: Long
+)
+
+internal fun parseResultsFilterTimeValue(value: String): ResultsFilterTimeValue? {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return null
+    trimmed.toLongOrNull()?.let { millis ->
+        return ResultsFilterTimeValue(
+            startMillis = millis,
+            endMillisExclusive = millis + 1L
+        )
+    }
+    return DATE_TIME_PATTERNS.firstNotNullOfOrNull { pattern ->
+        val parsed = parseUtcDateTime(trimmed, pattern.pattern) ?: return@firstNotNullOfOrNull null
+        ResultsFilterTimeValue(
+            startMillis = parsed,
+            endMillisExclusive = parsed + pattern.durationMillis
+        )
+    }
+}
+
+internal fun matchesTimeOperator(
+    sourceMillis: Long,
+    expected: ResultsFilterTimeValue,
+    operator: ResultsFilterTimeOperator
+): Boolean {
+    return when (operator) {
+        ResultsFilterTimeOperator.OnOrAfter -> sourceMillis >= expected.startMillis
+        ResultsFilterTimeOperator.OnOrBefore -> sourceMillis < expected.endMillisExclusive
+        ResultsFilterTimeOperator.OnDate -> sourceMillis >= expected.startMillis &&
+            sourceMillis < expected.endMillisExclusive
+    }
 }
 
 internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition): String {
@@ -346,7 +415,8 @@ internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition):
                         rule.target.name,
                         rule.textOperator.name,
                         rule.countOperator.name,
-                        encodeFilterToken(rule.value)
+                        encodeFilterToken(rule.value),
+                        rule.timeOperator.name
                     ).joinToString("\t")
                 )
                 append('\n')
@@ -407,7 +477,8 @@ internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefini
                                 target = parseResultsFilterTarget(parts[4]),
                                 textOperator = parseResultsFilterTextOperator(parts[5]),
                                 countOperator = parseResultsFilterCountOperator(parts[6]),
-                                value = decodeFilterToken(parts[7])
+                                value = decodeFilterToken(parts[7]),
+                                timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty())
                             )
                         )
                 }
@@ -452,6 +523,11 @@ private fun parseResultsFilterCountOperator(value: String): ResultsFilterCountOp
         .getOrDefault(ResultsFilterCountOperator.AtLeast)
 }
 
+private fun parseResultsFilterTimeOperator(value: String): ResultsFilterTimeOperator {
+    return runCatching { ResultsFilterTimeOperator.valueOf(value) }
+        .getOrDefault(ResultsFilterTimeOperator.OnOrAfter)
+}
+
 private data class FilterClusterRecord(
     val id: String,
     val enabled: Boolean,
@@ -471,4 +547,24 @@ private fun decodeFilterToken(token: String): String {
     return runCatching {
         String(Base64.getUrlDecoder().decode(token), Charsets.UTF_8)
     }.getOrDefault("")
+}
+
+private data class DateTimePattern(
+    val pattern: String,
+    val durationMillis: Long
+)
+
+private val DATE_TIME_PATTERNS = listOf(
+    DateTimePattern("yyyy-MM-dd HH:mm:ss", 1_000L),
+    DateTimePattern("yyyy-MM-dd HH:mm", 60_000L),
+    DateTimePattern("yyyy-MM-dd", 86_400_000L)
+)
+
+private fun parseUtcDateTime(value: String, pattern: String): Long? {
+    val formatter = SimpleDateFormat(pattern, Locale.US)
+    formatter.isLenient = false
+    formatter.timeZone = TimeZone.getTimeZone("UTC")
+    val position = ParsePosition(0)
+    val parsed = formatter.parse(value, position) ?: return null
+    return if (position.index == value.length) parsed.time else null
 }

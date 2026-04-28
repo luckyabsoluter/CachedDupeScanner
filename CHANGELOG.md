@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Optional video timeline snap mode that expands frames to fill each row width while preserving ratio-driven frame count.
 - Configurable video timeline line count to render multiple preview rows per file card.
 - DB maintenance option to validate and apply file-maintenance checks only to entries that are currently part of detected duplicate groups.
+- Modified-time filter rules for Results and Files filtering.
 
 ### Changed
 
