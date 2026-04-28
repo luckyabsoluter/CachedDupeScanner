@@ -596,14 +596,14 @@ private fun TrashEntryDetailsDialog(
         },
         confirmButton = {
             Row {
-                OutlinedButton(onClick = onOpen) { Text("Open") }
-                Spacer(modifier = Modifier.width(Spacing.inlineGap))
                 OutlinedButton(
                     enabled = actionsEnabled,
                     onClick = onRestore
                 ) {
                     Text("Restore")
                 }
+                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                OutlinedButton(onClick = onOpen) { Text("Open") }
             }
         },
         dismissButton = {
