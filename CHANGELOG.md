@@ -19,6 +19,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Configured the Gradle daemon JVM criteria to use JetBrains JDK 21 through Gradle toolchain resolution.
 - Moved the Trash item dialog Open action after Restore so Open stays in the same position as other item dialogs.
 
+### Fixed
+
+- Preserved the active screen across Android configuration recreations such as rotation or display size changes.
+
 ## [1.3.0] - 2026-04-17
 
 ### Added

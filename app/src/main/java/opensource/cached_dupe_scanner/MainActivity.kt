@@ -20,9 +20,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -89,8 +92,12 @@ class MainActivity : ComponentActivity() {
                 val rememberedVideoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
                 val scope = rememberCoroutineScope()
                 val dbManagementUiState = remember { DbManagementUiState() }
-                val screenCache = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
-                val backStack = remember { mutableStateListOf<Screen>(Screen.Dashboard) }
+                val screenCache = rememberSaveable(saver = ScreenBackStackSaver) {
+                    mutableStateListOf(Screen.Dashboard)
+                }
+                val backStack = rememberSaveable(saver = ScreenBackStackSaver) {
+                    mutableStateListOf(Screen.Dashboard)
+                }
                 val taskCoordinator = remember { TaskCoordinator(context) }
                 val notificationController = remember { TaskNotificationController(context) }
                 val database = remember {
@@ -476,7 +483,27 @@ private fun screenForTaskArea(area: TaskArea): Screen {
     }
 }
 
-private sealed class Screen {
+private val ScreenBackStackSaver = Saver<SnapshotStateList<Screen>, ArrayList<String>>(
+    save = { stack ->
+        ArrayList(stack.map { screen -> screen.toSaveToken() })
+    },
+    restore = { tokens ->
+        restoreScreenStack(tokens).toMutableStateList()
+    }
+)
+
+internal fun restoreScreenStack(tokens: List<String>): List<Screen> {
+    val restored = tokens.mapNotNull { token -> Screen.fromSaveToken(token) }
+    if (restored.isEmpty()) {
+        return listOf(Screen.Dashboard)
+    }
+    if (restored.first() == Screen.Dashboard) {
+        return restored
+    }
+    return listOf(Screen.Dashboard) + restored
+}
+
+internal sealed class Screen {
     data object Dashboard : Screen()
     data object Permission : Screen()
     data object Targets : Screen()
@@ -489,4 +516,41 @@ private sealed class Screen {
     data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
+
+    fun toSaveToken(): String {
+        return when (this) {
+            Dashboard -> "dashboard"
+            Permission -> "permission"
+            Targets -> "targets"
+            Files -> "files"
+            Trash -> "trash"
+            DbManagement -> "db-management"
+            ScanCommand -> "scan-command"
+            Results -> "results"
+            Settings -> "settings"
+            About -> "about"
+            Reports -> "reports"
+            is ReportDetail -> "report-detail:$id"
+        }
+    }
+
+    companion object {
+        fun fromSaveToken(token: String): Screen? {
+            return when {
+                token == "dashboard" -> Dashboard
+                token == "permission" -> Permission
+                token == "targets" -> Targets
+                token == "files" -> Files
+                token == "trash" -> Trash
+                token == "db-management" -> DbManagement
+                token == "scan-command" -> ScanCommand
+                token == "results" -> Results
+                token == "settings" -> Settings
+                token == "about" -> About
+                token == "reports" -> Reports
+                token.startsWith("report-detail:") -> ReportDetail(token.removePrefix("report-detail:"))
+                else -> null
+            }
+        }
+    }
 }
