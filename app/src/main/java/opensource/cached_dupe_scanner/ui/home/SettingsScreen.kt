@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -506,23 +507,21 @@ private fun DraftNumberSettingControl(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            stepLabels.chunked(2).forEach { rowItems ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            stepLabels.forEach { (label, delta) ->
+                OutlinedButton(
+                    onClick = { onStep(delta) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    rowItems.forEach { (label, delta) ->
-                        OutlinedButton(
-                            onClick = { onStep(delta) },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(label)
-                        }
-                    }
-                    if (rowItems.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+                    Text(
+                        text = label,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }
