@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-30
+
 ### Added
 
 - Fine-grained settings to adjust thumbnail size and video timeline preview frame size (exact % input, no upper cap), applied across files/results/bulk-delete previews.
