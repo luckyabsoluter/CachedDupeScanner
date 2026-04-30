@@ -160,10 +160,25 @@ class ScanHistoryRepository(
         deleteMissing: Boolean,
         rehashStale: Boolean,
         rehashMissing: Boolean,
+        onlyDuplicateDetected: Boolean = false,
         shouldContinue: () -> Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
     ): DbMaintenanceSummary {
-        val total = dao.countAll()
+        val duplicateGroupKeys = if (onlyDuplicateDetected) {
+            dao.listDuplicateGroupKeysFromCache()
+        } else {
+            emptyList()
+        }
+        val total = if (onlyDuplicateDetected) {
+            duplicateGroupKeys.sumOf { key ->
+                dao.countBySizeAndHash(
+                    sizeBytes = key.sizeBytes,
+                    hashHex = key.hashHex
+                )
+            }
+        } else {
+            dao.countAll()
+        }
         var processed = 0
         var deleted = 0
         var rehashed = 0
@@ -171,79 +186,28 @@ class ScanHistoryRepository(
         val batchSize = 200
         var lastPath = ""
         var currentPath: String? = null
-        while (true) {
-            if (!shouldContinue()) break
-            val batch = dao.getPageAfter(lastPath, batchSize)
-            if (batch.isEmpty()) break
-            for (entity in batch) {
-                if (!shouldContinue()) {
-                    return DbMaintenanceSummary(
-                        total = total,
-                        processed = processed,
-                        deleted = deleted,
-                        rehashed = rehashed,
-                        missingHashed = missingHashed,
-                        cancelled = true,
-                        currentPath = currentPath
-                    )
-                }
-                val path = entity.path.ifBlank { entity.normalizedPath }
-                currentPath = path
-                val file = File(path)
-                if (!file.exists()) {
-                    if (deleteMissing) {
-                        deleteEntityAndRefreshGroup(entity)
-                        deleted += 1
-                    }
-                    processed += 1
-                    onProgress(
-                        DbMaintenanceProgress(
-                            total = total,
-                            processed = processed,
-                            deleted = deleted,
-                            rehashed = rehashed,
-                            missingHashed = missingHashed,
-                            currentPath = path
-                        )
-                    )
-                    lastPath = entity.normalizedPath
-                    continue
-                }
 
-                val size = file.length()
-                val modified = file.lastModified()
-                val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
-                val isMissingHash = entity.hashHex.isNullOrBlank()
-                val shouldRehashStale = rehashStale && isStale
-                val shouldHashMissing = rehashMissing && isMissingHash
-                val shouldHash = shouldRehashStale || shouldHashMissing
-                if (shouldHash) {
-                    val hash = hashFile(file, shouldContinue)
-                    if (hash == null) {
-                        return DbMaintenanceSummary(
-                            total = total,
-                            processed = processed,
-                            deleted = deleted,
-                            rehashed = rehashed,
-                            missingHashed = missingHashed,
-                            cancelled = true,
-                            currentPath = currentPath
-                        )
-                    }
-                    val updatedEntity = entity.copy(
-                        sizeBytes = size,
-                        lastModifiedMillis = modified,
-                        hashHex = hash
-                    )
-                    upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
-                    if (shouldRehashStale) {
-                        rehashed += 1
-                    }
-                    if (shouldHashMissing) {
-                        missingHashed += 1
-                    }
-                }
+        fun applyMaintenanceToEntity(entity: CachedFileEntity): DbMaintenanceSummary? {
+            if (!shouldContinue()) {
+                return DbMaintenanceSummary(
+                    total = total,
+                    processed = processed,
+                    deleted = deleted,
+                    rehashed = rehashed,
+                    missingHashed = missingHashed,
+                    cancelled = true,
+                    currentPath = currentPath
+                )
+            }
 
+            val path = entity.path.ifBlank { entity.normalizedPath }
+            currentPath = path
+            val file = File(path)
+            if (!file.exists()) {
+                if (deleteMissing) {
+                    deleteEntityAndRefreshGroup(entity)
+                    deleted += 1
+                }
                 processed += 1
                 onProgress(
                     DbMaintenanceProgress(
@@ -255,6 +219,125 @@ class ScanHistoryRepository(
                         currentPath = path
                     )
                 )
+                return null
+            }
+
+            val size = file.length()
+            val modified = file.lastModified()
+            val isStale = size != entity.sizeBytes || modified != entity.lastModifiedMillis
+            val isMissingHash = entity.hashHex.isNullOrBlank()
+            val shouldRehashStale = rehashStale && isStale
+            val shouldHashMissing = rehashMissing && isMissingHash
+            val shouldHash = shouldRehashStale || shouldHashMissing
+            if (shouldHash) {
+                val hash = hashFile(file, shouldContinue)
+                if (hash == null) {
+                    return DbMaintenanceSummary(
+                        total = total,
+                        processed = processed,
+                        deleted = deleted,
+                        rehashed = rehashed,
+                        missingHashed = missingHashed,
+                        cancelled = true,
+                        currentPath = currentPath
+                    )
+                }
+                val updatedEntity = entity.copy(
+                    sizeBytes = size,
+                    lastModifiedMillis = modified,
+                    hashHex = hash
+                )
+                upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
+                if (shouldRehashStale) {
+                    rehashed += 1
+                }
+                if (shouldHashMissing) {
+                    missingHashed += 1
+                }
+            }
+
+            processed += 1
+            onProgress(
+                DbMaintenanceProgress(
+                    total = total,
+                    processed = processed,
+                    deleted = deleted,
+                    rehashed = rehashed,
+                    missingHashed = missingHashed,
+                    currentPath = path
+                )
+            )
+            return null
+        }
+
+        if (onlyDuplicateDetected) {
+            for (groupKey in duplicateGroupKeys) {
+                var memberAfterPath: String? = null
+                while (true) {
+                    if (!shouldContinue()) {
+                        return DbMaintenanceSummary(
+                            total = total,
+                            processed = processed,
+                            deleted = deleted,
+                            rehashed = rehashed,
+                            missingHashed = missingHashed,
+                            cancelled = true,
+                            currentPath = currentPath
+                        )
+                    }
+
+                    val batch = if (memberAfterPath == null) {
+                        dao.listMembersBySizeAndHash(
+                            sizeBytes = groupKey.sizeBytes,
+                            hashHex = groupKey.hashHex,
+                            limit = batchSize
+                        )
+                    } else {
+                        dao.listMembersBySizeAndHashAfter(
+                            sizeBytes = groupKey.sizeBytes,
+                            hashHex = groupKey.hashHex,
+                            afterPath = memberAfterPath,
+                            limit = batchSize
+                        )
+                    }
+                    if (batch.isEmpty()) {
+                        break
+                    }
+
+                    for (entity in batch) {
+                        val cancelledSummary = applyMaintenanceToEntity(entity)
+                        if (cancelledSummary != null) {
+                            return cancelledSummary
+                        }
+                    }
+
+                    if (batch.size < batchSize) {
+                        break
+                    }
+                    memberAfterPath = batch.last().normalizedPath
+                }
+            }
+
+            return DbMaintenanceSummary(
+                total = total,
+                processed = processed,
+                deleted = deleted,
+                rehashed = rehashed,
+                missingHashed = missingHashed,
+                cancelled = false,
+                currentPath = currentPath
+            )
+        }
+
+        while (true) {
+            if (!shouldContinue()) break
+            val batch = dao.getPageAfter(lastPath, batchSize)
+            if (batch.isEmpty()) break
+            for (entity in batch) {
+                val cancelledSummary = applyMaintenanceToEntity(entity)
+                if (cancelledSummary != null) {
+                    return cancelledSummary
+                }
                 lastPath = entity.normalizedPath
             }
         }
@@ -264,7 +347,7 @@ class ScanHistoryRepository(
             deleted = deleted,
             rehashed = rehashed,
             missingHashed = missingHashed,
-            cancelled = processed < total,
+            cancelled = false,
             currentPath = currentPath
         )
     }

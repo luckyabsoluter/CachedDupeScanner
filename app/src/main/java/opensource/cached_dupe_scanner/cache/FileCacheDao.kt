@@ -111,6 +111,29 @@ interface FileCacheDao {
     )
     fun listMembersBySizeAndHashAfter(sizeBytes: Long, hashHex: String, afterPath: String, limit: Int): List<CachedFileEntity>
 
+    @Query(
+        """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+        ORDER BY sizeBytes ASC, hashHex ASC
+        """
+    )
+    fun listDuplicateGroupKeysFromCache(): List<DuplicateGroupKeyRow>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        """
+    )
+    fun countBySizeAndHash(sizeBytes: Long, hashHex: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsert(entity: CachedFileEntity)
 
@@ -141,3 +164,8 @@ interface FileCacheDao {
     )
     fun findGroupKeysByPaths(paths: List<String>): List<PathGroupKey>
 }
+
+data class DuplicateGroupKeyRow(
+    val sizeBytes: Long,
+    val hashHex: String
+)

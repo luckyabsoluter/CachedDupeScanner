@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.ui.home
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.ui.unit.dp
 
 class GroupPreviewLogicTest {
     @Test
@@ -65,5 +66,60 @@ class GroupPreviewLogicTest {
         assertEquals(0f, frames.first().percent)
         assertTrue(frames.last().percent <= 0.98f)
         assertTrue(frames.zipWithNext().all { (prev, next) -> next.percent >= prev.percent })
+    }
+
+    @Test
+    fun dynamicTimelineFrameCountUsesAvailableWidth() {
+        val count = dynamicTimelineFrameCount(
+            containerWidth = 300.dp,
+            frameHeight = 44.dp
+        )
+
+        assertEquals(4, count)
+    }
+
+    @Test
+    fun dynamicTimelineFrameCountKeepsMinimumOneFrame() {
+        val count = dynamicTimelineFrameCount(
+            containerWidth = 1.dp,
+            frameHeight = 44.dp
+        )
+
+        assertEquals(1, count)
+    }
+
+    @Test
+    fun snappedTimelineFrameWidthFillsContainerWithSpacing() {
+        val width = snappedTimelineFrameWidth(
+            containerWidth = 300.dp,
+            frameCount = 4,
+            frameSpacing = 4.dp
+        )
+
+        assertEquals(72.dp, width)
+    }
+
+    @Test
+    fun totalTimelineFrameCountUsesConfiguredLineCount() {
+        val total = totalTimelineFrameCount(
+            framesPerRow = 4,
+            lineCount = 3
+        )
+
+        assertEquals(12, total)
+    }
+
+    @Test
+    fun timelineFrameRowsSplitsFramesPerRow() {
+        val frames = buildVideoTimelineFrames(frameCount = 10)
+        val rows = timelineFrameRows(
+            frameSpecs = frames,
+            framesPerRow = 4
+        )
+
+        assertEquals(3, rows.size)
+        assertEquals(4, rows[0].size)
+        assertEquals(4, rows[1].size)
+        assertEquals(2, rows[2].size)
     }
 }

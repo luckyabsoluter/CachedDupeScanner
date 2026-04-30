@@ -17,6 +17,10 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -47,6 +51,10 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -75,6 +83,10 @@ class SettingsScreenTest {
                 showMemoryOverlay = true,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -103,6 +115,10 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = true,
                 keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -131,6 +147,10 @@ class SettingsScreenTest {
                 showMemoryOverlay = false,
                 keepLoadedThumbnailsInMemory = false,
                 keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
                 resultSortKey = "Count",
                 resultSortDirection = "Desc",
                 resultGroupSortKey = "Path",
@@ -157,5 +177,83 @@ class SettingsScreenTest {
         assertTrue(section.description.contains("Export current preferences"))
         assertTrue(section.description.contains("import a saved backup"))
         assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun thumbnailSizeSectionExplainsGlobalPreviewSizing() {
+        val section = thumbnailSizeSettingsSection()
+
+        assertEquals("Thumbnail size", section.title)
+        assertTrue(section.description.contains("file thumbnails"))
+        assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun videoPreviewSizeSectionExplainsTimelineSizing() {
+        val section = videoPreviewSizeSettingsSection()
+
+        assertEquals("Video preview size", section.title)
+        assertTrue(section.description.contains("timeline"))
+        assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun videoPreviewSnapSectionExposesWidthSnapToggle() {
+        val section = videoPreviewSnapSettingsSection(
+            settings = AppSettings(
+                skipZeroSizeInDb = true,
+                skipTrashBinContentsInScan = true,
+                hideZeroSizeInResults = false,
+                showMemoryOverlay = false,
+                keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = true,
+                snapVideoPreviewFramesToWidth = true,
+                videoPreviewLineCount = 1,
+                thumbnailSizePercent = 100,
+                videoPreviewSizePercent = 100,
+                resultSortKey = "Count",
+                resultSortDirection = "Desc",
+                resultGroupSortKey = "Path",
+                resultGroupSortDirection = "Asc",
+                showFullPaths = false,
+                resultsFilterDefinitionJson = "",
+                filesFilterDefinitionJson = "",
+                filesSortKey = "Name",
+                filesSortDirection = "Asc"
+            )
+        )
+
+        assertEquals("Video preview width snap", section.title)
+        assertEquals(1, section.toggles.size)
+        assertEquals(ToggleSettingId.SnapVideoPreviewFramesToWidth, section.toggles[0].id)
+        assertTrue(section.toggles[0].checked)
+    }
+
+    @Test
+    fun videoPreviewLineCountSectionExplainsMultiRowPreview() {
+        val section = videoPreviewLineCountSettingsSection()
+
+        assertEquals("Video preview lines", section.title)
+        assertTrue(section.description.contains("rows"))
+        assertTrue(section.toggles.isEmpty())
+    }
+
+    @Test
+    fun numberDraftInputKeepsOnlyDigits() {
+        assertEquals("120", sanitizeNumberDraftInput(" 1a2%0 "))
+    }
+
+    @Test
+    fun normalizedDraftValueUsesFallbackUntilDraftIsValid() {
+        assertEquals(80, normalizedDraftValue(input = "", fallback = 80, minValue = 0))
+        assertEquals(1, normalizedDraftValue(input = "0", fallback = 3, minValue = 1))
+        assertEquals(125, normalizedDraftValue(input = "125", fallback = 80, minValue = 0))
+    }
+
+    @Test
+    fun adjustedDraftInputChangesDraftWithoutRequiringAppliedValueChange() {
+        assertEquals("90", adjustedDraftInput(input = "100", fallback = 100, delta = -10, minValue = 0))
+        assertEquals("1", adjustedDraftInput(input = "1", fallback = 1, delta = -1, minValue = 1))
+        assertEquals("6", adjustedDraftInput(input = "", fallback = 5, delta = 1, minValue = 1))
     }
 }

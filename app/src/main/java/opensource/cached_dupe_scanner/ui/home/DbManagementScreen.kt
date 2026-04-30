@@ -74,6 +74,7 @@ fun DbManagementScreen(
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
+    val onlyDuplicateDetected = remember { mutableStateOf(false) }
     val clearDialogOpen = remember { mutableStateOf(false) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Db)
 
@@ -206,6 +207,14 @@ fun DbManagementScreen(
                             Spacer(modifier = Modifier.width(Spacing.inlineGap))
                             Text("Compute hash for missing entries")
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = onlyDuplicateDetected.value,
+                                onCheckedChange = { onlyDuplicateDetected.value = it }
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                            Text("Check only entries currently detected as duplicates")
+                        }
                     }
 
                     Button(
@@ -219,6 +228,7 @@ fun DbManagementScreen(
                                 deleteMissing = deleteMissing.value,
                                 rehashStale = rehashStale.value,
                                 rehashMissing = rehashMissing.value,
+                                onlyDuplicateDetected = onlyDuplicateDetected.value,
                                 onMaintenanceApplied = onMaintenanceApplied,
                                 refreshOverview = refreshOverview
                             )
@@ -547,6 +557,7 @@ internal fun startDbMaintenanceTask(
     deleteMissing: Boolean,
     rehashStale: Boolean,
     rehashMissing: Boolean,
+    onlyDuplicateDetected: Boolean = false,
     onMaintenanceApplied: () -> Unit,
     refreshOverview: () -> Unit
 ) {
@@ -579,6 +590,7 @@ internal fun startDbMaintenanceTask(
                     deleteMissing = deleteMissing,
                     rehashStale = rehashStale,
                     rehashMissing = rehashMissing,
+                    onlyDuplicateDetected = onlyDuplicateDetected,
                     shouldContinue = { !cancelRequested.get() }
                 ) { progress ->
                     uiState.applyMaintenanceProgress(progress)

@@ -6,20 +6,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -55,6 +60,10 @@ fun SettingsScreen(
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
     val videoPreviewMemorySection = videoPreviewMemorySettingsSection(settings.value)
+    val thumbnailSizeSection = thumbnailSizeSettingsSection()
+    val videoPreviewSizeSection = videoPreviewSizeSettingsSection()
+    val videoPreviewLineCountSection = videoPreviewLineCountSettingsSection()
+    val videoPreviewSnapSection = videoPreviewSnapSettingsSection(settings.value)
     val backupSection = backupSettingsSection()
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -134,6 +143,7 @@ fun SettingsScreen(
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                                 ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> Unit
                             }
                         }
                     )
@@ -161,6 +171,7 @@ fun SettingsScreen(
                                 ToggleSettingId.ShowMemoryOverlay -> Unit
                                 ToggleSettingId.KeepLoadedThumbnailsInMemory -> Unit
                                 ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> Unit
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> Unit
                             }
                         }
                     )
@@ -228,6 +239,62 @@ fun SettingsScreen(
                                 ToggleSettingId.KeepLoadedVideoPreviewsInMemory -> {
                                     settingsStore.setKeepLoadedVideoPreviewsInMemory(enabled)
                                     settings.value = settings.value.copy(keepLoadedVideoPreviewsInMemory = enabled)
+                                    onSettingsChanged?.invoke()
+                                }
+                                else -> Unit
+                            }
+                        }
+                    )
+                }
+            }
+
+            SettingsSectionCard(section = thumbnailSizeSection) {
+                PreviewSizeSettingControl(
+                    selectedPercent = settings.value.thumbnailSizePercent,
+                    onPercentSelected = { percent ->
+                        settingsStore.setThumbnailSizePercent(percent)
+                        settings.value = settings.value.copy(thumbnailSizePercent = percent)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = videoPreviewSizeSection) {
+                PreviewSizeSettingControl(
+                    selectedPercent = settings.value.videoPreviewSizePercent,
+                    onPercentSelected = { percent ->
+                        settingsStore.setVideoPreviewSizePercent(percent)
+                        settings.value = settings.value.copy(videoPreviewSizePercent = percent)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = videoPreviewLineCountSection) {
+                PreviewLineCountSettingControl(
+                    selectedCount = settings.value.videoPreviewLineCount,
+                    onCountSelected = { count ->
+                        settingsStore.setVideoPreviewLineCount(count)
+                        settings.value = settings.value.copy(videoPreviewLineCount = count)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = videoPreviewSnapSection) {
+                videoPreviewSnapSection.toggles.forEachIndexed { index, toggle ->
+                    if (index > 0) {
+                        HorizontalDivider()
+                    }
+                    ToggleSettingRow(
+                        title = toggle.title,
+                        description = toggle.description,
+                        checked = toggle.checked,
+                        onCheckedChange = { enabled ->
+                            when (toggle.id) {
+                                ToggleSettingId.SnapVideoPreviewFramesToWidth -> {
+                                    settingsStore.setSnapVideoPreviewFramesToWidth(enabled)
+                                    settings.value = settings.value.copy(snapVideoPreviewFramesToWidth = enabled)
                                     onSettingsChanged?.invoke()
                                 }
                                 else -> Unit
@@ -338,6 +405,146 @@ private fun ToggleSettingRow(
     }
 }
 
+@Composable
+private fun PreviewSizeSettingControl(
+    selectedPercent: Int,
+    onPercentSelected: (Int) -> Unit
+) {
+    val inputValue = remember(selectedPercent) { mutableStateOf(selectedPercent.toString()) }
+
+    DraftNumberSettingControl(
+        currentValue = selectedPercent,
+        currentText = "${selectedPercent}%",
+        inputValue = inputValue.value,
+        inputLabel = "Editing (%)",
+        stepLabels = listOf("-10%" to -10, "-1%" to -1, "+1%" to 1, "+10%" to 10),
+        minValue = 0,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedPercent,
+                delta = delta,
+                minValue = 0
+            )
+        },
+        onApply = { value -> onPercentSelected(value) }
+    )
+}
+
+@Composable
+private fun PreviewLineCountSettingControl(
+    selectedCount: Int,
+    onCountSelected: (Int) -> Unit
+) {
+    val inputValue = remember(selectedCount) { mutableStateOf(selectedCount.toString()) }
+
+    DraftNumberSettingControl(
+        currentValue = selectedCount,
+        currentText = "$selectedCount lines",
+        inputValue = inputValue.value,
+        inputLabel = "Editing lines",
+        stepLabels = listOf("-1 line" to -1, "+1 line" to 1),
+        minValue = 1,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedCount,
+                delta = delta,
+                minValue = 1
+            )
+        },
+        onApply = { value -> onCountSelected(value) }
+    )
+}
+
+@Composable
+private fun DraftNumberSettingControl(
+    currentValue: Int,
+    currentText: String,
+    inputValue: String,
+    inputLabel: String,
+    stepLabels: List<Pair<String, Int>>,
+    minValue: Int,
+    onInputValueChange: (String) -> Unit,
+    onStep: (Int) -> Unit,
+    onApply: (Int) -> Unit
+) {
+    val draftValue = normalizedDraftValue(
+        input = inputValue,
+        fallback = currentValue,
+        minValue = minValue
+    )
+    val canApply = inputValue.isNotBlank() && draftValue != currentValue
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Current setting: $currentText",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = inputValue,
+                onValueChange = onInputValueChange,
+                modifier = Modifier.weight(1f),
+                label = { Text(inputLabel) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            Button(
+                onClick = { onApply(draftValue) },
+                enabled = canApply,
+                modifier = Modifier.widthIn(min = 88.dp)
+            ) {
+                Text("Apply")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            stepLabels.forEach { (label, delta) ->
+                OutlinedButton(
+                    onClick = { onStep(delta) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = label,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal fun sanitizeNumberDraftInput(raw: String): String {
+    return raw.filter { it.isDigit() }
+}
+
+internal fun normalizedDraftValue(input: String, fallback: Int, minValue: Int): Int {
+    return (input.toIntOrNull() ?: fallback).coerceAtLeast(minValue)
+}
+
+internal fun adjustedDraftInput(input: String, fallback: Int, delta: Int, minValue: Int): String {
+    val next = normalizedDraftValue(
+        input = input,
+        fallback = fallback,
+        minValue = minValue
+    ) + delta
+    return next.coerceAtLeast(minValue).toString()
+}
+
 internal data class SettingsSectionModel(
     val title: String,
     val description: String,
@@ -357,7 +564,8 @@ internal enum class ToggleSettingId {
     HideZeroSizeInResults,
     ShowMemoryOverlay,
     KeepLoadedThumbnailsInMemory,
-    KeepLoadedVideoPreviewsInMemory
+    KeepLoadedVideoPreviewsInMemory,
+    SnapVideoPreviewFramesToWidth
 }
 
 internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionModel {
@@ -436,6 +644,42 @@ internal fun videoPreviewMemorySettingsSection(settings: AppSettings): SettingsS
                 title = "Keep video previews in RAM",
                 description = "Caches start/middle/end timeline frames for video preview mode in the file list.",
                 checked = settings.keepLoadedVideoPreviewsInMemory
+            )
+        )
+    )
+}
+
+internal fun thumbnailSizeSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Thumbnail size",
+        description = "Choose how large file thumbnails appear across files, results, and bulk-delete previews."
+    )
+}
+
+internal fun videoPreviewSizeSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview size",
+        description = "Choose the timeline frame size used in the video preview mode on the files screen."
+    )
+}
+
+internal fun videoPreviewLineCountSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview lines",
+        description = "Choose how many timeline rows are rendered for each video preview card."
+    )
+}
+
+internal fun videoPreviewSnapSettingsSection(settings: AppSettings): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Video preview width snap",
+        description = "Snap timeline frames so each row expands to exactly fill the available width.",
+        toggles = listOf(
+            ToggleSettingModel(
+                id = ToggleSettingId.SnapVideoPreviewFramesToWidth,
+                title = "Snap and expand to full width",
+                description = "Keeps frame count based on target ratio, then expands each frame width so the row fits edge to edge.",
+                checked = settings.snapVideoPreviewFramesToWidth
             )
         )
     )

@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Fine-grained settings to adjust thumbnail size and video timeline preview frame size (exact % input, no upper cap), applied across files/results/bulk-delete previews.
+- Optional video timeline snap mode that expands frames to fill each row width while preserving ratio-driven frame count.
+- Configurable video timeline line count to render multiple preview rows per file card.
+- DB maintenance option to validate and apply file-maintenance checks only to entries that are currently part of detected duplicate groups.
+- Modified-time filter rules for Results and Files filtering.
+
+### Changed
+
+- Configured the Gradle daemon JVM criteria to use JetBrains JDK 21 through Gradle toolchain resolution.
+- Moved the Trash item dialog Open action after Restore so Open stays in the same position as other item dialogs.
+- Reworked preview size and video preview line controls so edits stay pending until Apply, repeated values are removed, and numeric step controls stay on one compact row.
+
+### Fixed
+
+- Preserved the active screen across Android configuration recreations such as rotation or display size changes.
+
 ## [1.3.0] - 2026-04-17
 
 ### Added

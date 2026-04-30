@@ -40,7 +40,7 @@ class FilesScreenDbVideoPreviewSourceTest {
         val content = sourceFile!!.readText()
         assertTrue(
             "Video timeline strip should only be shown in video preview mode for video files",
-            content.contains("isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)") &&
+            content.contains("isVideoTimelinePreviewEnabled() && isVideo") &&
                 content.contains("VideoTimelinePreviewStrip(")
         )
         assertTrue(
@@ -49,9 +49,26 @@ class FilesScreenDbVideoPreviewSourceTest {
                 content.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory")
         )
         assertTrue(
+            "Video timeline strip should receive width snap option",
+            content.contains("snapToFillWidth = snapVideoPreviewFramesToWidth")
+        )
+        assertTrue(
+            "Video timeline strip should receive configured line count",
+            content.contains("lineCount = videoPreviewLineCount")
+        )
+        assertTrue(
+            "Video timeline strip should use configurable frame height",
+            content.contains("frameHeight = videoPreviewFrameHeightDp")
+        )
+        assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",
             content.contains("rememberedPreviewCache = rememberedThumbnailCache") &&
                 content.contains("keepLoadedInMemory = keepLoadedThumbnailsInMemory")
+        )
+        assertTrue(
+            "Primary thumbnail should use configurable thumbnail size",
+            content.contains(".width(thumbnailSizeDp)") &&
+                content.contains(".height(thumbnailSizeDp)")
         )
     }
 }

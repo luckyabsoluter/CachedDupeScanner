@@ -24,7 +24,8 @@ Build a high-performance duplicate file scanner with a persistent cache that spe
 3. Implement only that deliverable.
 4. Add or update tests.
 5. Run tests and confirm they pass.
-6. Commit with a Conventional Commit message.
+6. Update CHANGELOG.md to reflect the changes.
+7. Commit with a Conventional Commit message.
 
 ## Definitions
 
@@ -42,6 +43,7 @@ Build a high-performance duplicate file scanner with a persistent cache that spe
 
 - Single purpose per commit.
 - Tests included for new behaviors.
+- CHANGELOG.md updated to reflect the changes.
 - README milestones updated if scope changes.
 
 ## Scope Boundaries

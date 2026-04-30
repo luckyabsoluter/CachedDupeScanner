@@ -76,6 +76,10 @@ fun FilesScreenDb(
     settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
     keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    thumbnailSizeScale: Float,
+    videoPreviewSizeScale: Float,
     rememberedThumbnailCache: MutableMap<String, ImageBitmap>,
     rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
@@ -137,6 +141,10 @@ fun FilesScreenDb(
     val pageSize = 200
     val buffer = 50
     val visibleCount = rememberSaveable { mutableStateOf(0) }
+    val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
+    val normalizedVideoPreviewScale = videoPreviewSizeScale.coerceAtLeast(0f)
+    val thumbnailSizeDp = 56.dp * normalizedThumbnailScale
+    val videoPreviewFrameHeightDp = 44.dp * normalizedVideoPreviewScale
 
     fun isVideoTimelinePreviewEnabled(): Boolean {
         return previewMode.value == FilesPreviewMode.VideoTimeline.name
@@ -362,6 +370,7 @@ fun FilesScreenDb(
             } else {
                 items(items.value, key = { it.normalizedPath }) { file ->
                     val isDeleted = deletedPaths.value.contains(file.normalizedPath)
+                    val isVideo = isVideoFile(file.normalizedPath)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -392,8 +401,8 @@ fun FilesScreenDb(
                                         keepLoadedInMemory = keepLoadedThumbnailsInMemory,
                                         contentDescription = "Thumbnail",
                                         modifier = Modifier
-                                            .width(56.dp)
-                                            .height(56.dp)
+                                            .width(thumbnailSizeDp)
+                                            .height(thumbnailSizeDp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
@@ -434,13 +443,16 @@ fun FilesScreenDb(
                                 }
                             }
 
-                            if (isVideoTimelinePreviewEnabled() && isVideoFile(file.normalizedPath)) {
+                            if (isVideoTimelinePreviewEnabled() && isVideo) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 VideoTimelinePreviewStrip(
                                     filePath = file.normalizedPath,
                                     rememberedPreviewCache = rememberedVideoPreviewCache,
                                     imageLoader = imageLoader,
                                     keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                                    snapToFillWidth = snapVideoPreviewFramesToWidth,
+                                    lineCount = videoPreviewLineCount,
+                                    frameHeight = videoPreviewFrameHeightDp,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }

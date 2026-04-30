@@ -24,6 +24,10 @@ class AppSettingsStoreTest {
         assertFalse(settings.showMemoryOverlay)
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
+        assertFalse(settings.snapVideoPreviewFramesToWidth)
+        assertEquals(1, settings.videoPreviewLineCount)
+        assertEquals(100, settings.thumbnailSizePercent)
+        assertEquals(100, settings.videoPreviewSizePercent)
         assertEquals("Count", settings.resultSortKey)
         assertEquals("Desc", settings.resultSortDirection)
         assertEquals("Path", settings.resultGroupSortKey)
@@ -57,6 +61,18 @@ class AppSettingsStoreTest {
 
         store.setKeepLoadedVideoPreviewsInMemory(false)
         assertFalse(store.load().keepLoadedVideoPreviewsInMemory)
+
+        store.setSnapVideoPreviewFramesToWidth(true)
+        assertTrue(store.load().snapVideoPreviewFramesToWidth)
+
+        store.setVideoPreviewLineCount(3)
+        assertEquals(3, store.load().videoPreviewLineCount)
+
+        store.setThumbnailSizePercent(125)
+        assertEquals(125, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(80)
+        assertEquals(80, store.load().videoPreviewSizePercent)
 
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
@@ -104,6 +120,10 @@ class AppSettingsStoreTest {
         assertFalse(imported.showMemoryOverlay)
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
+        assertFalse(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(1, imported.videoPreviewLineCount)
+        assertEquals(100, imported.thumbnailSizePercent)
+        assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
         assertTrue(store.load().skipZeroSizeInDb)
@@ -121,6 +141,10 @@ class AppSettingsStoreTest {
         store.setShowMemoryOverlay(true)
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setKeepLoadedVideoPreviewsInMemory(false)
+        store.setSnapVideoPreviewFramesToWidth(true)
+        store.setVideoPreviewLineCount(4)
+        store.setThumbnailSizePercent(125)
+        store.setVideoPreviewSizePercent(80)
         store.setResultSortKey("Name")
         store.setResultSortDirection("Asc")
         store.setResultGroupSortKey("Modified")
@@ -142,6 +166,10 @@ class AppSettingsStoreTest {
         assertTrue(imported.showMemoryOverlay)
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
+        assertTrue(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(4, imported.videoPreviewLineCount)
+        assertEquals(125, imported.thumbnailSizePercent)
+        assertEquals(80, imported.videoPreviewSizePercent)
         assertEquals("Name", imported.resultSortKey)
         assertEquals("Asc", imported.resultSortDirection)
         assertEquals("Modified", imported.resultGroupSortKey)
@@ -152,5 +180,35 @@ class AppSettingsStoreTest {
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals(imported, importedStore.load())
+    }
+
+    @Test
+    fun previewSizeSupportsFineGrainedValuesWithoutUpperCap() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setThumbnailSizePercent(137)
+        assertEquals(137, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(163)
+        assertEquals(163, store.load().videoPreviewSizePercent)
+
+        store.setThumbnailSizePercent(10000)
+        assertEquals(10000, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(7500)
+        assertEquals(7500, store.load().videoPreviewSizePercent)
+
+        store.setThumbnailSizePercent(-1)
+        assertEquals(0, store.load().thumbnailSizePercent)
+
+        store.setVideoPreviewSizePercent(-25)
+        assertEquals(0, store.load().videoPreviewSizePercent)
+
+        store.setVideoPreviewLineCount(0)
+        assertEquals(1, store.load().videoPreviewLineCount)
+
+        store.setVideoPreviewLineCount(-9)
+        assertEquals(1, store.load().videoPreviewLineCount)
     }
 }
