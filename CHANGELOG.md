@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Similarity experiments dashboard entry with an executable exact-thumbnail video/image clustering run, default 100 MB size filter, selectable size units, frame timestamps, resize target, optional quantization, grayscale mode, independent result tables, and reusable duplicate-group browsing for saved similarity clusters.
+
 ## [1.4.0] - 2026-04-30
 
 ### Added

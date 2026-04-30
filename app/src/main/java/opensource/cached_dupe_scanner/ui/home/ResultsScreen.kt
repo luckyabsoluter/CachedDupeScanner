@@ -522,107 +522,25 @@ private fun GroupDetailContent(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
-    val context = LocalContext.current
-    val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytesWithExact(group.files.firstOrNull()?.sizeBytes ?: 0)
-    val hasPreviewMedia = group.files.any { isMediaFile(it.normalizedPath) }
-    val previewCandidates = mediaPreviewCandidates(
-        files = group.files,
-        deletedPaths = deletedPaths
-    )
     val previewMemoryKey = remember(group.hashHex, group.files.firstOrNull()?.sizeBytes) {
         "${group.files.firstOrNull()?.sizeBytes ?: 0L}:${group.hashHex}"
     }
 
-    Text("Group detail")
-    Spacer(modifier = Modifier.height(8.dp))
-    if (hasPreviewMedia) {
-        GroupPreviewThumbnail(
-            candidatePaths = previewCandidates,
-            previewMemoryKey = previewMemoryKey,
-            rememberedPreviewCache = rememberedPreviewCache,
-            imageLoader = imageLoader,
-            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-            contentDescription = "Thumbnail",
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-    Text("${groupCount} files · Total ${formatBytes(groupSize)}")
-    Text("Per-file ${fileSize}")
-    Spacer(modifier = Modifier.height(8.dp))
-
-    group.files.sortedBy { it.normalizedPath }.forEach { file ->
-        val date = formatDate(file.lastModifiedMillis)
-        val isDeleted = deletedPaths.contains(file.normalizedPath)
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { selectedFile.value = file }
-            ,
-            colors = if (isDeleted) {
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            } else {
-                CardDefaults.cardColors()
-            }
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(10.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = file.normalizedPath,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-
-    selectedFile.value?.let { file ->
-        FileDetailsDialogWithDeleteConfirm(
-            file = file,
-            showName = false,
-            onOpen = {
-                openFile(context, file.normalizedPath)
-                selectedFile.value = null
-            },
-            onDelete = {
-                onDeleteFile(file)
-            },
-            onDeleteResult = { deleted ->
-                if (deleted) {
-                    selectedFile.value = null
-                }
-            },
-            onDismiss = { selectedFile.value = null }
-        )
-    }
+    DuplicateGroupDetailContent(
+        title = "Group detail",
+        memberCount = groupCount,
+        totalBytes = groupSize,
+        summaryLines = listOf("Per-file $fileSize"),
+        members = group.files,
+        deletedPaths = deletedPaths,
+        imageLoader = imageLoader,
+        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+        rememberedPreviewCache = rememberedPreviewCache,
+        previewMemoryKey = previewMemoryKey,
+        previewHeight = 180.dp,
+        onDeleteFile = onDeleteFile
+    )
 }

@@ -26,6 +26,108 @@ interface FileCacheDao {
     @Query("SELECT COUNT(*) FROM cached_files")
     fun countAll(): Int
 
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.3gp'
+              OR lower(normalizedPath) LIKE '%.avi'
+              OR lower(normalizedPath) LIKE '%.flv'
+              OR lower(normalizedPath) LIKE '%.m2ts'
+              OR lower(normalizedPath) LIKE '%.m4v'
+              OR lower(normalizedPath) LIKE '%.mkv'
+              OR lower(normalizedPath) LIKE '%.mov'
+              OR lower(normalizedPath) LIKE '%.mp4'
+              OR lower(normalizedPath) LIKE '%.mpeg'
+              OR lower(normalizedPath) LIKE '%.mpg'
+              OR lower(normalizedPath) LIKE '%.mts'
+              OR lower(normalizedPath) LIKE '%.ts'
+              OR lower(normalizedPath) LIKE '%.webm'
+              OR lower(normalizedPath) LIKE '%.wmv'
+          )
+        """
+    )
+    fun countVideoCandidates(minSizeBytes: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.bmp'
+              OR lower(normalizedPath) LIKE '%.gif'
+              OR lower(normalizedPath) LIKE '%.heic'
+              OR lower(normalizedPath) LIKE '%.heif'
+              OR lower(normalizedPath) LIKE '%.jpeg'
+              OR lower(normalizedPath) LIKE '%.jpg'
+              OR lower(normalizedPath) LIKE '%.png'
+              OR lower(normalizedPath) LIKE '%.webp'
+          )
+        """
+    )
+    fun countImageCandidates(minSizeBytes: Long): Int
+
+    @Query(
+        """
+        SELECT *
+        FROM cached_files
+        WHERE normalizedPath > :afterPath
+          AND sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.3gp'
+              OR lower(normalizedPath) LIKE '%.avi'
+              OR lower(normalizedPath) LIKE '%.flv'
+              OR lower(normalizedPath) LIKE '%.m2ts'
+              OR lower(normalizedPath) LIKE '%.m4v'
+              OR lower(normalizedPath) LIKE '%.mkv'
+              OR lower(normalizedPath) LIKE '%.mov'
+              OR lower(normalizedPath) LIKE '%.mp4'
+              OR lower(normalizedPath) LIKE '%.mpeg'
+              OR lower(normalizedPath) LIKE '%.mpg'
+              OR lower(normalizedPath) LIKE '%.mts'
+              OR lower(normalizedPath) LIKE '%.ts'
+              OR lower(normalizedPath) LIKE '%.webm'
+              OR lower(normalizedPath) LIKE '%.wmv'
+          )
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listVideoCandidatesAfter(
+        minSizeBytes: Long,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM cached_files
+        WHERE normalizedPath > :afterPath
+          AND sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.bmp'
+              OR lower(normalizedPath) LIKE '%.gif'
+              OR lower(normalizedPath) LIKE '%.heic'
+              OR lower(normalizedPath) LIKE '%.heif'
+              OR lower(normalizedPath) LIKE '%.jpeg'
+              OR lower(normalizedPath) LIKE '%.jpg'
+              OR lower(normalizedPath) LIKE '%.png'
+              OR lower(normalizedPath) LIKE '%.webp'
+          )
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listImageCandidatesAfter(
+        minSizeBytes: Long,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
     @Query("SELECT * FROM cached_files WHERE normalizedPath > :afterPath ORDER BY normalizedPath LIMIT :limit")
     fun getPageAfter(afterPath: String, limit: Int): List<CachedFileEntity>
 
@@ -154,6 +256,9 @@ interface FileCacheDao {
 
     @Query("SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes FROM cached_files WHERE normalizedPath IN (:paths)")
     fun findSizesByPaths(paths: List<String>): List<PathSize>
+
+    @Query("SELECT * FROM cached_files WHERE normalizedPath IN (:paths) OR path IN (:paths)")
+    fun findByNormalizedOrDisplayPaths(paths: List<String>): List<CachedFileEntity>
 
     @Query(
         """

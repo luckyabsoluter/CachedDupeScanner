@@ -172,4 +172,118 @@ object CacheMigrations {
             )
         }
     }
+
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_experiment_runs (
+                    experimentId TEXT NOT NULL PRIMARY KEY,
+                    experimentName TEXT NOT NULL,
+                    startedAtMillis INTEGER NOT NULL,
+                    finishedAtMillis INTEGER NOT NULL,
+                    candidateCount INTEGER NOT NULL,
+                    processedCount INTEGER NOT NULL,
+                    skippedCount INTEGER NOT NULL,
+                    clusterCount INTEGER NOT NULL,
+                    duplicateFileCount INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_clusters (
+                    experimentId TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    fileCount INTEGER NOT NULL,
+                    totalBytes INTEGER NOT NULL,
+                    memberPathsText TEXT NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(experimentId, signature)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_experimentId ON similarity_clusters(experimentId)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)"
+            )
+        }
+    }
+
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            val columns = tableColumns(db, "similarity_clusters")
+            if (columns.contains("memberNormalizedPathsText")) {
+                return
+            }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_clusters_new (
+                    experimentId TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    fileCount INTEGER NOT NULL,
+                    totalBytes INTEGER NOT NULL,
+                    memberNormalizedPathsText TEXT NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(experimentId, signature)
+                )
+                """.trimIndent()
+            )
+            if (columns.contains("memberPathsText")) {
+                db.execSQL(
+                    """
+                    INSERT INTO similarity_clusters_new (
+                        experimentId,
+                        signature,
+                        fileCount,
+                        totalBytes,
+                        memberNormalizedPathsText,
+                        updatedAtMillis
+                    )
+                    SELECT
+                        experimentId,
+                        signature,
+                        fileCount,
+                        totalBytes,
+                        memberPathsText,
+                        updatedAtMillis
+                    FROM similarity_clusters
+                    """.trimIndent()
+                )
+            }
+            db.execSQL("DROP TABLE IF EXISTS similarity_clusters")
+            db.execSQL("ALTER TABLE similarity_clusters_new RENAME TO similarity_clusters")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_experimentId ON similarity_clusters(experimentId)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)"
+            )
+        }
+    }
+
+}
+
+private fun tableColumns(
+    db: SupportSQLiteDatabase,
+    tableName: String
+): Set<String> {
+    db.query("PRAGMA table_info('$tableName')").use { cursor ->
+        val nameIndex = cursor.getColumnIndex("name")
+        val columns = linkedSetOf<String>()
+        while (cursor.moveToNext()) {
+            if (nameIndex >= 0) {
+                columns.add(cursor.getString(nameIndex))
+            }
+        }
+        return columns
+    }
 }

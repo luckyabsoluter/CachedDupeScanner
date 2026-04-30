@@ -32,6 +32,7 @@ fun DashboardScreen(
     onOpenFiles: () -> Unit,
     onOpenTrash: () -> Unit,
     onOpenDbManagement: () -> Unit,
+    onOpenSimilarityExperiments: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -83,18 +84,25 @@ fun DashboardScreen(
                 onAction = onOpenFiles
             )
 
-                DashboardCard(
-                    title = "Trash",
-                    description = "Review and restore files moved to trash.",
-                    actionLabel = "Open trash",
-                    onAction = onOpenTrash
-                )
+            DashboardCard(
+                title = "Trash",
+                description = "Review and restore files moved to trash.",
+                actionLabel = "Open trash",
+                onAction = onOpenTrash
+            )
 
             DashboardCard(
                 title = "DB management",
                 description = "Validate cached entries and rehash when needed.",
                 actionLabel = "Open DB manager",
                 onAction = onOpenDbManagement
+            )
+
+            DashboardCard(
+                title = "Similarity experiments",
+                description = "Build independent duplicate-detection clusters with video similarity methods.",
+                actionLabel = "Open experiments",
+                onAction = onOpenSimilarityExperiments
             )
 
             DashboardCard(
