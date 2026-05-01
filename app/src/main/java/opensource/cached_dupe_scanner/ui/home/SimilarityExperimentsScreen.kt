@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -985,6 +988,8 @@ private fun SimilarityClusterDetailScreen(
                     }
                 }
                 else -> {
+                    ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
+                    Spacer(modifier = Modifier.height(8.dp))
                     DuplicateGroupDetailContent(
                         title = "Group detail",
                         memberCount = cluster.fileCount,
@@ -1013,6 +1018,62 @@ private fun SimilarityClusterDetailScreen(
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+    }
+}
+
+@Composable
+private fun ExactHashReductionPreviewCard(exactHashExplanation: ExactThumbnailClusterExplanation?) {
+    val samples = exactHashExplanation?.let(::exactHashReductionSamples).orEmpty()
+    if (samples.isEmpty()) return
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Reduction preview",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "These enlarged tiles show the exact reduced image values used for this experiment's equality check.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            samples.forEach { sample ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                Color(
+                                    red = sample.color.red,
+                                    green = sample.color.green,
+                                    blue = sample.color.blue
+                                )
+                            )
+                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = sample.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = sample.signature,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1262,6 +1323,104 @@ internal fun similarityClusterDetailLines(
         "Sample signature values: ${sampleSignaturesLabel(exactHashExplanation.sampleSignatures)}",
         "Snapshot ${formatDate(cluster.updatedAtMillis)}"
     )
+}
+
+internal data class ExactHashReductionSample(
+    val label: String,
+    val signature: String,
+    val color: ExactHashReductionColor
+)
+
+internal data class ExactHashReductionColor(
+    val red: Int,
+    val green: Int,
+    val blue: Int
+)
+
+internal fun exactHashReductionSamples(
+    explanation: ExactThumbnailClusterExplanation
+): List<ExactHashReductionSample> {
+    return explanation.sampleSignatures.mapIndexedNotNull { index, signature ->
+        val color = exactHashReductionColor(
+            colorMode = explanation.colorMode,
+            quantization = explanation.quantization,
+            signature = signature
+        ) ?: return@mapIndexedNotNull null
+        ExactHashReductionSample(
+            label = exactHashReductionSampleLabel(
+                explanation = explanation,
+                index = index
+            ),
+            signature = signature,
+            color = color
+        )
+    }
+}
+
+internal fun exactHashReductionColor(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): ExactHashReductionColor? {
+    val trimmedSignature = signature.trim()
+    val quantizationLevels = quantization
+        .takeIf { value -> value.startsWith("q") }
+        ?.drop(1)
+        ?.toIntOrNull()
+        ?.coerceAtLeast(2)
+    return if (colorMode == "gray") {
+        val gray = if (quantizationLevels == null) {
+            parseHexChannel(trimmedSignature)
+        } else {
+            parseHexBucket(trimmedSignature)?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+        } ?: return null
+        ExactHashReductionColor(red = gray, green = gray, blue = gray)
+    } else if (colorMode == "color") {
+        if (quantizationLevels == null) {
+            if (trimmedSignature.length < 6) return null
+            val red = parseHexChannel(trimmedSignature.substring(0, 2)) ?: return null
+            val green = parseHexChannel(trimmedSignature.substring(2, 4)) ?: return null
+            val blue = parseHexChannel(trimmedSignature.substring(4, 6)) ?: return null
+            ExactHashReductionColor(red = red, green = green, blue = blue)
+        } else {
+            if (quantizationLevels > 16 || trimmedSignature.length < 3) return null
+            val red = parseHexBucket(trimmedSignature.substring(0, 1))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            val green = parseHexBucket(trimmedSignature.substring(1, 2))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            val blue = parseHexBucket(trimmedSignature.substring(2, 3))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            ExactHashReductionColor(red = red, green = green, blue = blue)
+        }
+    } else {
+        null
+    }
+}
+
+private fun exactHashReductionSampleLabel(
+    explanation: ExactThumbnailClusterExplanation,
+    index: Int
+): String {
+    if (explanation.mediaScope == "image") return "Reduced image"
+    val frameSecond = explanation.frameSeconds.getOrNull(index)
+    return frameSecond?.let { second -> "Reduced frame ${second}s" } ?: "Reduced sample ${index + 1}"
+}
+
+private fun parseHexChannel(value: String): Int? {
+    return value.toIntOrNull(radix = 16)?.coerceIn(0, 255)
+}
+
+private fun parseHexBucket(value: String): Int? {
+    return value.toIntOrNull(radix = 16)?.coerceAtLeast(0)
+}
+
+private fun bucketToChannel(bucket: Int, levels: Int): Int {
+    val normalizedLevels = levels.coerceAtLeast(2)
+    return ((bucket.coerceIn(0, normalizedLevels - 1) * 255) / (normalizedLevels - 1))
+        .coerceIn(0, 255)
 }
 
 private fun mediaScopeLabel(value: String): String {

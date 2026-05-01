@@ -223,6 +223,42 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun exactHashReductionSamplesConvertStoredSignaturesToPreviewColors() {
+        val explanation = ExactThumbnailClusterExplanation(
+            mediaScope = "video",
+            colorMode = "color",
+            resize = "1x1",
+            quantization = "q16",
+            frameSeconds = listOf("0", "1", "10"),
+            sampleSignatures = listOf("000", "f80", "fff")
+        )
+
+        val samples = exactHashReductionSamples(explanation)
+
+        assertEquals("Reduced frame 0s", samples[0].label)
+        assertEquals(ExactHashReductionColor(red = 0, green = 0, blue = 0), samples[0].color)
+        assertEquals(ExactHashReductionColor(red = 255, green = 136, blue = 0), samples[1].color)
+        assertEquals(ExactHashReductionColor(red = 255, green = 255, blue = 255), samples[2].color)
+    }
+
+    @Test
+    fun exactHashReductionSamplesConvertRawGrayscaleImageSignature() {
+        val explanation = ExactThumbnailClusterExplanation(
+            mediaScope = "image",
+            colorMode = "gray",
+            resize = "1x1",
+            quantization = "raw",
+            frameSeconds = emptyList(),
+            sampleSignatures = listOf("80")
+        )
+
+        val samples = exactHashReductionSamples(explanation)
+
+        assertEquals("Reduced image", samples.single().label)
+        assertEquals(ExactHashReductionColor(red = 128, green = 128, blue = 128), samples.single().color)
+    }
+
+    @Test
     fun screenStartsWithNewExperimentAndRunListBeforeDrillingIntoDetails() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
 
@@ -233,6 +269,8 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("SimilarityExperimentPane.Create ->"))
         assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
         assertTrue(content.contains("StoredSimilarityResultsCard("))
+        assertTrue(content.contains("Reduction preview"))
+        assertTrue(content.contains(".background("))
     }
 
     private fun cluster(signature: String): SimilarityClusterEntity {
