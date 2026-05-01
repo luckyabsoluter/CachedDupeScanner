@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class SimilarityExperimentsScreenTest {
     @Test
@@ -221,6 +222,19 @@ class SimilarityExperimentsScreenTest {
         assertFalse(genericLines.any { it.startsWith("Group rule:") })
     }
 
+    @Test
+    fun screenStartsWithNewExperimentAndRunListBeforeDrillingIntoDetails() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+
+        assertTrue(content.contains("private enum class SimilarityExperimentPane"))
+        assertTrue(content.contains("SimilarityExperimentPane.List ->"))
+        assertTrue(content.contains("Text(\"New experiment\")"))
+        assertTrue(content.contains("onSelectRun = ::openRunPane"))
+        assertTrue(content.contains("SimilarityExperimentPane.Create ->"))
+        assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
+        assertTrue(content.contains("StoredSimilarityResultsCard("))
+    }
+
     private fun cluster(signature: String): SimilarityClusterEntity {
         return SimilarityClusterEntity(
             experimentId = "experiment",
@@ -264,5 +278,16 @@ class SimilarityExperimentsScreenTest {
             mediaScope = SimilarityMediaScope.Video,
             steps = listOf(step)
         )
+    }
+
+    private fun sourceText(fileName: String): String {
+        val projectDir = File(System.getProperty("user.dir") ?: ".")
+        val sourceFile = sequenceOf(
+            File(projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName"),
+            File(projectDir.parentFile ?: projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName")
+        ).firstOrNull { it.exists() }
+
+        assertTrue("$fileName should exist", sourceFile != null)
+        return sourceFile!!.readText()
     }
 }

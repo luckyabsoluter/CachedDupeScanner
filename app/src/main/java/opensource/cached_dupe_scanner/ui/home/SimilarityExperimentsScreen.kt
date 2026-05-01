@@ -66,6 +66,12 @@ private data class SimilarityClusterMembersState(
     val complete: Boolean
 )
 
+private enum class SimilarityExperimentPane {
+    List,
+    Create,
+    RunDetail
+}
+
 @Composable
 fun SimilarityExperimentsScreen(
     repository: SimilarityExperimentRepository,
@@ -98,6 +104,8 @@ fun SimilarityExperimentsScreen(
     var selectedTemplateId by remember { mutableStateOf(experiments.firstOrNull()?.id) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
+    var pane by remember { mutableStateOf(SimilarityExperimentPane.List) }
+    var clustersLoading by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val imageLoader = remember {
@@ -127,10 +135,9 @@ fun SimilarityExperimentsScreen(
         selectedId = selectedTemplateId
     )
     val selectedTemplateExactStep = selectedTemplate?.let(::executableExactThumbnailStep)
-    val selectedRun = selectedSimilarityRun(
-        runs = runs,
-        selectedId = selectedRunExperimentId
-    )
+    val selectedRun = selectedRunExperimentId?.let { selectedId ->
+        runs.firstOrNull { run -> run.experimentId == selectedId }
+    }
 
     fun applyTemplateDefaults(experiment: SimilarityExperimentSpec) {
         selectedTemplateId = experiment.id
@@ -151,12 +158,12 @@ fun SimilarityExperimentsScreen(
     }
 
     fun refreshStoredResults(preferredRunExperimentId: String? = selectedRunExperimentId) {
+        clustersLoading = preferredRunExperimentId != null
         scope.launch {
             val nextRuns = withContext(Dispatchers.IO) { repository.listRuns() }
-            val nextSelectedRun = selectedSimilarityRun(
-                runs = nextRuns,
-                selectedId = preferredRunExperimentId
-            )
+            val nextSelectedRun = preferredRunExperimentId?.let { selectedId ->
+                nextRuns.firstOrNull { run -> run.experimentId == selectedId }
+            }
             val nextClusters = nextSelectedRun?.let { run ->
                 withContext(Dispatchers.IO) { repository.listClusters(run.experimentId) }
             }.orEmpty()
@@ -165,14 +172,38 @@ fun SimilarityExperimentsScreen(
             selectedRunExperimentId = nextSelectedRun?.experimentId
             clusters.clear()
             clusters.addAll(nextClusters)
+            clustersLoading = false
             if (selectedClusterKey != null && nextClusters.none { clusterStableKey(it) == selectedClusterKey }) {
                 selectedClusterKey = null
             }
         }
     }
 
+    fun openListPane() {
+        pane = SimilarityExperimentPane.List
+        selectedRunExperimentId = null
+        selectedClusterKey = null
+        clusters.clear()
+        refreshStoredResults(null)
+    }
+
+    fun openCreatePane() {
+        pane = SimilarityExperimentPane.Create
+        selectedRunExperimentId = null
+        selectedClusterKey = null
+        clusters.clear()
+    }
+
+    fun openRunPane(run: SimilarityExperimentRunEntity) {
+        pane = SimilarityExperimentPane.RunDetail
+        selectedRunExperimentId = run.experimentId
+        selectedClusterKey = null
+        clusters.clear()
+        refreshStoredResults(run.experimentId)
+    }
+
     LaunchedEffect(Unit) {
-        refreshStoredResults()
+        refreshStoredResults(null)
     }
 
     LaunchedEffect(mediaScope, minSizeBytes) {
@@ -210,6 +241,10 @@ fun SimilarityExperimentsScreen(
         return
     }
 
+    BackHandler(enabled = pane != SimilarityExperimentPane.List) {
+        openListPane()
+    }
+
     Box(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -218,115 +253,144 @@ fun SimilarityExperimentsScreen(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AppTopBar(
-                title = "Similarity experiments",
-                onBack = onBack
-            )
-
-            ExperimentRunsListCard(
-                runs = runs,
-                selectedExperimentId = selectedRun?.experimentId,
-                onSelectRun = { run ->
-                    selectedRunExperimentId = run.experimentId
-                    selectedClusterKey = null
-                    refreshStoredResults(run.experimentId)
-                }
-            )
-
-            ExperimentTemplatesCard(
-                experiments = experiments,
-                selectedExperimentId = selectedTemplate?.id,
-                onSelectExperiment = ::applyTemplateDefaults
-            )
-
-            if (selectedTemplate != null && selectedTemplateExactStep != null) {
-                ExactThumbnailRunCard(
-                    experimentName = selectedTemplate.name,
-                    minSizeInput = minSizeInput,
-                    onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                    minSizeUnit = minSizeUnit,
-                    onMinSizeUnitChange = { minSizeUnit = it },
-                    mediaScope = mediaScope,
-                    onMediaScopeChange = { mediaScope = it },
-                    frameSecondsInput = frameSecondsInput,
-                    onFrameSecondsInputChange = { frameSecondsInput = sanitizeFrameSecondsInput(it) },
-                    resizeWidthInput = resizeWidthInput,
-                    onResizeWidthInputChange = { resizeWidthInput = sanitizeNumberDraftInput(it) },
-                    resizeHeightInput = resizeHeightInput,
-                    onResizeHeightInputChange = { resizeHeightInput = sanitizeNumberDraftInput(it) },
-                    quantizationEnabled = quantizationEnabled,
-                    onQuantizationEnabledChange = { quantizationEnabled = it },
-                    quantizationInput = quantizationInput,
-                    onQuantizationInputChange = { quantizationInput = sanitizeNumberDraftInput(it) },
-                    grayscale = grayscale,
-                    onGrayscaleChange = { grayscale = it },
-                    candidateCountText = candidateCountText,
-                    runStatusText = runStatusText,
-                    isRunning = isRunning,
-                    onRun = {
-                        val step = exactStep
-                        if (step.frameSeconds.isEmpty()) {
-                            runStatusText = "Add at least one frame timestamp."
-                            return@ExactThumbnailRunCard
-                        }
-                        val experiment = exactThumbnailExperimentForRun(
-                            mediaScope = mediaScope,
-                            minSizeBytes = minSizeBytes,
-                            step = step
-                        )
-                        cancelRequested.set(false)
-                        isRunning = true
-                        runStatusText = "Starting ${experiment.name}..."
-                        scope.launch {
-                            val summary = withContext(Dispatchers.IO) {
-                                repository.runExactThumbnailHashExperiment(
-                                    request = SimilarityExperimentRunRequest(
-                                        experiment = experiment,
-                                        mediaScope = mediaScope,
-                                        minSizeBytes = minSizeBytes,
-                                        exactThumbnailStep = step
-                                    ),
-                                    shouldContinue = { !cancelRequested.get() },
-                                    onProgress = { progress ->
-                                        scope.launch {
-                                            runStatusText = similarityProgressText(progress)
-                                        }
-                                    }
-                                )
-                            }
-                            isRunning = false
-                            selectedRunExperimentId = summary.experimentId
-                            runStatusText = if (summary.cancelled) {
-                                "Cancelled after ${summary.processedCount}/${summary.candidateCount}."
-                            } else {
-                                "Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
-                            }
-                            refreshStoredResults(summary.experimentId)
-                        }
-                    },
-                    onCancel = {
-                        cancelRequested.set(true)
-                        runStatusText = "Cancelling..."
+            when (pane) {
+                SimilarityExperimentPane.List -> {
+                    AppTopBar(
+                        title = "Similarity experiments",
+                        onBack = onBack
+                    )
+                    Button(
+                        onClick = ::openCreatePane,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("New experiment")
                     }
-                )
-            } else if (selectedTemplate != null) {
-                SelectedExperimentMethodCard(experiment = selectedTemplate)
+                    ExperimentRunsListCard(
+                        runs = runs,
+                        onSelectRun = ::openRunPane
+                    )
+                }
+                SimilarityExperimentPane.Create -> {
+                    AppTopBar(
+                        title = "New experiment",
+                        onBack = ::openListPane
+                    )
+                    ExperimentTemplatesCard(
+                        experiments = experiments,
+                        selectedExperimentId = selectedTemplate?.id,
+                        onSelectExperiment = ::applyTemplateDefaults
+                    )
+                    if (selectedTemplate != null && selectedTemplateExactStep != null) {
+                        ExactThumbnailRunCard(
+                            experimentName = selectedTemplate.name,
+                            minSizeInput = minSizeInput,
+                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                            minSizeUnit = minSizeUnit,
+                            onMinSizeUnitChange = { minSizeUnit = it },
+                            mediaScope = mediaScope,
+                            onMediaScopeChange = { mediaScope = it },
+                            frameSecondsInput = frameSecondsInput,
+                            onFrameSecondsInputChange = { frameSecondsInput = sanitizeFrameSecondsInput(it) },
+                            resizeWidthInput = resizeWidthInput,
+                            onResizeWidthInputChange = { resizeWidthInput = sanitizeNumberDraftInput(it) },
+                            resizeHeightInput = resizeHeightInput,
+                            onResizeHeightInputChange = { resizeHeightInput = sanitizeNumberDraftInput(it) },
+                            quantizationEnabled = quantizationEnabled,
+                            onQuantizationEnabledChange = { quantizationEnabled = it },
+                            quantizationInput = quantizationInput,
+                            onQuantizationInputChange = { quantizationInput = sanitizeNumberDraftInput(it) },
+                            grayscale = grayscale,
+                            onGrayscaleChange = { grayscale = it },
+                            candidateCountText = candidateCountText,
+                            runStatusText = runStatusText,
+                            isRunning = isRunning,
+                            onRun = {
+                                val step = exactStep
+                                if (step.frameSeconds.isEmpty()) {
+                                    runStatusText = "Add at least one frame timestamp."
+                                    return@ExactThumbnailRunCard
+                                }
+                                val experiment = exactThumbnailExperimentForRun(
+                                    mediaScope = mediaScope,
+                                    minSizeBytes = minSizeBytes,
+                                    step = step
+                                )
+                                cancelRequested.set(false)
+                                isRunning = true
+                                runStatusText = "Starting ${experiment.name}..."
+                                scope.launch {
+                                    val summary = withContext(Dispatchers.IO) {
+                                        repository.runExactThumbnailHashExperiment(
+                                            request = SimilarityExperimentRunRequest(
+                                                experiment = experiment,
+                                                mediaScope = mediaScope,
+                                                minSizeBytes = minSizeBytes,
+                                                exactThumbnailStep = step
+                                            ),
+                                            shouldContinue = { !cancelRequested.get() },
+                                            onProgress = { progress ->
+                                                scope.launch {
+                                                    runStatusText = similarityProgressText(progress)
+                                                }
+                                            }
+                                        )
+                                    }
+                                    isRunning = false
+                                    selectedRunExperimentId = summary.experimentId
+                                    pane = SimilarityExperimentPane.RunDetail
+                                    runStatusText = if (summary.cancelled) {
+                                        "Cancelled after ${summary.processedCount}/${summary.candidateCount}."
+                                    } else {
+                                        "Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
+                                    }
+                                    refreshStoredResults(summary.experimentId)
+                                }
+                            },
+                            onCancel = {
+                                cancelRequested.set(true)
+                                runStatusText = "Cancelling..."
+                            }
+                        )
+                    } else if (selectedTemplate != null) {
+                        SelectedExperimentMethodCard(experiment = selectedTemplate)
+                    }
+                }
+                SimilarityExperimentPane.RunDetail -> {
+                    AppTopBar(
+                        title = selectedRun?.experimentName ?: "Experiment detail",
+                        onBack = ::openListPane
+                    )
+                    if (selectedRun == null) {
+                        Text(
+                            text = "This experiment run is no longer available.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Button(
+                            onClick = ::openListPane,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Back to experiments")
+                        }
+                    } else {
+                        SimilarityRunSummaryCard(run = selectedRun)
+                        StoredSimilarityResultsCard(
+                            repository = repository,
+                            selectedRun = selectedRun,
+                            clusters = clusters,
+                            isLoading = clustersLoading,
+                            deletedPaths = deletedPaths,
+                            imageLoader = imageLoader,
+                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                            previewThumbnailSizeDp = groupCardThumbnailSizeDp,
+                            rememberedPreviewCache = rememberedPreviewCache,
+                            showFullPaths = showFullPaths,
+                            loadedClusterMembers = loadedClusterMembers,
+                            clusterMemberLoadErrors = clusterMemberLoadErrors,
+                            onOpenCluster = { cluster -> selectedClusterKey = clusterStableKey(cluster) }
+                        )
+                    }
+                }
             }
-
-            StoredSimilarityResultsCard(
-                repository = repository,
-                selectedRun = selectedRun,
-                clusters = clusters,
-                deletedPaths = deletedPaths,
-                imageLoader = imageLoader,
-                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                previewThumbnailSizeDp = groupCardThumbnailSizeDp,
-                rememberedPreviewCache = rememberedPreviewCache,
-                showFullPaths = showFullPaths,
-                loadedClusterMembers = loadedClusterMembers,
-                clusterMemberLoadErrors = clusterMemberLoadErrors,
-                onOpenCluster = { cluster -> selectedClusterKey = clusterStableKey(cluster) }
-            )
         }
 
         VerticalScrollbar(
@@ -342,56 +406,45 @@ fun SimilarityExperimentsScreen(
 @Composable
 private fun ExperimentRunsListCard(
     runs: List<SimilarityExperimentRunEntity>,
-    selectedExperimentId: String?,
     onSelectRun: (SimilarityExperimentRunEntity) -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(text = "Experiment list", style = MaterialTheme.typography.titleMedium)
-            if (runs.isEmpty()) {
-                Text(text = "No saved experiment runs yet.", style = MaterialTheme.typography.bodySmall)
-                return@Column
-            }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(text = "Experiment list", style = MaterialTheme.typography.titleMedium)
+        if (runs.isEmpty()) {
+            Text(text = "No saved experiment runs yet.", style = MaterialTheme.typography.bodySmall)
+            return@Column
+        }
 
-            runs.forEach { run ->
-                val selected = run.experimentId == selectedExperimentId
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectRun(run) },
-                    colors = if (selected) {
-                        CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    } else {
-                        CardDefaults.cardColors()
-                    }
+        runs.forEach { run ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectRun(run) }
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = run.experimentName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = run.experimentId,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = run.experimentName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = run.experimentId,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -404,47 +457,45 @@ private fun ExperimentTemplatesCard(
     selectedExperimentId: String?,
     onSelectExperiment: (SimilarityExperimentSpec) -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(text = "Experiment templates", style = MaterialTheme.typography.titleMedium)
-            experiments.forEach { experiment ->
-                val selected = experiment.id == selectedExperimentId
-                val executable = executableExactThumbnailStep(experiment) != null
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectExperiment(experiment) },
-                    colors = if (selected) {
-                        CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    } else {
-                        CardDefaults.cardColors()
-                    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(text = "Experiment templates", style = MaterialTheme.typography.titleMedium)
+        experiments.forEach { experiment ->
+            val selected = experiment.id == selectedExperimentId
+            val executable = executableExactThumbnailStep(experiment) != null
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectExperiment(experiment) },
+                colors = if (selected) {
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                } else {
+                    CardDefaults.cardColors()
+                }
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = experiment.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = if (executable) "Executable exact-hash experiment" else "Methodology template",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = experiment.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = experiment.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (executable) "Executable exact-hash experiment" else "Methodology template",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = experiment.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -633,10 +684,43 @@ private fun ExactThumbnailRunCard(
 }
 
 @Composable
+private fun SimilarityRunSummaryCard(run: SimilarityExperimentRunEntity) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = run.experimentName,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = run.experimentId,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Processed ${run.processedCount}/${run.candidateCount} candidates.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun StoredSimilarityResultsCard(
     repository: SimilarityExperimentRepository,
     selectedRun: SimilarityExperimentRunEntity?,
     clusters: List<SimilarityClusterEntity>,
+    isLoading: Boolean,
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
@@ -660,6 +744,10 @@ private fun StoredSimilarityResultsCard(
             text = "${selectedRun.experimentName}: ${selectedRun.clusterCount} clusters, ${selectedRun.duplicateFileCount} files, ${selectedRun.skippedCount} skipped.",
             style = MaterialTheme.typography.bodySmall
         )
+        if (isLoading) {
+            Text(text = "Loading experiment clusters...", style = MaterialTheme.typography.bodySmall)
+            return@Column
+        }
         if (clusters.isEmpty()) {
             Text(text = "No duplicate-like similarity clusters found for the latest run.", style = MaterialTheme.typography.bodySmall)
             return@Column
