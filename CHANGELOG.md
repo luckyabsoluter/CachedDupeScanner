@@ -16,6 +16,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Split the similarity experiments screen into an entry list, a new-experiment flow, and saved experiment detail views so setup controls and cluster results are not shown together on first entry.
 
+### Fixed
+
+- Exact-thumbnail similarity hashing now stores every resized thumbnail pixel, so 2x2 and larger reductions no longer collapse to the top-left pixel.
+
 ## [1.4.0] - 2026-04-30
 
 ### Added

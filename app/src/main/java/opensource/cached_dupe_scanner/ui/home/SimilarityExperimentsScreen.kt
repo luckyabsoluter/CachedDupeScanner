@@ -1047,17 +1047,7 @@ private fun ExactHashReductionPreviewCard(exactHashExplanation: ExactThumbnailCl
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                Color(
-                                    red = sample.color.red,
-                                    green = sample.color.green,
-                                    blue = sample.color.blue
-                                )
-                            )
-                    )
+                    ExactHashReductionSampleGrid(sample = sample)
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = sample.label,
@@ -1072,6 +1062,36 @@ private fun ExactHashReductionPreviewCard(exactHashExplanation: ExactThumbnailCl
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExactHashReductionSampleGrid(sample: ExactHashReductionSample) {
+    val tileSize = when (maxOf(sample.width, sample.height)) {
+        1 -> 56.dp
+        2 -> 28.dp
+        else -> 18.dp
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        (0 until sample.height).forEach { y ->
+            Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                (0 until sample.width).forEach { x ->
+                    val color = sample.colors.getOrNull(y * sample.width + x)
+                        ?: ExactHashReductionColor(red = 0, green = 0, blue = 0)
+                    Box(
+                        modifier = Modifier
+                            .size(tileSize)
+                            .background(
+                                Color(
+                                    red = color.red,
+                                    green = color.green,
+                                    blue = color.blue
+                                )
+                            )
+                    )
                 }
             }
         }
@@ -1329,7 +1349,9 @@ internal fun similarityClusterDetailLines(
 internal data class ExactHashReductionSample(
     val label: String,
     val signature: String,
-    val color: ExactHashReductionColor
+    val width: Int,
+    val height: Int,
+    val colors: List<ExactHashReductionColor>
 )
 
 internal data class ExactHashReductionColor(
@@ -1341,24 +1363,69 @@ internal data class ExactHashReductionColor(
 internal fun exactHashReductionSamples(
     explanation: ExactThumbnailClusterExplanation
 ): List<ExactHashReductionSample> {
+    val configuredGrid = exactHashReductionGridSize(explanation.resize)
     return explanation.sampleSignatures.mapIndexedNotNull { index, signature ->
-        val color = exactHashReductionColor(
+        val colors = exactHashReductionColors(
             colorMode = explanation.colorMode,
             quantization = explanation.quantization,
             signature = signature
-        ) ?: return@mapIndexedNotNull null
+        )
+        if (colors.isEmpty()) return@mapIndexedNotNull null
+        val configuredPixelCount = configuredGrid.width * configuredGrid.height
+        val sampleWidth = if (configuredPixelCount == colors.size) configuredGrid.width else colors.size
+        val sampleHeight = if (configuredPixelCount == colors.size) configuredGrid.height else 1
         ExactHashReductionSample(
             label = exactHashReductionSampleLabel(
                 explanation = explanation,
                 index = index
             ),
             signature = signature,
-            color = color
+            width = sampleWidth.coerceAtLeast(1),
+            height = sampleHeight.coerceAtLeast(1),
+            colors = colors
         )
     }
 }
 
+internal data class ExactHashReductionGridSize(
+    val width: Int,
+    val height: Int
+)
+
+internal fun exactHashReductionGridSize(resize: String): ExactHashReductionGridSize {
+    val parts = resize.split('x', limit = 2)
+    val width = parts.getOrNull(0)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val height = parts.getOrNull(1)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    return ExactHashReductionGridSize(width = width, height = height)
+}
+
 internal fun exactHashReductionColor(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): ExactHashReductionColor? {
+    return exactHashReductionColors(
+        colorMode = colorMode,
+        quantization = quantization,
+        signature = signature
+    ).firstOrNull()
+}
+
+internal fun exactHashReductionColors(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): List<ExactHashReductionColor> {
+    return splitPixelSignatures(signature).mapNotNull { pixelSignature ->
+        exactHashReductionPixelColor(
+            colorMode = colorMode,
+            quantization = quantization,
+            signature = pixelSignature
+        )
+    }
+}
+
+private fun exactHashReductionPixelColor(
     colorMode: String,
     quantization: String,
     signature: String
@@ -1384,20 +1451,31 @@ internal fun exactHashReductionColor(
             val blue = parseHexChannel(trimmedSignature.substring(4, 6)) ?: return null
             ExactHashReductionColor(red = red, green = green, blue = blue)
         } else {
-            if (quantizationLevels > 16 || trimmedSignature.length < 3) return null
-            val red = parseHexBucket(trimmedSignature.substring(0, 1))
+            val channelWidth = quantizedChannelHexWidth(quantizationLevels)
+            if (trimmedSignature.length < channelWidth * 3) return null
+            val red = parseHexBucket(trimmedSignature.substring(0, channelWidth))
                 ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
                 ?: return null
-            val green = parseHexBucket(trimmedSignature.substring(1, 2))
+            val green = parseHexBucket(trimmedSignature.substring(channelWidth, channelWidth * 2))
                 ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
                 ?: return null
-            val blue = parseHexBucket(trimmedSignature.substring(2, 3))
+            val blue = parseHexBucket(trimmedSignature.substring(channelWidth * 2, channelWidth * 3))
                 ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
                 ?: return null
             ExactHashReductionColor(red = red, green = green, blue = blue)
         }
     } else {
         null
+    }
+}
+
+private fun splitPixelSignatures(signature: String): List<String> {
+    return if (signature.contains(',')) {
+        signature.split(',')
+            .map { part -> part.trim() }
+            .filter { part -> part.isNotEmpty() }
+    } else {
+        listOf(signature.trim()).filter { part -> part.isNotEmpty() }
     }
 }
 
@@ -1422,6 +1500,10 @@ private fun bucketToChannel(bucket: Int, levels: Int): Int {
     val normalizedLevels = levels.coerceAtLeast(2)
     return ((bucket.coerceIn(0, normalizedLevels - 1) * 255) / (normalizedLevels - 1))
         .coerceIn(0, 255)
+}
+
+private fun quantizedChannelHexWidth(levels: Int): Int {
+    return (levels.coerceAtLeast(2) - 1).toString(16).length
 }
 
 private fun mediaScopeLabel(value: String): String {

@@ -236,9 +236,11 @@ class SimilarityExperimentsScreenTest {
         val samples = exactHashReductionSamples(explanation)
 
         assertEquals("Reduced frame 0s", samples[0].label)
-        assertEquals(ExactHashReductionColor(red = 0, green = 0, blue = 0), samples[0].color)
-        assertEquals(ExactHashReductionColor(red = 255, green = 136, blue = 0), samples[1].color)
-        assertEquals(ExactHashReductionColor(red = 255, green = 255, blue = 255), samples[2].color)
+        assertEquals(1, samples[0].width)
+        assertEquals(1, samples[0].height)
+        assertEquals(ExactHashReductionColor(red = 0, green = 0, blue = 0), samples[0].colors.single())
+        assertEquals(ExactHashReductionColor(red = 255, green = 136, blue = 0), samples[1].colors.single())
+        assertEquals(ExactHashReductionColor(red = 255, green = 255, blue = 255), samples[2].colors.single())
     }
 
     @Test
@@ -255,7 +257,33 @@ class SimilarityExperimentsScreenTest {
         val samples = exactHashReductionSamples(explanation)
 
         assertEquals("Reduced image", samples.single().label)
-        assertEquals(ExactHashReductionColor(red = 128, green = 128, blue = 128), samples.single().color)
+        assertEquals(ExactHashReductionColor(red = 128, green = 128, blue = 128), samples.single().colors.single())
+    }
+
+    @Test
+    fun exactHashReductionSamplesPreserveTwoByTwoPreviewGrid() {
+        val explanation = ExactThumbnailClusterExplanation(
+            mediaScope = "image",
+            colorMode = "color",
+            resize = "2x2",
+            quantization = "q16",
+            frameSeconds = emptyList(),
+            sampleSignatures = listOf("000,f80,08f,fff")
+        )
+
+        val sample = exactHashReductionSamples(explanation).single()
+
+        assertEquals(2, sample.width)
+        assertEquals(2, sample.height)
+        assertEquals(
+            listOf(
+                ExactHashReductionColor(red = 0, green = 0, blue = 0),
+                ExactHashReductionColor(red = 255, green = 136, blue = 0),
+                ExactHashReductionColor(red = 0, green = 136, blue = 255),
+                ExactHashReductionColor(red = 255, green = 255, blue = 255)
+            ),
+            sample.colors
+        )
     }
 
     @Test
@@ -271,6 +299,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("StoredSimilarityResultsCard("))
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
+        assertTrue(content.contains("ExactHashReductionSampleGrid("))
     }
 
     @Test
