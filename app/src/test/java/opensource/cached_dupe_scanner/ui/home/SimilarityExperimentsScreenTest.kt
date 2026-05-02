@@ -273,6 +273,18 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains(".background("))
     }
 
+    @Test
+    fun memberThumbnailsAreEnabledOnlyForSimilarityClusterDetails() {
+        val detailContent = sourceText("DuplicateGroupDetailContent.kt")
+        val similarityContent = sourceText("SimilarityExperimentsScreen.kt")
+        val resultsContent = sourceText("ResultsScreen.kt")
+
+        assertTrue(detailContent.contains("showMemberThumbnails: Boolean = false"))
+        assertTrue(detailContent.contains("contentDescription = \"Member thumbnail\""))
+        assertTrue(similarityContent.contains("showMemberThumbnails = true"))
+        assertFalse(resultsContent.contains("showMemberThumbnails = true"))
+    }
+
     private fun cluster(signature: String): SimilarityClusterEntity {
         return SimilarityClusterEntity(
             experimentId = "experiment",

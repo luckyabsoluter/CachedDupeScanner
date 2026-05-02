@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +39,7 @@ internal fun DuplicateGroupDetailContent(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     previewMemoryKey: String,
     previewHeight: Dp,
+    showMemberThumbnails: Boolean = false,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?
 ) {
     val context = LocalContext.current
@@ -94,6 +97,21 @@ internal fun DuplicateGroupDetailContent(
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
+                    GroupPreviewThumbnail(
+                        candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
+                        previewMemoryKey = memberPreviewMemoryKey(
+                            previewMemoryKey = previewMemoryKey,
+                            file = file
+                        ),
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        imageLoader = imageLoader,
+                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                        contentDescription = "Member thumbnail",
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = file.normalizedPath,
@@ -142,4 +160,11 @@ internal fun DuplicateGroupDetailContent(
             onDismiss = { selectedFile.value = null }
         )
     }
+}
+
+private fun memberPreviewMemoryKey(
+    previewMemoryKey: String,
+    file: FileMetadata
+): String {
+    return "$previewMemoryKey:member:${file.normalizedPath}:${file.sizeBytes}:${file.lastModifiedMillis}"
 }

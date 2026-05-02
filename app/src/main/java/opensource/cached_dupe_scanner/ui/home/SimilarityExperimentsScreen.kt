@@ -1005,6 +1005,7 @@ private fun SimilarityClusterDetailScreen(
                         rememberedPreviewCache = rememberedPreviewCache,
                         previewMemoryKey = clusterPreviewMemoryKey(cluster),
                         previewHeight = previewHeight,
+                        showMemberThumbnails = true,
                         onDeleteFile = onDeleteFile
                     )
                 }
