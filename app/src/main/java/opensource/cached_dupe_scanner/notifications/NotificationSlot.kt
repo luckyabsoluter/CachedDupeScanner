@@ -7,5 +7,6 @@ internal fun notificationIdFor(area: TaskArea): Int {
         TaskArea.Scan -> 1001
         TaskArea.Db -> 1002
         TaskArea.Trash -> 1003
+        TaskArea.Similarity -> 1004
     }
 }

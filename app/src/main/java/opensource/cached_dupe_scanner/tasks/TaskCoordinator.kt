@@ -9,7 +9,8 @@ import androidx.compose.runtime.snapshots.Snapshot
 enum class TaskArea {
     Scan,
     Db,
-    Trash
+    Trash,
+    Similarity
 }
 
 enum class TaskKind {
@@ -18,7 +19,8 @@ enum class TaskKind {
     DbMaintenance,
     RebuildGroups,
     ClearCache,
-    EmptyTrash
+    EmptyTrash,
+    SimilarityExperiment
 }
 
 enum class TaskStatus {

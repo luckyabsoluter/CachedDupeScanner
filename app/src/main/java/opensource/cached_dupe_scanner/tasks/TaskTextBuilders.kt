@@ -9,6 +9,8 @@ import opensource.cached_dupe_scanner.storage.DbMaintenanceProgress
 import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
+import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
+import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
 import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRunSummary
 
@@ -87,4 +89,20 @@ fun trashTaskDetail(progress: TrashProgress): String {
 
 fun trashTaskCompletedDetail(summary: TrashRunSummary): String {
     return "Deleted ${summary.deleted} • Failed ${summary.failed}"
+}
+
+fun similarityExperimentTaskTitle(): String = "Running similarity experiment"
+
+fun similarityExperimentTaskDetail(progress: SimilarityExperimentProgress): String {
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}"
+}
+
+fun similarityExperimentCompletedDetail(summary: SimilarityExperimentSummary): String {
+    return "Clusters ${summary.clusterCount} • Files ${summary.duplicateFileCount} • Skipped ${summary.skippedCount}"
+}
+
+fun similarityExperimentCancelledDetail(summary: SimilarityExperimentSummary): String {
+    val totalText = if (summary.candidateCount > 0) summary.candidateCount.toString() else "?"
+    return "Cancelled after ${summary.processedCount}/$totalText candidates."
 }

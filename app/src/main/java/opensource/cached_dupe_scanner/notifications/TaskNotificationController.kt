@@ -112,7 +112,7 @@ class TaskNotificationController(context: Context) {
             "Background tasks",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Shows progress while scans, DB tasks, and trash tasks are running"
+            description = "Shows progress while scans, DB tasks, trash tasks, and similarity experiments are running"
         }
         val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)

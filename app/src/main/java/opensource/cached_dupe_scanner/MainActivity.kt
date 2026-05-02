@@ -373,6 +373,8 @@ class MainActivity : ComponentActivity() {
 
                             Screen.SimilarityExperiments -> SimilarityExperimentsScreen(
                                 repository = similarityRepo,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
@@ -517,6 +519,7 @@ private fun screenForTaskArea(area: TaskArea): Screen {
         TaskArea.Scan -> Screen.ScanCommand
         TaskArea.Db -> Screen.DbManagement
         TaskArea.Trash -> Screen.Trash
+        TaskArea.Similarity -> Screen.SimilarityExperiments
     }
 }
 

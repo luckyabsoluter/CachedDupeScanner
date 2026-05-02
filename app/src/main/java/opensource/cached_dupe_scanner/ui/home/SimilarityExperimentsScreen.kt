@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,9 +56,19 @@ import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityExperimentStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
+import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.similarityExperimentCancelledDetail
+import opensource.cached_dupe_scanner.tasks.similarityExperimentCompletedDetail
+import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskDetail
+import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -78,6 +89,8 @@ private enum class SimilarityExperimentPane {
 @Composable
 fun SimilarityExperimentsScreen(
     repository: SimilarityExperimentRepository,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
@@ -100,8 +113,6 @@ fun SimilarityExperimentsScreen(
     var grayscale by remember { mutableStateOf(false) }
     var candidateCountText by remember { mutableStateOf("Loading candidate count...") }
     var runStatusText by remember { mutableStateOf("No experiment running.") }
-    var isRunning by remember { mutableStateOf(false) }
-    val cancelRequested = remember { AtomicBoolean(false) }
     val runs = remember { mutableStateListOf<SimilarityExperimentRunEntity>() }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     var selectedTemplateId by remember { mutableStateOf(experiments.firstOrNull()?.id) }
@@ -141,6 +152,8 @@ fun SimilarityExperimentsScreen(
     val selectedRun = selectedRunExperimentId?.let { selectedId ->
         runs.firstOrNull { run -> run.experimentId == selectedId }
     }
+    val activeSimilarityTask = taskCoordinator.activeTask(TaskArea.Similarity)
+    val displayedRunStatusText = activeSimilarityTask?.detail ?: runStatusText
 
     fun applyTemplateDefaults(experiment: SimilarityExperimentSpec) {
         selectedTemplateId = experiment.id
@@ -305,8 +318,8 @@ fun SimilarityExperimentsScreen(
                             grayscale = grayscale,
                             onGrayscaleChange = { grayscale = it },
                             candidateCountText = candidateCountText,
-                            runStatusText = runStatusText,
-                            isRunning = isRunning,
+                            runStatusText = displayedRunStatusText,
+                            isRunning = activeSimilarityTask != null,
                             onRun = {
                                 val step = exactStep
                                 if (step.frameSeconds.isEmpty()) {
@@ -318,40 +331,27 @@ fun SimilarityExperimentsScreen(
                                     minSizeBytes = minSizeBytes,
                                     step = step
                                 )
-                                cancelRequested.set(false)
-                                isRunning = true
-                                runStatusText = "Starting ${experiment.name}..."
-                                scope.launch {
-                                    val summary = withContext(Dispatchers.IO) {
-                                        repository.runExactThumbnailHashExperiment(
-                                            request = SimilarityExperimentRunRequest(
-                                                experiment = experiment,
-                                                mediaScope = mediaScope,
-                                                minSizeBytes = minSizeBytes,
-                                                exactThumbnailStep = step
-                                            ),
-                                            shouldContinue = { !cancelRequested.get() },
-                                            onProgress = { progress ->
-                                                scope.launch {
-                                                    runStatusText = similarityProgressText(progress)
-                                                }
-                                            }
-                                        )
+                                startSimilarityExperimentTask(
+                                    repository = repository,
+                                    request = SimilarityExperimentRunRequest(
+                                        experiment = experiment,
+                                        mediaScope = mediaScope,
+                                        minSizeBytes = minSizeBytes,
+                                        exactThumbnailStep = step
+                                    ),
+                                    scope = scope,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    onStatusText = { status -> runStatusText = status },
+                                    onRunFinished = { summary ->
+                                        selectedRunExperimentId = summary.experimentId
+                                        pane = SimilarityExperimentPane.RunDetail
+                                        refreshStoredResults(summary.experimentId)
                                     }
-                                    isRunning = false
-                                    selectedRunExperimentId = summary.experimentId
-                                    pane = SimilarityExperimentPane.RunDetail
-                                    runStatusText = if (summary.cancelled) {
-                                        "Cancelled after ${summary.processedCount}/${summary.candidateCount}."
-                                    } else {
-                                        "Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
-                                    }
-                                    refreshStoredResults(summary.experimentId)
-                                }
+                                )
                             },
                             onCancel = {
-                                cancelRequested.set(true)
-                                runStatusText = "Cancelling..."
+                                taskCoordinator.requestCancel(TaskArea.Similarity)
                             }
                         )
                     } else if (selectedTemplate != null) {
@@ -1269,9 +1269,135 @@ internal fun executableExactThumbnailStep(experiment: SimilarityExperimentSpec):
     return experiment.steps.singleOrNull() as? ExactThumbnailHashStep
 }
 
-private fun similarityProgressText(progress: SimilarityExperimentProgress): String {
-    val totalText = if (progress.total > 0) progress.total.toString() else "?"
-    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}"
+internal fun startSimilarityExperimentTask(
+    repository: SimilarityExperimentRepository,
+    request: SimilarityExperimentRunRequest,
+    scope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onStatusText: (String) -> Unit,
+    onRunFinished: (SimilarityExperimentSummary) -> Unit
+): Boolean {
+    return startSimilarityExperimentTask(
+        request = request,
+        scope = scope,
+        taskCoordinator = taskCoordinator,
+        notificationController = notificationController,
+        onStatusText = onStatusText,
+        onRunFinished = onRunFinished
+    ) { shouldContinue, onProgress ->
+        repository.runExactThumbnailHashExperiment(
+            request = request,
+            shouldContinue = shouldContinue,
+            onProgress = onProgress
+        )
+    }
+}
+
+internal fun startSimilarityExperimentTask(
+    request: SimilarityExperimentRunRequest,
+    scope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onStatusText: (String) -> Unit,
+    onRunFinished: (SimilarityExperimentSummary) -> Unit,
+    runExperiment: ((() -> Boolean), (SimilarityExperimentProgress) -> Unit) -> SimilarityExperimentSummary
+): Boolean {
+    val cancelRequested = AtomicBoolean(false)
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Similarity,
+        kind = TaskKind.SimilarityExperiment,
+        title = similarityExperimentTaskTitle(),
+        detail = "Starting ${request.experiment.name}.",
+        processed = 0,
+        total = null,
+        indeterminate = true,
+        isCancellable = true,
+        onCancel = {
+            cancelRequested.set(true)
+            requestImmediateSimilarityCancel(
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController
+            )
+        }
+    ) ?: return false
+    notificationController.showActive(started)
+    onStatusText(started.detail)
+
+    scope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                runExperiment(
+                    { !cancelRequested.get() },
+                    { progress ->
+                        val detail = similarityExperimentTaskDetail(progress)
+                        taskCoordinator.update(TaskArea.Similarity) { task ->
+                            task.withLinearProgress(
+                                title = similarityExperimentTaskTitle(),
+                                detail = detail,
+                                currentPath = progress.currentPath,
+                                processed = progress.processed,
+                                total = progress.total
+                            )
+                        }?.let(notificationController::showActive)
+                        scope.launch { onStatusText(detail) }
+                    }
+                )
+            }
+        }.onSuccess { summary ->
+            val currentPath = taskCoordinator.activeTask(TaskArea.Similarity)?.currentPath
+            if (summary.cancelled) {
+                val detail = similarityExperimentCancelledDetail(summary)
+                taskCoordinator.cancel(
+                    area = TaskArea.Similarity,
+                    title = "Similarity experiment cancelled",
+                    detail = detail,
+                    currentPath = currentPath,
+                    processed = summary.processedCount,
+                    total = summary.candidateCount,
+                    indeterminate = summary.candidateCount <= 0
+                )?.let(notificationController::showTerminal)
+                onStatusText(detail)
+            } else {
+                val detail = similarityExperimentCompletedDetail(summary)
+                taskCoordinator.complete(
+                    area = TaskArea.Similarity,
+                    title = "Similarity experiment complete",
+                    detail = detail,
+                    currentPath = currentPath,
+                    processed = summary.processedCount,
+                    total = summary.candidateCount,
+                    indeterminate = summary.candidateCount <= 0
+                )?.let(notificationController::showTerminal)
+                onStatusText("Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files.")
+            }
+            onRunFinished(summary)
+        }.onFailure {
+            taskCoordinator.fail(
+                area = TaskArea.Similarity,
+                title = "Similarity experiment failed",
+                detail = "The similarity experiment did not finish."
+            )?.let(notificationController::showTerminal)
+            onStatusText("Similarity experiment failed.")
+        }
+    }
+    return true
+}
+
+private fun requestImmediateSimilarityCancel(
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController
+) {
+    val snapshot = taskCoordinator.activeTask(TaskArea.Similarity)
+    taskCoordinator.cancel(
+        area = TaskArea.Similarity,
+        title = "Similarity experiment cancelled",
+        detail = "Cancelling similarity experiment.",
+        currentPath = snapshot?.currentPath,
+        processed = snapshot?.processed,
+        total = snapshot?.total,
+        indeterminate = snapshot?.indeterminate ?: true
+    )?.let(notificationController::showTerminal)
 }
 
 private fun clusterStableKey(cluster: SimilarityClusterEntity): String {
