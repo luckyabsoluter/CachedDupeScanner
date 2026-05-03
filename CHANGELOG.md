@@ -16,6 +16,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Split the similarity experiments screen into an entry list, a new-experiment flow, and saved experiment detail views so setup controls and cluster results are not shown together on first entry.
 - Similarity experiment runs now use the shared app-wide task banner, bubble, and notification progress flow while running.
+- Similarity cluster member previews now use row-based grids instead of long single-column lists.
 
 ### Fixed
 

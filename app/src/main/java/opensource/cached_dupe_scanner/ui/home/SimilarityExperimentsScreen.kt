@@ -886,18 +886,10 @@ private fun SimilarityClusterCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                members
-                    .sortedBy { it.normalizedPath }
-                    .forEach { file ->
-                        val date = formatDate(file.lastModifiedMillis)
-                        Text(
-                            text = "${formatPath(file.normalizedPath, showFullPaths)} · $date",
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                SimilarityClusterMemberPreviewGrid(
+                    members = members,
+                    showFullPaths = showFullPaths
+                )
 
                 val remaining = (cluster.fileCount - members.size).coerceAtLeast(0)
                 if (remaining > 0) {
@@ -907,6 +899,35 @@ private fun SimilarityClusterCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimilarityClusterMemberPreviewGrid(
+    members: List<FileMetadata>,
+    showFullPaths: Boolean
+) {
+    val rows = similarityClusterPreviewRows(members)
+    rows.forEach { rowMembers ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            rowMembers.forEach { file ->
+                val date = formatDate(file.lastModifiedMillis)
+                Text(
+                    text = "${formatPath(file.normalizedPath, showFullPaths)} · $date",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            repeat(SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_ROW - rowMembers.size) {
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
@@ -1472,6 +1493,15 @@ internal fun similarityClusterDetailLines(
     )
 }
 
+internal fun similarityClusterPreviewRows(
+    members: List<FileMetadata>,
+    columns: Int = SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_ROW
+): List<List<FileMetadata>> {
+    return members
+        .sortedBy { file -> file.normalizedPath }
+        .chunked(columns.coerceAtLeast(1))
+}
+
 internal data class ExactHashReductionSample(
     val label: String,
     val signature: String,
@@ -1672,4 +1702,5 @@ private fun sampleSignaturesLabel(values: List<String>): String {
 }
 
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 10
+private const val SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_ROW = 2
 private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32

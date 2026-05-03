@@ -1,10 +1,12 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.buildThumbnailSignature
 import org.junit.Assert.assertEquals
@@ -287,6 +289,36 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun similarityClusterPreviewRowsKeepMembersAcrossMultipleColumns() {
+        val rows = similarityClusterPreviewRows(
+            members = listOf(
+                file("/c.mp4"),
+                file("/a.mp4"),
+                file("/e.mp4"),
+                file("/b.mp4"),
+                file("/d.mp4")
+            ),
+            columns = 2
+        )
+
+        assertEquals(
+            listOf(
+                listOf("/a.mp4", "/b.mp4"),
+                listOf("/c.mp4", "/d.mp4"),
+                listOf("/e.mp4")
+            ),
+            rows.map { row -> row.map { file -> file.normalizedPath } }
+        )
+    }
+
+    @Test
+    fun memberThumbnailGridUsesResponsiveColumnCounts() {
+        assertEquals(2, memberThumbnailGridColumns(360.dp))
+        assertEquals(3, memberThumbnailGridColumns(560.dp))
+        assertEquals(4, memberThumbnailGridColumns(760.dp))
+    }
+
+    @Test
     fun screenStartsWithNewExperimentAndRunListBeforeDrillingIntoDetails() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
 
@@ -300,6 +332,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
         assertTrue(content.contains("ExactHashReductionSampleGrid("))
+        assertTrue(content.contains("SimilarityClusterMemberPreviewGrid("))
     }
 
     @Test
@@ -310,6 +343,7 @@ class SimilarityExperimentsScreenTest {
 
         assertTrue(detailContent.contains("showMemberThumbnails: Boolean = false"))
         assertTrue(detailContent.contains("contentDescription = \"Member thumbnail\""))
+        assertTrue(detailContent.contains("MemberThumbnailGrid("))
         assertTrue(similarityContent.contains("showMemberThumbnails = true"))
         assertFalse(resultsContent.contains("showMemberThumbnails = true"))
     }
@@ -336,6 +370,16 @@ class SimilarityExperimentsScreenTest {
             skippedCount = 0,
             clusterCount = 1,
             duplicateFileCount = 2
+        )
+    }
+
+    private fun file(path: String): FileMetadata {
+        return FileMetadata(
+            path = path,
+            normalizedPath = path,
+            sizeBytes = 10L,
+            lastModifiedMillis = 1L,
+            hashHex = null
         )
     }
 
