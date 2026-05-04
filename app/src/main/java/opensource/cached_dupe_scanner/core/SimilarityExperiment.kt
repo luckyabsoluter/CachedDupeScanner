@@ -57,7 +57,7 @@ data class DurationToleranceStep(
     val toleranceSeconds: Int
 ) : SimilarityExperimentStep {
     override val title: String = "Duration tolerance"
-    override val summary: String = "Group videos within +/- ${toleranceSeconds}s"
+    override val summary: String = "Group videos with durations within ${toleranceSeconds.coerceAtLeast(0)}s"
 }
 
 data class PerceptualHashRefinementStep(
@@ -71,6 +71,7 @@ fun defaultSimilarityExperimentSpecs(): List<SimilarityExperimentSpec> {
     return listOf(
         exactThumbnailHashExperiment(grayscale = false),
         exactThumbnailHashExperiment(grayscale = true),
+        durationToleranceExperiment(),
         durationThenPerceptualHashExperiment(),
         stagedThumbnailThenPerceptualHashExperiment()
     )
@@ -110,6 +111,17 @@ fun durationThenPerceptualHashExperiment(): SimilarityExperimentSpec {
     )
 }
 
+fun durationToleranceExperiment(): SimilarityExperimentSpec {
+    return SimilarityExperimentSpec(
+        id = "video-duration-tolerance",
+        name = "Duration tolerance only",
+        description = "Cluster cached videos only by extracted duration using a configurable tolerance.",
+        defaultMinSizeBytes = DEFAULT_SIMILARITY_EXPERIMENT_MIN_SIZE_BYTES,
+        mediaScope = SimilarityMediaScope.Video,
+        steps = listOf(DurationToleranceStep(toleranceSeconds = 1))
+    )
+}
+
 fun stagedThumbnailThenPerceptualHashExperiment(): SimilarityExperimentSpec {
     return SimilarityExperimentSpec(
         id = "video-thumbnail-phash-staged",
@@ -128,6 +140,21 @@ fun stagedThumbnailThenPerceptualHashExperiment(): SimilarityExperimentSpec {
             PerceptualHashRefinementStep(maxHammingDistance = 6)
         )
     )
+}
+
+fun buildDurationToleranceSignature(
+    minDurationMillis: Long,
+    maxDurationMillis: Long,
+    step: DurationToleranceStep
+): String {
+    val toleranceMillis = durationToleranceMillis(step)
+    val min = minDurationMillis.coerceAtLeast(0L)
+    val max = maxDurationMillis.coerceAtLeast(min)
+    return "duration-v1:$toleranceMillis:$min-$max"
+}
+
+fun durationToleranceMillis(step: DurationToleranceStep): Long {
+    return step.toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L
 }
 
 fun isVideoPath(path: String): Boolean {

@@ -33,10 +33,16 @@ class SimilarityExperimentTest {
             listOf(
                 "video-thumbnail-exact-color",
                 "video-thumbnail-exact-grayscale",
+                "video-duration-tolerance",
                 "video-duration-phash",
                 "video-thumbnail-phash-staged"
             ),
             experiments.map { it.id }
+        )
+        assertTrue(
+            experiments.any { experiment ->
+                experiment.steps.singleOrNull() is DurationToleranceStep
+            }
         )
         assertTrue(
             experiments.any { experiment ->
@@ -82,5 +88,20 @@ class SimilarityExperimentTest {
         )
 
         assertTrue(signature.contains(":raw:"))
+    }
+
+    @Test
+    fun durationToleranceSignatureStoresToleranceAndObservedRange() {
+        val step = DurationToleranceStep(toleranceSeconds = 2)
+
+        assertEquals(2_000L, durationToleranceMillis(step))
+        assertEquals(
+            "duration-v1:2000:10000-11500",
+            buildDurationToleranceSignature(
+                minDurationMillis = 10_000L,
+                maxDurationMillis = 11_500L,
+                step = step
+            )
+        )
     }
 }

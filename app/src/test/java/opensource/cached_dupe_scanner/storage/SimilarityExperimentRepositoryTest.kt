@@ -5,12 +5,15 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -146,6 +149,65 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(2, summary.duplicateFileCount)
     }
 
+    @Test
+    fun durationToleranceRunPersistsClustersWithoutFrameSignatures() {
+        val first = videoFile("a.mp4")
+        val second = videoFile("b.mp4")
+        val unique = videoFile("c.mp4")
+        val missingDuration = videoFile("missing-duration.mp4")
+        val minSizeBytes = 10L
+        database.fileCacheDao().upsert(entity(first, sizeBytes = minSizeBytes))
+        database.fileCacheDao().upsert(entity(second, sizeBytes = minSizeBytes + 1L))
+        database.fileCacheDao().upsert(entity(unique, sizeBytes = minSizeBytes + 2L))
+        database.fileCacheDao().upsert(entity(missingDuration, sizeBytes = minSizeBytes + 3L))
+
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao(),
+            durationExtractor = FakeDurationExtractor(
+                mapOf(
+                    first.absolutePath to 10_000L,
+                    second.absolutePath to 10_750L,
+                    unique.absolutePath to 20_000L
+                )
+            )
+        )
+        val step = DurationToleranceStep(toleranceSeconds = 1)
+        val experiment = SimilarityExperimentSpec(
+            id = "duration-only",
+            name = "Duration only",
+            description = "Duration test",
+            defaultMinSizeBytes = minSizeBytes,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(step)
+        )
+
+        val summary = repository.runDurationToleranceExperiment(
+            request = SimilarityExperimentRunRequest(
+                experiment = experiment,
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = minSizeBytes,
+                durationToleranceStep = step
+            ),
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(4, summary.candidateCount)
+        assertEquals(4, summary.processedCount)
+        assertEquals(1, summary.skippedCount)
+        assertEquals(1, summary.clusterCount)
+        assertEquals(2, summary.duplicateFileCount)
+        val clusters = repository.listClusters("duration-only")
+        assertEquals(1, clusters.size)
+        assertTrue(clusters.single().signature.startsWith("duration-v1:1000:"))
+        assertEquals(
+            listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
+            clusters.single().memberNormalizedPathsText.lineSequence().toList()
+        )
+    }
+
     private fun videoFile(name: String): File {
         val file = File(tempDir, name)
         file.writeText("video")
@@ -183,5 +245,17 @@ private class FakeSignatureExtractor(
         shouldContinue: () -> Boolean
     ): String? {
         return signaturesByPath[file.absolutePath]
+    }
+}
+
+private class FakeDurationExtractor(
+    private val durationsByPath: Map<String, Long>
+) : VideoDurationExtractor {
+    override fun durationMillis(
+        file: File,
+        shouldContinue: () -> Boolean
+    ): Long? {
+        if (!shouldContinue()) return null
+        return durationsByPath[file.absolutePath]
     }
 }

@@ -67,6 +67,13 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun durationToleranceStepUsesEditableSeconds() {
+        assertEquals(2, parsedDurationToleranceStep("2").toleranceSeconds)
+        assertEquals(0, parsedDurationToleranceStep("0").toleranceSeconds)
+        assertEquals(1, parsedDurationToleranceStep("").toleranceSeconds)
+    }
+
+    @Test
     fun generatedExperimentIdChangesWithRuntimeParameters() {
         val color = parsedExactThumbnailStep(
             frameSecondsInput = "0",
@@ -81,6 +88,10 @@ class SimilarityExperimentsScreenTest {
         assertFalse(
             exactThumbnailExperimentForRun(SimilarityMediaScope.Video, 0L, color).id ==
                 exactThumbnailExperimentForRun(SimilarityMediaScope.Video, 0L, gray).id
+        )
+        assertFalse(
+            durationToleranceExperimentForRun(0L, DurationToleranceStep(toleranceSeconds = 1)).id ==
+                durationToleranceExperimentForRun(0L, DurationToleranceStep(toleranceSeconds = 2)).id
         )
     }
 
@@ -145,6 +156,23 @@ class SimilarityExperimentsScreenTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun executableDurationToleranceStepRequiresSingleDurationStep() {
+        val duration = DurationToleranceStep(toleranceSeconds = 2)
+        val durationTemplate = SimilarityExperimentSpec(
+            id = "duration",
+            name = "Duration",
+            description = "Duration",
+            defaultMinSizeBytes = 0L,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(duration)
+        )
+
+        assertEquals(duration, executableDurationToleranceStep(durationTemplate))
+        assertEquals("Executable duration experiment", executableTemplateKind(durationTemplate))
+        assertEquals(null, executableDurationToleranceStep(exactTemplate("exact")))
     }
 
     @Test
@@ -324,6 +352,8 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("SimilarityExperimentPane.TemplateDetail ->"))
         assertTrue(content.contains("onSelectExperiment = ::openTemplateDetailPane"))
         assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
+        assertTrue(content.contains("DurationToleranceRunCard("))
+        assertTrue(content.contains("repository.runDurationToleranceExperiment("))
         assertTrue(content.contains("StoredSimilarityResultsCard("))
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
@@ -343,6 +373,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(createPane.contains("ExperimentTemplatesCard("))
         assertFalse(createPane.contains("ExactThumbnailRunCard("))
         assertTrue(templateDetailPane.contains("ExactThumbnailRunCard("))
+        assertTrue(templateDetailPane.contains("DurationToleranceRunCard("))
     }
 
     @Test

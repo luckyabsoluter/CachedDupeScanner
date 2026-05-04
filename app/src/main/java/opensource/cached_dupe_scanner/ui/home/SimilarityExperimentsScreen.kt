@@ -50,11 +50,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
+import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityExperimentStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
@@ -112,6 +114,7 @@ fun SimilarityExperimentsScreen(
     var quantizationEnabled by remember { mutableStateOf(false) }
     var quantizationInput by remember { mutableStateOf("16") }
     var grayscale by remember { mutableStateOf(false) }
+    var durationToleranceInput by remember { mutableStateOf("1") }
     var candidateCountText by remember { mutableStateOf("Loading candidate count...") }
     var runStatusText by remember { mutableStateOf("No experiment running.") }
     val runs = remember { mutableStateListOf<SimilarityExperimentRunEntity>() }
@@ -145,11 +148,13 @@ fun SimilarityExperimentsScreen(
         quantizationInput = quantizationInput,
         grayscale = grayscale
     )
+    val durationStep = parsedDurationToleranceStep(durationToleranceInput)
     val selectedTemplate = selectedSimilarityExperimentTemplate(
         experiments = experiments,
         selectedId = selectedTemplateId
     )
     val selectedTemplateExactStep = selectedTemplate?.let(::executableExactThumbnailStep)
+    val selectedTemplateDurationStep = selectedTemplate?.let(::executableDurationToleranceStep)
     val selectedRun = selectedRunExperimentId?.let { selectedId ->
         runs.firstOrNull { run -> run.experimentId == selectedId }
     }
@@ -165,6 +170,9 @@ fun SimilarityExperimentsScreen(
         )
         minSizeUnit = defaultSize.unit
         minSizeInput = defaultSize.input
+        executableDurationToleranceStep(experiment)?.let { duration ->
+            durationToleranceInput = duration.toleranceSeconds.toString()
+        }
         val exact = executableExactThumbnailStep(experiment) ?: return
         frameSecondsInput = exact.frameSeconds.joinToString(",")
         resizeWidthInput = exact.resizeWidthPx.toString()
@@ -377,6 +385,47 @@ fun SimilarityExperimentsScreen(
                                 taskCoordinator.requestCancel(TaskArea.Similarity)
                             }
                         )
+                    } else if (selectedTemplate != null && selectedTemplateDurationStep != null) {
+                        DurationToleranceRunCard(
+                            experimentName = selectedTemplate.name,
+                            minSizeInput = minSizeInput,
+                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                            minSizeUnit = minSizeUnit,
+                            onMinSizeUnitChange = { minSizeUnit = it },
+                            toleranceInput = durationToleranceInput,
+                            onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
+                            candidateCountText = candidateCountText,
+                            runStatusText = displayedRunStatusText,
+                            isRunning = activeSimilarityTask != null,
+                            onRun = {
+                                val step = durationStep
+                                val experiment = durationToleranceExperimentForRun(
+                                    minSizeBytes = minSizeBytes,
+                                    step = step
+                                )
+                                startSimilarityExperimentTask(
+                                    repository = repository,
+                                    request = SimilarityExperimentRunRequest(
+                                        experiment = experiment,
+                                        mediaScope = SimilarityMediaScope.Video,
+                                        minSizeBytes = minSizeBytes,
+                                        durationToleranceStep = step
+                                    ),
+                                    scope = scope,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    onStatusText = { status -> runStatusText = status },
+                                    onRunFinished = { summary ->
+                                        selectedRunExperimentId = summary.experimentId
+                                        pane = SimilarityExperimentPane.RunDetail
+                                        refreshStoredResults(summary.experimentId)
+                                    }
+                                )
+                            },
+                            onCancel = {
+                                taskCoordinator.requestCancel(TaskArea.Similarity)
+                            }
+                        )
                     } else if (selectedTemplate != null) {
                         SelectedExperimentMethodCard(experiment = selectedTemplate)
                     } else {
@@ -501,7 +550,7 @@ private fun ExperimentTemplatesCard(
         Text(text = "Experiment templates", style = MaterialTheme.typography.titleMedium)
         experiments.forEach { experiment ->
             val selected = experiment.id == selectedExperimentId
-            val executable = executableExactThumbnailStep(experiment) != null
+            val templateKind = executableTemplateKind(experiment)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -524,7 +573,7 @@ private fun ExperimentTemplatesCard(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = if (executable) "Executable exact-hash experiment" else "Methodology template",
+                        text = templateKind,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -555,6 +604,85 @@ private fun SelectedExperimentMethodCard(experiment: SimilarityExperimentSpec) {
             )
             experiment.steps.forEachIndexed { index, step ->
                 SimilarityStepRow(index = index + 1, step = step)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DurationToleranceRunCard(
+    experimentName: String,
+    minSizeInput: String,
+    onMinSizeInputChange: (String) -> Unit,
+    minSizeUnit: SimilaritySizeUnit,
+    onMinSizeUnitChange: (SimilaritySizeUnit) -> Unit,
+    toleranceInput: String,
+    onToleranceInputChange: (String) -> Unit,
+    candidateCountText: String,
+    runStatusText: String,
+    isRunning: Boolean,
+    onRun: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = experimentName,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Runs a cached-video experiment that extracts each video's duration and clusters candidates whose durations fall within the configured tolerance.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Media type: Video",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = minSizeInput,
+                    onValueChange = onMinSizeInputChange,
+                    label = { Text("Minimum size") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    onClick = { onMinSizeUnitChange(minSizeUnit.next()) },
+                    modifier = Modifier.align(Alignment.CenterVertically)
+                ) {
+                    Text("Unit: ${minSizeUnit.label}")
+                }
+            }
+            Text(
+                text = "Minimum size filters cached video candidates before duration extraction. The default is 100 MB, and Unit cycles through B, KB, MB, and GB.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedTextField(
+                value = toleranceInput,
+                onValueChange = onToleranceInputChange,
+                label = { Text("Duration tolerance seconds") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text(
+                text = "Tolerance is the maximum duration gap inside one cluster. Use 0 for exact millisecond duration matches.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = candidateCountText,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(text = runStatusText, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = if (isRunning) onCancel else onRun,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isRunning) "Cancel run" else "Run duration experiment")
             }
         }
     }
@@ -1251,6 +1379,12 @@ internal fun parsedExactThumbnailStep(
     )
 }
 
+internal fun parsedDurationToleranceStep(input: String): DurationToleranceStep {
+    return DurationToleranceStep(
+        toleranceSeconds = (input.toIntOrNull() ?: 1).coerceAtLeast(0)
+    )
+}
+
 internal fun exactThumbnailExperimentForRun(
     mediaScope: SimilarityMediaScope,
     minSizeBytes: Long,
@@ -1265,6 +1399,21 @@ internal fun exactThumbnailExperimentForRun(
         description = "Runtime-configured exact thumbnail hash experiment.",
         defaultMinSizeBytes = minSizeBytes,
         mediaScope = mediaScope,
+        steps = listOf(step)
+    )
+}
+
+internal fun durationToleranceExperimentForRun(
+    minSizeBytes: Long,
+    step: DurationToleranceStep
+): SimilarityExperimentSpec {
+    val toleranceMillis = durationToleranceMillis(step)
+    return SimilarityExperimentSpec(
+        id = "video-duration-${minSizeBytes}-${toleranceMillis}",
+        name = "Video duration tolerance",
+        description = "Runtime-configured duration tolerance experiment.",
+        defaultMinSizeBytes = minSizeBytes,
+        mediaScope = SimilarityMediaScope.Video,
         steps = listOf(step)
     )
 }
@@ -1315,6 +1464,19 @@ internal fun executableExactThumbnailStep(experiment: SimilarityExperimentSpec):
     return experiment.steps.singleOrNull() as? ExactThumbnailHashStep
 }
 
+internal fun executableDurationToleranceStep(experiment: SimilarityExperimentSpec): DurationToleranceStep? {
+    if (experiment.steps.size != 1) return null
+    return experiment.steps.singleOrNull() as? DurationToleranceStep
+}
+
+internal fun executableTemplateKind(experiment: SimilarityExperimentSpec): String {
+    return when {
+        executableExactThumbnailStep(experiment) != null -> "Executable exact-hash experiment"
+        executableDurationToleranceStep(experiment) != null -> "Executable duration experiment"
+        else -> "Methodology template"
+    }
+}
+
 internal fun startSimilarityExperimentTask(
     repository: SimilarityExperimentRepository,
     request: SimilarityExperimentRunRequest,
@@ -1332,11 +1494,19 @@ internal fun startSimilarityExperimentTask(
         onStatusText = onStatusText,
         onRunFinished = onRunFinished
     ) { shouldContinue, onProgress ->
-        repository.runExactThumbnailHashExperiment(
-            request = request,
-            shouldContinue = shouldContinue,
-            onProgress = onProgress
-        )
+        when {
+            request.exactThumbnailStep != null -> repository.runExactThumbnailHashExperiment(
+                request = request,
+                shouldContinue = shouldContinue,
+                onProgress = onProgress
+            )
+            request.durationToleranceStep != null -> repository.runDurationToleranceExperiment(
+                request = request,
+                shouldContinue = shouldContinue,
+                onProgress = onProgress
+            )
+            else -> error("Similarity experiment request has no executable step.")
+        }
     }
 }
 
