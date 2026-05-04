@@ -1,6 +1,5 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
@@ -289,8 +288,8 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
-    fun similarityClusterPreviewRowsKeepMembersAcrossMultipleColumns() {
-        val rows = similarityClusterPreviewRows(
+    fun similarityClusterPreviewLineTextsCompactMembersWithoutGrowingCards() {
+        val lines = similarityClusterPreviewLineTexts(
             members = listOf(
                 file("/c.mp4"),
                 file("/a.mp4"),
@@ -298,24 +297,19 @@ class SimilarityExperimentsScreenTest {
                 file("/b.mp4"),
                 file("/d.mp4")
             ),
-            columns = 2
+            showFullPaths = true,
+            itemsPerLine = 2,
+            maxItems = 4
         )
 
         assertEquals(
             listOf(
-                listOf("/a.mp4", "/b.mp4"),
-                listOf("/c.mp4", "/d.mp4"),
-                listOf("/e.mp4")
+                "/a.mp4  •  /b.mp4",
+                "/c.mp4  •  /d.mp4"
             ),
-            rows.map { row -> row.map { file -> file.normalizedPath } }
+            lines
         )
-    }
-
-    @Test
-    fun memberThumbnailGridUsesResponsiveColumnCounts() {
-        assertEquals(2, memberThumbnailGridColumns(360.dp))
-        assertEquals(3, memberThumbnailGridColumns(560.dp))
-        assertEquals(4, memberThumbnailGridColumns(760.dp))
+        assertEquals(4, similarityClusterPreviewDisplayCount(List(5) { index -> file("/$index.mp4") }))
     }
 
     @Test
@@ -332,7 +326,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
         assertTrue(content.contains("ExactHashReductionSampleGrid("))
-        assertTrue(content.contains("SimilarityClusterMemberPreviewGrid("))
+        assertTrue(content.contains("SimilarityClusterMemberPreviewLines("))
     }
 
     @Test
@@ -343,7 +337,7 @@ class SimilarityExperimentsScreenTest {
 
         assertTrue(detailContent.contains("showMemberThumbnails: Boolean = false"))
         assertTrue(detailContent.contains("contentDescription = \"Member thumbnail\""))
-        assertTrue(detailContent.contains("MemberThumbnailGrid("))
+        assertFalse(detailContent.contains("MemberThumbnailGrid("))
         assertTrue(similarityContent.contains("showMemberThumbnails = true"))
         assertFalse(resultsContent.contains("showMemberThumbnails = true"))
     }
