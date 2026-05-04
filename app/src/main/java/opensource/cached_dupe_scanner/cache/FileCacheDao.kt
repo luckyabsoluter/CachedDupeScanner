@@ -131,6 +131,27 @@ interface FileCacheDao {
     @Query("SELECT * FROM cached_files WHERE normalizedPath > :afterPath ORDER BY normalizedPath LIMIT :limit")
     fun getPageAfter(afterPath: String, limit: Int): List<CachedFileEntity>
 
+    @Query(
+        """
+        SELECT *
+        FROM cached_files AS candidate
+        WHERE candidate.normalizedPath > :afterPath
+          AND (candidate.hashHex IS NULL OR candidate.hashHex = '')
+          AND EXISTS (
+              SELECT 1
+              FROM cached_files AS peer
+              WHERE peer.sizeBytes = candidate.sizeBytes
+                AND peer.normalizedPath != candidate.normalizedPath
+          )
+        ORDER BY candidate.normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listMissingHashSizeCollisionCandidatesAfter(
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
     @Query("SELECT * FROM cached_files ORDER BY normalizedPath DESC LIMIT :limit")
     fun getFirstPageByNameDesc(limit: Int): List<CachedFileEntity>
 

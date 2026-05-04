@@ -24,6 +24,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Fixed
 
 - Exact-thumbnail similarity hashing now stores every resized thumbnail pixel, so 2x2 and larger reductions no longer collapse to the top-left pixel.
+- Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
 
 ## [1.4.0] - 2026-04-30
 

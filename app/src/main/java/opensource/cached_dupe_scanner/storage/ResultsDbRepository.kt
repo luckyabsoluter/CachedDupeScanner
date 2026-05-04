@@ -5,6 +5,8 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.Hashing
+import java.io.File
 
 data class ResultsSnapshot(
     val fileCount: Int,
@@ -15,7 +17,10 @@ data class ResultsSnapshot(
 
 class ResultsDbRepository(
     private val fileDao: FileCacheDao,
-    private val groupDao: DuplicateGroupDao
+    private val groupDao: DuplicateGroupDao,
+    private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
+        Hashing.sha256Hex(file, shouldContinue = shouldContinue)
+    }
 ) {
     fun countFiles(): Int = fileDao.countAll()
 
@@ -30,6 +35,13 @@ class ResultsDbRepository(
         shouldContinue: () -> Boolean,
         onProgress: (RebuildGroupsProgress) -> Unit
     ): RebuildGroupsSummary {
+        if (repairMissingHashesForSizeCollisions(shouldContinue)) {
+            return RebuildGroupsSummary(
+                total = 0,
+                processed = 0,
+                cancelled = true
+            )
+        }
         val total = groupDao.countGroupsFromCache()
         var processed = 0
         var offset = 0
@@ -68,6 +80,44 @@ class ResultsDbRepository(
             processed = processed,
             cancelled = processed < total
         )
+    }
+
+    private fun repairMissingHashesForSizeCollisions(shouldContinue: () -> Boolean): Boolean {
+        var afterPath = ""
+        val batchSize = 200
+        while (true) {
+            if (!shouldContinue()) return true
+            val batch = fileDao.listMissingHashSizeCollisionCandidatesAfter(
+                afterPath = afterPath,
+                limit = batchSize
+            )
+            if (batch.isEmpty()) {
+                return false
+            }
+            for (entity in batch) {
+                afterPath = entity.normalizedPath
+                if (!shouldContinue()) return true
+                val path = entity.path.ifBlank { entity.normalizedPath }
+                val file = File(path)
+                if (!file.exists()) {
+                    continue
+                }
+                val hash = runCatching {
+                    hashFile(file, shouldContinue)
+                }.getOrNull()
+                if (hash == null) {
+                    if (!shouldContinue()) return true
+                    continue
+                }
+                fileDao.upsert(
+                    entity.copy(
+                        sizeBytes = file.length(),
+                        lastModifiedMillis = file.lastModified(),
+                        hashHex = hash
+                    )
+                )
+            }
+        }
     }
 
     fun refreshSingleGroup(sizeBytes: Long, hashHex: String, updatedAtMillis: Long = System.currentTimeMillis()) {
