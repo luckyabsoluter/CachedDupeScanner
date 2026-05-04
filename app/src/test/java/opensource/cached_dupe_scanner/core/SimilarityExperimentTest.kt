@@ -34,6 +34,7 @@ class SimilarityExperimentTest {
                 "video-thumbnail-exact-color",
                 "video-thumbnail-exact-grayscale",
                 "video-duration-tolerance",
+                "video-duration-neighbor-list",
                 "video-duration-phash",
                 "video-thumbnail-phash-staged"
             ),
@@ -42,6 +43,11 @@ class SimilarityExperimentTest {
         assertTrue(
             experiments.any { experiment ->
                 experiment.steps.singleOrNull() is DurationToleranceStep
+            }
+        )
+        assertTrue(
+            experiments.any { experiment ->
+                experiment.steps.singleOrNull() is DurationNeighborListStep
             }
         )
         assertTrue(
@@ -98,6 +104,21 @@ class SimilarityExperimentTest {
         assertEquals(
             "duration-v1:2000:10000-11500",
             buildDurationToleranceSignature(
+                minDurationMillis = 10_000L,
+                maxDurationMillis = 11_500L,
+                step = step
+            )
+        )
+    }
+
+    @Test
+    fun durationNeighborSignatureStoresSortableObservedRange() {
+        val step = DurationNeighborListStep(toleranceSeconds = 2)
+
+        assertEquals(2_000L, durationNeighborToleranceMillis(step))
+        assertEquals(
+            "duration-neighbor-v1:2000:0000000010000-0000000011500",
+            buildDurationNeighborListSignature(
                 minDurationMillis = 10_000L,
                 maxDurationMillis = 11_500L,
                 step = step

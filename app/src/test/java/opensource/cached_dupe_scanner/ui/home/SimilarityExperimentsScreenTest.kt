@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.ui.home
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
+import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -71,6 +72,7 @@ class SimilarityExperimentsScreenTest {
         assertEquals(2, parsedDurationToleranceStep("2").toleranceSeconds)
         assertEquals(0, parsedDurationToleranceStep("0").toleranceSeconds)
         assertEquals(1, parsedDurationToleranceStep("").toleranceSeconds)
+        assertEquals(2, parsedDurationNeighborListStep("2").toleranceSeconds)
     }
 
     @Test
@@ -92,6 +94,10 @@ class SimilarityExperimentsScreenTest {
         assertFalse(
             durationToleranceExperimentForRun(0L, DurationToleranceStep(toleranceSeconds = 1)).id ==
                 durationToleranceExperimentForRun(0L, DurationToleranceStep(toleranceSeconds = 2)).id
+        )
+        assertFalse(
+            durationNeighborListExperimentForRun(0L, DurationNeighborListStep(toleranceSeconds = 1)).id ==
+                durationNeighborListExperimentForRun(0L, DurationNeighborListStep(toleranceSeconds = 2)).id
         )
     }
 
@@ -176,6 +182,23 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun executableDurationNeighborListStepRequiresSingleNeighborStep() {
+        val duration = DurationNeighborListStep(toleranceSeconds = 2)
+        val durationTemplate = SimilarityExperimentSpec(
+            id = "duration-neighbor",
+            name = "Duration neighbor",
+            description = "Duration neighbor",
+            defaultMinSizeBytes = 0L,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(duration)
+        )
+
+        assertEquals(duration, executableDurationNeighborListStep(durationTemplate))
+        assertEquals("Executable duration neighbor-list experiment", executableTemplateKind(durationTemplate))
+        assertEquals(null, executableDurationNeighborListStep(exactTemplate("exact")))
+    }
+
+    @Test
     fun defaultSizeInputKeepsMbDefaultWhenDivisible() {
         assertEquals(
             SimilaritySizeInput(input = "100", unit = SimilaritySizeUnit.MB),
@@ -221,6 +244,21 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun durationNeighborClusterExplanationParsesSortedDurationRange() {
+        val explanation = durationNeighborClusterExplanation(
+            "duration-neighbor-v1:1000:0000000010000-0000000010750"
+        )
+
+        assertEquals(1_000L, explanation?.toleranceMillis)
+        assertEquals(10_000L, explanation?.minDurationMillis)
+        assertEquals(10_750L, explanation?.maxDurationMillis)
+        assertEquals(
+            "Duration neighbors: 10s - 10.750s, tolerance 1s",
+            explanation?.let(::durationNeighborClusterSummary)
+        )
+    }
+
+    @Test
     fun similarityClusterDetailLinesExplainExactHashGroupingOnlyWhenAvailable() {
         val exactSignature = buildThumbnailSignature(
             mediaScope = SimilarityMediaScope.Image,
@@ -249,6 +287,16 @@ class SimilarityExperimentsScreenTest {
             exactHashExplanation = null
         )
         assertFalse(genericLines.any { it.startsWith("Group rule:") })
+
+        val durationNeighborLines = similarityClusterDetailLines(
+            cluster = cluster(signature = "duration-neighbor-v1:1000:0000000010000-0000000010750"),
+            exactHashExplanation = null,
+            durationNeighborExplanation = durationNeighborClusterExplanation(
+                "duration-neighbor-v1:1000:0000000010000-0000000010750"
+            )
+        )
+        assertTrue(durationNeighborLines.any { it == "Group rule: adjacent duration neighbors" })
+        assertTrue(durationNeighborLines.any { it == "Order: sorted by extracted video duration" })
     }
 
     @Test
@@ -338,6 +386,13 @@ class SimilarityExperimentsScreenTest {
             lines
         )
         assertEquals(4, similarityClusterPreviewDisplayCount(List(5) { index -> file("/$index.mp4") }))
+
+        val orderedLines = similarityClusterPreviewLineTexts(
+            members = listOf(file("/b.mp4"), file("/a.mp4")),
+            showFullPaths = true,
+            preserveOrder = true
+        )
+        assertEquals(listOf("/b.mp4  •  /a.mp4"), orderedLines)
     }
 
     @Test
@@ -354,6 +409,8 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
         assertTrue(content.contains("DurationToleranceRunCard("))
         assertTrue(content.contains("repository.runDurationToleranceExperiment("))
+        assertTrue(content.contains("repository.runDurationNeighborListExperiment("))
+        assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
         assertTrue(content.contains("StoredSimilarityResultsCard("))
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))

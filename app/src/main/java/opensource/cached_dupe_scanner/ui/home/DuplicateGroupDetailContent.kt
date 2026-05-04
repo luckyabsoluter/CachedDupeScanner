@@ -40,6 +40,7 @@ internal fun DuplicateGroupDetailContent(
     previewMemoryKey: String,
     previewHeight: Dp,
     showMemberThumbnails: Boolean = false,
+    sortMembersByPath: Boolean = true,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?
 ) {
     val context = LocalContext.current
@@ -76,7 +77,12 @@ internal fun DuplicateGroupDetailContent(
     }
     Spacer(modifier = Modifier.height(8.dp))
 
-    members.sortedBy { it.normalizedPath }.forEach { file ->
+    val displayedMembers = if (sortMembersByPath) {
+        members.sortedBy { it.normalizedPath }
+    } else {
+        members
+    }
+    displayedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
         Card(

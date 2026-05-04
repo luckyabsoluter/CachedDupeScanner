@@ -50,12 +50,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
+import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityExperimentStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
 import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
@@ -155,6 +157,7 @@ fun SimilarityExperimentsScreen(
     )
     val selectedTemplateExactStep = selectedTemplate?.let(::executableExactThumbnailStep)
     val selectedTemplateDurationStep = selectedTemplate?.let(::executableDurationToleranceStep)
+    val selectedTemplateDurationNeighborStep = selectedTemplate?.let(::executableDurationNeighborListStep)
     val selectedRun = selectedRunExperimentId?.let { selectedId ->
         runs.firstOrNull { run -> run.experimentId == selectedId }
     }
@@ -171,6 +174,9 @@ fun SimilarityExperimentsScreen(
         minSizeUnit = defaultSize.unit
         minSizeInput = defaultSize.input
         executableDurationToleranceStep(experiment)?.let { duration ->
+            durationToleranceInput = duration.toleranceSeconds.toString()
+        }
+        executableDurationNeighborListStep(experiment)?.let { duration ->
             durationToleranceInput = duration.toleranceSeconds.toString()
         }
         val exact = executableExactThumbnailStep(experiment) ?: return
@@ -388,15 +394,18 @@ fun SimilarityExperimentsScreen(
                     } else if (selectedTemplate != null && selectedTemplateDurationStep != null) {
                         DurationToleranceRunCard(
                             experimentName = selectedTemplate.name,
+                            description = "Runs a cached-video experiment that extracts each video's duration and clusters candidates whose durations fall within the configured tolerance.",
                             minSizeInput = minSizeInput,
                             onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
                             minSizeUnit = minSizeUnit,
                             onMinSizeUnitChange = { minSizeUnit = it },
                             toleranceInput = durationToleranceInput,
                             onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
+                            toleranceDescription = "Tolerance is the maximum duration gap inside one cluster. Use 0 for exact millisecond duration matches.",
                             candidateCountText = candidateCountText,
                             runStatusText = displayedRunStatusText,
                             isRunning = activeSimilarityTask != null,
+                            runButtonText = "Run duration experiment",
                             onRun = {
                                 val step = durationStep
                                 val experiment = durationToleranceExperimentForRun(
@@ -410,6 +419,50 @@ fun SimilarityExperimentsScreen(
                                         mediaScope = SimilarityMediaScope.Video,
                                         minSizeBytes = minSizeBytes,
                                         durationToleranceStep = step
+                                    ),
+                                    scope = scope,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    onStatusText = { status -> runStatusText = status },
+                                    onRunFinished = { summary ->
+                                        selectedRunExperimentId = summary.experimentId
+                                        pane = SimilarityExperimentPane.RunDetail
+                                        refreshStoredResults(summary.experimentId)
+                                    }
+                                )
+                            },
+                            onCancel = {
+                                taskCoordinator.requestCancel(TaskArea.Similarity)
+                            }
+                        )
+                    } else if (selectedTemplate != null && selectedTemplateDurationNeighborStep != null) {
+                        DurationToleranceRunCard(
+                            experimentName = selectedTemplate.name,
+                            description = "Runs a cached-video experiment that sorts candidates by duration, keeps only adjacent neighbors inside the tolerance, and omits videos without a nearby neighbor.",
+                            minSizeInput = minSizeInput,
+                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                            minSizeUnit = minSizeUnit,
+                            onMinSizeUnitChange = { minSizeUnit = it },
+                            toleranceInput = durationToleranceInput,
+                            onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
+                            toleranceDescription = "Tolerance is the maximum duration gap between adjacent sorted videos. Videos with no adjacent neighbor inside this gap are not listed.",
+                            candidateCountText = candidateCountText,
+                            runStatusText = displayedRunStatusText,
+                            isRunning = activeSimilarityTask != null,
+                            runButtonText = "Run duration neighbor list",
+                            onRun = {
+                                val step = parsedDurationNeighborListStep(durationToleranceInput)
+                                val experiment = durationNeighborListExperimentForRun(
+                                    minSizeBytes = minSizeBytes,
+                                    step = step
+                                )
+                                startSimilarityExperimentTask(
+                                    repository = repository,
+                                    request = SimilarityExperimentRunRequest(
+                                        experiment = experiment,
+                                        mediaScope = SimilarityMediaScope.Video,
+                                        minSizeBytes = minSizeBytes,
+                                        durationNeighborListStep = step
                                     ),
                                     scope = scope,
                                     taskCoordinator = taskCoordinator,
@@ -612,15 +665,18 @@ private fun SelectedExperimentMethodCard(experiment: SimilarityExperimentSpec) {
 @Composable
 private fun DurationToleranceRunCard(
     experimentName: String,
+    description: String,
     minSizeInput: String,
     onMinSizeInputChange: (String) -> Unit,
     minSizeUnit: SimilaritySizeUnit,
     onMinSizeUnitChange: (SimilaritySizeUnit) -> Unit,
     toleranceInput: String,
     onToleranceInputChange: (String) -> Unit,
+    toleranceDescription: String,
     candidateCountText: String,
     runStatusText: String,
     isRunning: Boolean,
+    runButtonText: String,
     onRun: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -634,7 +690,7 @@ private fun DurationToleranceRunCard(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = "Runs a cached-video experiment that extracts each video's duration and clusters candidates whose durations fall within the configured tolerance.",
+                text = description,
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -669,7 +725,7 @@ private fun DurationToleranceRunCard(
                 singleLine = true
             )
             Text(
-                text = "Tolerance is the maximum duration gap inside one cluster. Use 0 for exact millisecond duration matches.",
+                text = toleranceDescription,
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -682,7 +738,7 @@ private fun DurationToleranceRunCard(
                 onClick = if (isRunning) onCancel else onRun,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isRunning) "Cancel run" else "Run duration experiment")
+                Text(if (isRunning) "Cancel run" else runButtonText)
             }
         }
     }
@@ -984,6 +1040,7 @@ private fun SimilarityClusterCard(
     )
     val groupDeleted = members.any { deletedPaths.contains(it.normalizedPath) }
     val exactHashExplanation = exactThumbnailClusterExplanation(cluster.signature)
+    val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.signature)
 
     Card(
         modifier = Modifier
@@ -1025,6 +1082,7 @@ private fun SimilarityClusterCard(
                 )
                 Text(
                     text = exactHashExplanation?.let(::exactHashClusterSummary)
+                        ?: durationNeighborExplanation?.let(::durationNeighborClusterSummary)
                         ?: "Signature ${cluster.signature.take(16)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1034,6 +1092,15 @@ private fun SimilarityClusterCard(
                 if (exactHashExplanation != null) {
                     Text(
                         text = "Members matched the same exact thumbnail signature.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (durationNeighborExplanation != null) {
+                    Text(
+                        text = "Members are ordered by duration and each listed member has a nearby adjacent neighbor.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1050,7 +1117,8 @@ private fun SimilarityClusterCard(
                 }
                 SimilarityClusterMemberPreviewLines(
                     members = members,
-                    showFullPaths = showFullPaths
+                    showFullPaths = showFullPaths,
+                    preserveOrder = durationNeighborExplanation != null
                 )
 
                 val remaining = (cluster.fileCount - similarityClusterPreviewDisplayCount(members))
@@ -1070,11 +1138,13 @@ private fun SimilarityClusterCard(
 @Composable
 private fun SimilarityClusterMemberPreviewLines(
     members: List<FileMetadata>,
-    showFullPaths: Boolean
+    showFullPaths: Boolean,
+    preserveOrder: Boolean = false
 ) {
     similarityClusterPreviewLineTexts(
         members = members,
-        showFullPaths = showFullPaths
+        showFullPaths = showFullPaths,
+        preserveOrder = preserveOrder
     ).forEach { line ->
         Text(
             text = line,
@@ -1109,6 +1179,7 @@ private fun SimilarityClusterDetailScreen(
     var isLoading by remember(clusterKey) { mutableStateOf(memberState?.complete != true) }
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
     val exactHashExplanation = exactThumbnailClusterExplanation(cluster.signature)
+    val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.signature)
 
     LaunchedEffect(clusterKey, loadAttempt) {
         if (loadedClusterMembers[clusterKey]?.complete == true) {
@@ -1170,7 +1241,8 @@ private fun SimilarityClusterDetailScreen(
                         totalBytes = cluster.totalBytes,
                         summaryLines = similarityClusterDetailLines(
                             cluster = cluster,
-                            exactHashExplanation = exactHashExplanation
+                            exactHashExplanation = exactHashExplanation,
+                            durationNeighborExplanation = durationNeighborExplanation
                         ),
                         members = members,
                         deletedPaths = deletedPaths,
@@ -1180,6 +1252,7 @@ private fun SimilarityClusterDetailScreen(
                         previewMemoryKey = clusterPreviewMemoryKey(cluster),
                         previewHeight = previewHeight,
                         showMemberThumbnails = true,
+                        sortMembersByPath = durationNeighborExplanation == null,
                         onDeleteFile = onDeleteFile
                     )
                 }
@@ -1385,6 +1458,12 @@ internal fun parsedDurationToleranceStep(input: String): DurationToleranceStep {
     )
 }
 
+internal fun parsedDurationNeighborListStep(input: String): DurationNeighborListStep {
+    return DurationNeighborListStep(
+        toleranceSeconds = (input.toIntOrNull() ?: 1).coerceAtLeast(0)
+    )
+}
+
 internal fun exactThumbnailExperimentForRun(
     mediaScope: SimilarityMediaScope,
     minSizeBytes: Long,
@@ -1412,6 +1491,21 @@ internal fun durationToleranceExperimentForRun(
         id = "video-duration-${minSizeBytes}-${toleranceMillis}",
         name = "Video duration tolerance",
         description = "Runtime-configured duration tolerance experiment.",
+        defaultMinSizeBytes = minSizeBytes,
+        mediaScope = SimilarityMediaScope.Video,
+        steps = listOf(step)
+    )
+}
+
+internal fun durationNeighborListExperimentForRun(
+    minSizeBytes: Long,
+    step: DurationNeighborListStep
+): SimilarityExperimentSpec {
+    val toleranceMillis = durationNeighborToleranceMillis(step)
+    return SimilarityExperimentSpec(
+        id = "video-duration-neighbor-${minSizeBytes}-${toleranceMillis}",
+        name = "Video duration neighbor list",
+        description = "Runtime-configured duration neighbor-list experiment.",
         defaultMinSizeBytes = minSizeBytes,
         mediaScope = SimilarityMediaScope.Video,
         steps = listOf(step)
@@ -1469,10 +1563,16 @@ internal fun executableDurationToleranceStep(experiment: SimilarityExperimentSpe
     return experiment.steps.singleOrNull() as? DurationToleranceStep
 }
 
+internal fun executableDurationNeighborListStep(experiment: SimilarityExperimentSpec): DurationNeighborListStep? {
+    if (experiment.steps.size != 1) return null
+    return experiment.steps.singleOrNull() as? DurationNeighborListStep
+}
+
 internal fun executableTemplateKind(experiment: SimilarityExperimentSpec): String {
     return when {
         executableExactThumbnailStep(experiment) != null -> "Executable exact-hash experiment"
         executableDurationToleranceStep(experiment) != null -> "Executable duration experiment"
+        executableDurationNeighborListStep(experiment) != null -> "Executable duration neighbor-list experiment"
         else -> "Methodology template"
     }
 }
@@ -1501,6 +1601,11 @@ internal fun startSimilarityExperimentTask(
                 onProgress = onProgress
             )
             request.durationToleranceStep != null -> repository.runDurationToleranceExperiment(
+                request = request,
+                shouldContinue = shouldContinue,
+                onProgress = onProgress
+            )
+            request.durationNeighborListStep != null -> repository.runDurationNeighborListExperiment(
                 request = request,
                 shouldContinue = shouldContinue,
                 onProgress = onProgress
@@ -1659,22 +1764,62 @@ internal fun exactThumbnailClusterExplanation(signature: String): ExactThumbnail
     )
 }
 
+internal data class DurationNeighborClusterExplanation(
+    val toleranceMillis: Long,
+    val minDurationMillis: Long,
+    val maxDurationMillis: Long
+)
+
+internal fun durationNeighborClusterExplanation(signature: String): DurationNeighborClusterExplanation? {
+    val parts = signature.split(":", limit = 3)
+    if (parts.size != 3 || parts[0] != "duration-neighbor-v1") return null
+    val toleranceMillis = parts[1].toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val minDurationMillis = parts[2].substringBefore('-').toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val maxDurationMillis = parts[2].substringAfter('-', missingDelimiterValue = "")
+        .toLongOrNull()
+        ?.coerceAtLeast(minDurationMillis)
+        ?: return null
+    return DurationNeighborClusterExplanation(
+        toleranceMillis = toleranceMillis,
+        minDurationMillis = minDurationMillis,
+        maxDurationMillis = maxDurationMillis
+    )
+}
+
 internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanation): String {
     return "Exact hash: ${mediaScopeLabel(explanation.mediaScope)}, ${framesLabel(explanation)}, ${explanation.resize}, " +
         "${colorModeLabel(explanation.colorMode)}, ${quantizationLabel(explanation.quantization)}"
 }
 
+internal fun durationNeighborClusterSummary(explanation: DurationNeighborClusterExplanation): String {
+    return "Duration neighbors: ${durationMillisLabel(explanation.minDurationMillis)} - " +
+        "${durationMillisLabel(explanation.maxDurationMillis)}, tolerance ${durationMillisLabel(explanation.toleranceMillis)}"
+}
+
 internal fun similarityClusterDetailLines(
     cluster: SimilarityClusterEntity,
-    exactHashExplanation: ExactThumbnailClusterExplanation?
+    exactHashExplanation: ExactThumbnailClusterExplanation?,
+    durationNeighborExplanation: DurationNeighborClusterExplanation? = null
 ): List<String> {
-    if (exactHashExplanation == null) {
+    if (exactHashExplanation == null && durationNeighborExplanation == null) {
         return listOf(
             "Similarity signature ${cluster.signature}",
             "Snapshot ${formatDate(cluster.updatedAtMillis)}"
         )
     }
 
+    if (durationNeighborExplanation != null) {
+        return listOf(
+            "Group rule: adjacent duration neighbors",
+            "Why included: every listed member has a previous or next duration neighbor inside the tolerance.",
+            "Duration range: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
+            "Tolerance: ${durationMillisLabel(durationNeighborExplanation.toleranceMillis)}",
+            "Order: sorted by extracted video duration",
+            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+        )
+    }
+
+    requireNotNull(exactHashExplanation)
     return listOf(
         "Group rule: exact thumbnail hash equality",
         "Why included: every member produced the same exact thumbnail signature.",
@@ -1692,10 +1837,15 @@ internal fun similarityClusterPreviewLineTexts(
     members: List<FileMetadata>,
     showFullPaths: Boolean,
     itemsPerLine: Int = SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE,
-    maxItems: Int = SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT
+    maxItems: Int = SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT,
+    preserveOrder: Boolean = false
 ): List<String> {
-    return members
-        .sortedBy { file -> file.normalizedPath }
+    val orderedMembers = if (preserveOrder) {
+        members
+    } else {
+        members.sortedBy { file -> file.normalizedPath }
+    }
+    return orderedMembers
         .take(maxItems.coerceAtLeast(0))
         .chunked(itemsPerLine.coerceAtLeast(1))
         .map { row ->
@@ -1891,6 +2041,17 @@ private fun colorModeLabel(value: String): String {
         "gray" -> "grayscale"
         "color" -> "color"
         else -> value
+    }
+}
+
+private fun durationMillisLabel(value: Long): String {
+    val safeValue = value.coerceAtLeast(0L)
+    val seconds = safeValue / 1_000L
+    val millis = safeValue % 1_000L
+    return if (millis == 0L) {
+        "${seconds}s"
+    } else {
+        "$seconds.${millis.toString().padStart(3, '0')}s"
     }
 }
 

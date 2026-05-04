@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
@@ -206,6 +207,72 @@ class SimilarityExperimentRepositoryTest {
             listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
             clusters.single().memberNormalizedPathsText.lineSequence().toList()
         )
+    }
+
+    @Test
+    fun durationNeighborListRunKeepsOnlyAdjacentDurationNeighbors() {
+        val isolated = videoFile("a-isolated.mp4")
+        val first = videoFile("b-first.mp4")
+        val second = videoFile("c-second.mp4")
+        val third = videoFile("d-third.mp4")
+        val fourth = videoFile("e-fourth.mp4")
+        val fifth = videoFile("f-fifth.mp4")
+        val minSizeBytes = 10L
+        listOf(isolated, first, second, third, fourth, fifth).forEachIndexed { index, file ->
+            database.fileCacheDao().upsert(entity(file, sizeBytes = minSizeBytes + index))
+        }
+
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao(),
+            durationExtractor = FakeDurationExtractor(
+                mapOf(
+                    isolated.absolutePath to 30_000L,
+                    first.absolutePath to 10_000L,
+                    second.absolutePath to 10_750L,
+                    third.absolutePath to 12_100L,
+                    fourth.absolutePath to 12_800L,
+                    fifth.absolutePath to 13_500L
+                )
+            )
+        )
+        val step = DurationNeighborListStep(toleranceSeconds = 1)
+        val experiment = SimilarityExperimentSpec(
+            id = "video-duration-neighbor-test",
+            name = "Duration neighbor",
+            description = "Duration neighbor test",
+            defaultMinSizeBytes = minSizeBytes,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(step)
+        )
+
+        val summary = repository.runDurationNeighborListExperiment(
+            request = SimilarityExperimentRunRequest(
+                experiment = experiment,
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = minSizeBytes,
+                durationNeighborListStep = step
+            ),
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(6, summary.candidateCount)
+        assertEquals(6, summary.processedCount)
+        assertEquals(2, summary.clusterCount)
+        assertEquals(5, summary.duplicateFileCount)
+        val clusters = repository.listClusters("video-duration-neighbor-test")
+        assertEquals(2, clusters.size)
+        assertEquals(
+            listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
+            clusters[0].memberNormalizedPathsText.lineSequence().toList()
+        )
+        assertEquals(
+            listOf(third, fourth, fifth).map { it.absolutePath.replace('\\', '/').lowercase() },
+            clusters[1].memberNormalizedPathsText.lineSequence().toList()
+        )
+        assertTrue(clusters.all { cluster -> cluster.signature.startsWith("duration-neighbor-v1:1000:") })
     }
 
     private fun videoFile(name: String): File {

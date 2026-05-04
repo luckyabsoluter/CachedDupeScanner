@@ -60,6 +60,13 @@ data class DurationToleranceStep(
     override val summary: String = "Group videos with durations within ${toleranceSeconds.coerceAtLeast(0)}s"
 }
 
+data class DurationNeighborListStep(
+    val toleranceSeconds: Int
+) : SimilarityExperimentStep {
+    override val title: String = "Duration neighbor list"
+    override val summary: String = "List videos whose nearest duration neighbor is within ${toleranceSeconds.coerceAtLeast(0)}s"
+}
+
 data class PerceptualHashRefinementStep(
     val maxHammingDistance: Int
 ) : SimilarityExperimentStep {
@@ -72,6 +79,7 @@ fun defaultSimilarityExperimentSpecs(): List<SimilarityExperimentSpec> {
         exactThumbnailHashExperiment(grayscale = false),
         exactThumbnailHashExperiment(grayscale = true),
         durationToleranceExperiment(),
+        durationNeighborListExperiment(),
         durationThenPerceptualHashExperiment(),
         stagedThumbnailThenPerceptualHashExperiment()
     )
@@ -122,6 +130,17 @@ fun durationToleranceExperiment(): SimilarityExperimentSpec {
     )
 }
 
+fun durationNeighborListExperiment(): SimilarityExperimentSpec {
+    return SimilarityExperimentSpec(
+        id = "video-duration-neighbor-list",
+        name = "Duration neighbor list",
+        description = "Sort cached videos by extracted duration and list only adjacent duration neighbors inside the configured tolerance.",
+        defaultMinSizeBytes = DEFAULT_SIMILARITY_EXPERIMENT_MIN_SIZE_BYTES,
+        mediaScope = SimilarityMediaScope.Video,
+        steps = listOf(DurationNeighborListStep(toleranceSeconds = 1))
+    )
+}
+
 fun stagedThumbnailThenPerceptualHashExperiment(): SimilarityExperimentSpec {
     return SimilarityExperimentSpec(
         id = "video-thumbnail-phash-staged",
@@ -153,8 +172,27 @@ fun buildDurationToleranceSignature(
     return "duration-v1:$toleranceMillis:$min-$max"
 }
 
+fun buildDurationNeighborListSignature(
+    minDurationMillis: Long,
+    maxDurationMillis: Long,
+    step: DurationNeighborListStep
+): String {
+    val toleranceMillis = durationNeighborToleranceMillis(step)
+    val min = minDurationMillis.coerceAtLeast(0L)
+    val max = maxDurationMillis.coerceAtLeast(min)
+    return "duration-neighbor-v1:$toleranceMillis:${paddedDurationMillis(min)}-${paddedDurationMillis(max)}"
+}
+
 fun durationToleranceMillis(step: DurationToleranceStep): Long {
     return step.toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L
+}
+
+fun durationNeighborToleranceMillis(step: DurationNeighborListStep): Long {
+    return step.toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L
+}
+
+private fun paddedDurationMillis(durationMillis: Long): String {
+    return durationMillis.coerceAtLeast(0L).toString().padStart(13, '0')
 }
 
 fun isVideoPath(path: String): Boolean {

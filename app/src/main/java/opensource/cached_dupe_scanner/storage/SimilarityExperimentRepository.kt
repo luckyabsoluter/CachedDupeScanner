@@ -8,6 +8,7 @@ import opensource.cached_dupe_scanner.cache.SimilarityExperimentDao
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
 import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoFrameSignatureExtractor
+import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -15,7 +16,9 @@ import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
+import opensource.cached_dupe_scanner.core.buildDurationNeighborListSignature
 import opensource.cached_dupe_scanner.core.buildDurationToleranceSignature
+import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
 import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import java.io.File
 
@@ -42,7 +45,8 @@ data class SimilarityExperimentRunRequest(
     val mediaScope: SimilarityMediaScope,
     val minSizeBytes: Long,
     val exactThumbnailStep: ExactThumbnailHashStep? = null,
-    val durationToleranceStep: DurationToleranceStep? = null
+    val durationToleranceStep: DurationToleranceStep? = null,
+    val durationNeighborListStep: DurationNeighborListStep? = null
 )
 
 class SimilarityExperimentRepository(
@@ -67,7 +71,11 @@ class SimilarityExperimentRepository(
     }
 
     fun listClusters(experimentId: String): List<SimilarityClusterEntity> {
-        return experimentDao.listClusters(experimentId)
+        val clusters = experimentDao.listClusters(experimentId)
+        if (!experimentId.startsWith(DURATION_NEIGHBOR_EXPERIMENT_ID_PREFIX)) {
+            return clusters
+        }
+        return clusters.sortedBy { cluster -> durationNeighborSortMillis(cluster.signature) }
     }
 
     fun listClusterMembers(
@@ -350,6 +358,139 @@ class SimilarityExperimentRepository(
         )
     }
 
+    fun runDurationNeighborListExperiment(
+        request: SimilarityExperimentRunRequest,
+        shouldContinue: () -> Boolean,
+        onProgress: (SimilarityExperimentProgress) -> Unit
+    ): SimilarityExperimentSummary {
+        val experiment = request.experiment
+        val neighborStep = requireNotNull(request.durationNeighborListStep) {
+            "Duration neighbor list step is required for duration neighbor experiments."
+        }
+        val toleranceMillis = durationNeighborToleranceMillis(neighborStep)
+        val candidateCount = countCandidates(
+            mediaScope = request.mediaScope,
+            minSizeBytes = request.minSizeBytes
+        )
+        val startedAt = System.currentTimeMillis()
+        val durationCandidates = mutableListOf<DurationCandidate>()
+        val progressBuckets = mutableMapOf<Long, Int>()
+        var progressClusterCandidates = 0
+        var processed = 0
+        var skipped = 0
+        var afterPath = ""
+        var currentPath: String? = null
+
+        while (shouldContinue()) {
+            val batch = listCandidatesAfter(
+                mediaScope = request.mediaScope,
+                minSizeBytes = request.minSizeBytes,
+                afterPath = afterPath,
+                limit = SIMILARITY_EXPERIMENT_BATCH_SIZE
+            )
+            if (batch.isEmpty()) {
+                break
+            }
+
+            for (entity in batch) {
+                if (!shouldContinue()) {
+                    return durationNeighborSummaryWithoutSaving(
+                        experimentId = experiment.id,
+                        candidateCount = candidateCount,
+                        processed = processed,
+                        skipped = skipped,
+                        candidates = durationCandidates,
+                        toleranceMillis = toleranceMillis,
+                        neighborStep = neighborStep,
+                        cancelled = true
+                    )
+                }
+
+                currentPath = entity.path.ifBlank { entity.normalizedPath }
+                val file = File(currentPath)
+                val durationMillis = if (file.exists()) {
+                    durationExtractor.durationMillis(
+                        file = file,
+                        shouldContinue = shouldContinue
+                    )
+                } else {
+                    null
+                }
+                if (durationMillis == null) {
+                    skipped += 1
+                } else {
+                    durationCandidates += DurationCandidate(
+                        entity = entity,
+                        durationMillis = durationMillis
+                    )
+                    val bucket = durationProgressBucket(
+                        durationMillis = durationMillis,
+                        toleranceMillis = toleranceMillis
+                    )
+                    val previousBucketCount = progressBuckets[bucket] ?: 0
+                    progressBuckets[bucket] = previousBucketCount + 1
+                    if (previousBucketCount == 1) {
+                        progressClusterCandidates += 1
+                    }
+                }
+                processed += 1
+                afterPath = entity.normalizedPath
+                onProgress(
+                    SimilarityExperimentProgress(
+                        total = candidateCount,
+                        processed = processed,
+                        skipped = skipped,
+                        clusterCandidates = progressClusterCandidates,
+                        currentPath = currentPath
+                    )
+                )
+            }
+
+            if (batch.size < SIMILARITY_EXPERIMENT_BATCH_SIZE) {
+                break
+            }
+        }
+
+        val finishedAt = System.currentTimeMillis()
+        val clusters = durationNeighborListClusters(
+            experimentId = experiment.id,
+            candidates = durationCandidates,
+            toleranceMillis = toleranceMillis,
+            neighborStep = neighborStep,
+            updatedAtMillis = finishedAt
+        )
+        val duplicateFileCount = clusters.sumOf { it.fileCount }
+        val run = SimilarityExperimentRunEntity(
+            experimentId = experiment.id,
+            experimentName = experiment.name,
+            startedAtMillis = startedAt,
+            finishedAtMillis = finishedAt,
+            candidateCount = candidateCount,
+            processedCount = processed,
+            skippedCount = skipped,
+            clusterCount = clusters.size,
+            duplicateFileCount = duplicateFileCount
+        )
+        database.runInTransaction {
+            experimentDao.deleteClusters(experiment.id)
+            experimentDao.deleteRun(experiment.id)
+            experimentDao.upsertRun(run)
+            clusters.chunked(SIMILARITY_CLUSTER_INSERT_CHUNK_SIZE).forEach { chunk ->
+                experimentDao.insertClusters(chunk)
+            }
+        }
+
+        return SimilarityExperimentSummary(
+            experimentId = experiment.id,
+            candidateCount = candidateCount,
+            processedCount = processed,
+            skippedCount = skipped,
+            clusterCount = clusters.size,
+            duplicateFileCount = duplicateFileCount,
+            cancelled = false
+        )
+    }
+
     private fun summaryWithoutSaving(
         experimentId: String,
         candidateCount: Int,
@@ -457,6 +598,63 @@ private fun durationToleranceClusters(
     return clusters
 }
 
+private fun durationNeighborListClusters(
+    experimentId: String,
+    candidates: List<DurationCandidate>,
+    toleranceMillis: Long,
+    neighborStep: DurationNeighborListStep,
+    updatedAtMillis: Long
+): List<SimilarityClusterEntity> {
+    val sortedCandidates = candidates.sortedWith(
+        compareBy<DurationCandidate> { candidate -> candidate.durationMillis }
+            .thenBy { candidate -> candidate.entity.normalizedPath }
+    )
+    val clusters = mutableListOf<SimilarityClusterEntity>()
+    val current = mutableListOf<DurationCandidate>()
+
+    fun flushCurrent() {
+        if (current.size <= 1) return
+        val firstDurationMillis = current.first().durationMillis
+        val lastDurationMillis = current.last().durationMillis
+        clusters += SimilarityClusterEntity(
+            experimentId = experimentId,
+            signature = buildDurationNeighborListSignature(
+                minDurationMillis = firstDurationMillis,
+                maxDurationMillis = lastDurationMillis,
+                step = neighborStep
+            ),
+            fileCount = current.size,
+            totalBytes = current.sumOf { candidate -> candidate.entity.sizeBytes },
+            memberNormalizedPathsText = current.joinToString("\n") { candidate ->
+                candidate.entity.normalizedPath
+            },
+            updatedAtMillis = updatedAtMillis
+        )
+    }
+
+    sortedCandidates.forEachIndexed { index, candidate ->
+        val previous = sortedCandidates.getOrNull(index - 1)
+        val next = sortedCandidates.getOrNull(index + 1)
+        val closeToPrevious = previous != null &&
+            candidate.durationMillis - previous.durationMillis <= toleranceMillis
+        val closeToNext = next != null &&
+            next.durationMillis - candidate.durationMillis <= toleranceMillis
+        if (!closeToPrevious && !closeToNext) {
+            flushCurrent()
+            current.clear()
+        } else if (current.isEmpty() || closeToPrevious) {
+            current += candidate
+        } else {
+            flushCurrent()
+            current.clear()
+            current += candidate
+        }
+    }
+    flushCurrent()
+
+    return clusters
+}
+
 private fun durationSummaryWithoutSaving(
     experimentId: String,
     candidateCount: Int,
@@ -485,6 +683,42 @@ private fun durationSummaryWithoutSaving(
     )
 }
 
+private fun durationNeighborSummaryWithoutSaving(
+    experimentId: String,
+    candidateCount: Int,
+    processed: Int,
+    skipped: Int,
+    candidates: List<DurationCandidate>,
+    toleranceMillis: Long,
+    neighborStep: DurationNeighborListStep,
+    cancelled: Boolean
+): SimilarityExperimentSummary {
+    val clusters = durationNeighborListClusters(
+        experimentId = experimentId,
+        candidates = candidates,
+        toleranceMillis = toleranceMillis,
+        neighborStep = neighborStep,
+        updatedAtMillis = System.currentTimeMillis()
+    )
+    return SimilarityExperimentSummary(
+        experimentId = experimentId,
+        candidateCount = candidateCount,
+        processedCount = processed,
+        skippedCount = skipped,
+        clusterCount = clusters.size,
+        duplicateFileCount = clusters.sumOf { cluster -> cluster.fileCount },
+        cancelled = cancelled
+    )
+}
+
+private fun durationNeighborSortMillis(signature: String): Long {
+    val range = signature
+        .takeIf { it.startsWith("duration-neighbor-v1:") }
+        ?.substringAfterLast(':')
+        ?: return Long.MAX_VALUE
+    return range.substringBefore('-').toLongOrNull() ?: Long.MAX_VALUE
+}
+
 internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {
     return text.lineSequence()
         .map { line -> line.trim() }
@@ -506,3 +740,4 @@ private fun CachedFileEntity.toMetadata(): FileMetadata {
 private const val SIMILARITY_EXPERIMENT_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_INSERT_CHUNK_SIZE = 100
 private const val SIMILARITY_CLUSTER_MEMBER_LOOKUP_CHUNK_SIZE = 500
+private const val DURATION_NEIGHBOR_EXPERIMENT_ID_PREFIX = "video-duration-neighbor"
