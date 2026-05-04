@@ -83,6 +83,7 @@ private data class SimilarityClusterMembersState(
 private enum class SimilarityExperimentPane {
     List,
     Create,
+    TemplateDetail,
     RunDetail
 }
 
@@ -115,7 +116,7 @@ fun SimilarityExperimentsScreen(
     var runStatusText by remember { mutableStateOf("No experiment running.") }
     val runs = remember { mutableStateListOf<SimilarityExperimentRunEntity>() }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var selectedTemplateId by remember { mutableStateOf(experiments.firstOrNull()?.id) }
+    var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
     var pane by remember { mutableStateOf(SimilarityExperimentPane.List) }
@@ -203,8 +204,19 @@ fun SimilarityExperimentsScreen(
         refreshStoredResults(null)
     }
 
-    fun openCreatePane() {
+    fun openCreatePane(clearTemplateSelection: Boolean = true) {
         pane = SimilarityExperimentPane.Create
+        if (clearTemplateSelection) {
+            selectedTemplateId = null
+        }
+        selectedRunExperimentId = null
+        selectedClusterKey = null
+        clusters.clear()
+    }
+
+    fun openTemplateDetailPane(experiment: SimilarityExperimentSpec) {
+        applyTemplateDefaults(experiment)
+        pane = SimilarityExperimentPane.TemplateDetail
         selectedRunExperimentId = null
         selectedClusterKey = null
         clusters.clear()
@@ -258,7 +270,12 @@ fun SimilarityExperimentsScreen(
     }
 
     BackHandler(enabled = pane != SimilarityExperimentPane.List) {
-        openListPane()
+        when (pane) {
+            SimilarityExperimentPane.TemplateDetail -> openCreatePane(clearTemplateSelection = false)
+            SimilarityExperimentPane.Create,
+            SimilarityExperimentPane.RunDetail -> openListPane()
+            SimilarityExperimentPane.List -> Unit
+        }
     }
 
     Box(modifier = modifier) {
@@ -276,7 +293,7 @@ fun SimilarityExperimentsScreen(
                         onBack = onBack
                     )
                     Button(
-                        onClick = ::openCreatePane,
+                        onClick = { openCreatePane() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("New experiment")
@@ -293,8 +310,14 @@ fun SimilarityExperimentsScreen(
                     )
                     ExperimentTemplatesCard(
                         experiments = experiments,
-                        selectedExperimentId = selectedTemplate?.id,
-                        onSelectExperiment = ::applyTemplateDefaults
+                        selectedExperimentId = selectedTemplateId,
+                        onSelectExperiment = ::openTemplateDetailPane
+                    )
+                }
+                SimilarityExperimentPane.TemplateDetail -> {
+                    AppTopBar(
+                        title = selectedTemplate?.name ?: "Experiment template",
+                        onBack = { openCreatePane(clearTemplateSelection = false) }
                     )
                     if (selectedTemplate != null && selectedTemplateExactStep != null) {
                         ExactThumbnailRunCard(
@@ -356,6 +379,17 @@ fun SimilarityExperimentsScreen(
                         )
                     } else if (selectedTemplate != null) {
                         SelectedExperimentMethodCard(experiment = selectedTemplate)
+                    } else {
+                        Text(
+                            text = "Select a template to configure this experiment.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Button(
+                            onClick = { openCreatePane(clearTemplateSelection = true) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Back to templates")
+                        }
                     }
                 }
                 SimilarityExperimentPane.RunDetail -> {

@@ -321,12 +321,28 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("Text(\"New experiment\")"))
         assertTrue(content.contains("onSelectRun = ::openRunPane"))
         assertTrue(content.contains("SimilarityExperimentPane.Create ->"))
+        assertTrue(content.contains("SimilarityExperimentPane.TemplateDetail ->"))
+        assertTrue(content.contains("onSelectExperiment = ::openTemplateDetailPane"))
         assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
         assertTrue(content.contains("StoredSimilarityResultsCard("))
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
         assertTrue(content.contains("ExactHashReductionSampleGrid("))
         assertTrue(content.contains("SimilarityClusterMemberPreviewLines("))
+
+        val createPane = sourceSection(
+            content = content,
+            start = "SimilarityExperimentPane.Create -> {",
+            end = "SimilarityExperimentPane.TemplateDetail -> {"
+        )
+        val templateDetailPane = sourceSection(
+            content = content,
+            start = "SimilarityExperimentPane.TemplateDetail -> {",
+            end = "SimilarityExperimentPane.RunDetail -> {"
+        )
+        assertTrue(createPane.contains("ExperimentTemplatesCard("))
+        assertFalse(createPane.contains("ExactThumbnailRunCard("))
+        assertTrue(templateDetailPane.contains("ExactThumbnailRunCard("))
     }
 
     @Test
@@ -406,5 +422,15 @@ class SimilarityExperimentsScreenTest {
 
         assertTrue("$fileName should exist", sourceFile != null)
         return sourceFile!!.readText()
+    }
+
+    private fun sourceSection(
+        content: String,
+        start: String,
+        end: String
+    ): String {
+        assertTrue("source should contain $start", content.contains(start))
+        assertTrue("source should contain $end", content.contains(end))
+        return content.substringAfter(start).substringBefore(end)
     }
 }
