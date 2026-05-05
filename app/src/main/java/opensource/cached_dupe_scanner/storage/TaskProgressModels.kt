@@ -19,15 +19,23 @@ data class DbMaintenanceSummary(
     val currentPath: String?
 )
 
+enum class RebuildGroupsPhase {
+    RepairingMissingHashes,
+    RebuildingGroups
+}
+
 data class RebuildGroupsProgress(
     val total: Int,
-    val processed: Int
+    val processed: Int,
+    val phase: RebuildGroupsPhase = RebuildGroupsPhase.RebuildingGroups,
+    val currentPath: String? = null
 )
 
 data class RebuildGroupsSummary(
     val total: Int,
     val processed: Int,
-    val cancelled: Boolean
+    val cancelled: Boolean,
+    val phase: RebuildGroupsPhase = RebuildGroupsPhase.RebuildingGroups
 )
 
 data class ClearCacheProgress(

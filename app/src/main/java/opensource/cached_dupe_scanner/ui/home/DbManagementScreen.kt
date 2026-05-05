@@ -42,12 +42,14 @@ import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 import opensource.cached_dupe_scanner.tasks.clearCacheCompletedDetail
 import opensource.cached_dupe_scanner.tasks.clearCacheTaskDetail
 import opensource.cached_dupe_scanner.tasks.clearCacheTaskTitle
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceCompletedDetail
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceTaskDetail
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceTaskTitle
+import opensource.cached_dupe_scanner.tasks.rebuildGroupsCancelledDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsCompletedDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskTitle
@@ -170,6 +172,12 @@ fun DbManagementScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                    activeTask?.takeIf { it.kind == TaskKind.RebuildGroups }?.let { task ->
+                        DbTaskProgressContent(
+                            task = task,
+                            taskCoordinator = taskCoordinator
+                        )
+                    }
                 }
             }
 
@@ -250,40 +258,17 @@ fun DbManagementScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
-                    activeTask?.let { task ->
-                        if (task.total != null && task.total > 0 && !task.indeterminate) {
-                            LinearProgressIndicator(
-                                progress = {
-                                    ((task.processed ?: 0).toFloat() / task.total.toFloat())
-                                        .coerceIn(0f, 1f)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-                        Spacer(modifier = Modifier.height(Spacing.compactGap))
-                        Text(
-                            text = task.detail,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    activeTask?.takeIf { it.kind != TaskKind.RebuildGroups }?.let { task ->
+                        DbTaskProgressContent(
+                            task = task,
+                            taskCoordinator = taskCoordinator
                         )
-                        task.currentPath?.let { path ->
-                            Text(
-                                text = "Current: $path",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = { taskCoordinator.requestCancel(TaskArea.Db) },
-                            enabled = task.isCancellable,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancel running task")
-                        }
                     } ?: Text(
-                        text = "Idle",
+                        text = if (activeTask?.kind == TaskKind.RebuildGroups) {
+                            "Rebuild progress is shown above."
+                        } else {
+                            "Idle"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -337,6 +322,44 @@ fun DbManagementScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun DbTaskProgressContent(
+    task: TaskSnapshot,
+    taskCoordinator: TaskCoordinator
+) {
+    if (task.total != null && task.total > 0 && !task.indeterminate) {
+        LinearProgressIndicator(
+            progress = {
+                ((task.processed ?: 0).toFloat() / task.total.toFloat())
+                    .coerceIn(0f, 1f)
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+    Spacer(modifier = Modifier.height(Spacing.compactGap))
+    Text(
+        text = task.detail,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    task.currentPath?.let { path ->
+        Text(
+            text = "Current: $path",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    OutlinedButton(
+        onClick = { taskCoordinator.requestCancel(TaskArea.Db) },
+        enabled = task.isCancellable,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Cancel running task")
     }
 }
 
@@ -402,6 +425,7 @@ internal fun startRebuildGroupsTask(
                             task.withLinearProgress(
                                 title = rebuildGroupsTaskTitle(),
                                 detail = rebuildGroupsTaskDetail(progress),
+                                currentPath = progress.currentPath,
                                 processed = progress.processed,
                                 total = progress.total
                             )
@@ -415,7 +439,7 @@ internal fun startRebuildGroupsTask(
                 taskCoordinator.cancel(
                     area = TaskArea.Db,
                     title = "Duplicate groups rebuild cancelled",
-                    detail = "Cancelled after ${summary.processed}/${summary.total} duplicate groups.",
+                    detail = rebuildGroupsCancelledDetail(summary),
                     processed = summary.processed,
                     total = summary.total,
                     indeterminate = summary.total <= 0

@@ -6,6 +6,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
+import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
+import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 
 class TaskCoordinatorTest {
     @Test
@@ -127,5 +130,30 @@ class TaskCoordinatorTest {
         assertEquals(3, updated.bubbleProcessed)
         assertEquals(10, updated.bubbleTotal)
         assertFalse(updated.bubbleIndeterminate)
+    }
+
+    @Test
+    fun rebuildGroupsTextDescribesMissingHashRepairProgress() {
+        assertEquals(
+            "Repairing missing hashes 2/5 before rebuilding groups.",
+            rebuildGroupsTaskDetail(
+                RebuildGroupsProgress(
+                    total = 5,
+                    processed = 2,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            )
+        )
+        assertEquals(
+            "Cancelled after repairing 2/5 missing hashes.",
+            rebuildGroupsCancelledDetail(
+                RebuildGroupsSummary(
+                    total = 5,
+                    processed = 2,
+                    cancelled = true,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            )
+        )
     }
 }

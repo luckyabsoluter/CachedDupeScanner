@@ -7,6 +7,7 @@ import opensource.cached_dupe_scanner.storage.ClearCacheProgress
 import opensource.cached_dupe_scanner.storage.ClearCacheSummary
 import opensource.cached_dupe_scanner.storage.DbMaintenanceProgress
 import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
+import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
@@ -61,12 +62,27 @@ fun rebuildGroupsTaskTitle(): String = "Rebuilding groups"
 
 fun rebuildGroupsTaskDetail(progress: RebuildGroupsProgress): String {
     val totalText = if (progress.total > 0) progress.total.toString() else "?"
-    return "Processed ${progress.processed}/$totalText duplicate groups."
+    return when (progress.phase) {
+        RebuildGroupsPhase.RepairingMissingHashes ->
+            "Repairing missing hashes ${progress.processed}/$totalText before rebuilding groups."
+        RebuildGroupsPhase.RebuildingGroups ->
+            "Processed ${progress.processed}/$totalText duplicate groups."
+    }
 }
 
 fun rebuildGroupsCompletedDetail(summary: RebuildGroupsSummary): String {
     val totalText = if (summary.total > 0) summary.total.toString() else "?"
     return "Processed ${summary.processed}/$totalText duplicate groups."
+}
+
+fun rebuildGroupsCancelledDetail(summary: RebuildGroupsSummary): String {
+    val totalText = if (summary.total > 0) summary.total.toString() else "?"
+    return when (summary.phase) {
+        RebuildGroupsPhase.RepairingMissingHashes ->
+            "Cancelled after repairing ${summary.processed}/$totalText missing hashes."
+        RebuildGroupsPhase.RebuildingGroups ->
+            "Cancelled after ${summary.processed}/$totalText duplicate groups."
+    }
 }
 
 fun clearCacheTaskTitle(): String = "Clearing cached results"

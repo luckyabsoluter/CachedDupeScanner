@@ -152,6 +152,21 @@ interface FileCacheDao {
         limit: Int
     ): List<CachedFileEntity>
 
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files AS candidate
+        WHERE (candidate.hashHex IS NULL OR candidate.hashHex = '')
+          AND EXISTS (
+              SELECT 1
+              FROM cached_files AS peer
+              WHERE peer.sizeBytes = candidate.sizeBytes
+                AND peer.normalizedPath != candidate.normalizedPath
+          )
+        """
+    )
+    fun countMissingHashSizeCollisionCandidates(): Int
+
     @Query("SELECT * FROM cached_files ORDER BY normalizedPath DESC LIMIT :limit")
     fun getFirstPageByNameDesc(limit: Int): List<CachedFileEntity>
 

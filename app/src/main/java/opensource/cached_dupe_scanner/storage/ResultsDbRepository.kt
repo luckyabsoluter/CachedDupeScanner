@@ -35,14 +35,32 @@ class ResultsDbRepository(
         shouldContinue: () -> Boolean,
         onProgress: (RebuildGroupsProgress) -> Unit
     ): RebuildGroupsSummary {
-        if (repairMissingHashesForSizeCollisions(shouldContinue)) {
-            return RebuildGroupsSummary(
-                total = 0,
-                processed = 0,
-                cancelled = true
+        val repairTotal = fileDao.countMissingHashSizeCollisionCandidates()
+        if (repairTotal > 0) {
+            onProgress(
+                RebuildGroupsProgress(
+                    total = repairTotal,
+                    processed = 0,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
             )
         }
+        val repairSummary = repairMissingHashesForSizeCollisions(
+            total = repairTotal,
+            shouldContinue = shouldContinue,
+            onProgress = onProgress
+        )
+        if (repairSummary.cancelled) {
+            return repairSummary
+        }
         val total = groupDao.countGroupsFromCache()
+        onProgress(
+            RebuildGroupsProgress(
+                total = total,
+                processed = 0,
+                phase = RebuildGroupsPhase.RebuildingGroups
+            )
+        )
         var processed = 0
         var offset = 0
         val batchSize = 200
@@ -78,35 +96,85 @@ class ResultsDbRepository(
         return RebuildGroupsSummary(
             total = total,
             processed = processed,
-            cancelled = processed < total
+            cancelled = processed < total,
+            phase = RebuildGroupsPhase.RebuildingGroups
         )
     }
 
-    private fun repairMissingHashesForSizeCollisions(shouldContinue: () -> Boolean): Boolean {
+    private fun repairMissingHashesForSizeCollisions(
+        total: Int,
+        shouldContinue: () -> Boolean,
+        onProgress: (RebuildGroupsProgress) -> Unit
+    ): RebuildGroupsSummary {
         var afterPath = ""
+        var processed = 0
         val batchSize = 200
         while (true) {
-            if (!shouldContinue()) return true
+            if (!shouldContinue()) {
+                return RebuildGroupsSummary(
+                    total = total,
+                    processed = processed,
+                    cancelled = true,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            }
             val batch = fileDao.listMissingHashSizeCollisionCandidatesAfter(
                 afterPath = afterPath,
                 limit = batchSize
             )
             if (batch.isEmpty()) {
-                return false
+                return RebuildGroupsSummary(
+                    total = total,
+                    processed = processed,
+                    cancelled = false,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
             }
             for (entity in batch) {
                 afterPath = entity.normalizedPath
-                if (!shouldContinue()) return true
+                if (!shouldContinue()) {
+                    return RebuildGroupsSummary(
+                        total = total,
+                        processed = processed,
+                        cancelled = true,
+                        phase = RebuildGroupsPhase.RepairingMissingHashes
+                    )
+                }
                 val path = entity.path.ifBlank { entity.normalizedPath }
                 val file = File(path)
                 if (!file.exists()) {
+                    processed += 1
+                    onProgress(
+                        RebuildGroupsProgress(
+                            total = total,
+                            processed = processed,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes,
+                            currentPath = path
+                        )
+                    )
                     continue
                 }
                 val hash = runCatching {
                     hashFile(file, shouldContinue)
                 }.getOrNull()
                 if (hash == null) {
-                    if (!shouldContinue()) return true
+                    if (!shouldContinue()) {
+                        return RebuildGroupsSummary(
+                            total = total,
+                            processed = processed,
+                            cancelled = true,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes
+                        )
+                    }
+                    processed += 1
+                    onProgress(
+                        RebuildGroupsProgress(
+                            total = total,
+                            processed = processed,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes,
+                            currentPath = path
+                        )
+                    )
                     continue
                 }
                 fileDao.upsert(
@@ -114,6 +182,15 @@ class ResultsDbRepository(
                         sizeBytes = file.length(),
                         lastModifiedMillis = file.lastModified(),
                         hashHex = hash
+                    )
+                )
+                processed += 1
+                onProgress(
+                    RebuildGroupsProgress(
+                        total = total,
+                        processed = processed,
+                        phase = RebuildGroupsPhase.RepairingMissingHashes,
+                        currentPath = path
                     )
                 )
             }

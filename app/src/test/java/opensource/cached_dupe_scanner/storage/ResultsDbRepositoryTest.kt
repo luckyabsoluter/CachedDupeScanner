@@ -168,6 +168,65 @@ class ResultsDbRepositoryTest {
     }
 
     @Test
+    fun rebuildGroupsReportsMissingHashRepairProgress() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val hashedFile = File.createTempFile("cached-dupe", ".hashed")
+        val missingHashFile = File.createTempFile("cached-dupe", ".missing-hash")
+        try {
+            val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+            hashedFile.writeText("same-content")
+            missingHashFile.writeText("same-content")
+            val sharedHash = Hashing.sha256Hex(hashedFile)
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = hashedFile.absolutePath,
+                    path = hashedFile.absolutePath,
+                    sizeBytes = hashedFile.length(),
+                    lastModifiedMillis = hashedFile.lastModified(),
+                    hashHex = sharedHash
+                )
+            )
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = missingHashFile.absolutePath,
+                    path = missingHashFile.absolutePath,
+                    sizeBytes = missingHashFile.length(),
+                    lastModifiedMillis = missingHashFile.lastModified(),
+                    hashHex = null
+                )
+            )
+            val progressEvents = mutableListOf<RebuildGroupsProgress>()
+
+            val summary = repo.rebuildGroups(
+                shouldContinue = { true },
+                onProgress = progressEvents::add
+            )
+
+            assertFalse(summary.cancelled)
+            assertTrue(
+                progressEvents.any {
+                    it.phase == RebuildGroupsPhase.RepairingMissingHashes &&
+                        it.total == 1 &&
+                        it.processed == 1 &&
+                        it.currentPath == missingHashFile.absolutePath
+                }
+            )
+            assertTrue(
+                progressEvents.any {
+                    it.phase == RebuildGroupsPhase.RebuildingGroups &&
+                        it.total == 1 &&
+                        it.processed == 1
+                }
+            )
+        } finally {
+            hashedFile.delete()
+            missingHashFile.delete()
+            db.close()
+        }
+    }
+
+    @Test
     fun loadPageAtSnapshotHasNoGapOrDuplicate() {
         val db = newDb()
         val fileDao = db.fileCacheDao()
@@ -377,8 +436,10 @@ class ResultsDbRepositoryTest {
         var allow = true
         val summary = repo.rebuildGroups(
             shouldContinue = { allow }
-        ) {
-            allow = false
+        ) { progress ->
+            if (progress.phase == RebuildGroupsPhase.RebuildingGroups && progress.processed > 0) {
+                allow = false
+            }
         }
 
         assertTrue(summary.cancelled)
