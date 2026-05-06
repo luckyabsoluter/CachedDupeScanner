@@ -411,7 +411,9 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("repository.runDurationToleranceExperiment("))
         assertTrue(content.contains("repository.runDurationNeighborListExperiment("))
         assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
-        assertTrue(content.contains("StoredSimilarityResultsCard("))
+        assertTrue(content.contains("StoredSimilarityResultsHeader("))
+        assertTrue(content.contains("items("))
+        assertTrue(content.contains("SimilarityClusterLoadingIndicator("))
         assertTrue(content.contains("Reduction preview"))
         assertTrue(content.contains(".background("))
         assertTrue(content.contains("ExactHashReductionSampleGrid("))
@@ -427,10 +429,65 @@ class SimilarityExperimentsScreenTest {
             start = "SimilarityExperimentPane.TemplateDetail -> {",
             end = "SimilarityExperimentPane.RunDetail -> {"
         )
-        assertTrue(createPane.contains("ExperimentTemplatesCard("))
+        assertTrue(createPane.contains("ExperimentTemplatesHeader("))
+        assertTrue(createPane.contains("ExperimentTemplateCard("))
         assertFalse(createPane.contains("ExactThumbnailRunCard("))
         assertTrue(templateDetailPane.contains("ExactThumbnailRunCard("))
         assertTrue(templateDetailPane.contains("DurationToleranceRunCard("))
+    }
+
+    @Test
+    fun similarityExperimentMainPaneUsesLazyListScrollbarAndLoadIndicator() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val mainScreen = sourceSection(
+            content = content,
+            start = "fun SimilarityExperimentsScreen(",
+            end = "@Composable\nprivate fun ExperimentRunsHeader"
+        )
+
+        assertTrue(mainScreen.contains("rememberLazyListState()"))
+        assertTrue(mainScreen.contains("SimilarityExperimentLazyPane("))
+        assertTrue(mainScreen.contains("LazyColumn("))
+        assertTrue(mainScreen.contains("VerticalLazyScrollbar("))
+        assertTrue(mainScreen.contains("TopRightLoadIndicator("))
+        assertTrue(mainScreen.contains("similarityClusterLoadIndicatorText("))
+        assertTrue(mainScreen.contains("items = clusters"))
+        assertFalse(mainScreen.contains(".verticalScroll("))
+        assertFalse(mainScreen.contains("VerticalScrollbar("))
+    }
+
+    @Test
+    fun similarityClusterLoadIndicatorTextTracksVisibleLazyCluster() {
+        assertEquals(
+            "Loading 0/12 clusters",
+            similarityClusterLoadIndicatorText(
+                isRunDetailPane = true,
+                totalClusterCount = 12,
+                loadedClusterCount = 0,
+                topVisibleItemIndex = 0,
+                clustersLoading = true
+            )
+        )
+        assertEquals(
+            "3/8/12 (37%/66%)",
+            similarityClusterLoadIndicatorText(
+                isRunDetailPane = true,
+                totalClusterCount = 12,
+                loadedClusterCount = 8,
+                topVisibleItemIndex = SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX + 2,
+                clustersLoading = false
+            )
+        )
+        assertEquals(
+            null,
+            similarityClusterLoadIndicatorText(
+                isRunDetailPane = false,
+                totalClusterCount = 12,
+                loadedClusterCount = 8,
+                topVisibleItemIndex = 0,
+                clustersLoading = false
+            )
+        )
     }
 
     @Test

@@ -15,12 +15,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +54,7 @@ import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
@@ -76,7 +85,10 @@ import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import java.util.concurrent.atomic.AtomicBoolean
 
 private data class SimilarityClusterMembersState(
@@ -89,6 +101,30 @@ private enum class SimilarityExperimentPane {
     Create,
     TemplateDetail,
     RunDetail
+}
+
+internal const val SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX = 3
+
+internal fun similarityClusterLoadIndicatorText(
+    isRunDetailPane: Boolean,
+    totalClusterCount: Int,
+    loadedClusterCount: Int,
+    topVisibleItemIndex: Int,
+    clustersLoading: Boolean
+): String? {
+    if (!isRunDetailPane || totalClusterCount <= 0) return null
+    val safeLoaded = loadedClusterCount.coerceIn(0, totalClusterCount)
+    if (clustersLoading && safeLoaded == 0) {
+        return "Loading 0/$totalClusterCount clusters"
+    }
+    val loadedForDisplay = safeLoaded.coerceAtLeast(1)
+    val currentClusterIndex = (topVisibleItemIndex - SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX)
+        .coerceAtLeast(0)
+    return formatLoadProgressText(
+        current = currentClusterIndex + 1,
+        loaded = loadedForDisplay,
+        total = totalClusterCount
+    )
 }
 
 @Composable
@@ -126,7 +162,8 @@ fun SimilarityExperimentsScreen(
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
     var pane by remember { mutableStateOf(SimilarityExperimentPane.List) }
     var clustersLoading by remember { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
+    var topVisibleItemIndex by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -248,6 +285,12 @@ fun SimilarityExperimentsScreen(
         refreshStoredResults(null)
     }
 
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { topVisibleItemIndex = it }
+    }
+
     LaunchedEffect(mediaScope, minSizeBytes) {
         candidateCountText = runCatching {
             withContext(Dispatchers.IO) {
@@ -292,351 +335,448 @@ fun SimilarityExperimentsScreen(
         }
     }
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    val loadIndicatorText = similarityClusterLoadIndicatorText(
+        isRunDetailPane = pane == SimilarityExperimentPane.RunDetail,
+        totalClusterCount = selectedRun?.clusterCount ?: 0,
+        loadedClusterCount = clusters.size,
+        topVisibleItemIndex = topVisibleItemIndex,
+        clustersLoading = clustersLoading
+    )
+
+    SimilarityExperimentLazyPane(
+        listState = listState,
+        loadIndicatorText = loadIndicatorText,
+        modifier = modifier
+    ) {
             when (pane) {
                 SimilarityExperimentPane.List -> {
-                    AppTopBar(
-                        title = "Similarity experiments",
-                        onBack = onBack
-                    )
-                    Button(
-                        onClick = { openCreatePane() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("New experiment")
+                    item(key = "top_bar") {
+                        AppTopBar(
+                            title = "Similarity experiments",
+                            onBack = onBack
+                        )
                     }
-                    ExperimentRunsListCard(
-                        runs = runs,
-                        onSelectRun = ::openRunPane
-                    )
-                }
-                SimilarityExperimentPane.Create -> {
-                    AppTopBar(
-                        title = "New experiment",
-                        onBack = ::openListPane
-                    )
-                    ExperimentTemplatesCard(
-                        experiments = experiments,
-                        selectedExperimentId = selectedTemplateId,
-                        onSelectExperiment = ::openTemplateDetailPane
-                    )
-                }
-                SimilarityExperimentPane.TemplateDetail -> {
-                    AppTopBar(
-                        title = selectedTemplate?.name ?: "Experiment template",
-                        onBack = { openCreatePane(clearTemplateSelection = false) }
-                    )
-                    if (selectedTemplate != null && selectedTemplateExactStep != null) {
-                        ExactThumbnailRunCard(
-                            experimentName = selectedTemplate.name,
-                            minSizeInput = minSizeInput,
-                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                            minSizeUnit = minSizeUnit,
-                            onMinSizeUnitChange = { minSizeUnit = it },
-                            mediaScope = mediaScope,
-                            onMediaScopeChange = { mediaScope = it },
-                            frameSecondsInput = frameSecondsInput,
-                            onFrameSecondsInputChange = { frameSecondsInput = sanitizeFrameSecondsInput(it) },
-                            resizeWidthInput = resizeWidthInput,
-                            onResizeWidthInputChange = { resizeWidthInput = sanitizeNumberDraftInput(it) },
-                            resizeHeightInput = resizeHeightInput,
-                            onResizeHeightInputChange = { resizeHeightInput = sanitizeNumberDraftInput(it) },
-                            quantizationEnabled = quantizationEnabled,
-                            onQuantizationEnabledChange = { quantizationEnabled = it },
-                            quantizationInput = quantizationInput,
-                            onQuantizationInputChange = { quantizationInput = sanitizeNumberDraftInput(it) },
-                            grayscale = grayscale,
-                            onGrayscaleChange = { grayscale = it },
-                            candidateCountText = candidateCountText,
-                            runStatusText = displayedRunStatusText,
-                            isRunning = activeSimilarityTask != null,
-                            onRun = {
-                                val step = exactStep
-                                if (step.frameSeconds.isEmpty()) {
-                                    runStatusText = "Add at least one frame timestamp."
-                                    return@ExactThumbnailRunCard
-                                }
-                                val experiment = exactThumbnailExperimentForRun(
-                                    mediaScope = mediaScope,
-                                    minSizeBytes = minSizeBytes,
-                                    step = step
-                                )
-                                startSimilarityExperimentTask(
-                                    repository = repository,
-                                    request = SimilarityExperimentRunRequest(
-                                        experiment = experiment,
-                                        mediaScope = mediaScope,
-                                        minSizeBytes = minSizeBytes,
-                                        exactThumbnailStep = step
-                                    ),
-                                    scope = scope,
-                                    taskCoordinator = taskCoordinator,
-                                    notificationController = notificationController,
-                                    onStatusText = { status -> runStatusText = status },
-                                    onRunFinished = { summary ->
-                                        selectedRunExperimentId = summary.experimentId
-                                        pane = SimilarityExperimentPane.RunDetail
-                                        refreshStoredResults(summary.experimentId)
-                                    }
-                                )
-                            },
-                            onCancel = {
-                                taskCoordinator.requestCancel(TaskArea.Similarity)
-                            }
-                        )
-                    } else if (selectedTemplate != null && selectedTemplateDurationStep != null) {
-                        DurationToleranceRunCard(
-                            experimentName = selectedTemplate.name,
-                            description = "Runs a cached-video experiment that extracts each video's duration and clusters candidates whose durations fall within the configured tolerance.",
-                            minSizeInput = minSizeInput,
-                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                            minSizeUnit = minSizeUnit,
-                            onMinSizeUnitChange = { minSizeUnit = it },
-                            toleranceInput = durationToleranceInput,
-                            onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
-                            toleranceDescription = "Tolerance is the maximum duration gap inside one cluster. Use 0 for exact millisecond duration matches.",
-                            candidateCountText = candidateCountText,
-                            runStatusText = displayedRunStatusText,
-                            isRunning = activeSimilarityTask != null,
-                            runButtonText = "Run duration experiment",
-                            onRun = {
-                                val step = durationStep
-                                val experiment = durationToleranceExperimentForRun(
-                                    minSizeBytes = minSizeBytes,
-                                    step = step
-                                )
-                                startSimilarityExperimentTask(
-                                    repository = repository,
-                                    request = SimilarityExperimentRunRequest(
-                                        experiment = experiment,
-                                        mediaScope = SimilarityMediaScope.Video,
-                                        minSizeBytes = minSizeBytes,
-                                        durationToleranceStep = step
-                                    ),
-                                    scope = scope,
-                                    taskCoordinator = taskCoordinator,
-                                    notificationController = notificationController,
-                                    onStatusText = { status -> runStatusText = status },
-                                    onRunFinished = { summary ->
-                                        selectedRunExperimentId = summary.experimentId
-                                        pane = SimilarityExperimentPane.RunDetail
-                                        refreshStoredResults(summary.experimentId)
-                                    }
-                                )
-                            },
-                            onCancel = {
-                                taskCoordinator.requestCancel(TaskArea.Similarity)
-                            }
-                        )
-                    } else if (selectedTemplate != null && selectedTemplateDurationNeighborStep != null) {
-                        DurationToleranceRunCard(
-                            experimentName = selectedTemplate.name,
-                            description = "Runs a cached-video experiment that sorts candidates by duration, keeps only adjacent neighbors inside the tolerance, and omits videos without a nearby neighbor.",
-                            minSizeInput = minSizeInput,
-                            onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                            minSizeUnit = minSizeUnit,
-                            onMinSizeUnitChange = { minSizeUnit = it },
-                            toleranceInput = durationToleranceInput,
-                            onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
-                            toleranceDescription = "Tolerance is the maximum duration gap between adjacent sorted videos. Videos with no adjacent neighbor inside this gap are not listed.",
-                            candidateCountText = candidateCountText,
-                            runStatusText = displayedRunStatusText,
-                            isRunning = activeSimilarityTask != null,
-                            runButtonText = "Run duration neighbor list",
-                            onRun = {
-                                val step = parsedDurationNeighborListStep(durationToleranceInput)
-                                val experiment = durationNeighborListExperimentForRun(
-                                    minSizeBytes = minSizeBytes,
-                                    step = step
-                                )
-                                startSimilarityExperimentTask(
-                                    repository = repository,
-                                    request = SimilarityExperimentRunRequest(
-                                        experiment = experiment,
-                                        mediaScope = SimilarityMediaScope.Video,
-                                        minSizeBytes = minSizeBytes,
-                                        durationNeighborListStep = step
-                                    ),
-                                    scope = scope,
-                                    taskCoordinator = taskCoordinator,
-                                    notificationController = notificationController,
-                                    onStatusText = { status -> runStatusText = status },
-                                    onRunFinished = { summary ->
-                                        selectedRunExperimentId = summary.experimentId
-                                        pane = SimilarityExperimentPane.RunDetail
-                                        refreshStoredResults(summary.experimentId)
-                                    }
-                                )
-                            },
-                            onCancel = {
-                                taskCoordinator.requestCancel(TaskArea.Similarity)
-                            }
-                        )
-                    } else if (selectedTemplate != null) {
-                        SelectedExperimentMethodCard(experiment = selectedTemplate)
-                    } else {
-                        Text(
-                            text = "Select a template to configure this experiment.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                    item(key = "new_experiment") {
                         Button(
-                            onClick = { openCreatePane(clearTemplateSelection = true) },
+                            onClick = { openCreatePane() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Back to templates")
+                            Text("New experiment")
+                        }
+                    }
+                    item(key = "run_list_header") {
+                        ExperimentRunsHeader(hasRuns = runs.isNotEmpty())
+                    }
+                    if (runs.isNotEmpty()) {
+                        items(
+                            items = runs,
+                            key = { run -> run.experimentId }
+                        ) { run ->
+                            ExperimentRunCard(
+                                run = run,
+                                onSelectRun = ::openRunPane
+                            )
+                        }
+                    }
+                }
+                SimilarityExperimentPane.Create -> {
+                    item(key = "top_bar") {
+                        AppTopBar(
+                            title = "New experiment",
+                            onBack = ::openListPane
+                        )
+                    }
+                    item(key = "template_header") {
+                        ExperimentTemplatesHeader(hasTemplates = experiments.isNotEmpty())
+                    }
+                    items(
+                        items = experiments,
+                        key = { experiment -> experiment.id }
+                    ) { experiment ->
+                        ExperimentTemplateCard(
+                            experiment = experiment,
+                            selected = experiment.id == selectedTemplateId,
+                            onSelectExperiment = ::openTemplateDetailPane
+                        )
+                    }
+                }
+                SimilarityExperimentPane.TemplateDetail -> {
+                    item(key = "top_bar") {
+                        AppTopBar(
+                            title = selectedTemplate?.name ?: "Experiment template",
+                            onBack = { openCreatePane(clearTemplateSelection = false) }
+                        )
+                    }
+                    if (selectedTemplate != null && selectedTemplateExactStep != null) {
+                        item(key = "exact_thumbnail_run") {
+                            ExactThumbnailRunCard(
+                                experimentName = selectedTemplate.name,
+                                minSizeInput = minSizeInput,
+                                onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                                minSizeUnit = minSizeUnit,
+                                onMinSizeUnitChange = { minSizeUnit = it },
+                                mediaScope = mediaScope,
+                                onMediaScopeChange = { mediaScope = it },
+                                frameSecondsInput = frameSecondsInput,
+                                onFrameSecondsInputChange = { frameSecondsInput = sanitizeFrameSecondsInput(it) },
+                                resizeWidthInput = resizeWidthInput,
+                                onResizeWidthInputChange = { resizeWidthInput = sanitizeNumberDraftInput(it) },
+                                resizeHeightInput = resizeHeightInput,
+                                onResizeHeightInputChange = { resizeHeightInput = sanitizeNumberDraftInput(it) },
+                                quantizationEnabled = quantizationEnabled,
+                                onQuantizationEnabledChange = { quantizationEnabled = it },
+                                quantizationInput = quantizationInput,
+                                onQuantizationInputChange = { quantizationInput = sanitizeNumberDraftInput(it) },
+                                grayscale = grayscale,
+                                onGrayscaleChange = { grayscale = it },
+                                candidateCountText = candidateCountText,
+                                runStatusText = displayedRunStatusText,
+                                isRunning = activeSimilarityTask != null,
+                                onRun = {
+                                    val step = exactStep
+                                    if (step.frameSeconds.isEmpty()) {
+                                        runStatusText = "Add at least one frame timestamp."
+                                        return@ExactThumbnailRunCard
+                                    }
+                                    val experiment = exactThumbnailExperimentForRun(
+                                        mediaScope = mediaScope,
+                                        minSizeBytes = minSizeBytes,
+                                        step = step
+                                    )
+                                    startSimilarityExperimentTask(
+                                        repository = repository,
+                                        request = SimilarityExperimentRunRequest(
+                                            experiment = experiment,
+                                            mediaScope = mediaScope,
+                                            minSizeBytes = minSizeBytes,
+                                            exactThumbnailStep = step
+                                        ),
+                                        scope = scope,
+                                        taskCoordinator = taskCoordinator,
+                                        notificationController = notificationController,
+                                        onStatusText = { status -> runStatusText = status },
+                                        onRunFinished = { summary ->
+                                            selectedRunExperimentId = summary.experimentId
+                                            pane = SimilarityExperimentPane.RunDetail
+                                            refreshStoredResults(summary.experimentId)
+                                        }
+                                    )
+                                },
+                                onCancel = {
+                                    taskCoordinator.requestCancel(TaskArea.Similarity)
+                                }
+                            )
+                        }
+                    } else if (selectedTemplate != null && selectedTemplateDurationStep != null) {
+                        item(key = "duration_tolerance_run") {
+                            DurationToleranceRunCard(
+                                experimentName = selectedTemplate.name,
+                                description = "Runs a cached-video experiment that extracts each video's duration and clusters candidates whose durations fall within the configured tolerance.",
+                                minSizeInput = minSizeInput,
+                                onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                                minSizeUnit = minSizeUnit,
+                                onMinSizeUnitChange = { minSizeUnit = it },
+                                toleranceInput = durationToleranceInput,
+                                onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
+                                toleranceDescription = "Tolerance is the maximum duration gap inside one cluster. Use 0 for exact millisecond duration matches.",
+                                candidateCountText = candidateCountText,
+                                runStatusText = displayedRunStatusText,
+                                isRunning = activeSimilarityTask != null,
+                                runButtonText = "Run duration experiment",
+                                onRun = {
+                                    val step = durationStep
+                                    val experiment = durationToleranceExperimentForRun(
+                                        minSizeBytes = minSizeBytes,
+                                        step = step
+                                    )
+                                    startSimilarityExperimentTask(
+                                        repository = repository,
+                                        request = SimilarityExperimentRunRequest(
+                                            experiment = experiment,
+                                            mediaScope = SimilarityMediaScope.Video,
+                                            minSizeBytes = minSizeBytes,
+                                            durationToleranceStep = step
+                                        ),
+                                        scope = scope,
+                                        taskCoordinator = taskCoordinator,
+                                        notificationController = notificationController,
+                                        onStatusText = { status -> runStatusText = status },
+                                        onRunFinished = { summary ->
+                                            selectedRunExperimentId = summary.experimentId
+                                            pane = SimilarityExperimentPane.RunDetail
+                                            refreshStoredResults(summary.experimentId)
+                                        }
+                                    )
+                                },
+                                onCancel = {
+                                    taskCoordinator.requestCancel(TaskArea.Similarity)
+                                }
+                            )
+                        }
+                    } else if (selectedTemplate != null && selectedTemplateDurationNeighborStep != null) {
+                        item(key = "duration_neighbor_run") {
+                            DurationToleranceRunCard(
+                                experimentName = selectedTemplate.name,
+                                description = "Runs a cached-video experiment that sorts candidates by duration, keeps only adjacent neighbors inside the tolerance, and omits videos without a nearby neighbor.",
+                                minSizeInput = minSizeInput,
+                                onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
+                                minSizeUnit = minSizeUnit,
+                                onMinSizeUnitChange = { minSizeUnit = it },
+                                toleranceInput = durationToleranceInput,
+                                onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
+                                toleranceDescription = "Tolerance is the maximum duration gap between adjacent sorted videos. Videos with no adjacent neighbor inside this gap are not listed.",
+                                candidateCountText = candidateCountText,
+                                runStatusText = displayedRunStatusText,
+                                isRunning = activeSimilarityTask != null,
+                                runButtonText = "Run duration neighbor list",
+                                onRun = {
+                                    val step = parsedDurationNeighborListStep(durationToleranceInput)
+                                    val experiment = durationNeighborListExperimentForRun(
+                                        minSizeBytes = minSizeBytes,
+                                        step = step
+                                    )
+                                    startSimilarityExperimentTask(
+                                        repository = repository,
+                                        request = SimilarityExperimentRunRequest(
+                                            experiment = experiment,
+                                            mediaScope = SimilarityMediaScope.Video,
+                                            minSizeBytes = minSizeBytes,
+                                            durationNeighborListStep = step
+                                        ),
+                                        scope = scope,
+                                        taskCoordinator = taskCoordinator,
+                                        notificationController = notificationController,
+                                        onStatusText = { status -> runStatusText = status },
+                                        onRunFinished = { summary ->
+                                            selectedRunExperimentId = summary.experimentId
+                                            pane = SimilarityExperimentPane.RunDetail
+                                            refreshStoredResults(summary.experimentId)
+                                        }
+                                    )
+                                },
+                                onCancel = {
+                                    taskCoordinator.requestCancel(TaskArea.Similarity)
+                                }
+                            )
+                        }
+                    } else if (selectedTemplate != null) {
+                        item(key = "selected_method") {
+                            SelectedExperimentMethodCard(experiment = selectedTemplate)
+                        }
+                    } else {
+                        item(key = "missing_template") {
+                            Text(
+                                text = "Select a template to configure this experiment.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Button(
+                                onClick = { openCreatePane(clearTemplateSelection = true) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Back to templates")
+                            }
                         }
                     }
                 }
                 SimilarityExperimentPane.RunDetail -> {
-                    AppTopBar(
-                        title = selectedRun?.experimentName ?: "Experiment detail",
-                        onBack = ::openListPane
-                    )
-                    if (selectedRun == null) {
-                        Text(
-                            text = "This experiment run is no longer available.",
-                            style = MaterialTheme.typography.bodySmall
+                    item(key = "top_bar") {
+                        AppTopBar(
+                            title = selectedRun?.experimentName ?: "Experiment detail",
+                            onBack = ::openListPane
                         )
-                        Button(
-                            onClick = ::openListPane,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Back to experiments")
+                    }
+                    if (selectedRun == null) {
+                        item(key = "missing_run") {
+                            Text(
+                                text = "This experiment run is no longer available.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Button(
+                                onClick = ::openListPane,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Back to experiments")
+                            }
                         }
                     } else {
-                        SimilarityRunSummaryCard(run = selectedRun)
-                        StoredSimilarityResultsCard(
-                            repository = repository,
-                            selectedRun = selectedRun,
-                            clusters = clusters,
-                            isLoading = clustersLoading,
-                            deletedPaths = deletedPaths,
-                            imageLoader = imageLoader,
-                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                            previewThumbnailSizeDp = groupCardThumbnailSizeDp,
-                            rememberedPreviewCache = rememberedPreviewCache,
-                            showFullPaths = showFullPaths,
-                            loadedClusterMembers = loadedClusterMembers,
-                            clusterMemberLoadErrors = clusterMemberLoadErrors,
-                            onOpenCluster = { cluster -> selectedClusterKey = clusterStableKey(cluster) }
-                        )
+                        item(key = "run_summary") {
+                            SimilarityRunSummaryCard(run = selectedRun)
+                        }
+                        item(key = "cluster_header") {
+                            StoredSimilarityResultsHeader(
+                                selectedRun = selectedRun,
+                                clusters = clusters,
+                                isLoading = clustersLoading
+                            )
+                        }
+                        if (clustersLoading) {
+                            item(key = "clusters_loading") {
+                                SimilarityClusterLoadingIndicator(
+                                    loadedClusterCount = clusters.size,
+                                    totalClusterCount = selectedRun.clusterCount
+                                )
+                            }
+                        } else if (clusters.isEmpty()) {
+                            item(key = "clusters_empty") {
+                                Text(
+                                    text = "No duplicate-like similarity clusters found for the latest run.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        } else {
+                            items(
+                                items = clusters,
+                                key = { cluster -> clusterStableKey(cluster) }
+                            ) { cluster ->
+                                SimilarityClusterCard(
+                                    repository = repository,
+                                    cluster = cluster,
+                                    deletedPaths = deletedPaths,
+                                    imageLoader = imageLoader,
+                                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                    previewThumbnailSizeDp = groupCardThumbnailSizeDp,
+                                    rememberedPreviewCache = rememberedPreviewCache,
+                                    showFullPaths = showFullPaths,
+                                    loadedClusterMembers = loadedClusterMembers,
+                                    clusterMemberLoadErrors = clusterMemberLoadErrors,
+                                    onOpen = { selectedClusterKey = clusterStableKey(cluster) }
+                                )
+                            }
+                        }
                     }
                 }
             }
-        }
+    }
+}
 
-        VerticalScrollbar(
-            scrollState = scrollState,
+@Composable
+private fun SimilarityExperimentLazyPane(
+    listState: LazyListState,
+    loadIndicatorText: String?,
+    modifier: Modifier = Modifier,
+    content: LazyListScope.() -> Unit
+) {
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(Spacing.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp),
+            content = content
+        )
+
+        VerticalLazyScrollbar(
+            listState = listState,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+        TopRightLoadIndicator(text = loadIndicatorText)
     }
 }
 
 @Composable
-private fun ExperimentRunsListCard(
-    runs: List<SimilarityExperimentRunEntity>,
-    onSelectRun: (SimilarityExperimentRunEntity) -> Unit
-) {
+private fun ExperimentRunsHeader(hasRuns: Boolean) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(text = "Experiment list", style = MaterialTheme.typography.titleMedium)
-        if (runs.isEmpty()) {
+        if (!hasRuns) {
             Text(text = "No saved experiment runs yet.", style = MaterialTheme.typography.bodySmall)
-            return@Column
-        }
-
-        runs.forEach { run ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelectRun(run) }
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = run.experimentName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = run.experimentId,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun ExperimentTemplatesCard(
-    experiments: List<SimilarityExperimentSpec>,
-    selectedExperimentId: String?,
-    onSelectExperiment: (SimilarityExperimentSpec) -> Unit
+private fun ExperimentRunCard(
+    run: SimilarityExperimentRunEntity,
+    onSelectRun: (SimilarityExperimentRunEntity) -> Unit
 ) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectRun(run) }
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = run.experimentName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = run.experimentId,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExperimentTemplatesHeader(hasTemplates: Boolean) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(text = "Experiment templates", style = MaterialTheme.typography.titleMedium)
-        experiments.forEach { experiment ->
-            val selected = experiment.id == selectedExperimentId
-            val templateKind = executableTemplateKind(experiment)
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelectExperiment(experiment) },
-                colors = if (selected) {
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                } else {
-                    CardDefaults.cardColors()
-                }
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = experiment.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = templateKind,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = experiment.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+        if (!hasTemplates) {
+            Text(text = "No experiment templates are available.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ExperimentTemplateCard(
+    experiment: SimilarityExperimentSpec,
+    selected: Boolean,
+    onSelectExperiment: (SimilarityExperimentSpec) -> Unit
+) {
+    val templateKind = executableTemplateKind(experiment)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelectExperiment(experiment) },
+        colors = if (selected) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = experiment.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = templateKind,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = experiment.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -937,20 +1077,10 @@ private fun SimilarityRunSummaryCard(run: SimilarityExperimentRunEntity) {
 }
 
 @Composable
-private fun StoredSimilarityResultsCard(
-    repository: SimilarityExperimentRepository,
+private fun StoredSimilarityResultsHeader(
     selectedRun: SimilarityExperimentRunEntity?,
     clusters: List<SimilarityClusterEntity>,
-    isLoading: Boolean,
-    deletedPaths: Set<String>,
-    imageLoader: ImageLoader,
-    keepLoadedThumbnailsInMemory: Boolean,
-    previewThumbnailSizeDp: Dp,
-    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
-    showFullPaths: Boolean,
-    loadedClusterMembers: MutableMap<String, SimilarityClusterMembersState>,
-    clusterMemberLoadErrors: MutableMap<String, String>,
-    onOpenCluster: (SimilarityClusterEntity) -> Unit
+    isLoading: Boolean
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -969,25 +1099,38 @@ private fun StoredSimilarityResultsCard(
             Text(text = "Loading experiment clusters...", style = MaterialTheme.typography.bodySmall)
             return@Column
         }
-        if (clusters.isEmpty()) {
-            Text(text = "No duplicate-like similarity clusters found for the latest run.", style = MaterialTheme.typography.bodySmall)
-            return@Column
-        }
-        clusters.forEach { cluster ->
-            SimilarityClusterCard(
-                repository = repository,
-                cluster = cluster,
-                deletedPaths = deletedPaths,
-                imageLoader = imageLoader,
-                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                previewThumbnailSizeDp = previewThumbnailSizeDp,
-                rememberedPreviewCache = rememberedPreviewCache,
-                showFullPaths = showFullPaths,
-                loadedClusterMembers = loadedClusterMembers,
-                clusterMemberLoadErrors = clusterMemberLoadErrors,
-                onOpen = { onOpenCluster(cluster) }
-            )
-        }
+        Text(
+            text = "Loaded ${clusters.size}/${selectedRun.clusterCount} clusters.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SimilarityClusterLoadingIndicator(
+    loadedClusterCount: Int,
+    totalClusterCount: Int
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
+    ) {
+        LinearProgressIndicator(
+            progress = {
+                if (totalClusterCount <= 0) {
+                    0f
+                } else {
+                    (loadedClusterCount.toFloat() / totalClusterCount.toFloat()).coerceIn(0f, 1f)
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = "Loading experiment clusters ${loadedClusterCount.coerceAtLeast(0)}/${totalClusterCount.coerceAtLeast(0)}...",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
