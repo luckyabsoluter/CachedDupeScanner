@@ -397,6 +397,17 @@ class SimilarityExperimentsScreenTest {
             preserveOrder = true
         )
         assertEquals(listOf("/b.mp4  •  /a.mp4"), orderedLines)
+
+        val durationLines = similarityClusterPreviewLineTexts(
+            members = listOf(file("/b.mp4"), file("/a.mp4")),
+            showFullPaths = true,
+            durationMillisByNormalizedPath = mapOf(
+                "/a.mp4" to 10_000L,
+                "/b.mp4" to 10_750L
+            ),
+            preserveOrder = true
+        )
+        assertEquals(listOf("10.750s · /b.mp4  •  10s · /a.mp4"), durationLines)
     }
 
     @Test

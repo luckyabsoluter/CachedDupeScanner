@@ -70,6 +70,7 @@ import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
 import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
@@ -93,6 +94,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private data class SimilarityClusterMembersState(
     val members: List<FileMetadata>,
+    val durationMillisByNormalizedPath: Map<String, Long>,
     val complete: Boolean
 )
 
@@ -1183,6 +1185,7 @@ private fun SimilarityClusterCard(
     val clusterKey = remember(cluster.experimentId, cluster.signature) { clusterStableKey(cluster) }
     val memberState = loadedClusterMembers[clusterKey]
     val members = memberState?.members.orEmpty()
+    val durationMillisByNormalizedPath = memberState?.durationMillisByNormalizedPath.orEmpty()
     val loadError = clusterMemberLoadErrors[clusterKey]
 
     LaunchedEffect(clusterKey) {
@@ -1191,7 +1194,7 @@ private fun SimilarityClusterCard(
         }
         val previewMembers = runCatching {
             withContext(Dispatchers.IO) {
-                repository.listClusterMembers(
+                repository.listClusterMemberRows(
                     cluster = cluster,
                     limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT
                 )
@@ -1200,7 +1203,8 @@ private fun SimilarityClusterCard(
         previewMembers.fold(
             onSuccess = {
                 loadedClusterMembers[clusterKey] = SimilarityClusterMembersState(
-                    members = it,
+                    members = it.map { member -> member.metadata },
+                    durationMillisByNormalizedPath = similarityMemberDurationMap(it),
                     complete = it.size >= cluster.fileCount
                 )
             },
@@ -1297,6 +1301,7 @@ private fun SimilarityClusterCard(
                 SimilarityClusterMemberPreviewLines(
                     members = members,
                     showFullPaths = showFullPaths,
+                    durationMillisByNormalizedPath = durationMillisByNormalizedPath,
                     preserveOrder = durationNeighborExplanation != null
                 )
 
@@ -1318,11 +1323,13 @@ private fun SimilarityClusterCard(
 private fun SimilarityClusterMemberPreviewLines(
     members: List<FileMetadata>,
     showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long> = emptyMap(),
     preserveOrder: Boolean = false
 ) {
     similarityClusterPreviewLineTexts(
         members = members,
         showFullPaths = showFullPaths,
+        durationMillisByNormalizedPath = durationMillisByNormalizedPath,
         preserveOrder = preserveOrder
     ).forEach { line ->
         Text(
@@ -1368,13 +1375,14 @@ private fun SimilarityClusterDetailScreen(
         isLoading = true
         val result = runCatching {
             withContext(Dispatchers.IO) {
-                repository.listClusterMembers(cluster = cluster)
+                repository.listClusterMemberRows(cluster = cluster)
             }
         }
         result.fold(
             onSuccess = {
                 loadedClusterMembers[clusterKey] = SimilarityClusterMembersState(
-                    members = it,
+                    members = it.map { member -> member.metadata },
+                    durationMillisByNormalizedPath = similarityMemberDurationMap(it),
                     complete = true
                 )
                 clusterMemberLoadErrors.remove(clusterKey)
@@ -2019,6 +2027,7 @@ internal fun similarityClusterDetailLines(
 internal fun similarityClusterPreviewLineTexts(
     members: List<FileMetadata>,
     showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long> = emptyMap(),
     itemsPerLine: Int = SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE,
     maxItems: Int = SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT,
     preserveOrder: Boolean = false
@@ -2033,9 +2042,33 @@ internal fun similarityClusterPreviewLineTexts(
         .chunked(itemsPerLine.coerceAtLeast(1))
         .map { row ->
             row.joinToString("  •  ") { file ->
-                formatPath(file.normalizedPath, showFullPaths)
+                similarityClusterPreviewMemberText(
+                    file = file,
+                    showFullPaths = showFullPaths,
+                    durationMillisByNormalizedPath = durationMillisByNormalizedPath
+                )
             }
         }
+}
+
+private fun similarityMemberDurationMap(
+    members: List<SimilarityClusterMember>
+): Map<String, Long> {
+    return members.mapNotNull { member ->
+        member.durationMillis?.let { durationMillis ->
+            member.metadata.normalizedPath to durationMillis
+        }
+    }.toMap()
+}
+
+private fun similarityClusterPreviewMemberText(
+    file: FileMetadata,
+    showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long>
+): String {
+    val path = formatPath(file.normalizedPath, showFullPaths)
+    val durationMillis = durationMillisByNormalizedPath[file.normalizedPath] ?: return path
+    return "${durationMillisLabel(durationMillis)} · $path"
 }
 
 internal fun similarityClusterPreviewDisplayCount(

@@ -49,6 +49,11 @@ data class SimilarityExperimentRunRequest(
     val durationNeighborListStep: DurationNeighborListStep? = null
 )
 
+data class SimilarityClusterMember(
+    val metadata: FileMetadata,
+    val durationMillis: Long?
+)
+
 class SimilarityExperimentRepository(
     private val database: CacheDatabase,
     private val fileDao: FileCacheDao,
@@ -82,12 +87,24 @@ class SimilarityExperimentRepository(
         cluster: SimilarityClusterEntity,
         limit: Int? = null
     ): List<FileMetadata> {
-        val paths = parseSimilarityClusterMemberPaths(cluster.memberNormalizedPathsText)
+        return listClusterMemberRows(
+            cluster = cluster,
+            limit = limit
+        ).map { member -> member.metadata }
+    }
+
+    fun listClusterMemberRows(
+        cluster: SimilarityClusterEntity,
+        limit: Int? = null
+    ): List<SimilarityClusterMember> {
+        val entries = parseSimilarityClusterMemberEntries(cluster.memberNormalizedPathsText)
             .let { parsed ->
                 if (limit == null) parsed else parsed.take(limit.coerceAtLeast(0))
             }
-        if (paths.isEmpty()) return emptyList()
+        if (entries.isEmpty()) return emptyList()
 
+        val paths = entries.map { entry -> entry.normalizedPath }
+        val entryByPath = entries.associateBy { entry -> entry.normalizedPath }
         val membersByPath = linkedMapOf<String, FileMetadata>()
         paths
             .chunked(SIMILARITY_CLUSTER_MEMBER_LOOKUP_CHUNK_SIZE)
@@ -99,7 +116,14 @@ class SimilarityExperimentRepository(
                     membersByPath[entity.path] = metadata
                 }
             }
-        return paths.mapNotNull { path -> membersByPath[path] }
+        return paths.mapNotNull { path ->
+            membersByPath[path]?.let { metadata ->
+                SimilarityClusterMember(
+                    metadata = metadata,
+                    durationMillis = entryByPath[path]?.durationMillis
+                )
+            }
+        }
     }
 
     fun runExactThumbnailHashExperiment(
@@ -573,9 +597,7 @@ private fun durationToleranceClusters(
             ),
             fileCount = current.size,
             totalBytes = current.sumOf { candidate -> candidate.entity.sizeBytes },
-            memberNormalizedPathsText = current.joinToString("\n") { candidate ->
-                candidate.entity.normalizedPath
-            },
+            memberNormalizedPathsText = durationClusterMemberText(current),
             updatedAtMillis = updatedAtMillis
         )
     }
@@ -632,9 +654,7 @@ private fun durationNeighborListClusters(
             ),
             fileCount = listedCandidates.size,
             totalBytes = listedCandidates.sumOf { candidate -> candidate.entity.sizeBytes },
-            memberNormalizedPathsText = listedCandidates.joinToString("\n") { candidate ->
-                candidate.entity.normalizedPath
-            },
+            memberNormalizedPathsText = durationClusterMemberText(listedCandidates),
             updatedAtMillis = updatedAtMillis
         )
     )
@@ -709,12 +729,53 @@ private fun isDurationNeighborListSignature(signature: String): Boolean {
         signature.startsWith("duration-neighbor-v1:")
 }
 
-internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {
-    return text.lineSequence()
+internal data class SimilarityClusterMemberEntry(
+    val normalizedPath: String,
+    val durationMillis: Long?
+)
+
+private fun durationClusterMemberText(candidates: List<DurationCandidate>): String {
+    return candidates.joinToString("\n") { candidate ->
+        "${candidate.durationMillis.coerceAtLeast(0L)}\t${candidate.entity.normalizedPath}"
+    }
+}
+
+internal fun parseSimilarityClusterMemberEntries(text: String): List<SimilarityClusterMemberEntry> {
+    val entriesByPath = linkedMapOf<String, SimilarityClusterMemberEntry>()
+    text.lineSequence()
         .map { line -> line.trim() }
         .filter { line -> line.isNotEmpty() }
-        .distinct()
-        .toList()
+        .forEach { line ->
+            val tabIndex = line.indexOf('\t')
+            val durationMillis = if (tabIndex > 0) {
+                line.substring(0, tabIndex)
+                    .toLongOrNull()
+                    ?.coerceAtLeast(0L)
+            } else {
+                null
+            }
+            val entry = if (durationMillis != null) {
+                val normalizedPath = line.substring(tabIndex + 1).trim()
+                SimilarityClusterMemberEntry(
+                    normalizedPath = normalizedPath,
+                    durationMillis = durationMillis
+                )
+            } else {
+                SimilarityClusterMemberEntry(
+                    normalizedPath = line,
+                    durationMillis = null
+                )
+            }
+            if (entry.normalizedPath.isNotEmpty()) {
+                entriesByPath.putIfAbsent(entry.normalizedPath, entry)
+            }
+        }
+    return entriesByPath.values.toList()
+}
+
+internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {
+    return parseSimilarityClusterMemberEntries(text)
+        .map { entry -> entry.normalizedPath }
 }
 
 private fun CachedFileEntity.toMetadata(): FileMetadata {

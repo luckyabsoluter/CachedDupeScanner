@@ -205,7 +205,16 @@ class SimilarityExperimentRepositoryTest {
         assertTrue(clusters.single().signature.startsWith("duration-v1:1000:"))
         assertEquals(
             listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
-            clusters.single().memberNormalizedPathsText.lineSequence().toList()
+            parseSimilarityClusterMemberPaths(clusters.single().memberNormalizedPathsText)
+        )
+        assertEquals(
+            listOf(10_000L, 10_750L),
+            parseSimilarityClusterMemberEntries(clusters.single().memberNormalizedPathsText)
+                .map { entry -> entry.durationMillis }
+        )
+        assertEquals(
+            listOf(10_000L, 10_750L),
+            repository.listClusterMemberRows(clusters.single()).map { member -> member.durationMillis }
         )
     }
 
@@ -266,7 +275,11 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(1, clusters.size)
         assertEquals(
             listOf(first, second, third, fourth, fifth).map { it.absolutePath.replace('\\', '/').lowercase() },
-            clusters.single().memberNormalizedPathsText.lineSequence().toList()
+            parseSimilarityClusterMemberPaths(clusters.single().memberNormalizedPathsText)
+        )
+        assertEquals(
+            listOf(10_000L, 10_750L, 12_100L, 12_800L, 13_500L),
+            repository.listClusterMemberRows(clusters.single()).map { member -> member.durationMillis }
         )
         assertTrue(clusters.single().signature.startsWith("duration-neighbor-list-v1:1000:"))
     }

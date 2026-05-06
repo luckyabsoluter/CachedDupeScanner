@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity experiment runs now use the shared app-wide task banner, bubble, and notification progress flow while running.
 - Similarity cluster cards now cap member preview text into compact multi-item lines instead of growing with one member per line.
 - New similarity experiments now show only templates first, then open the selected template's configuration screen.
+- Duration-based similarity cards now show stored video lengths next to preview members.
 
 ### Fixed
 
