@@ -286,6 +286,70 @@ class SimilarityExperimentRepositoryTest {
     }
 
     @Test
+    fun durationNeighborListRebuildUsesStoredDurationsWithoutExtractorIo() {
+        val isolated = videoFile("a-isolated.mp4")
+        val first = videoFile("b-first.mp4")
+        val second = videoFile("c-second.mp4")
+        val third = videoFile("d-third.mp4")
+        val fourth = videoFile("e-fourth.mp4")
+        val fifth = videoFile("f-fifth.mp4")
+        val minSizeBytes = 10L
+        listOf(isolated, first, second, third, fourth, fifth).forEachIndexed { index, file ->
+            database.fileCacheDao().upsert(entity(file, sizeBytes = minSizeBytes + index))
+        }
+        val durationExtractor = FakeDurationExtractor(
+            mapOf(
+                isolated.absolutePath to 30_000L,
+                first.absolutePath to 10_000L,
+                second.absolutePath to 10_750L,
+                third.absolutePath to 12_100L,
+                fourth.absolutePath to 12_800L,
+                fifth.absolutePath to 13_500L
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao(),
+            durationExtractor = durationExtractor
+        )
+        val experiment = SimilarityExperimentSpec(
+            id = "video-duration-neighbor-rebuild-test",
+            name = "Duration neighbor",
+            description = "Duration neighbor test",
+            defaultMinSizeBytes = minSizeBytes,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(DurationNeighborListStep(toleranceSeconds = 1))
+        )
+
+        val initialSummary = repository.runDurationNeighborListExperiment(
+            request = SimilarityExperimentRunRequest(
+                experiment = experiment,
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = minSizeBytes,
+                durationNeighborListStep = DurationNeighborListStep(toleranceSeconds = 1)
+            ),
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val initialExtractorCalls = durationExtractor.calls
+        val rebuiltSummary = repository.rebuildDurationNeighborListFromStoredDurations(
+            experimentId = experiment.id,
+            neighborStep = DurationNeighborListStep(toleranceSeconds = 0)
+        )
+
+        assertEquals(5, initialSummary.duplicateFileCount)
+        assertEquals(6, repository.countDurationCandidates(experiment.id))
+        assertEquals(6, initialExtractorCalls)
+        assertEquals(initialExtractorCalls, durationExtractor.calls)
+        assertEquals(6, rebuiltSummary.candidateCount)
+        assertEquals(6, rebuiltSummary.processedCount)
+        assertEquals(0, rebuiltSummary.clusterCount)
+        assertEquals(0, rebuiltSummary.duplicateFileCount)
+        assertTrue(repository.listClusters(experiment.id).isEmpty())
+    }
+
+    @Test
     fun durationMemberRowsExtractLegacyPathOnlyDurations() {
         val first = videoFile("legacy-a.mp4")
         val second = videoFile("legacy-b.mp4")
@@ -374,7 +438,11 @@ private class FakeDurationExtractor(
         file: File,
         shouldContinue: () -> Boolean
     ): Long? {
+        calls += 1
         if (!shouldContinue()) return null
         return durationsByPath[file.absolutePath]
     }
+
+    var calls = 0
+        private set
 }

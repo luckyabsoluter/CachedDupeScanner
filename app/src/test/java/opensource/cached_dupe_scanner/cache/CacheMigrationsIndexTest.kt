@@ -286,6 +286,50 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration14to15CreatesSimilarityDurationCandidateCache() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-14-15-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(14) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion14SimilarityTables(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_14_15.migrate(db)
+
+            assertTrue(hasTable(db, "similarity_experiment_runs"))
+            assertTrue(hasTable(db, "similarity_clusters"))
+            assertTrue(hasTable(db, "similarity_duration_candidates"))
+            assertTrue(hasColumn(db, "similarity_duration_candidates", "experimentId"))
+            assertTrue(hasColumn(db, "similarity_duration_candidates", "normalizedPath"))
+            assertTrue(hasColumn(db, "similarity_duration_candidates", "durationMillis"))
+            assertTrue(hasColumn(db, "similarity_duration_candidates", "sizeBytes"))
+            assertTrue(hasColumn(db, "similarity_duration_candidates", "updatedAtMillis"))
+            assertTrue(
+                hasIndex(
+                    db = db,
+                    table = "similarity_duration_candidates",
+                    indexName = "index_similarity_duration_candidates_experimentId_durationMillis_normalizedPath"
+                )
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -338,6 +382,40 @@ class CacheMigrationsIndexTest {
             )
             """.trimIndent()
         )
+    }
+
+    private fun createVersion14SimilarityTables(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS similarity_experiment_runs (
+                experimentId TEXT NOT NULL PRIMARY KEY,
+                experimentName TEXT NOT NULL,
+                startedAtMillis INTEGER NOT NULL,
+                finishedAtMillis INTEGER NOT NULL,
+                candidateCount INTEGER NOT NULL,
+                processedCount INTEGER NOT NULL,
+                skippedCount INTEGER NOT NULL,
+                clusterCount INTEGER NOT NULL,
+                duplicateFileCount INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS similarity_clusters (
+                experimentId TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                fileCount INTEGER NOT NULL,
+                totalBytes INTEGER NOT NULL,
+                memberNormalizedPathsText TEXT NOT NULL,
+                updatedAtMillis INTEGER NOT NULL,
+                PRIMARY KEY(experimentId, signature)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_experimentId ON similarity_clusters(experimentId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)")
     }
 
     private fun hasIndex(db: SupportSQLiteDatabase, table: String, indexName: String): Boolean {

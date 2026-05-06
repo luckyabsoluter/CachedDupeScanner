@@ -270,6 +270,29 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_duration_candidates (
+                    experimentId TEXT NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    durationMillis INTEGER NOT NULL,
+                    sizeBytes INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(experimentId, normalizedPath)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_duration_candidates_experimentId_durationMillis_normalizedPath
+                ON similarity_duration_candidates(experimentId, durationMillis, normalizedPath)
+                """.trimIndent()
+            )
+        }
+    }
+
 }
 
 private fun tableColumns(

@@ -264,6 +264,18 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun durationNeighborToleranceInputUsesClusterSignatureBeforeRunId() {
+        val run = run("video-duration-neighbor-104857600-2000")
+        val clusters = listOf(
+            cluster(signature = "duration-neighbor-list-v1:1000:0000000010000-0000000010750")
+        )
+
+        assertEquals("1", durationNeighborToleranceInputForRun(run = run, clusters = clusters))
+        assertEquals("2", durationNeighborToleranceInputForRun(run = run, clusters = emptyList()))
+        assertEquals(null, durationNeighborToleranceInputForRun(run = run("exact"), clusters = emptyList()))
+    }
+
+    @Test
     fun similarityClusterDetailLinesExplainExactHashGroupingOnlyWhenAvailable() {
         val exactSignature = buildThumbnailSignature(
             mediaScope = SimilarityMediaScope.Image,
@@ -436,6 +448,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("DurationToleranceRunCard("))
         assertTrue(content.contains("repository.runDurationToleranceExperiment("))
         assertTrue(content.contains("repository.runDurationNeighborListExperiment("))
+        assertTrue(content.contains("repository.rebuildDurationNeighborListFromStoredDurations("))
         assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
         assertTrue(content.contains("StoredSimilarityResultsHeader("))
         assertTrue(content.contains("items("))
@@ -500,6 +513,8 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains(".distinctBy { member -> member.metadata.normalizedPath }"))
         assertTrue(content.contains("Card(\n        onClick = onOpen"))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
+        assertTrue(content.contains("DurationNeighborStoredRebuildCard("))
+        assertTrue(content.contains("countDurationCandidates("))
     }
 
     @Test

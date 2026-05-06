@@ -156,11 +156,13 @@ fun SimilarityExperimentsScreen(
     var quantizationInput by remember { mutableStateOf("16") }
     var grayscale by remember { mutableStateOf(false) }
     var durationToleranceInput by remember { mutableStateOf("1") }
+    var durationRebuildToleranceInput by remember { mutableStateOf("1") }
     var candidateCountText by remember { mutableStateOf("Loading candidate count...") }
     var runStatusText by remember { mutableStateOf("No experiment running.") }
     val runs = remember { mutableStateListOf<SimilarityExperimentRunEntity>() }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     val durationNeighborMembers = remember { mutableStateListOf<SimilarityClusterMember>() }
+    var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
@@ -168,6 +170,7 @@ fun SimilarityExperimentsScreen(
     var pane by remember { mutableStateOf(SimilarityExperimentPane.List) }
     var clustersLoading by remember { mutableStateOf(false) }
     var durationNeighborMembersLoading by remember { mutableStateOf(false) }
+    var durationNeighborRebuildRunning by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var topVisibleItemIndex by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -252,6 +255,13 @@ fun SimilarityExperimentsScreen(
             } else {
                 emptyList()
             }
+            val nextDurationNeighborStoredDurationCount = if (nextIsDurationNeighborList && nextSelectedRun != null) {
+                withContext(Dispatchers.IO) {
+                    repository.countDurationCandidates(nextSelectedRun.experimentId)
+                }
+            } else {
+                0
+            }
             runs.clear()
             runs.addAll(nextRuns)
             selectedRunExperimentId = nextSelectedRun?.experimentId
@@ -259,6 +269,16 @@ fun SimilarityExperimentsScreen(
             clusters.addAll(nextClusters)
             durationNeighborMembers.clear()
             durationNeighborMembers.addAll(nextDurationNeighborMembers)
+            durationNeighborStoredDurationCount = nextDurationNeighborStoredDurationCount
+            if (nextIsDurationNeighborList) {
+                val nextToleranceInput = durationNeighborToleranceInputForClusters(nextClusters)
+                    ?: if (nextDurationNeighborStoredDurationCount == 0) {
+                        durationNeighborToleranceInputForRun(run = nextSelectedRun, clusters = emptyList())
+                    } else {
+                        null
+                    }
+                nextToleranceInput?.let { input -> durationRebuildToleranceInput = input }
+            }
             clustersLoading = false
             durationNeighborMembersLoading = false
             if (selectedClusterKey != null && nextClusters.none { clusterStableKey(it) == selectedClusterKey }) {
@@ -274,6 +294,7 @@ fun SimilarityExperimentsScreen(
         selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
+        durationNeighborStoredDurationCount = 0
         refreshStoredResults(null)
     }
 
@@ -287,6 +308,7 @@ fun SimilarityExperimentsScreen(
         selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
+        durationNeighborStoredDurationCount = 0
     }
 
     fun openTemplateDetailPane(experiment: SimilarityExperimentSpec) {
@@ -297,6 +319,7 @@ fun SimilarityExperimentsScreen(
         selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
+        durationNeighborStoredDurationCount = 0
     }
 
     fun openRunPane(run: SimilarityExperimentRunEntity) {
@@ -306,7 +329,37 @@ fun SimilarityExperimentsScreen(
         selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
+        durationNeighborStoredDurationCount = 0
         refreshStoredResults(run.experimentId)
+    }
+
+    fun rebuildSelectedDurationNeighborList() {
+        val run = selectedRun ?: return
+        if (!isDurationNeighborListExperiment(run.experimentId) || durationNeighborRebuildRunning) return
+        val step = parsedDurationNeighborListStep(durationRebuildToleranceInput)
+        durationNeighborRebuildRunning = true
+        clustersLoading = true
+        durationNeighborMembersLoading = true
+        runStatusText = "Rebuilding duration-neighbor list from stored video lengths."
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    repository.rebuildDurationNeighborListFromStoredDurations(
+                        experimentId = run.experimentId,
+                        neighborStep = step
+                    )
+                }
+            }.onSuccess { summary ->
+                durationToleranceInput = durationRebuildToleranceInput
+                runStatusText = "Rebuilt: ${summary.duplicateFileCount} videos match the current tolerance."
+                refreshStoredResults(summary.experimentId)
+            }.onFailure {
+                clustersLoading = false
+                durationNeighborMembersLoading = false
+                runStatusText = "Duration-neighbor rebuild failed."
+            }
+            durationNeighborRebuildRunning = false
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -667,6 +720,22 @@ fun SimilarityExperimentsScreen(
                     } else {
                         item(key = "run_summary") {
                             SimilarityRunSummaryCard(run = selectedRun)
+                        }
+                        if (selectedRunIsDurationNeighbor) {
+                            item(key = "duration_neighbor_rebuild") {
+                                DurationNeighborStoredRebuildCard(
+                                    toleranceInput = durationRebuildToleranceInput,
+                                    onToleranceInputChange = {
+                                        durationRebuildToleranceInput = sanitizeNumberDraftInput(it)
+                                    },
+                                    storedDurationCount = durationNeighborStoredDurationCount,
+                                    runStatusText = displayedRunStatusText,
+                                    isRunning = activeSimilarityTask != null ||
+                                        durationNeighborRebuildRunning ||
+                                        resultItemsLoading,
+                                    onRebuild = ::rebuildSelectedDurationNeighborList
+                                )
+                            }
                         }
                         item(key = "cluster_header") {
                             StoredSimilarityResultsHeader(
@@ -1176,6 +1245,53 @@ private fun SimilarityRunSummaryCard(run: SimilarityExperimentRunEntity) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun DurationNeighborStoredRebuildCard(
+    toleranceInput: String,
+    onToleranceInputChange: (String) -> Unit,
+    storedDurationCount: Int,
+    runStatusText: String,
+    isRunning: Boolean,
+    onRebuild: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Rebuild duration list",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "$storedDurationCount stored video lengths",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = toleranceInput,
+                onValueChange = onToleranceInputChange,
+                label = { Text("Tolerance seconds") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = runStatusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onRebuild,
+                enabled = !isRunning && storedDurationCount > 0,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Rebuild from stored lengths")
+            }
         }
     }
 }
@@ -2150,6 +2266,29 @@ internal fun durationNeighborClusterExplanation(signature: String): DurationNeig
         minDurationMillis = minDurationMillis,
         maxDurationMillis = maxDurationMillis
     )
+}
+
+internal fun durationNeighborToleranceInputForRun(
+    run: SimilarityExperimentRunEntity?,
+    clusters: List<SimilarityClusterEntity>
+): String? {
+    val toleranceMillis = durationNeighborToleranceInputForClusters(clusters)
+        ?.toLongOrNull()
+        ?.times(1_000L)
+        ?: run?.experimentId
+            ?.takeIf(::isDurationNeighborListExperiment)
+            ?.substringAfterLast('-', missingDelimiterValue = "")
+            ?.toLongOrNull()
+    return toleranceMillis?.let { millis -> (millis / 1_000L).toString() }
+}
+
+internal fun durationNeighborToleranceInputForClusters(
+    clusters: List<SimilarityClusterEntity>
+): String? {
+    val toleranceMillis = clusters.asSequence()
+        .mapNotNull { cluster -> durationNeighborClusterExplanation(cluster.signature)?.toleranceMillis }
+        .firstOrNull()
+    return toleranceMillis?.let { millis -> (millis / 1_000L).toString() }
 }
 
 internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanation): String {
