@@ -21,6 +21,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity cluster cards now cap member preview text into compact multi-item lines instead of growing with one member per line.
 - New similarity experiments now show only templates first, then open the selected template's configuration screen.
 - Duration-based similarity cards now show stored video lengths next to preview members.
+- Duration-neighbor similarity results now render as a flat duration-sorted video list instead of a group card.
 
 ### Fixed
 

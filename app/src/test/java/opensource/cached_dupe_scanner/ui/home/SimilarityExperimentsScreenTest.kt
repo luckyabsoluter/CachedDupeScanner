@@ -9,6 +9,7 @@ import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.buildThumbnailSignature
+import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -408,6 +409,16 @@ class SimilarityExperimentsScreenTest {
             preserveOrder = true
         )
         assertEquals(listOf("10.750s · /b.mp4  •  10s · /a.mp4"), durationLines)
+        assertEquals(
+            "10.750s · /b.mp4",
+            durationNeighborVideoTitle(
+                member = SimilarityClusterMember(
+                    metadata = file("/b.mp4"),
+                    durationMillis = 10_750L
+                ),
+                showFullPaths = true
+            )
+        )
     }
 
     @Test
@@ -469,6 +480,22 @@ class SimilarityExperimentsScreenTest {
         assertTrue(mainScreen.contains("items = clusters"))
         assertFalse(mainScreen.contains(".verticalScroll("))
         assertFalse(mainScreen.contains("VerticalScrollbar("))
+    }
+
+    @Test
+    fun durationNeighborRunDetailUsesFlatVideoListInsteadOfClusterCards() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val durationNeighborBranch = sourceSection(
+            content = content,
+            start = "} else if (selectedRunIsDurationNeighbor) {",
+            end = "} else if (clusters.isEmpty()) {"
+        )
+
+        assertTrue(durationNeighborBranch.contains("items("))
+        assertTrue(durationNeighborBranch.contains("items = durationNeighborMembers"))
+        assertTrue(durationNeighborBranch.contains("DurationNeighborVideoCard("))
+        assertFalse(durationNeighborBranch.contains("SimilarityClusterCard("))
+        assertFalse(durationNeighborBranch.contains("selectedClusterKey"))
     }
 
     @Test
