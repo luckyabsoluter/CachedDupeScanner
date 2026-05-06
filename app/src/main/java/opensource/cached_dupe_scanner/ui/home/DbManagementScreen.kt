@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -57,7 +58,7 @@ import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
 @Composable
 fun DbManagementScreen(
@@ -72,7 +73,7 @@ fun DbManagementScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
@@ -97,195 +98,205 @@ fun DbManagementScreen(
     val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
 
     Box(modifier = modifier) {
-        Column(
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
+                .padding(Spacing.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
         ) {
-            AppTopBar(title = "DB management", onBack = onBack)
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(Spacing.cardPadding),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
-                ) {
-                    Text(
-                        text = "Overview",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        text = "Choose policies, then run. The app scans storage based on DB entries.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "DB entries: ${uiState.dbCount ?: "-"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Duplicate groups: ${uiState.groupCount ?: "-"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            item(key = "top_bar") {
+                AppTopBar(title = "DB management", onBack = onBack)
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(Spacing.cardPadding),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)
-                ) {
-                    Text(
-                        text = "Duplicate group snapshot",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        text = "This action rebuilds the derived group snapshot only. It does not scan files on storage.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            startRebuildGroupsTask(
-                                resultsRepo = resultsRepo,
-                                uiState = uiState,
-                                appScope = appScope,
-                                taskCoordinator = taskCoordinator,
-                                notificationController = notificationController,
-                                onMaintenanceApplied = onMaintenanceApplied,
-                                refreshOverview = refreshOverview
-                            )
-                        },
-                        enabled = !isBusy,
-                        modifier = Modifier.fillMaxWidth()
+            item(key = "overview") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
                     ) {
-                        Text(if (uiState.isRebuilding) "Rebuilding groups..." else "Rebuild duplicate groups")
-                    }
-                    uiState.groupStatusMessage?.let { message ->
                         Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                            text = "Overview",
+                            style = MaterialTheme.typography.titleSmall
                         )
-                    }
-                    activeTask?.takeIf { it.kind == TaskKind.RebuildGroups }?.let { task ->
-                        DbTaskProgressContent(
-                            task = task,
-                            taskCoordinator = taskCoordinator
+                        Text(
+                            text = "Choose policies, then run. The app scans storage based on DB entries.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "DB entries: ${uiState.dbCount ?: "-"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Duplicate groups: ${uiState.groupCount ?: "-"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(Spacing.cardPadding),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
-                ) {
-                    Text(
-                        text = "File maintenance policies",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = deleteMissing.value,
-                                onCheckedChange = { deleteMissing.value = it }
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
-                            Text("Delete DB entries missing on storage")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = rehashStale.value,
-                                onCheckedChange = { rehashStale.value = it }
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
-                            Text("Rehash entries with stale size/date")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = rehashMissing.value,
-                                onCheckedChange = { rehashMissing.value = it }
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
-                            Text("Compute hash for missing entries")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = onlyDuplicateDetected.value,
-                                onCheckedChange = { onlyDuplicateDetected.value = it }
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
-                            Text("Check only entries currently detected as duplicates")
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            startDbMaintenanceTask(
-                                historyRepo = historyRepo,
-                                uiState = uiState,
-                                appScope = appScope,
-                                taskCoordinator = taskCoordinator,
-                                notificationController = notificationController,
-                                deleteMissing = deleteMissing.value,
-                                rehashStale = rehashStale.value,
-                                rehashMissing = rehashMissing.value,
-                                onlyDuplicateDetected = onlyDuplicateDetected.value,
-                                onMaintenanceApplied = onMaintenanceApplied,
-                                refreshOverview = refreshOverview
-                            )
-                        },
-                        enabled = canRun,
-                        modifier = Modifier.fillMaxWidth()
+            item(key = "duplicate_group_snapshot") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)
                     ) {
-                        Text(if (uiState.isRunning) "Running..." else "Run maintenance")
-                    }
-
-                    Text(
-                        text = "Maintenance progress",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    uiState.maintenanceStatusMessage?.let { message ->
                         Text(
-                            text = message,
+                            text = "Duplicate group snapshot",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "This action rebuilds the derived group snapshot only. It does not scan files on storage.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        OutlinedButton(
+                            onClick = {
+                                startRebuildGroupsTask(
+                                    resultsRepo = resultsRepo,
+                                    uiState = uiState,
+                                    appScope = appScope,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    onMaintenanceApplied = onMaintenanceApplied,
+                                    refreshOverview = refreshOverview
+                                )
+                            },
+                            enabled = !isBusy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (uiState.isRebuilding) "Rebuilding groups..." else "Rebuild duplicate groups")
+                        }
+                        uiState.groupStatusMessage?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        activeTask?.takeIf { it.kind == TaskKind.RebuildGroups }?.let { task ->
+                            DbTaskProgressContent(
+                                task = task,
+                                taskCoordinator = taskCoordinator
+                            )
+                        }
                     }
-                    activeTask?.takeIf { it.kind != TaskKind.RebuildGroups }?.let { task ->
-                        DbTaskProgressContent(
-                            task = task,
-                            taskCoordinator = taskCoordinator
-                        )
-                    } ?: Text(
-                        text = if (activeTask?.kind == TaskKind.RebuildGroups) {
-                            "Rebuild progress is shown above."
-                        } else {
-                            "Idle"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
 
-            OutlinedButton(
-                onClick = { clearDialogOpen.value = true },
-                enabled = !isBusy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Clear all cached results")
+            item(key = "file_maintenance") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(Spacing.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
+                    ) {
+                        Text(
+                            text = "File maintenance policies",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = deleteMissing.value,
+                                    onCheckedChange = { deleteMissing.value = it }
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                                Text("Delete DB entries missing on storage")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = rehashStale.value,
+                                    onCheckedChange = { rehashStale.value = it }
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                                Text("Rehash entries with stale size/date")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = rehashMissing.value,
+                                    onCheckedChange = { rehashMissing.value = it }
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                                Text("Compute hash for missing entries")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = onlyDuplicateDetected.value,
+                                    onCheckedChange = { onlyDuplicateDetected.value = it }
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.inlineGap))
+                                Text("Check only entries currently detected as duplicates")
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                startDbMaintenanceTask(
+                                    historyRepo = historyRepo,
+                                    uiState = uiState,
+                                    appScope = appScope,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    deleteMissing = deleteMissing.value,
+                                    rehashStale = rehashStale.value,
+                                    rehashMissing = rehashMissing.value,
+                                    onlyDuplicateDetected = onlyDuplicateDetected.value,
+                                    onMaintenanceApplied = onMaintenanceApplied,
+                                    refreshOverview = refreshOverview
+                                )
+                            },
+                            enabled = canRun,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (uiState.isRunning) "Running..." else "Run maintenance")
+                        }
+
+                        Text(
+                            text = "Maintenance progress",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        uiState.maintenanceStatusMessage?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        activeTask?.takeIf { it.kind != TaskKind.RebuildGroups }?.let { task ->
+                            DbTaskProgressContent(
+                                task = task,
+                                taskCoordinator = taskCoordinator
+                            )
+                        } ?: Text(
+                            text = if (activeTask?.kind == TaskKind.RebuildGroups) {
+                                "Rebuild progress is shown above."
+                            } else {
+                                "Idle"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            item(key = "clear_cache") {
+                OutlinedButton(
+                    onClick = { clearDialogOpen.value = true },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Clear all cached results")
+                }
             }
         }
 
-        VerticalScrollbar(
-            scrollState = scrollState,
+        VerticalLazyScrollbar(
+            listState = listState,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()

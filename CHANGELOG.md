@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Exact-thumbnail similarity hashing now stores every resized thumbnail pixel, so 2x2 and larger reductions no longer collapse to the top-left pixel.
 - Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
 - Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
+- DB management now uses the shared lazy list and lazy scrollbar pattern instead of a non-lazy scroll container.
 
 ## [1.4.0] - 2026-04-30
 
