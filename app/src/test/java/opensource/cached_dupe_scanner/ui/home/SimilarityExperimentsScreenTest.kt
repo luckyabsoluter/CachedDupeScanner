@@ -246,14 +246,18 @@ class SimilarityExperimentsScreenTest {
     @Test
     fun durationNeighborClusterExplanationParsesSortedDurationRange() {
         val explanation = durationNeighborClusterExplanation(
+            "duration-neighbor-list-v1:1000:0000000010000-0000000010750"
+        )
+        val legacyExplanation = durationNeighborClusterExplanation(
             "duration-neighbor-v1:1000:0000000010000-0000000010750"
         )
 
         assertEquals(1_000L, explanation?.toleranceMillis)
         assertEquals(10_000L, explanation?.minDurationMillis)
         assertEquals(10_750L, explanation?.maxDurationMillis)
+        assertEquals(explanation, legacyExplanation)
         assertEquals(
-            "Duration neighbors: 10s - 10.750s, tolerance 1s",
+            "Duration neighbor list: 10s - 10.750s, tolerance 1s",
             explanation?.let(::durationNeighborClusterSummary)
         )
     }
@@ -289,13 +293,13 @@ class SimilarityExperimentsScreenTest {
         assertFalse(genericLines.any { it.startsWith("Group rule:") })
 
         val durationNeighborLines = similarityClusterDetailLines(
-            cluster = cluster(signature = "duration-neighbor-v1:1000:0000000010000-0000000010750"),
+            cluster = cluster(signature = "duration-neighbor-list-v1:1000:0000000010000-0000000010750"),
             exactHashExplanation = null,
             durationNeighborExplanation = durationNeighborClusterExplanation(
-                "duration-neighbor-v1:1000:0000000010000-0000000010750"
+                "duration-neighbor-list-v1:1000:0000000010000-0000000010750"
             )
         )
-        assertTrue(durationNeighborLines.any { it == "Group rule: adjacent duration neighbors" })
+        assertTrue(durationNeighborLines.any { it == "List rule: duration-sorted neighbor filter" })
         assertTrue(durationNeighborLines.any { it == "Order: sorted by extracted video duration" })
     }
 

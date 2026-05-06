@@ -609,50 +609,35 @@ private fun durationNeighborListClusters(
         compareBy<DurationCandidate> { candidate -> candidate.durationMillis }
             .thenBy { candidate -> candidate.entity.normalizedPath }
     )
-    val clusters = mutableListOf<SimilarityClusterEntity>()
-    val current = mutableListOf<DurationCandidate>()
-
-    fun flushCurrent() {
-        if (current.size <= 1) return
-        val firstDurationMillis = current.first().durationMillis
-        val lastDurationMillis = current.last().durationMillis
-        clusters += SimilarityClusterEntity(
-            experimentId = experimentId,
-            signature = buildDurationNeighborListSignature(
-                minDurationMillis = firstDurationMillis,
-                maxDurationMillis = lastDurationMillis,
-                step = neighborStep
-            ),
-            fileCount = current.size,
-            totalBytes = current.sumOf { candidate -> candidate.entity.sizeBytes },
-            memberNormalizedPathsText = current.joinToString("\n") { candidate ->
-                candidate.entity.normalizedPath
-            },
-            updatedAtMillis = updatedAtMillis
-        )
-    }
-
-    sortedCandidates.forEachIndexed { index, candidate ->
+    val listedCandidates = sortedCandidates.filterIndexed { index, candidate ->
         val previous = sortedCandidates.getOrNull(index - 1)
         val next = sortedCandidates.getOrNull(index + 1)
         val closeToPrevious = previous != null &&
             candidate.durationMillis - previous.durationMillis <= toleranceMillis
         val closeToNext = next != null &&
             next.durationMillis - candidate.durationMillis <= toleranceMillis
-        if (!closeToPrevious && !closeToNext) {
-            flushCurrent()
-            current.clear()
-        } else if (current.isEmpty() || closeToPrevious) {
-            current += candidate
-        } else {
-            flushCurrent()
-            current.clear()
-            current += candidate
-        }
+        closeToPrevious || closeToNext
     }
-    flushCurrent()
+    if (listedCandidates.size <= 1) return emptyList()
 
-    return clusters
+    val firstDurationMillis = listedCandidates.first().durationMillis
+    val lastDurationMillis = listedCandidates.last().durationMillis
+    return listOf(
+        SimilarityClusterEntity(
+            experimentId = experimentId,
+            signature = buildDurationNeighborListSignature(
+                minDurationMillis = firstDurationMillis,
+                maxDurationMillis = lastDurationMillis,
+                step = neighborStep
+            ),
+            fileCount = listedCandidates.size,
+            totalBytes = listedCandidates.sumOf { candidate -> candidate.entity.sizeBytes },
+            memberNormalizedPathsText = listedCandidates.joinToString("\n") { candidate ->
+                candidate.entity.normalizedPath
+            },
+            updatedAtMillis = updatedAtMillis
+        )
+    )
 }
 
 private fun durationSummaryWithoutSaving(
@@ -713,10 +698,15 @@ private fun durationNeighborSummaryWithoutSaving(
 
 private fun durationNeighborSortMillis(signature: String): Long {
     val range = signature
-        .takeIf { it.startsWith("duration-neighbor-v1:") }
+        .takeIf(::isDurationNeighborListSignature)
         ?.substringAfterLast(':')
         ?: return Long.MAX_VALUE
     return range.substringBefore('-').toLongOrNull() ?: Long.MAX_VALUE
+}
+
+private fun isDurationNeighborListSignature(signature: String): Boolean {
+    return signature.startsWith("duration-neighbor-list-v1:") ||
+        signature.startsWith("duration-neighbor-v1:")
 }
 
 internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {

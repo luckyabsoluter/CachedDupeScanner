@@ -134,7 +134,7 @@ fun durationNeighborListExperiment(): SimilarityExperimentSpec {
     return SimilarityExperimentSpec(
         id = "video-duration-neighbor-list",
         name = "Duration neighbor list",
-        description = "Sort cached videos by extracted duration and list only adjacent duration neighbors inside the configured tolerance.",
+        description = "Sort cached videos by extracted duration as one list and show only items with adjacent neighbors inside the configured tolerance.",
         defaultMinSizeBytes = DEFAULT_SIMILARITY_EXPERIMENT_MIN_SIZE_BYTES,
         mediaScope = SimilarityMediaScope.Video,
         steps = listOf(DurationNeighborListStep(toleranceSeconds = 1))
@@ -180,7 +180,7 @@ fun buildDurationNeighborListSignature(
     val toleranceMillis = durationNeighborToleranceMillis(step)
     val min = minDurationMillis.coerceAtLeast(0L)
     val max = maxDurationMillis.coerceAtLeast(min)
-    return "duration-neighbor-v1:$toleranceMillis:${paddedDurationMillis(min)}-${paddedDurationMillis(max)}"
+    return "duration-neighbor-list-v1:$toleranceMillis:${paddedDurationMillis(min)}-${paddedDurationMillis(max)}"
 }
 
 fun durationToleranceMillis(step: DurationToleranceStep): Long {

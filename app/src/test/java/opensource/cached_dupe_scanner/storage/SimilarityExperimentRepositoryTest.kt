@@ -260,19 +260,15 @@ class SimilarityExperimentRepositoryTest {
 
         assertEquals(6, summary.candidateCount)
         assertEquals(6, summary.processedCount)
-        assertEquals(2, summary.clusterCount)
+        assertEquals(1, summary.clusterCount)
         assertEquals(5, summary.duplicateFileCount)
         val clusters = repository.listClusters("video-duration-neighbor-test")
-        assertEquals(2, clusters.size)
+        assertEquals(1, clusters.size)
         assertEquals(
-            listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
-            clusters[0].memberNormalizedPathsText.lineSequence().toList()
+            listOf(first, second, third, fourth, fifth).map { it.absolutePath.replace('\\', '/').lowercase() },
+            clusters.single().memberNormalizedPathsText.lineSequence().toList()
         )
-        assertEquals(
-            listOf(third, fourth, fifth).map { it.absolutePath.replace('\\', '/').lowercase() },
-            clusters[1].memberNormalizedPathsText.lineSequence().toList()
-        )
-        assertTrue(clusters.all { cluster -> cluster.signature.startsWith("duration-neighbor-v1:1000:") })
+        assertTrue(clusters.single().signature.startsWith("duration-neighbor-list-v1:1000:"))
     }
 
     private fun videoFile(name: String): File {

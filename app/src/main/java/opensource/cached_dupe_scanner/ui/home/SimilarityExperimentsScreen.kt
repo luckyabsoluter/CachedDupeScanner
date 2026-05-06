@@ -110,12 +110,13 @@ internal fun similarityClusterLoadIndicatorText(
     totalClusterCount: Int,
     loadedClusterCount: Int,
     topVisibleItemIndex: Int,
-    clustersLoading: Boolean
+    clustersLoading: Boolean,
+    resultItemsLabel: String = "clusters"
 ): String? {
     if (!isRunDetailPane || totalClusterCount <= 0) return null
     val safeLoaded = loadedClusterCount.coerceIn(0, totalClusterCount)
     if (clustersLoading && safeLoaded == 0) {
-        return "Loading 0/$totalClusterCount clusters"
+        return "Loading 0/$totalClusterCount $resultItemsLabel"
     }
     val loadedForDisplay = safeLoaded.coerceAtLeast(1)
     val currentClusterIndex = (topVisibleItemIndex - SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX)
@@ -335,12 +336,17 @@ fun SimilarityExperimentsScreen(
         }
     }
 
+    val resultItemsLabel = similarityResultItemsLabel(
+        experimentId = selectedRun?.experimentId,
+        count = selectedRun?.clusterCount
+    )
     val loadIndicatorText = similarityClusterLoadIndicatorText(
         isRunDetailPane = pane == SimilarityExperimentPane.RunDetail,
         totalClusterCount = selectedRun?.clusterCount ?: 0,
         loadedClusterCount = clusters.size,
         topVisibleItemIndex = topVisibleItemIndex,
-        clustersLoading = clustersLoading
+        clustersLoading = clustersLoading,
+        resultItemsLabel = resultItemsLabel
     )
 
     SimilarityExperimentLazyPane(
@@ -517,14 +523,14 @@ fun SimilarityExperimentsScreen(
                         item(key = "duration_neighbor_run") {
                             DurationToleranceRunCard(
                                 experimentName = selectedTemplate.name,
-                                description = "Runs a cached-video experiment that sorts candidates by duration, keeps only adjacent neighbors inside the tolerance, and omits videos without a nearby neighbor.",
+                                description = "Runs a cached-video experiment that builds one duration-sorted list, keeps only adjacent neighbors inside the tolerance, and omits videos without a nearby neighbor.",
                                 minSizeInput = minSizeInput,
                                 onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
                                 minSizeUnit = minSizeUnit,
                                 onMinSizeUnitChange = { minSizeUnit = it },
                                 toleranceInput = durationToleranceInput,
                                 onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
-                                toleranceDescription = "Tolerance is the maximum duration gap between adjacent sorted videos. Videos with no adjacent neighbor inside this gap are not listed.",
+                                toleranceDescription = "Tolerance is the maximum duration gap between adjacent sorted videos. The displayed result is one filtered list; videos with no adjacent neighbor inside this gap are not listed.",
                                 candidateCountText = candidateCountText,
                                 runStatusText = displayedRunStatusText,
                                 isRunning = activeSimilarityTask != null,
@@ -613,13 +619,18 @@ fun SimilarityExperimentsScreen(
                             item(key = "clusters_loading") {
                                 SimilarityClusterLoadingIndicator(
                                     loadedClusterCount = clusters.size,
-                                    totalClusterCount = selectedRun.clusterCount
+                                    totalClusterCount = selectedRun.clusterCount,
+                                    resultItemsLabel = resultItemsLabel
                                 )
                             }
                         } else if (clusters.isEmpty()) {
                             item(key = "clusters_empty") {
                                 Text(
-                                    text = "No duplicate-like similarity clusters found for the latest run.",
+                                    text = if (isDurationNeighborListExperiment(selectedRun.experimentId)) {
+                                        "No duration-neighbor list entries found for the latest run."
+                                    } else {
+                                        "No duplicate-like similarity clusters found for the latest run."
+                                    },
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -1046,6 +1057,10 @@ private fun ExactThumbnailRunCard(
 
 @Composable
 private fun SimilarityRunSummaryCard(run: SimilarityExperimentRunEntity) {
+    val resultItemsLabel = similarityResultItemsLabel(
+        experimentId = run.experimentId,
+        count = run.clusterCount
+    )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1063,7 +1078,7 @@ private fun SimilarityRunSummaryCard(run: SimilarityExperimentRunEntity) {
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${run.clusterCount} clusters · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
+                text = "${run.clusterCount} $resultItemsLabel · ${run.duplicateFileCount} files · ${run.skippedCount} skipped",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -1086,21 +1101,36 @@ private fun StoredSimilarityResultsHeader(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(text = "Selected experiment clusters", style = MaterialTheme.typography.titleMedium)
+        val resultItemsLabel = similarityResultItemsLabel(
+            experimentId = selectedRun?.experimentId,
+            count = selectedRun?.clusterCount
+        )
+        Text(
+            text = if (isDurationNeighborListExperiment(selectedRun?.experimentId)) {
+                "Selected experiment list"
+            } else {
+                "Selected experiment clusters"
+            },
+            style = MaterialTheme.typography.titleMedium
+        )
         if (selectedRun == null) {
-            Text(text = "Select or run an experiment to review its clusters.", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = "Select or run an experiment to review its saved results.",
+                style = MaterialTheme.typography.bodySmall
+            )
             return@Column
         }
         Text(
-            text = "${selectedRun.experimentName}: ${selectedRun.clusterCount} clusters, ${selectedRun.duplicateFileCount} files, ${selectedRun.skippedCount} skipped.",
+            text = "${selectedRun.experimentName}: ${selectedRun.clusterCount} $resultItemsLabel, " +
+                "${selectedRun.duplicateFileCount} files, ${selectedRun.skippedCount} skipped.",
             style = MaterialTheme.typography.bodySmall
         )
         if (isLoading) {
-            Text(text = "Loading experiment clusters...", style = MaterialTheme.typography.bodySmall)
+            Text(text = "Loading experiment $resultItemsLabel...", style = MaterialTheme.typography.bodySmall)
             return@Column
         }
         Text(
-            text = "Loaded ${clusters.size}/${selectedRun.clusterCount} clusters.",
+            text = "Loaded ${clusters.size}/${selectedRun.clusterCount} $resultItemsLabel.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1110,7 +1140,8 @@ private fun StoredSimilarityResultsHeader(
 @Composable
 private fun SimilarityClusterLoadingIndicator(
     loadedClusterCount: Int,
-    totalClusterCount: Int
+    totalClusterCount: Int,
+    resultItemsLabel: String = "clusters"
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1127,7 +1158,8 @@ private fun SimilarityClusterLoadingIndicator(
             modifier = Modifier.fillMaxWidth()
         )
         Text(
-            text = "Loading experiment clusters ${loadedClusterCount.coerceAtLeast(0)}/${totalClusterCount.coerceAtLeast(0)}...",
+            text = "Loading experiment $resultItemsLabel " +
+                "${loadedClusterCount.coerceAtLeast(0)}/${totalClusterCount.coerceAtLeast(0)}...",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1220,7 +1252,11 @@ private fun SimilarityClusterCard(
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "${cluster.fileCount} files · Total ${formatBytes(cluster.totalBytes)}",
+                    text = if (durationNeighborExplanation != null) {
+                        "${cluster.fileCount} listed videos · Total ${formatBytes(cluster.totalBytes)}"
+                    } else {
+                        "${cluster.fileCount} files · Total ${formatBytes(cluster.totalBytes)}"
+                    },
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
@@ -1243,7 +1279,7 @@ private fun SimilarityClusterCard(
                 }
                 if (durationNeighborExplanation != null) {
                     Text(
-                        text = "Members are ordered by duration and each listed member has a nearby adjacent neighbor.",
+                        text = "One duration-sorted list; isolated videos are omitted.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1359,7 +1395,11 @@ private fun SimilarityClusterDetailScreen(
                 .verticalScroll(detailScrollState)
         ) {
             AppTopBar(
-                title = "Similarity cluster detail",
+                title = if (durationNeighborExplanation != null) {
+                    "Similarity list detail"
+                } else {
+                    "Similarity cluster detail"
+                },
                 onBack = onBack
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -1379,7 +1419,7 @@ private fun SimilarityClusterDetailScreen(
                     ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
                     Spacer(modifier = Modifier.height(8.dp))
                     DuplicateGroupDetailContent(
-                        title = "Group detail",
+                        title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
                         memberCount = cluster.fileCount,
                         totalBytes = cluster.totalBytes,
                         summaryLines = similarityClusterDetailLines(
@@ -1915,7 +1955,7 @@ internal data class DurationNeighborClusterExplanation(
 
 internal fun durationNeighborClusterExplanation(signature: String): DurationNeighborClusterExplanation? {
     val parts = signature.split(":", limit = 3)
-    if (parts.size != 3 || parts[0] != "duration-neighbor-v1") return null
+    if (parts.size != 3 || !isDurationNeighborListSignature(signature)) return null
     val toleranceMillis = parts[1].toLongOrNull()?.coerceAtLeast(0L) ?: return null
     val minDurationMillis = parts[2].substringBefore('-').toLongOrNull()?.coerceAtLeast(0L) ?: return null
     val maxDurationMillis = parts[2].substringAfter('-', missingDelimiterValue = "")
@@ -1935,7 +1975,7 @@ internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanati
 }
 
 internal fun durationNeighborClusterSummary(explanation: DurationNeighborClusterExplanation): String {
-    return "Duration neighbors: ${durationMillisLabel(explanation.minDurationMillis)} - " +
+    return "Duration neighbor list: ${durationMillisLabel(explanation.minDurationMillis)} - " +
         "${durationMillisLabel(explanation.maxDurationMillis)}, tolerance ${durationMillisLabel(explanation.toleranceMillis)}"
 }
 
@@ -1953,9 +1993,9 @@ internal fun similarityClusterDetailLines(
 
     if (durationNeighborExplanation != null) {
         return listOf(
-            "Group rule: adjacent duration neighbors",
-            "Why included: every listed member has a previous or next duration neighbor inside the tolerance.",
-            "Duration range: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
+            "List rule: duration-sorted neighbor filter",
+            "Why included: the full candidate set is sorted by extracted duration, then only videos with a previous or next item inside the tolerance are shown.",
+            "Visible duration span: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
             "Tolerance: ${durationMillisLabel(durationNeighborExplanation.toleranceMillis)}",
             "Order: sorted by extracted video duration",
             "Snapshot ${formatDate(cluster.updatedAtMillis)}"
@@ -2215,7 +2255,28 @@ private fun sampleSignaturesLabel(values: List<String>): String {
     }
 }
 
+private fun similarityResultItemsLabel(
+    experimentId: String?,
+    count: Int? = null
+): String {
+    val isDurationNeighborList = isDurationNeighborListExperiment(experimentId)
+    if (count == 1) {
+        return if (isDurationNeighborList) "list" else "cluster"
+    }
+    return if (isDurationNeighborList) "lists" else "clusters"
+}
+
+private fun isDurationNeighborListExperiment(experimentId: String?): Boolean {
+    return experimentId?.startsWith(DURATION_NEIGHBOR_LIST_EXPERIMENT_ID_PREFIX) == true
+}
+
+private fun isDurationNeighborListSignature(signature: String): Boolean {
+    return signature.startsWith("duration-neighbor-list-v1:") ||
+        signature.startsWith("duration-neighbor-v1:")
+}
+
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 10
 private const val SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT = 4
 private const val SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE = 2
 private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32
+private const val DURATION_NEIGHBOR_LIST_EXPERIMENT_ID_PREFIX = "video-duration-neighbor"

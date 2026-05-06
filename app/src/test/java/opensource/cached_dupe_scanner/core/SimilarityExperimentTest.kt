@@ -117,7 +117,7 @@ class SimilarityExperimentTest {
 
         assertEquals(2_000L, durationNeighborToleranceMillis(step))
         assertEquals(
-            "duration-neighbor-v1:2000:0000000010000-0000000011500",
+            "duration-neighbor-list-v1:2000:0000000010000-0000000011500",
             buildDurationNeighborListSignature(
                 minDurationMillis = 10_000L,
                 maxDurationMillis = 11_500L,
