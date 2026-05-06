@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
 - Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
 - Similarity experiment cluster browsing now uses lazy list items, the lazy scrollbar, and the shared load indicator while reviewing run results.
+- Duration-neighbor similarity video cards now fall back to extracting legacy video lengths, open file details on tap, and de-duplicate lazy row keys.
 
 ## [1.4.0] - 2026-04-30
 

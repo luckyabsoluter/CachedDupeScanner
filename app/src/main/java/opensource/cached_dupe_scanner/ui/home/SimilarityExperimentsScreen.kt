@@ -164,6 +164,7 @@ fun SimilarityExperimentsScreen(
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
+    var selectedDurationNeighborFile by remember { mutableStateOf<FileMetadata?>(null) }
     var pane by remember { mutableStateOf(SimilarityExperimentPane.List) }
     var clustersLoading by remember { mutableStateOf(false) }
     var durationNeighborMembersLoading by remember { mutableStateOf(false) }
@@ -246,6 +247,7 @@ fun SimilarityExperimentsScreen(
             val nextDurationNeighborMembers = if (nextIsDurationNeighborList) {
                 withContext(Dispatchers.IO) {
                     nextClusters.flatMap { cluster -> repository.listClusterMemberRows(cluster) }
+                        .distinctBy { member -> member.metadata.normalizedPath }
                 }
             } else {
                 emptyList()
@@ -269,6 +271,7 @@ fun SimilarityExperimentsScreen(
         pane = SimilarityExperimentPane.List
         selectedRunExperimentId = null
         selectedClusterKey = null
+        selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
         refreshStoredResults(null)
@@ -281,6 +284,7 @@ fun SimilarityExperimentsScreen(
         }
         selectedRunExperimentId = null
         selectedClusterKey = null
+        selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
     }
@@ -290,6 +294,7 @@ fun SimilarityExperimentsScreen(
         pane = SimilarityExperimentPane.TemplateDetail
         selectedRunExperimentId = null
         selectedClusterKey = null
+        selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
     }
@@ -298,6 +303,7 @@ fun SimilarityExperimentsScreen(
         pane = SimilarityExperimentPane.RunDetail
         selectedRunExperimentId = run.experimentId
         selectedClusterKey = null
+        selectedDurationNeighborFile = null
         clusters.clear()
         durationNeighborMembers.clear()
         refreshStoredResults(run.experimentId)
@@ -346,6 +352,27 @@ fun SimilarityExperimentsScreen(
             modifier = modifier
         )
         return
+    }
+
+    selectedDurationNeighborFile?.let { file ->
+        FileDetailsDialogWithDeleteConfirm(
+            file = file,
+            showName = true,
+            onOpen = {
+                openFile(context, file.normalizedPath)
+                selectedDurationNeighborFile = null
+            },
+            onDelete = {
+                val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
+                handler(file)
+            },
+            onDeleteResult = { deleted ->
+                if (deleted) {
+                    selectedDurationNeighborFile = null
+                }
+            },
+            onDismiss = { selectedDurationNeighborFile = null }
+        )
     }
 
     BackHandler(enabled = pane != SimilarityExperimentPane.List) {
@@ -677,7 +704,10 @@ fun SimilarityExperimentsScreen(
                                         keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                                         previewThumbnailSizeDp = groupCardThumbnailSizeDp,
                                         rememberedPreviewCache = rememberedPreviewCache,
-                                        showFullPaths = showFullPaths
+                                        showFullPaths = showFullPaths,
+                                        onOpen = {
+                                            selectedDurationNeighborFile = member.metadata
+                                        }
                                     )
                                 }
                             }
@@ -1255,7 +1285,8 @@ private fun DurationNeighborVideoCard(
     keepLoadedThumbnailsInMemory: Boolean,
     previewThumbnailSizeDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
-    showFullPaths: Boolean
+    showFullPaths: Boolean,
+    onOpen: () -> Unit
 ) {
     val file = member.metadata
     val deleted = deletedPaths.contains(file.normalizedPath)
@@ -1265,7 +1296,9 @@ private fun DurationNeighborVideoCard(
     )
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
         colors = if (deleted) {
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer

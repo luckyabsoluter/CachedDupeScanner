@@ -494,8 +494,12 @@ class SimilarityExperimentsScreenTest {
         assertTrue(durationNeighborBranch.contains("items("))
         assertTrue(durationNeighborBranch.contains("items = durationNeighborMembers"))
         assertTrue(durationNeighborBranch.contains("DurationNeighborVideoCard("))
+        assertTrue(durationNeighborBranch.contains("selectedDurationNeighborFile = member.metadata"))
         assertFalse(durationNeighborBranch.contains("SimilarityClusterCard("))
         assertFalse(durationNeighborBranch.contains("selectedClusterKey"))
+        assertTrue(content.contains(".distinctBy { member -> member.metadata.normalizedPath }"))
+        assertTrue(content.contains(".clickable(onClick = onOpen)"))
+        assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
     }
 
     @Test

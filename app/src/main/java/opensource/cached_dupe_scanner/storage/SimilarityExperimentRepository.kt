@@ -118,12 +118,30 @@ class SimilarityExperimentRepository(
             }
         return paths.mapNotNull { path ->
             membersByPath[path]?.let { metadata ->
+                val storedDurationMillis = entryByPath[path]?.durationMillis
                 SimilarityClusterMember(
                     metadata = metadata,
-                    durationMillis = entryByPath[path]?.durationMillis
+                    durationMillis = storedDurationMillis ?: fallbackDurationMillis(
+                        cluster = cluster,
+                        metadata = metadata
+                    )
                 )
             }
         }
+    }
+
+    private fun fallbackDurationMillis(
+        cluster: SimilarityClusterEntity,
+        metadata: FileMetadata
+    ): Long? {
+        if (!isDurationSimilaritySignature(cluster.signature)) return null
+        val path = metadata.path.ifBlank { metadata.normalizedPath }
+        val file = File(path)
+        if (!file.exists()) return null
+        return durationExtractor.durationMillis(
+            file = file,
+            shouldContinue = { true }
+        )
     }
 
     fun runExactThumbnailHashExperiment(
@@ -727,6 +745,10 @@ private fun durationNeighborSortMillis(signature: String): Long {
 private fun isDurationNeighborListSignature(signature: String): Boolean {
     return signature.startsWith("duration-neighbor-list-v1:") ||
         signature.startsWith("duration-neighbor-v1:")
+}
+
+private fun isDurationSimilaritySignature(signature: String): Boolean {
+    return signature.startsWith("duration-v1:") || isDurationNeighborListSignature(signature)
 }
 
 internal data class SimilarityClusterMemberEntry(

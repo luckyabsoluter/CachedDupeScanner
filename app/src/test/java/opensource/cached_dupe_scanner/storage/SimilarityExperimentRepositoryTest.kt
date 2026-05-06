@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
@@ -282,6 +283,48 @@ class SimilarityExperimentRepositoryTest {
             repository.listClusterMemberRows(clusters.single()).map { member -> member.durationMillis }
         )
         assertTrue(clusters.single().signature.startsWith("duration-neighbor-list-v1:1000:"))
+    }
+
+    @Test
+    fun durationMemberRowsExtractLegacyPathOnlyDurations() {
+        val first = videoFile("legacy-a.mp4")
+        val second = videoFile("legacy-b.mp4")
+        val minSizeBytes = 10L
+        database.fileCacheDao().upsert(entity(first, sizeBytes = minSizeBytes))
+        database.fileCacheDao().upsert(entity(second, sizeBytes = minSizeBytes + 1L))
+        val firstPath = first.absolutePath.replace('\\', '/').lowercase()
+        val secondPath = second.absolutePath.replace('\\', '/').lowercase()
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(
+                    experimentId = "video-duration-neighbor-legacy",
+                    signature = "duration-neighbor-v1:1000:0000000010000-0000000010750",
+                    fileCount = 2,
+                    totalBytes = minSizeBytes + minSizeBytes + 1L,
+                    memberNormalizedPathsText = "$firstPath\n$secondPath",
+                    updatedAtMillis = 1L
+                )
+            )
+        )
+
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao(),
+            durationExtractor = FakeDurationExtractor(
+                mapOf(
+                    first.absolutePath to 10_000L,
+                    second.absolutePath to 10_750L
+                )
+            )
+        )
+
+        val cluster = repository.listClusters("video-duration-neighbor-legacy").single()
+
+        assertEquals(
+            listOf(10_000L, 10_750L),
+            repository.listClusterMemberRows(cluster).map { member -> member.durationMillis }
+        )
     }
 
     private fun videoFile(name: String): File {
