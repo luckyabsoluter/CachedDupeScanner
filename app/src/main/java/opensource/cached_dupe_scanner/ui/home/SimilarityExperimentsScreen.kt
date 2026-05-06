@@ -1296,9 +1296,8 @@ private fun DurationNeighborVideoCard(
     )
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen),
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
         colors = if (deleted) {
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer

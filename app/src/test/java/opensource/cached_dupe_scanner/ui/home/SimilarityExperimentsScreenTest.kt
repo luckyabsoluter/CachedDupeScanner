@@ -498,7 +498,7 @@ class SimilarityExperimentsScreenTest {
         assertFalse(durationNeighborBranch.contains("SimilarityClusterCard("))
         assertFalse(durationNeighborBranch.contains("selectedClusterKey"))
         assertTrue(content.contains(".distinctBy { member -> member.metadata.normalizedPath }"))
-        assertTrue(content.contains(".clickable(onClick = onOpen)"))
+        assertTrue(content.contains("Card(\n        onClick = onOpen"))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
     }
 
