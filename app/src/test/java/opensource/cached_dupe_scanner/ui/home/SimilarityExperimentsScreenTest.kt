@@ -31,6 +31,11 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun timeUnitCyclesFromDefaultSecondsToMilliseconds() {
+        assertEquals(SimilarityTimeUnit.MS, SimilarityTimeUnit.S.next())
+    }
+
+    @Test
     fun frameSecondsInputKeepsEditableCommaSeparatedSeconds() {
         assertEquals("0, 1, 10", sanitizeFrameSecondsInput("0, 1, 10s"))
         assertEquals(listOf(0, 1, 10), parsedFrameSeconds("0, 1, 10, 10"))
@@ -74,6 +79,21 @@ class SimilarityExperimentsScreenTest {
         assertEquals(0, parsedDurationToleranceStep("0").toleranceSeconds)
         assertEquals(1, parsedDurationToleranceStep("").toleranceSeconds)
         assertEquals(2, parsedDurationNeighborListStep("2").toleranceSeconds)
+        assertEquals(
+            500L,
+            parsedDurationToleranceStep(
+                input = "500",
+                unit = SimilarityTimeUnit.MS
+            ).toleranceMillis
+        )
+        assertEquals(
+            250L,
+            parsedDurationNeighborListStep(
+                input = "250",
+                unit = SimilarityTimeUnit.MS
+            ).toleranceMillis
+        )
+        assertEquals(120_000L, parsedDurationToleranceMillis("2", SimilarityTimeUnit.MIN))
     }
 
     @Test
@@ -264,15 +284,27 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
-    fun durationNeighborToleranceInputUsesClusterSignatureBeforeRunId() {
+    fun durationNeighborTimeInputUsesClusterSignatureBeforeRunId() {
         val run = run("video-duration-neighbor-104857600-2000")
         val clusters = listOf(
             cluster(signature = "duration-neighbor-list-v1:1000:0000000010000-0000000010750")
         )
 
-        assertEquals("1", durationNeighborToleranceInputForRun(run = run, clusters = clusters))
-        assertEquals("2", durationNeighborToleranceInputForRun(run = run, clusters = emptyList()))
-        assertEquals(null, durationNeighborToleranceInputForRun(run = run("exact"), clusters = emptyList()))
+        assertEquals(
+            SimilarityTimeInput(input = "1", unit = SimilarityTimeUnit.S),
+            durationNeighborTimeInputForRun(run = run, clusters = clusters)
+        )
+        assertEquals(
+            SimilarityTimeInput(input = "2", unit = SimilarityTimeUnit.S),
+            durationNeighborTimeInputForRun(run = run, clusters = emptyList())
+        )
+        assertEquals(
+            SimilarityTimeInput(input = "500", unit = SimilarityTimeUnit.MS),
+            durationNeighborTimeInputForClusters(
+                listOf(cluster(signature = "duration-neighbor-list-v1:500:0000000010000-0000000010750"))
+            )
+        )
+        assertEquals(null, durationNeighborTimeInputForRun(run = run("exact"), clusters = emptyList()))
     }
 
     @Test
@@ -449,6 +481,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("repository.runDurationToleranceExperiment("))
         assertTrue(content.contains("repository.runDurationNeighborListExperiment("))
         assertTrue(content.contains("repository.rebuildDurationNeighborListFromStoredDurations("))
+        assertTrue(content.contains("toleranceUnit = durationToleranceUnit"))
         assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
         assertTrue(content.contains("StoredSimilarityResultsHeader("))
         assertTrue(content.contains("items("))
@@ -514,6 +547,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("Card(\n        onClick = onOpen"))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
         assertTrue(content.contains("DurationNeighborStoredRebuildCard("))
+        assertTrue(content.contains("toleranceUnit = durationRebuildToleranceUnit"))
         assertTrue(content.contains("countDurationCandidates("))
     }
 

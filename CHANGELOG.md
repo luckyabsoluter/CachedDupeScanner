@@ -23,6 +23,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - New similarity experiments now show only templates first, then open the selected template's configuration screen.
 - Duration-based similarity cards now show stored video lengths next to preview members.
 - Duration-neighbor similarity results now render as a flat duration-sorted video list instead of a group card.
+- Duration-based similarity tolerance controls now allow seconds, milliseconds, or minutes instead of seconds only.
 
 ### Fixed
 

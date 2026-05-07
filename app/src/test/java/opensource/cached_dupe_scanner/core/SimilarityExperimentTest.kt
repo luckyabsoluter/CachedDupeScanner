@@ -101,6 +101,7 @@ class SimilarityExperimentTest {
         val step = DurationToleranceStep(toleranceSeconds = 2)
 
         assertEquals(2_000L, durationToleranceMillis(step))
+        assertEquals(500L, durationToleranceMillis(DurationToleranceStep(toleranceMillis = 500L)))
         assertEquals(
             "duration-v1:2000:10000-11500",
             buildDurationToleranceSignature(
@@ -116,6 +117,7 @@ class SimilarityExperimentTest {
         val step = DurationNeighborListStep(toleranceSeconds = 2)
 
         assertEquals(2_000L, durationNeighborToleranceMillis(step))
+        assertEquals(500L, durationNeighborToleranceMillis(DurationNeighborListStep(toleranceMillis = 500L)))
         assertEquals(
             "duration-neighbor-list-v1:2000:0000000010000-0000000011500",
             buildDurationNeighborListSignature(

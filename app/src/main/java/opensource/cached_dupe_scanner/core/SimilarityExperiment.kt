@@ -54,17 +54,27 @@ data class ExactThumbnailHashStep(
 }
 
 data class DurationToleranceStep(
-    val toleranceSeconds: Int
+    val toleranceMillis: Long
 ) : SimilarityExperimentStep {
+    constructor(toleranceSeconds: Int) : this(toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L)
+
+    val toleranceSeconds: Int
+        get() = (toleranceMillis.coerceAtLeast(0L) / 1_000L).toInt()
+
     override val title: String = "Duration tolerance"
-    override val summary: String = "Group videos with durations within ${toleranceSeconds.coerceAtLeast(0)}s"
+    override val summary: String = "Group videos with durations within ${durationStepLabel(toleranceMillis)}"
 }
 
 data class DurationNeighborListStep(
-    val toleranceSeconds: Int
+    val toleranceMillis: Long
 ) : SimilarityExperimentStep {
+    constructor(toleranceSeconds: Int) : this(toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L)
+
+    val toleranceSeconds: Int
+        get() = (toleranceMillis.coerceAtLeast(0L) / 1_000L).toInt()
+
     override val title: String = "Duration neighbor list"
-    override val summary: String = "List videos whose nearest duration neighbor is within ${toleranceSeconds.coerceAtLeast(0)}s"
+    override val summary = "List videos whose nearest duration neighbor is within ${durationStepLabel(toleranceMillis)}"
 }
 
 data class PerceptualHashRefinementStep(
@@ -184,15 +194,24 @@ fun buildDurationNeighborListSignature(
 }
 
 fun durationToleranceMillis(step: DurationToleranceStep): Long {
-    return step.toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L
+    return step.toleranceMillis.coerceAtLeast(0L)
 }
 
 fun durationNeighborToleranceMillis(step: DurationNeighborListStep): Long {
-    return step.toleranceSeconds.coerceAtLeast(0).toLong() * 1_000L
+    return step.toleranceMillis.coerceAtLeast(0L)
 }
 
 private fun paddedDurationMillis(durationMillis: Long): String {
     return durationMillis.coerceAtLeast(0L).toString().padStart(13, '0')
+}
+
+private fun durationStepLabel(durationMillis: Long): String {
+    val safeValue = durationMillis.coerceAtLeast(0L)
+    return if (safeValue % 1_000L == 0L) {
+        "${safeValue / 1_000L}s"
+    } else {
+        "${safeValue}ms"
+    }
 }
 
 fun isVideoPath(path: String): Boolean {
