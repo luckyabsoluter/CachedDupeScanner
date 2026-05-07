@@ -17,6 +17,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Bulk delete execution now uses the shared task progress and notification flow while deleting files.
 - Split the similarity experiments screen into an entry list, a new-experiment flow, and saved experiment detail views so setup controls and cluster results are not shown together on first entry.
 - Similarity experiment runs now use the shared app-wide task banner, bubble, and notification progress flow while running.
 - Similarity cluster cards now cap member preview text into compact multi-item lines instead of growing with one member per line.

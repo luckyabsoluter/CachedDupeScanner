@@ -1,12 +1,36 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ResultsScreenDbBulkDeleteTest {
+    private val taskScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @After
+    fun tearDown() {
+        taskScope.cancel()
+    }
     @Test
     fun buildKeepOneNonMatchBulkDeleteCandidateDeletesMatchingFileNames() {
         val candidate = buildKeepOneNonMatchBulkDeleteCandidate(
@@ -194,6 +218,94 @@ class ResultsScreenDbBulkDeleteTest {
         assertEquals("/show/episode-new.mkv", candidates.single().survivor.normalizedPath)
     }
 
+    @Test
+    fun executeBulkDeletePreviewReportsProgressForEachDeleteTarget() = runBlocking {
+        val preview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 1,
+            filterMatchedGroupCount = 1,
+            candidates = listOf(
+                ResultsBulkDeleteCandidate(
+                    group = group(size = 10L, hash = "a", count = 3),
+                    survivor = file("/keep/original.mkv"),
+                    deleteTargets = listOf(
+                        file("/delete/first.mkv"),
+                        file("/delete/second.mkv")
+                    )
+                )
+            )
+        )
+        val progressEvents = mutableListOf<ResultsBulkDeleteExecutionProgress>()
+
+        val outcome = executeBulkDeletePreview(
+            preview = preview,
+            onDeleteFile = { file -> file.normalizedPath.endsWith("first.mkv") },
+            onProgress = { progressEvents += it }
+        )
+
+        assertEquals(1, outcome.successCount)
+        assertEquals(setOf("/delete/second.mkv"), outcome.failedPaths)
+        assertEquals(
+            listOf(
+                ResultsBulkDeleteExecutionProgress(total = 2),
+                ResultsBulkDeleteExecutionProgress(
+                    processed = 1,
+                    total = 2,
+                    failed = 0,
+                    currentPath = "/delete/first.mkv"
+                ),
+                ResultsBulkDeleteExecutionProgress(
+                    processed = 2,
+                    total = 2,
+                    failed = 1,
+                    currentPath = "/delete/second.mkv"
+                )
+            ),
+            progressEvents
+        )
+    }
+
+    @Test
+    fun startBulkDeleteTaskUsesDeleteCallbackWhileTrashAreaIsBusy() {
+        val coordinator = TaskCoordinator()
+        val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
+        val deleteSawBusyTrash = AtomicBoolean(false)
+        val finished = CountDownLatch(1)
+        val preview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 1,
+            filterMatchedGroupCount = 1,
+            candidates = listOf(
+                ResultsBulkDeleteCandidate(
+                    group = group(size = 10L, hash = "a", count = 3),
+                    survivor = file("/keep/original.mkv"),
+                    deleteTargets = listOf(file("/delete/first.mkv"))
+                )
+            )
+        )
+
+        startBulkDeleteTask(
+            preview = preview,
+            scope = taskScope,
+            taskCoordinator = coordinator,
+            notificationController = notificationController,
+            onDeleteFile = {
+                deleteSawBusyTrash.set(coordinator.isAreaBusy(TaskArea.Trash))
+                true
+            },
+            onSnapshotChanged = { false },
+            onRefreshGroups = {},
+            onSuccess = { outcome -> assertEquals(1, outcome.successCount) },
+            onSnapshotStale = {},
+            onFailure = { error("Bulk delete should not fail") },
+            onFinished = { finished.countDown() }
+        )
+
+        assertEquals(true, finished.await(5, TimeUnit.SECONDS))
+
+        assertEquals(true, deleteSawBusyTrash.get())
+        assertEquals(false, coordinator.isAreaBusy(TaskArea.Trash))
+    }
     private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,

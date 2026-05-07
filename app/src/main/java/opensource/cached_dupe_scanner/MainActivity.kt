@@ -1,14 +1,20 @@
 package opensource.cached_dupe_scanner
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -102,6 +108,21 @@ class MainActivity : ComponentActivity() {
                 }
                 val taskCoordinator = remember { TaskCoordinator(context) }
                 val notificationController = remember { TaskNotificationController(context) }
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                    onResult = {}
+                )
+                LaunchedEffect(Unit) {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
                 val database = remember {
                     Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                         .addMigrations(
@@ -350,6 +371,17 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
+                                onBulkDeleteFile = { file ->
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 onBack = {
                                     if (selectedResultsGroupIndex.value != null) {
                                         selectedResultsGroupIndex.value = null

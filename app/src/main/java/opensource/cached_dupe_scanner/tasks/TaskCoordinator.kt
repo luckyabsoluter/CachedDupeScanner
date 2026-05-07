@@ -20,6 +20,7 @@ enum class TaskKind {
     RebuildGroups,
     ClearCache,
     EmptyTrash,
+    BulkDelete,
     SimilarityExperiment
 }
 

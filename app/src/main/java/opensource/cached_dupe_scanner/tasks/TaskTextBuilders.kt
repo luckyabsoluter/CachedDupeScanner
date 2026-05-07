@@ -107,6 +107,17 @@ fun trashTaskCompletedDetail(summary: TrashRunSummary): String {
     return "Deleted ${summary.deleted} • Failed ${summary.failed}"
 }
 
+fun bulkDeleteTaskTitle(): String = "Bulk deleting files"
+
+fun bulkDeleteTaskDetail(processed: Int, total: Int, failed: Int): String {
+    val totalText = if (total > 0) total.toString() else "?"
+    return "Processed $processed/$totalText • Failed $failed"
+}
+
+fun bulkDeleteCompletedDetail(successCount: Int, failedCount: Int): String {
+    return "Deleted $successCount • Failed $failedCount"
+}
+
 fun similarityExperimentTaskTitle(): String = "Running similarity experiment"
 
 fun similarityExperimentTaskDetail(progress: SimilarityExperimentProgress): String {

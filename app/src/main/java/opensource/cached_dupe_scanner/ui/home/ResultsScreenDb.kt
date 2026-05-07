@@ -66,9 +66,11 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -116,6 +118,9 @@ fun ResultsScreenDb(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onBulkDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onBack: () -> Unit,
     onOpenGroup: ((Int) -> Unit)?,
     refreshVersion: Int = 0,
@@ -988,7 +993,9 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
-                    onDeleteFile = onDeleteFile,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
@@ -1009,7 +1016,9 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
-                    onDeleteFile = onDeleteFile,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null
                     },

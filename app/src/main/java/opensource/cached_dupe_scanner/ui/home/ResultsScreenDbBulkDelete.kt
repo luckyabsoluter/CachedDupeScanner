@@ -42,8 +42,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.bulkDeleteCompletedDetail
+import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskDetail
+import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -104,6 +112,23 @@ internal data class ResultsBulkDeleteExecutionOutcome(
     val successCount: Int,
     val failedPaths: Set<String>
 )
+
+internal data class ResultsBulkDeleteExecutionProgress(
+    val processed: Int = 0,
+    val total: Int = 0,
+    val failed: Int = 0,
+    val currentPath: String? = null
+)
+
+internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
+    return candidates.sumOf { it.deleteTargets.size }
+}
+
+internal fun ResultsBulkDeletePreview.firstDeleteTargetPath(): String? {
+    return candidates.firstNotNullOfOrNull { candidate ->
+        candidate.deleteTargets.firstOrNull()?.normalizedPath
+    }
+}
 
 internal fun buildKeepModifiedBulkDeleteCandidate(
     group: DuplicateGroupEntity,
@@ -325,24 +350,138 @@ private suspend fun buildBulkDeletePreview(
 
 internal suspend fun executeBulkDeletePreview(
     preview: ResultsBulkDeletePreview,
-    onDeleteFile: suspend (FileMetadata) -> Boolean
+    onDeleteFile: suspend (FileMetadata) -> Boolean,
+    onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit = {}
 ): ResultsBulkDeleteExecutionOutcome {
+    val total = preview.deleteTargetCount()
+    var processed = 0
     var successCount = 0
     val failedPaths = linkedSetOf<String>()
+    onProgress(ResultsBulkDeleteExecutionProgress(total = total))
     preview.candidates.forEach { candidate ->
         candidate.deleteTargets.forEach { file ->
             val deleted = runCatching { onDeleteFile(file) }.getOrDefault(false)
+            processed += 1
             if (deleted) {
                 successCount += 1
             } else {
                 failedPaths += file.normalizedPath
             }
+            onProgress(
+                ResultsBulkDeleteExecutionProgress(
+                    processed = processed,
+                    total = total,
+                    failed = failedPaths.size,
+                    currentPath = file.normalizedPath
+                )
+            )
         }
     }
     return ResultsBulkDeleteExecutionOutcome(
         successCount = successCount,
         failedPaths = failedPaths
     )
+}
+
+internal fun startBulkDeleteTask(
+    preview: ResultsBulkDeletePreview,
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onDeleteFile: suspend (FileMetadata) -> Boolean,
+    onSnapshotChanged: suspend () -> Boolean,
+    onRefreshGroups: suspend () -> Unit,
+    onSuccess: (ResultsBulkDeleteExecutionOutcome) -> Unit,
+    onSnapshotStale: () -> Unit,
+    onFailure: () -> Unit,
+    onFinished: () -> Unit
+) {
+    val total = preview.deleteTargetCount()
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Trash,
+        kind = TaskKind.BulkDelete,
+        title = bulkDeleteTaskTitle(),
+        detail = bulkDeleteTaskDetail(processed = 0, total = total, failed = 0),
+        currentPath = preview.firstDeleteTargetPath(),
+        processed = 0,
+        total = total,
+        indeterminate = total <= 0,
+        isCancellable = false
+    ) ?: run {
+        onFailure()
+        onFinished()
+        return
+    }
+    notificationController.showActive(started)
+    scope.launch {
+        var terminalShown = false
+        try {
+            val snapshotChanged = withContext(Dispatchers.IO) { onSnapshotChanged() }
+            if (snapshotChanged) {
+                taskCoordinator.fail(
+                    area = TaskArea.Trash,
+                    title = "Bulk delete skipped",
+                    detail = "The results snapshot changed. Build the preview again.",
+                    processed = 0,
+                    total = total,
+                    indeterminate = total <= 0
+                )?.let(notificationController::showTerminal)
+                terminalShown = true
+                onSnapshotStale()
+                return@launch
+            }
+
+            val outcome = executeBulkDeletePreview(
+                preview = preview,
+                onDeleteFile = onDeleteFile,
+                onProgress = { progress ->
+                    taskCoordinator.update(TaskArea.Trash) { task ->
+                        task.withLinearProgress(
+                            title = bulkDeleteTaskTitle(),
+                            detail = bulkDeleteTaskDetail(
+                                processed = progress.processed,
+                                total = progress.total,
+                                failed = progress.failed
+                            ),
+                            currentPath = progress.currentPath,
+                            processed = progress.processed,
+                            total = progress.total
+                        )
+                    }?.let(notificationController::showActive)
+                }
+            )
+            withContext(Dispatchers.IO) { onRefreshGroups() }
+            taskCoordinator.complete(
+                area = TaskArea.Trash,
+                title = "Bulk delete complete",
+                detail = bulkDeleteCompletedDetail(
+                    successCount = outcome.successCount,
+                    failedCount = outcome.failedPaths.size
+                ),
+                processed = total,
+                total = total,
+                indeterminate = total <= 0
+            )?.let(notificationController::showTerminal)
+            terminalShown = true
+            onSuccess(outcome)
+        } catch (_: Exception) {
+            if (!terminalShown) {
+                val task = taskCoordinator.activeTask(TaskArea.Trash)
+                taskCoordinator.fail(
+                    area = TaskArea.Trash,
+                    title = "Bulk delete failed",
+                    detail = "Unable to delete the selected files.",
+                    currentPath = task?.currentPath,
+                    processed = task?.processed,
+                    total = task?.total,
+                    indeterminate = task?.indeterminate ?: true
+                )?.let(notificationController::showTerminal)
+            }
+            onFailure()
+        } finally {
+            onFinished()
+        }
+    }
 }
 
 @Composable
@@ -447,6 +586,8 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -473,7 +614,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     }
 
     val currentPreview = preview.value
-    val previewDeleteCount = currentPreview?.candidates?.sumOf { it.deleteTargets.size } ?: 0
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         config.value.phrase.trim().isNotEmpty() &&
@@ -759,29 +900,24 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                         val handler = onDeleteFile ?: return@OutlinedButton
                         isExecuting.value = true
                         message.value = null
-                        scope.launch {
-                            try {
-                                val snapshotChanged = withContext(Dispatchers.IO) {
-                                    resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = scope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onDeleteFile = handler,
+                            onSnapshotChanged = {
+                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                            },
+                            onRefreshGroups = {
+                                currentPreview.candidates.forEach { candidate ->
+                                    resultsRepo.refreshSingleGroup(
+                                        sizeBytes = candidate.group.sizeBytes,
+                                        hashHex = candidate.group.hashHex
+                                    )
                                 }
-                                if (snapshotChanged) {
-                                    preview.value = null
-                                    message.value = "The results snapshot changed. Build the preview again."
-                                    return@launch
-                                }
-
-                                val outcome = executeBulkDeletePreview(
-                                    preview = currentPreview,
-                                    onDeleteFile = handler
-                                )
-                                withContext(Dispatchers.IO) {
-                                    currentPreview.candidates.forEach { candidate ->
-                                        resultsRepo.refreshSingleGroup(
-                                            sizeBytes = candidate.group.sizeBytes,
-                                            hashHex = candidate.group.hashHex
-                                        )
-                                    }
-                                }
+                            },
+                            onSuccess = { outcome ->
                                 preview.value = null
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
@@ -793,13 +929,19 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                     else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
                                 }
                                 onResultsChanged()
-                            } catch (_: Exception) {
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
                                 message.value = "Bulk delete failed."
-                            } finally {
+                            },
+                            onFinished = {
                                 isExecuting.value = false
                                 confirmExecute.value = false
                             }
-                        }
+                        )
                     },
                     enabled = !isExecuting.value
                 ) {
@@ -831,6 +973,8 @@ internal fun KeepByModifiedBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -857,7 +1001,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
     }
 
     val currentPreview = preview.value
-    val previewDeleteCount = currentPreview?.candidates?.sumOf { it.deleteTargets.size } ?: 0
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         snapshotUpdatedAtMillis != null &&
@@ -1125,29 +1269,24 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         val handler = onDeleteFile ?: return@OutlinedButton
                         isExecuting.value = true
                         message.value = null
-                        scope.launch {
-                            try {
-                                val snapshotChanged = withContext(Dispatchers.IO) {
-                                    resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = scope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onDeleteFile = handler,
+                            onSnapshotChanged = {
+                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                            },
+                            onRefreshGroups = {
+                                currentPreview.candidates.forEach { candidate ->
+                                    resultsRepo.refreshSingleGroup(
+                                        sizeBytes = candidate.group.sizeBytes,
+                                        hashHex = candidate.group.hashHex
+                                    )
                                 }
-                                if (snapshotChanged) {
-                                    preview.value = null
-                                    message.value = "The results snapshot changed. Build the preview again."
-                                    return@launch
-                                }
-
-                                val outcome = executeBulkDeletePreview(
-                                    preview = currentPreview,
-                                    onDeleteFile = handler
-                                )
-                                withContext(Dispatchers.IO) {
-                                    currentPreview.candidates.forEach { candidate ->
-                                        resultsRepo.refreshSingleGroup(
-                                            sizeBytes = candidate.group.sizeBytes,
-                                            hashHex = candidate.group.hashHex
-                                        )
-                                    }
-                                }
+                            },
+                            onSuccess = { outcome ->
                                 preview.value = null
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
@@ -1159,13 +1298,19 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                     else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
                                 }
                                 onResultsChanged()
-                            } catch (_: Exception) {
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
                                 message.value = "Bulk delete failed."
-                            } finally {
+                            },
+                            onFinished = {
                                 isExecuting.value = false
                                 confirmExecute.value = false
                             }
-                        }
+                        )
                     },
                     enabled = !isExecuting.value
                 ) {

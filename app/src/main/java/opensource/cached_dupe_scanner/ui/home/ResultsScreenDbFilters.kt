@@ -4,7 +4,6 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
-import java.util.Base64
 import java.util.Locale
 import java.util.TimeZone
 
@@ -537,17 +536,60 @@ private data class FilterClusterRecord(
 
 private fun encodeFilterToken(value: String): String {
     if (value.isEmpty()) return "-"
-    return Base64.getUrlEncoder()
-        .withoutPadding()
-        .encodeToString(value.toByteArray(Charsets.UTF_8))
+    val bytes = value.toByteArray(Charsets.UTF_8)
+    val output = StringBuilder(((bytes.size + 2) / 3) * 4)
+    var index = 0
+    while (index < bytes.size) {
+        val b0 = bytes[index].toInt() and 0xff
+        val hasB1 = index + 1 < bytes.size
+        val hasB2 = index + 2 < bytes.size
+        val b1 = if (hasB1) bytes[index + 1].toInt() and 0xff else 0
+        val b2 = if (hasB2) bytes[index + 2].toInt() and 0xff else 0
+        output.append(BASE64_URL_ALPHABET[b0 ushr 2])
+        output.append(BASE64_URL_ALPHABET[((b0 and 0x03) shl 4) or (b1 ushr 4)])
+        if (hasB1) {
+            output.append(BASE64_URL_ALPHABET[((b1 and 0x0f) shl 2) or (b2 ushr 6)])
+        }
+        if (hasB2) {
+            output.append(BASE64_URL_ALPHABET[b2 and 0x3f])
+        }
+        index += 3
+    }
+    return output.toString()
 }
 
 private fun decodeFilterToken(token: String): String {
     if (token == "-") return ""
     return runCatching {
-        String(Base64.getUrlDecoder().decode(token), Charsets.UTF_8)
+        val output = ArrayList<Byte>((token.length * 3) / 4)
+        var index = 0
+        while (index < token.length) {
+            val c0 = decodeBase64UrlChar(token[index])
+            val c1 = decodeBase64UrlChar(token[index + 1])
+            val hasC2 = index + 2 < token.length
+            val hasC3 = index + 3 < token.length
+            val c2 = if (hasC2) decodeBase64UrlChar(token[index + 2]) else 0
+            val c3 = if (hasC3) decodeBase64UrlChar(token[index + 3]) else 0
+            output.add(((c0 shl 2) or (c1 ushr 4)).toByte())
+            if (hasC2) {
+                output.add((((c1 and 0x0f) shl 4) or (c2 ushr 2)).toByte())
+            }
+            if (hasC3) {
+                output.add((((c2 and 0x03) shl 6) or c3).toByte())
+            }
+            index += 4
+        }
+        String(output.toByteArray(), Charsets.UTF_8)
     }.getOrDefault("")
 }
+
+private fun decodeBase64UrlChar(char: Char): Int {
+    val index = BASE64_URL_ALPHABET.indexOf(char)
+    if (index < 0) throw IllegalArgumentException("Invalid base64url character")
+    return index
+}
+
+private const val BASE64_URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 private data class DateTimePattern(
     val pattern: String,

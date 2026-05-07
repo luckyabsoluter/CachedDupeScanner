@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.notifications
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -21,6 +22,7 @@ class TaskNotificationController(context: Context) {
     private val lastUpdateAt = mutableMapOf<TaskArea, Long>()
     private val pendingSnapshots = mutableMapOf<TaskArea, TaskSnapshot>()
 
+    @SuppressLint("MissingPermission")
     fun showActive(snapshot: TaskSnapshot) {
         val now = SystemClock.elapsedRealtime()
         val timeSinceLast = now - (lastUpdateAt[snapshot.area] ?: 0L)
@@ -47,6 +49,7 @@ class TaskNotificationController(context: Context) {
         )
     }
 
+    @SuppressLint("MissingPermission")
     fun showTerminal(summary: TaskTerminalSummary) {
         beginNotificationSession()
         if (!notificationPermissionGranted) return

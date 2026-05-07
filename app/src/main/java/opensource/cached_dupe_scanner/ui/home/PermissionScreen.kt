@@ -119,7 +119,9 @@ fun PermissionScreen(
 
 internal fun hasAllFilesAccess(
     sdkInt: Int = Build.VERSION.SDK_INT,
-    isExternalStorageManager: () -> Boolean = { Environment.isExternalStorageManager() }
+    isExternalStorageManager: () -> Boolean = {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+    }
 ): Boolean {
     return if (sdkInt >= Build.VERSION_CODES.R) {
         isExternalStorageManager()
