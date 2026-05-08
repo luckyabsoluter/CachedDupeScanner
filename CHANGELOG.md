@@ -8,32 +8,18 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity experiments dashboard entry with an executable exact-thumbnail video/image clustering run, default 100 MB size filter, selectable size units, frame timestamps, resize target, optional quantization, grayscale mode, independent result tables, and reusable duplicate-group browsing for saved similarity clusters.
-- Similarity experiments now include an executable duration-only video clustering run with configurable duration tolerance.
-- Similarity experiments now include an executable duration-neighbor list that keeps one duration-sorted list of videos with adjacent duration matches inside the configured tolerance.
-- Duration-neighbor similarity experiments now store extracted video lengths so saved runs can rebuild the neighbor list with a new tolerance without reading video files again.
-- Exact-hash similarity cluster details now show enlarged reduction preview tiles for the stored resized and quantized sample values used to form the cluster.
-- Similarity cluster member rows now show per-file thumbnails while regular exact duplicate result details keep the existing text-only member rows.
+- Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
+- Similarity experiment controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, duration tolerances with seconds/milliseconds/minutes units, and tolerance-only rebuilds from stored video lengths.
+- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, lazy result browsing, and shared task progress/notification support.
 
 ### Changed
 
 - Bulk delete execution now uses the shared task progress and notification flow while deleting files.
-- Split the similarity experiments screen into an entry list, a new-experiment flow, and saved experiment detail views so setup controls and cluster results are not shown together on first entry.
-- Similarity experiment runs now use the shared app-wide task banner, bubble, and notification progress flow while running.
-- Similarity cluster cards now cap member preview text into compact multi-item lines instead of growing with one member per line.
-- New similarity experiments now show only templates first, then open the selected template's configuration screen.
-- Duration-based similarity cards now show stored video lengths next to preview members.
-- Duration-neighbor similarity results now render as a flat duration-sorted video list instead of a group card.
-- Duration-based similarity tolerance controls now allow seconds, milliseconds, or minutes instead of seconds only.
 
 ### Fixed
 
-- Exact-thumbnail similarity hashing now stores every resized thumbnail pixel, so 2x2 and larger reductions no longer collapse to the top-left pixel.
 - Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
 - Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
-- Similarity experiment cluster browsing now uses lazy list items, the lazy scrollbar, and the shared load indicator while reviewing run results.
-- Duration-neighbor similarity video cards now fall back to extracting legacy video lengths, open file details on tap, and de-duplicate lazy row keys.
-- Duration-neighbor similarity video cards now use interactive Material card surfaces for tap handling.
 
 ## [1.4.0] - 2026-04-30
 
