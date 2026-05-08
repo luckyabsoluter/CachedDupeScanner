@@ -241,6 +241,106 @@ class IncrementalScannerTest {
     }
 
     @Test
+    fun scanRepairsUnscannedSameSizeCachedEntryMissingHash() {
+        val existingRoot = Files.createTempDirectory("cached-existing").toFile()
+        try {
+            val fileA = File(existingRoot, "a.txt").apply {
+                writeText("aa")
+            }
+            val fileB = File(tempDir, "b.txt").apply {
+                writeText("bb")
+            }
+            store.upsert(
+                FileMetadata(
+                    path = fileA.path,
+                    normalizedPath = PathNormalizer.normalize(fileA.path),
+                    sizeBytes = fileA.length(),
+                    lastModifiedMillis = fileA.lastModified(),
+                    hashHex = null
+                )
+            )
+            val hasher = CountingHasher()
+            val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+            scanner.scan(tempDir)
+
+            assertEquals(1, hasher.callsFor(fileA))
+            assertEquals(1, hasher.callsFor(fileB))
+            val repaired = database.fileCacheDao()
+                .getByNormalizedPath(PathNormalizer.normalize(fileA.path))
+            assertNotNull(repaired?.hashHex)
+        } finally {
+            existingRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cancelledScanStopsDuringRepairingCachedMissingHashWithoutPersistingPartialCache() {
+        val existingRoot = Files.createTempDirectory("cached-existing").toFile()
+        try {
+            val fileA = File(existingRoot, "a.txt").apply {
+                writeText("aa")
+            }
+            File(tempDir, "b.txt").apply {
+                writeText("bb")
+            }
+            store.upsert(
+                FileMetadata(
+                    path = fileA.path,
+                    normalizedPath = PathNormalizer.normalize(fileA.path),
+                    sizeBytes = fileA.length(),
+                    lastModifiedMillis = fileA.lastModified(),
+                    hashHex = null
+                )
+            )
+            var allow = true
+            val hasher = CancellingHasher { allow = false }
+            val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+            val result = scanner.scan(
+                tempDir,
+                shouldContinue = { allow }
+            )
+
+            assertEquals(0, result.files.size)
+            val cachedAfter = database.fileCacheDao()
+                .getByNormalizedPath(PathNormalizer.normalize(fileA.path))
+            assertNull(cachedAfter?.hashHex)
+            assertEquals(1, database.fileCacheDao().getAll().size)
+        } finally {
+            existingRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun scanSkipsMissingCachedEntryDuringHashRepair() {
+        val missingFile = File(tempDir.parentFile, "missing-cached-entry.txt")
+        val scannedFile = File(tempDir, "b.txt").apply {
+            writeText("bb")
+        }
+        store.upsert(
+            FileMetadata(
+                path = missingFile.path,
+                normalizedPath = PathNormalizer.normalize(missingFile.path),
+                sizeBytes = scannedFile.length(),
+                lastModifiedMillis = 1,
+                hashHex = null
+            )
+        )
+        val hasher = CountingHasher()
+        val scanner = IncrementalScanner(store, hasher, FileWalker())
+
+        val result = scanner.scan(tempDir)
+
+        assertEquals(1, result.files.size)
+        assertEquals(0, hasher.callsFor(missingFile))
+        assertEquals(1, hasher.callsFor(scannedFile))
+        val cachedAfter = database.fileCacheDao()
+            .getByNormalizedPath(PathNormalizer.normalize(missingFile.path))
+        assertNull(cachedAfter?.hashHex)
+    }
+
+    @Test
     fun scanIgnoreCanExcludeTrashBinContents() {
         val regularFile = File(tempDir, "regular.txt").apply {
             writeText("hello")

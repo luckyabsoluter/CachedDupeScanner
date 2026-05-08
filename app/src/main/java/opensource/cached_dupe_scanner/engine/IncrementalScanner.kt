@@ -88,13 +88,18 @@ class IncrementalScanner(
             if (cachedCount == 1 && lookupByPath[it.normalizedPath]?.status == CacheStatus.MISS) return@filter true
             false
         }
+        val missingCachedCandidates = cacheStore.missingHashCandidatesBySizes(
+            candidates.map { it.sizeBytes }.toSet()
+        ).filter { cached ->
+            uniqueScanned.none { it.normalizedPath == cached.normalizedPath }
+        }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
         val hashTargets = candidates.filter {
             val cached = lookupByPath[it.normalizedPath]
             cached == null ||
                 cached.status != CacheStatus.FRESH ||
                 cached.cached?.hashHex == null
-        }.toSet()
+        }.toSet() + missingCachedCandidates
         val totalHash = hashTargets.size
         var hashCount = 0
 
@@ -134,6 +139,39 @@ class IncrementalScanner(
             files.add(finalMetadata)
             pending.add(finalMetadata)
             // progress for hashing is reported only when actual hashing occurs
+        }
+
+        missingCachedCandidates.forEach { cachedCandidate ->
+            if (!shouldContinue()) {
+                return ScanResult(
+                    scannedAtMillis = scannedAtMillis,
+                    files = files,
+                    duplicateGroups = emptyList()
+                )
+            }
+            val file = File(cachedCandidate.path)
+            if (!file.exists()) return@forEach
+            val computed = runCatching {
+                fileHasher.hash(file, shouldContinue)
+            }.getOrNull()
+            if (computed == null) {
+                if (!shouldContinue()) {
+                    return ScanResult(
+                        scannedAtMillis = scannedAtMillis,
+                        files = files,
+                        duplicateGroups = emptyList()
+                    )
+                }
+                return@forEach
+            }
+            hashCount += 1
+            val repaired = cachedCandidate.copy(
+                sizeBytes = file.length(),
+                lastModifiedMillis = file.lastModified(),
+                hashHex = computed
+            )
+            pending.add(repaired)
+            onProgress(hashCount, totalHash, repaired, ScanPhase.Hashing)
         }
 
         if (!shouldContinue()) {

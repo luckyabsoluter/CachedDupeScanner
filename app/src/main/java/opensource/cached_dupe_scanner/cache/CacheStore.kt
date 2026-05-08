@@ -14,6 +14,25 @@ class CacheStore(
         dao.upsertAll(metadata.map { it.toEntity() })
     }
 
+    fun missingHashCandidatesBySizes(sizes: Set<Long>): List<FileMetadata> {
+        if (sizes.isEmpty()) return emptyList()
+        val result = mutableListOf<FileMetadata>()
+        sizes.toList().chunked(SQLITE_VARIABLE_LIMIT).forEach { chunk ->
+            var afterPath = ""
+            while (true) {
+                val batch = dao.listMissingHashCandidatesBySizesAfter(
+                    sizes = chunk,
+                    afterPath = afterPath,
+                    limit = PAGE_SIZE
+                )
+                if (batch.isEmpty()) break
+                result += batch.map { it.toMetadata() }
+                afterPath = batch.last().normalizedPath
+            }
+        }
+        return result
+    }
+
     fun deleteByNormalizedPath(normalizedPath: String) {
         dao.deleteByNormalizedPath(normalizedPath)
     }
@@ -46,6 +65,7 @@ class CacheStore(
 
     private companion object {
         const val SQLITE_VARIABLE_LIMIT = 900
+        const val PAGE_SIZE = 500
     }
 }
 
