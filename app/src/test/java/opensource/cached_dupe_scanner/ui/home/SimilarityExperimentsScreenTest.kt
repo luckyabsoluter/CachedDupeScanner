@@ -26,13 +26,19 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
-    fun sizeUnitCyclesFromDefaultMbToGb() {
-        assertEquals(SimilaritySizeUnit.GB, SimilaritySizeUnit.MB.next())
+    fun sizeUnitsExposeMenuOptions() {
+        assertEquals(
+            listOf("B", "KB", "MB", "GB"),
+            SimilaritySizeUnit.entries.map { it.label }
+        )
     }
 
     @Test
-    fun timeUnitCyclesFromDefaultSecondsToMilliseconds() {
-        assertEquals(SimilarityTimeUnit.MS, SimilarityTimeUnit.S.next())
+    fun timeUnitsExposeMenuOptions() {
+        assertEquals(
+            listOf("s", "ms", "min"),
+            SimilarityTimeUnit.entries.map { it.label }
+        )
     }
 
     @Test

@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -998,6 +1000,37 @@ private fun SelectedExperimentMethodCard(experiment: SimilarityExperimentSpec) {
 }
 
 @Composable
+private fun <T> UnitDropdown(
+    label: String,
+    selectedLabel: String,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onOptionSelected: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Button(onClick = { expanded = true }) {
+            Text("$label: $selectedLabel")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DurationToleranceRunCard(
     experimentName: String,
     description: String,
@@ -1043,15 +1076,17 @@ private fun DurationToleranceRunCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Button(
-                    onClick = { onMinSizeUnitChange(minSizeUnit.next()) },
+                UnitDropdown(
+                    label = "Unit",
+                    selectedLabel = minSizeUnit.label,
+                    options = SimilaritySizeUnit.entries,
+                    optionLabel = { it.label },
+                    onOptionSelected = onMinSizeUnitChange,
                     modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Text("Unit: ${minSizeUnit.label}")
-                }
+                )
             }
             Text(
-                text = "Minimum size filters cached video candidates before duration extraction. The default is 100 MB, and Unit cycles through B, KB, MB, and GB.",
+                text = "Minimum size filters cached video candidates before duration extraction. The default is 100 MB, and Unit opens a menu for B, KB, MB, and GB.",
                 style = MaterialTheme.typography.bodySmall
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1062,15 +1097,17 @@ private fun DurationToleranceRunCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Button(
-                    onClick = { onToleranceUnitChange(toleranceUnit.next()) },
+                UnitDropdown(
+                    label = "Unit",
+                    selectedLabel = toleranceUnit.label,
+                    options = SimilarityTimeUnit.entries,
+                    optionLabel = { it.label },
+                    onOptionSelected = onToleranceUnitChange,
                     modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Text("Unit: ${toleranceUnit.label}")
-                }
+                )
             }
             Text(
-                text = "$toleranceDescription Unit cycles through seconds, milliseconds, and minutes.",
+                text = "$toleranceDescription Unit opens a menu for seconds, milliseconds, and minutes.",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -1155,15 +1192,17 @@ private fun ExactThumbnailRunCard(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Button(
-                    onClick = { onMinSizeUnitChange(minSizeUnit.next()) },
+                UnitDropdown(
+                    label = "Unit",
+                    selectedLabel = minSizeUnit.label,
+                    options = SimilaritySizeUnit.entries,
+                    optionLabel = { it.label },
+                    onOptionSelected = onMinSizeUnitChange,
                     modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Text("Unit: ${minSizeUnit.label}")
-                }
+                )
             }
             Text(
-                text = "Minimum size filters candidates before signature extraction. The default is 100 MB, and Unit cycles through B, KB, MB, and GB.",
+                text = "Minimum size filters candidates before signature extraction. The default is 100 MB, and Unit opens a menu for B, KB, MB, and GB.",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
@@ -1324,12 +1363,14 @@ private fun DurationNeighborStoredRebuildCard(
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
-                Button(
-                    onClick = { onToleranceUnitChange(toleranceUnit.next()) },
+                UnitDropdown(
+                    label = "Unit",
+                    selectedLabel = toleranceUnit.label,
+                    options = SimilarityTimeUnit.entries,
+                    optionLabel = { it.label },
+                    onOptionSelected = onToleranceUnitChange,
                     modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Text("Unit: ${toleranceUnit.label}")
-                }
+                )
             }
             Text(
                 text = runStatusText,
@@ -1937,12 +1978,7 @@ internal enum class SimilaritySizeUnit(
     B("B", 1L),
     KB("KB", 1024L),
     MB("MB", 1024L * 1024L),
-    GB("GB", 1024L * 1024L * 1024L);
-
-    fun next(): SimilaritySizeUnit {
-        val values = entries
-        return values[(ordinal + 1) % values.size]
-    }
+    GB("GB", 1024L * 1024L * 1024L)
 }
 
 internal enum class SimilarityTimeUnit(
@@ -1951,12 +1987,7 @@ internal enum class SimilarityTimeUnit(
 ) {
     S("s", 1_000L),
     MS("ms", 1L),
-    MIN("min", 60_000L);
-
-    fun next(): SimilarityTimeUnit {
-        val values = entries
-        return values[(ordinal + 1) % values.size]
-    }
+    MIN("min", 60_000L)
 }
 
 internal fun parsedMinSizeBytes(
