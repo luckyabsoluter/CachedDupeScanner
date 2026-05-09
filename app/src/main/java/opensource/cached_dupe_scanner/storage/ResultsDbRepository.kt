@@ -1,9 +1,9 @@
 package opensource.cached_dupe_scanner.storage
 
-import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.Hashing
 import java.io.File
@@ -280,7 +280,7 @@ class ResultsDbRepository(
         } else {
             fileDao.listMembersBySizeAndHashAfter(sizeBytes, hashHex, afterPath, limit)
         }
-        return entities.map { it.toMetadata() }
+        return entities.map { it.toFileMetadata() }
     }
 
     fun listAllGroupMembers(sizeBytes: Long, hashHex: String, pageSize: Int = 200): List<FileMetadata> {
@@ -305,14 +305,4 @@ class ResultsDbRepository(
         }
         return allMembers
     }
-}
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
 }

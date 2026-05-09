@@ -6,12 +6,12 @@ class CacheStore(
     private val dao: FileCacheDao
 ) {
     fun upsert(metadata: FileMetadata) {
-        dao.upsert(metadata.toEntity())
+        dao.upsert(metadata.toCachedFileEntity())
     }
 
     fun upsertAll(metadata: List<FileMetadata>) {
         if (metadata.isEmpty()) return
-        dao.upsertAll(metadata.map { it.toEntity() })
+        dao.upsertAll(metadata.map { it.toCachedFileEntity() })
     }
 
     fun missingHashCandidatesBySizes(sizes: Set<Long>): List<FileMetadata> {
@@ -26,7 +26,7 @@ class CacheStore(
                     limit = PAGE_SIZE
                 )
                 if (batch.isEmpty()) break
-                result += batch.map { it.toMetadata() }
+                result += batch.map { it.toFileMetadata() }
                 afterPath = batch.last().normalizedPath
             }
         }
@@ -41,7 +41,7 @@ class CacheStore(
         val cachedEntity = dao.getByNormalizedPath(current.normalizedPath)
             ?: return CacheLookupResult(CacheStatus.MISS)
 
-        val cachedMetadata = cachedEntity.toMetadata()
+        val cachedMetadata = cachedEntity.toFileMetadata()
         val isFresh = cachedEntity.sizeBytes == current.sizeBytes &&
             cachedEntity.lastModifiedMillis == current.lastModifiedMillis
 
@@ -67,24 +67,4 @@ class CacheStore(
         const val SQLITE_VARIABLE_LIMIT = 900
         const val PAGE_SIZE = 500
     }
-}
-
-private fun FileMetadata.toEntity(): CachedFileEntity {
-    return CachedFileEntity(
-        normalizedPath = normalizedPath,
-        path = path,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
-}
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
 }

@@ -7,6 +7,7 @@ import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityDurationCandidateEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentDao
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
+import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
@@ -115,7 +116,7 @@ class SimilarityExperimentRepository(
             .chunked(SIMILARITY_CLUSTER_MEMBER_LOOKUP_CHUNK_SIZE)
             .flatMap { chunk -> fileDao.findByNormalizedOrDisplayPaths(chunk) }
             .forEach { entity ->
-                val metadata = entity.toMetadata()
+                val metadata = entity.toFileMetadata()
                 membersByPath[entity.normalizedPath] = metadata
                 if (entity.path.isNotBlank()) {
                     membersByPath[entity.path] = metadata
@@ -886,16 +887,6 @@ internal fun parseSimilarityClusterMemberEntries(text: String): List<SimilarityC
 internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {
     return parseSimilarityClusterMemberEntries(text)
         .map { entry -> entry.normalizedPath }
-}
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
 }
 
 private const val SIMILARITY_EXPERIMENT_BATCH_SIZE = 100
