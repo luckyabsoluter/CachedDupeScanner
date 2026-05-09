@@ -53,6 +53,7 @@ import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskDetail
 import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -687,7 +688,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text("Target")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsBulkDeleteTextTarget.entries,
                                 selected = config.value.target,
                                 label = { it.label },
@@ -696,7 +697,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 }
                             )
                             Text("Operator")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsFilterTextOperator.entries,
                                 selected = config.value.operator,
                                 label = { it.label },
@@ -1068,7 +1069,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         ) {
                             Text("Command rule", style = MaterialTheme.typography.titleMedium)
                             Text("Keep mode")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsBulkDeleteModifiedKeepMode.entries,
                                 selected = keepMode.value,
                                 label = { it.label },
@@ -1395,33 +1396,6 @@ private fun ResultsBulkDeleteCandidateCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> BulkDeleteOptionButtons(
-    options: Iterable<T>,
-    selected: T,
-    label: (T) -> String,
-    onSelect: (T) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(2).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { option ->
-                    val isSelected = option == selected
-                    if (isSelected) {
-                        Button(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    } else {
-                        OutlinedButton(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    }
                 }
             }
         }

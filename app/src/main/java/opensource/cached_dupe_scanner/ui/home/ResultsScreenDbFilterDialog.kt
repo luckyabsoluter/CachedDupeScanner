@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -298,7 +299,7 @@ private fun ResultsFilterClusterEditor(
                 )
 
                 Text("Cluster logic")
-                FilterOptionButtons(
+                OptionButtonGrid(
                     options = ResultsFilterClusterMode.entries,
                     selected = cluster.mode,
                     label = { it.label },
@@ -370,7 +371,7 @@ private fun ResultsFilterRuleEditor(
             }
 
             Text("Target")
-            FilterOptionButtons(
+            OptionButtonGrid(
                 options = supportedTargets.toList(),
                 selected = rule.target,
                 label = { it.label },
@@ -389,7 +390,7 @@ private fun ResultsFilterRuleEditor(
 
             if (rule.target == ResultsFilterTarget.GroupItemCount) {
                 Text("Operator")
-                FilterOptionButtons(
+                OptionButtonGrid(
                     options = ResultsFilterCountOperator.entries,
                     selected = rule.countOperator,
                     label = { it.label },
@@ -407,7 +408,7 @@ private fun ResultsFilterRuleEditor(
                 )
             } else if (rule.target == ResultsFilterTarget.ModifiedTime) {
                 Text("Operator")
-                FilterOptionButtons(
+                OptionButtonGrid(
                     options = ResultsFilterTimeOperator.entries,
                     selected = rule.timeOperator,
                     label = { it.label },
@@ -431,7 +432,7 @@ private fun ResultsFilterRuleEditor(
                 )
             } else {
                 Text("Operator")
-                FilterOptionButtons(
+                OptionButtonGrid(
                     options = ResultsFilterTextOperator.entries,
                     selected = rule.textOperator,
                     label = { it.label },
@@ -454,33 +455,6 @@ private fun ResultsFilterRuleEditor(
                     },
                     singleLine = true
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> FilterOptionButtons(
-    options: Iterable<T>,
-    selected: T,
-    label: (T) -> String,
-    onSelect: (T) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(2).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { option ->
-                    val isSelected = option == selected
-                    if (isSelected) {
-                        Button(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    } else {
-                        OutlinedButton(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    }
-                }
             }
         }
     }
