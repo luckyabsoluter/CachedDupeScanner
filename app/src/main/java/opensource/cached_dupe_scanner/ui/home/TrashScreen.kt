@@ -65,6 +65,7 @@ import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
 @Composable
@@ -203,29 +204,11 @@ fun TrashScreen(
 
             activeTask?.let { task ->
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(Spacing.cardPadding),
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.itemGap)
-                        ) {
-                            Text(task.title, style = MaterialTheme.typography.titleSmall)
-                            Text(task.detail)
-                            task.currentPath?.let { current ->
-                                Text(
-                                    text = current,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { taskCoordinator.requestCancel(TaskArea.Trash) },
-                                enabled = task.isCancellable,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Cancel")
-                            }
-                        }
-                    }
+                    TaskProgressCard(
+                        task = task,
+                        onCancel = { taskCoordinator.requestCancel(TaskArea.Trash) },
+                        cancelText = "Cancel"
+                    )
                     Spacer(modifier = Modifier.height(Spacing.itemGap))
                 }
             }

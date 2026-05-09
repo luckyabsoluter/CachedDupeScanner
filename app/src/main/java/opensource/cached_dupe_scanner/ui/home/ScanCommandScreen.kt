@@ -58,6 +58,7 @@ import opensource.cached_dupe_scanner.tasks.scanTaskTitle
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.TrashPaths
@@ -225,26 +226,15 @@ internal fun ScanCommandScreen(
 
             activeTask?.let { task ->
                 Spacer(modifier = Modifier.height(Spacing.sectionGap))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(Spacing.cardPadding),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
-                    ) {
-                        Text(task.title, style = MaterialTheme.typography.titleSmall)
-                        Text(task.detail)
+                TaskProgressCard(
+                    task = task,
+                    onCancel = { taskCoordinator.requestCancel(TaskArea.Scan) },
+                    cancelText = "Stop scan",
+                    currentPathText = { current -> "Current: $current" },
+                    extraContent = {
                         Text("Scanned: ${task.processed ?: 0} / ${task.total?.toString() ?: "?"}")
-                        task.currentPath?.let { current ->
-                            Text("Current: $current")
-                        }
-                        Button(
-                            onClick = { taskCoordinator.requestCancel(TaskArea.Scan) },
-                            enabled = task.isCancellable,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Stop scan")
-                        }
                     }
-                }
+                )
             }
         }
 

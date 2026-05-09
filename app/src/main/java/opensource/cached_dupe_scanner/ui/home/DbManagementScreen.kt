@@ -17,7 +17,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -42,7 +41,6 @@ import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
-import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 import opensource.cached_dupe_scanner.tasks.clearCacheCompletedDetail
 import opensource.cached_dupe_scanner.tasks.clearCacheTaskDetail
 import opensource.cached_dupe_scanner.tasks.clearCacheTaskTitle
@@ -57,6 +55,7 @@ import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TaskProgressContent
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 
 @Composable
@@ -173,9 +172,12 @@ fun DbManagementScreen(
                         )
                     }
                     activeTask?.takeIf { it.kind == TaskKind.RebuildGroups }?.let { task ->
-                        DbTaskProgressContent(
+                        TaskProgressContent(
                             task = task,
-                            taskCoordinator = taskCoordinator
+                            onCancel = { taskCoordinator.requestCancel(TaskArea.Db) },
+                            cancelText = "Cancel running task",
+                            currentPathText = { path -> "Current: $path" },
+                            showTitle = false
                         )
                     }
                 }
@@ -259,9 +261,12 @@ fun DbManagementScreen(
                         )
                     }
                     activeTask?.takeIf { it.kind != TaskKind.RebuildGroups }?.let { task ->
-                        DbTaskProgressContent(
+                        TaskProgressContent(
                             task = task,
-                            taskCoordinator = taskCoordinator
+                            onCancel = { taskCoordinator.requestCancel(TaskArea.Db) },
+                            cancelText = "Cancel running task",
+                            currentPathText = { path -> "Current: $path" },
+                            showTitle = false
                         )
                     } ?: Text(
                         text = if (activeTask?.kind == TaskKind.RebuildGroups) {
@@ -322,44 +327,6 @@ fun DbManagementScreen(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun DbTaskProgressContent(
-    task: TaskSnapshot,
-    taskCoordinator: TaskCoordinator
-) {
-    if (task.total != null && task.total > 0 && !task.indeterminate) {
-        LinearProgressIndicator(
-            progress = {
-                ((task.processed ?: 0).toFloat() / task.total.toFloat())
-                    .coerceIn(0f, 1f)
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-    } else {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-    }
-    Spacer(modifier = Modifier.height(Spacing.compactGap))
-    Text(
-        text = task.detail,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    task.currentPath?.let { path ->
-        Text(
-            text = "Current: $path",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-    OutlinedButton(
-        onClick = { taskCoordinator.requestCancel(TaskArea.Db) },
-        enabled = task.isCancellable,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("Cancel running task")
     }
 }
 
