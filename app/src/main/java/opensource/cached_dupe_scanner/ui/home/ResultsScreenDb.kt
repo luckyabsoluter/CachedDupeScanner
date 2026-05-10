@@ -37,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +71,7 @@ import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
@@ -880,27 +880,24 @@ fun ResultsScreenDb(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Count,
-                            onClick = { pendingSortKey.value = ResultSortKey.Count }
-                        )
-                        Text(ResultSortKey.Count.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.TotalSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
-                        )
-                        Text(ResultSortKey.TotalSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.PerFileSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
-                        )
-                        Text(ResultSortKey.PerFileSize.label)
-                    }
+                    RadioOptionRow(
+                        option = ResultSortKey.Count,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Count.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.TotalSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.PerFileSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.PerFileSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
                     // Name sort is not supported in DB mode yet.
                     Text(
                         text = "Name sort is not supported in DB mode.",
@@ -910,20 +907,18 @@ fun ResultsScreenDb(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = SortDirection.Desc }
-                        )
-                        Text(SortDirection.Desc.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = SortDirection.Asc }
-                        )
-                        Text(SortDirection.Asc.label)
-                    }
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = SortDirection.Desc.label,
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = SortDirection.Asc.label,
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {
@@ -1680,37 +1675,33 @@ private fun GroupDetailDb(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Path,
-                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Path }
-                        )
-                        Text(ResultGroupMemberSortKey.Path.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Modified,
-                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Modified }
-                        )
-                        Text(ResultGroupMemberSortKey.Modified.label)
-                    }
+                    RadioOptionRow(
+                        option = ResultGroupMemberSortKey.Path,
+                        selected = pendingGroupSortKey.value,
+                        label = ResultGroupMemberSortKey.Path.label,
+                        onSelect = { pendingGroupSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultGroupMemberSortKey.Modified,
+                        selected = pendingGroupSortKey.value,
+                        label = ResultGroupMemberSortKey.Modified.label,
+                        onSelect = { pendingGroupSortKey.value = it }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingGroupSortDirection.value = SortDirection.Asc }
-                        )
-                        Text(SortDirection.Asc.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingGroupSortDirection.value = SortDirection.Desc }
-                        )
-                        Text(SortDirection.Desc.label)
-                    }
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingGroupSortDirection.value,
+                        label = SortDirection.Asc.label,
+                        onSelect = { pendingGroupSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingGroupSortDirection.value,
+                        label = SortDirection.Desc.label,
+                        onSelect = { pendingGroupSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {

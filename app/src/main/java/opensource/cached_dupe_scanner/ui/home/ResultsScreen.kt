@@ -57,13 +57,13 @@ import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.util.Locale
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -445,51 +445,45 @@ fun ResultsScreen(
             text = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Count,
-                            onClick = { pendingSortKey.value = ResultSortKey.Count }
-                        )
-                        Text(ResultSortKey.Count.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.TotalSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
-                        )
-                        Text(ResultSortKey.TotalSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.PerFileSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
-                        )
-                        Text(ResultSortKey.PerFileSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Name,
-                            onClick = { pendingSortKey.value = ResultSortKey.Name }
-                        )
-                        Text(ResultSortKey.Name.label)
-                    }
+                    RadioOptionRow(
+                        option = ResultSortKey.Count,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Count.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.TotalSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.PerFileSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.PerFileSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.Name,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Name.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Order")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = SortDirection.Asc }
-                        )
-                        Text("Ascending")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = SortDirection.Desc }
-                        )
-                        Text("Descending")
-                    }
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = "Ascending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = "Descending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {

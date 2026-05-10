@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +54,7 @@ import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -518,44 +518,39 @@ fun FilesScreenDb(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Name,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Name }
-                        )
-                        Text("Name")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Size,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Size }
-                        )
-                        Text("Size")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Modified,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Modified }
-                        )
-                        Text("Modified")
-                    }
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Name,
+                        selected = pendingSortKey.value,
+                        label = "Name",
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Size,
+                        selected = pendingSortKey.value,
+                        label = "Size",
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Modified,
+                        selected = pendingSortKey.value,
+                        label = "Modified",
+                        onSelect = { pendingSortKey.value = it }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == PagedFileRepository.SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = PagedFileRepository.SortDirection.Asc }
-                        )
-                        Text("Ascending")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == PagedFileRepository.SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = PagedFileRepository.SortDirection.Desc }
-                        )
-                        Text("Descending")
-                    }
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = "Ascending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = "Descending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {
