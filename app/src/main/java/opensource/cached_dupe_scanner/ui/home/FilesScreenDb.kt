@@ -633,34 +633,31 @@ internal fun loadFilteredFilesPage(
         )
     }
 
-    val matchedItems = mutableListOf<FileMetadata>()
-    var sourceLoaded = 0
-    var nextCursor: PagedFileRepository.Cursor? = cursor
-    var exhausted = false
-
-    while (matchedItems.size < minMatches && !exhausted) {
-        val page = fileRepo.loadPage(
-            sortKey = sortKey,
-            direction = direction,
-            cursor = nextCursor ?: cursor,
-            limit = sourcePageSize
-        )
-        if (page.items.isEmpty()) {
-            exhausted = true
-            nextCursor = null
-            break
+    val page = loadFilteredSourcePage(
+        startCursor = cursor,
+        minMatches = minMatches,
+        loadPage = { currentCursor ->
+            val sourcePage = fileRepo.loadPage(
+                sortKey = sortKey,
+                direction = direction,
+                cursor = currentCursor,
+                limit = sourcePageSize
+            )
+            SourcePage(
+                items = sourcePage.items,
+                nextCursor = sourcePage.nextCursor,
+                exhausted = sourcePage.items.isEmpty()
+            )
+        },
+        transformMatch = { file ->
+            if (matchesFileFilter(definition, file)) file else null
         }
-        sourceLoaded += page.items.size
-        matchedItems += page.items.filter { file ->
-            matchesFileFilter(definition, file)
-        }
-        nextCursor = page.nextCursor
-    }
+    )
 
     return FilteredFilesPage(
-        items = matchedItems.take(minMatches),
-        nextCursor = nextCursor,
-        exhausted = exhausted,
-        sourceLoadedCount = sourceLoaded
+        items = page.items,
+        nextCursor = page.nextCursor,
+        exhausted = page.exhausted,
+        sourceLoadedCount = page.sourceLoadedCount
     )
 }

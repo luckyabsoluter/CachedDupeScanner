@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Files and results DB filtering now share a pure filtered paging loop instead of separate source-page scanning implementations.
 - Active task progress cards now share one reusable task progress component across the task banner, DB management, scan, and trash screens.
 - Result filter and bulk-delete option controls now share one option-button grid component instead of separate local copies.
 - Cached file entity and metadata conversions now share one cache-boundary mapper instead of local repository copies.

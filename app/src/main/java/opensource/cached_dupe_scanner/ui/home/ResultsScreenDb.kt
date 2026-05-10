@@ -1919,25 +1919,25 @@ internal fun loadFilteredGroupsPage(
         )
     }
 
-    val matchedGroups = mutableListOf<DuplicateGroupEntity>()
     val previewMembersByGroupKey = linkedMapOf<String, List<FileMetadata>>()
     val needsMembers = definition.requiresGroupMembers()
-    var sourceOffset = startOffset
-    var exhausted = false
-
-    while (matchedGroups.size < minMatches && !exhausted) {
-        val page = resultsRepo.loadPageAtSnapshot(
-            sortKey = sortKey,
-            snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
-            offset = sourceOffset,
-            limit = sourcePageSize
-        )
-        if (page.isEmpty()) {
-            exhausted = true
-            break
-        }
-        sourceOffset += page.size
-        page.forEach { group ->
+    val page = loadFilteredSourcePage(
+        startCursor = startOffset,
+        minMatches = minMatches,
+        loadPage = { sourceOffset ->
+            val sourcePage = resultsRepo.loadPageAtSnapshot(
+                sortKey = sortKey,
+                snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+                offset = sourceOffset,
+                limit = sourcePageSize
+            )
+            SourcePage(
+                items = sourcePage,
+                nextCursor = sourceOffset + sourcePage.size,
+                exhausted = sourcePage.isEmpty() || sourcePage.size < sourcePageSize
+            )
+        },
+        transformMatch = { group ->
             val members = if (needsMembers) {
                 resultsRepo.listAllGroupMembers(
                     sizeBytes = group.sizeBytes,
@@ -1947,21 +1947,21 @@ internal fun loadFilteredGroupsPage(
                 emptyList()
             }
             if (matchesResultsFilter(definition, group, members)) {
-                matchedGroups.add(group)
                 if (members.isNotEmpty()) {
                     previewMembersByGroupKey[groupStableKey(group)] = members.take(10)
                 }
+                group
+            } else {
+                null
             }
-        }
-        if (page.size < sourcePageSize) {
-            exhausted = true
-        }
-    }
+        },
+        trimToMinMatches = false
+    )
 
     return FilteredGroupsPage(
-        matchedGroups = matchedGroups,
+        matchedGroups = page.items,
         previewMembersByGroupKey = previewMembersByGroupKey,
-        nextSourceOffset = sourceOffset,
-        exhausted = exhausted
+        nextSourceOffset = page.nextCursor ?: startOffset,
+        exhausted = page.exhausted
     )
 }
