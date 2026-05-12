@@ -31,6 +31,115 @@ class ResultsScreenDbBulkDeleteTest {
     fun tearDown() {
         taskScope.cancel()
     }
+
+    @Test
+    fun bulkDeletePreviewReadyMessageReportsEmptyAndReadyStates() {
+        val emptyPreview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 2,
+            filterMatchedGroupCount = 0,
+            candidates = emptyList()
+        )
+        val readyPreview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 2,
+            filterMatchedGroupCount = 2,
+            candidates = listOf(
+                ResultsBulkDeleteCandidate(
+                    group = group(size = 10L, hash = "a", count = 3),
+                    survivor = file("/keep/original.mkv"),
+                    deleteTargets = listOf(
+                        file("/delete/first.mkv"),
+                        file("/delete/second.mkv")
+                    )
+                )
+            )
+        )
+
+        assertEquals("No groups matched this command.", emptyPreview.readyMessage())
+        assertEquals("1 groups and 2 files are ready.", readyPreview.readyMessage())
+    }
+
+    @Test
+    fun bulkDeletePreviewProgressLinesDescribeLoadedFilterAndCandidateCounts() {
+        val progress = ResultsBulkDeletePreviewProgress(
+            scannedGroupCount = 3,
+            totalGroupCount = 5,
+            filterMatchedGroupCount = 2,
+            candidateGroupCount = 1,
+            candidateFileCount = 4
+        )
+
+        assertEquals(
+            listOf(
+                "3/5 groups loaded before filtering",
+                "2 groups passed the current filter",
+                "1 candidate groups · 4 files to delete"
+            ),
+            progress.progressLines()
+        )
+    }
+
+    @Test
+    fun bulkDeletePreviewSummaryLinesUsePreviewTotals() {
+        val preview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 3,
+            filterMatchedGroupCount = 2,
+            candidates = listOf(
+                ResultsBulkDeleteCandidate(
+                    group = group(size = 10L, hash = "a", count = 3),
+                    survivor = file("/keep/original.mkv"),
+                    deleteTargets = listOf(
+                        file("/delete/first.mkv"),
+                        file("/delete/second.mkv")
+                    )
+                )
+            )
+        )
+
+        assertEquals(
+            listOf(
+                "3/3 groups loaded before filtering",
+                "2 groups passed the current filter",
+                "1 candidate groups · 2 files to delete"
+            ),
+            preview.progressSummaryLines()
+        )
+    }
+
+    @Test
+    fun bulkDeleteExecutionOutcomeMessageReportsSuccessAndFailureCounts() {
+        assertEquals(
+            "No files were deleted.",
+            ResultsBulkDeleteExecutionOutcome(
+                successCount = 0,
+                failedPaths = emptySet()
+            ).message()
+        )
+        assertEquals(
+            "2 files deleted.",
+            ResultsBulkDeleteExecutionOutcome(
+                successCount = 2,
+                failedPaths = emptySet()
+            ).message()
+        )
+        assertEquals(
+            "Delete failed for 2 files.",
+            ResultsBulkDeleteExecutionOutcome(
+                successCount = 0,
+                failedPaths = setOf("/first", "/second")
+            ).message()
+        )
+        assertEquals(
+            "2 files deleted, 1 failed.",
+            ResultsBulkDeleteExecutionOutcome(
+                successCount = 2,
+                failedPaths = setOf("/failed")
+            ).message()
+        )
+    }
+
     @Test
     fun buildKeepOneNonMatchBulkDeleteCandidateDeletesMatchingFileNames() {
         val candidate = buildKeepOneNonMatchBulkDeleteCandidate(

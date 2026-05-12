@@ -125,6 +125,49 @@ internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
     return candidates.sumOf { it.deleteTargets.size }
 }
 
+internal fun ResultsBulkDeletePreview.readyMessage(): String {
+    return if (candidates.isEmpty()) {
+        "No groups matched this command."
+    } else {
+        "${candidates.size} groups and ${deleteTargetCount()} files are ready."
+    }
+}
+
+internal fun ResultsBulkDeletePreview.progressSummaryLines(): List<String> {
+    return bulkDeletePreviewProgressLines(
+        ResultsBulkDeletePreviewProgress(
+            scannedGroupCount = totalGroupCount,
+            totalGroupCount = totalGroupCount,
+            filterMatchedGroupCount = filterMatchedGroupCount,
+            candidateGroupCount = candidates.size,
+            candidateFileCount = deleteTargetCount()
+        )
+    )
+}
+
+internal fun ResultsBulkDeletePreviewProgress.progressLines(): List<String> {
+    return bulkDeletePreviewProgressLines(this)
+}
+
+private fun bulkDeletePreviewProgressLines(
+    progress: ResultsBulkDeletePreviewProgress
+): List<String> {
+    return listOf(
+        "${progress.scannedGroupCount}/${progress.totalGroupCount} groups loaded before filtering",
+        "${progress.filterMatchedGroupCount} groups passed the current filter",
+        "${progress.candidateGroupCount} candidate groups · ${progress.candidateFileCount} files to delete"
+    )
+}
+
+internal fun ResultsBulkDeleteExecutionOutcome.message(): String {
+    return when {
+        successCount == 0 && failedPaths.isEmpty() -> "No files were deleted."
+        failedPaths.isEmpty() -> "$successCount files deleted."
+        successCount == 0 -> "Delete failed for ${failedPaths.size} files."
+        else -> "$successCount files deleted, ${failedPaths.size} failed."
+    }
+}
+
 internal fun ResultsBulkDeletePreview.firstDeleteTargetPath(): String? {
     return candidates.firstNotNullOfOrNull { candidate ->
         candidate.deleteTargets.firstOrNull()?.normalizedPath
@@ -753,11 +796,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                             }
                                         )
                                         preview.value = builtPreview
-                                        message.value = if (builtPreview.candidates.isEmpty()) {
-                                            "No groups matched this command."
-                                        } else {
-                                            "${builtPreview.candidates.size} groups and ${builtPreview.candidates.sumOf { it.deleteTargets.size }} files are ready."
-                                        }
+                                        message.value = builtPreview.readyMessage()
                                     } catch (_: Exception) {
                                         message.value = "Failed to build the bulk delete preview."
                                     } finally {
@@ -784,18 +823,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Scanning", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${progress.value.scannedGroupCount}/${progress.value.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.candidateGroupCount} candidate groups · ${progress.value.candidateFileCount} files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -810,18 +843,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Preview summary", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${builtPreview.totalGroupCount}/${builtPreview.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.candidates.size} candidate groups · $previewDeleteCount files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -923,12 +950,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
-                                message.value = when {
-                                    outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files were deleted."
-                                    outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
-                                    outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
-                                    else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
-                                }
+                                message.value = outcome.message()
                                 onResultsChanged()
                             },
                             onSnapshotStale = {
@@ -1122,11 +1144,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                             }
                                         )
                                         preview.value = builtPreview
-                                        message.value = if (builtPreview.candidates.isEmpty()) {
-                                            "No groups matched this command."
-                                        } else {
-                                            "${builtPreview.candidates.size} groups and ${builtPreview.candidates.sumOf { it.deleteTargets.size }} files are ready."
-                                        }
+                                        message.value = builtPreview.readyMessage()
                                     } catch (_: Exception) {
                                         message.value = "Failed to build the bulk delete preview."
                                     } finally {
@@ -1153,18 +1171,12 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Scanning", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${progress.value.scannedGroupCount}/${progress.value.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.candidateGroupCount} candidate groups · ${progress.value.candidateFileCount} files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -1179,18 +1191,12 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Preview summary", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${builtPreview.totalGroupCount}/${builtPreview.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.candidates.size} candidate groups · $previewDeleteCount files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -1292,12 +1298,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
-                                message.value = when {
-                                    outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files were deleted."
-                                    outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
-                                    outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
-                                    else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
-                                }
+                                message.value = outcome.message()
                                 onResultsChanged()
                             },
                             onSnapshotStale = {

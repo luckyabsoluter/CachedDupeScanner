@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Bulk-delete preview and execution status text now share helper formatting instead of duplicating message assembly across commands.
 - Sort dialogs now share one radio option row component instead of repeating local radio row markup.
 - Files and results DB filtering now share a pure filtered paging loop instead of separate source-page scanning implementations.
 - Active task progress cards now share one reusable task progress component across the task banner, DB management, scan, and trash screens.
