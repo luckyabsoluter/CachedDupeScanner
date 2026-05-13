@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -53,6 +52,7 @@ import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TaskProgressContent
@@ -299,33 +299,23 @@ fun DbManagementScreen(
     }
 
     if (clearDialogOpen.value) {
-        AlertDialog(
-            onDismissRequest = { clearDialogOpen.value = false },
-            title = { Text("Clear all cached results?") },
-            text = { Text("This removes all cached files and results from the database.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        clearDialogOpen.value = false
-                        startClearCacheTask(
-                            historyRepo = historyRepo,
-                            uiState = uiState,
-                            appScope = appScope,
-                            taskCoordinator = taskCoordinator,
-                            notificationController = notificationController,
-                            onCacheCleared = onCacheCleared,
-                            refreshOverview = refreshOverview
-                        )
-                    }
-                ) {
-                    Text("Clear")
-                }
+        ConfirmationDialog(
+            title = "Clear all cached results?",
+            text = "This removes all cached files and results from the database.",
+            confirmText = "Clear",
+            onConfirm = {
+                clearDialogOpen.value = false
+                startClearCacheTask(
+                    historyRepo = historyRepo,
+                    uiState = uiState,
+                    appScope = appScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onCacheCleared = onCacheCleared,
+                    refreshOverview = refreshOverview
+                )
             },
-            dismissButton = {
-                OutlinedButton(onClick = { clearDialogOpen.value = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { clearDialogOpen.value = false }
         )
     }
 }

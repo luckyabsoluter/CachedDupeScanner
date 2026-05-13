@@ -63,6 +63,8 @@ import opensource.cached_dupe_scanner.tasks.trashTaskDetail
 import opensource.cached_dupe_scanner.tasks.trashTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
@@ -262,33 +264,24 @@ fun TrashScreen(
     }
 
     if (confirmEmpty.value) {
-        AlertDialog(
-            onDismissRequest = { confirmEmpty.value = false },
-            title = { Text("Empty trash?") },
-            text = { Text("This will permanently delete all items in trash.") },
-            confirmButton = {
-                OutlinedButton(
-                    enabled = !isBusy,
-                    onClick = {
-                        confirmEmpty.value = false
-                        startEmptyTrashTask(
-                            trashController = trashController,
-                            scope = scope,
-                            taskCoordinator = taskCoordinator,
-                            notificationController = notificationController,
-                            onJobChanged = { job -> currentJob.value = job },
-                            resetAndLoad = ::resetAndLoad
-                        )
-                    }
-                ) {
-                    Text("Delete all")
-                }
+        ConfirmationDialog(
+            title = "Empty trash?",
+            text = "This will permanently delete all items in trash.",
+            confirmText = "Delete all",
+            onConfirm = {
+                confirmEmpty.value = false
+                startEmptyTrashTask(
+                    trashController = trashController,
+                    scope = scope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onJobChanged = { job -> currentJob.value = job },
+                    resetAndLoad = ::resetAndLoad
+                )
             },
-            dismissButton = {
-                OutlinedButton(onClick = { confirmEmpty.value = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { confirmEmpty.value = false },
+            confirmEnabled = !isBusy,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
 
@@ -352,31 +345,22 @@ fun TrashScreen(
     }
 
     confirmDeleteEntry.value?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { confirmDeleteEntry.value = null },
-            title = { Text("Delete permanently?") },
-            text = { Text(entry.originalPath) },
-            confirmButton = {
-                OutlinedButton(
-                    enabled = !isBusy,
-                    onClick = {
-                        confirmDeleteEntry.value = null
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                trashController.deletePermanently(entry)
-                            }
-                            resetAndLoad()
-                        }
+        ConfirmationDialog(
+            title = "Delete permanently?",
+            text = entry.originalPath,
+            confirmText = "Delete",
+            onConfirm = {
+                confirmDeleteEntry.value = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        trashController.deletePermanently(entry)
                     }
-                ) {
-                    Text("Delete")
+                    resetAndLoad()
                 }
             },
-            dismissButton = {
-                OutlinedButton(onClick = { confirmDeleteEntry.value = null }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { confirmDeleteEntry.value = null },
+            confirmEnabled = !isBusy,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
 }
