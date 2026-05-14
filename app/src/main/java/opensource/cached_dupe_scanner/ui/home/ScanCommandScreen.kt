@@ -30,8 +30,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheMigrations
@@ -313,10 +313,13 @@ private fun runScanForTarget(
     ) ?: return
     notificationController.showActive(started)
 
-    var job: Job? = null
-    job = scope.launch {
+    launchTrackedScanJob(
+        scope = scope,
+        onJobStarted = { currentJob.value = it }
+    ) scanJob@{
         try {
             cancelRequested.value = false
+            val scanJob = coroutineContext[Job]
             state.value = ScanUiState.Scanning(scanned = 0, total = null)
             val startedAt = System.currentTimeMillis()
             var collectingStart = startedAt
@@ -337,7 +340,7 @@ private fun runScanForTarget(
                     title = "Scan failed",
                     detail = "Target path not found."
                 )?.let(notificationController::showTerminal)
-                return@launch
+                return@scanJob
             }
 
             val execution = captureScanExecution {
@@ -399,7 +402,7 @@ private fun runScanForTarget(
                                 )
                             }?.let(notificationController::showActive)
                         },
-                        shouldContinue = { job?.isActive == true }
+                        shouldContinue = { scanJob?.isActive != false }
                     )
                 }
             }
@@ -433,7 +436,7 @@ private fun runScanForTarget(
                 onReportSaved()
                 finishCancelledScan(taskCoordinator, notificationController)
                 onScanCancelled()
-                return@launch
+                return@scanJob
             }
 
             val result = (execution as ScanExecution.Completed).value
@@ -443,7 +446,7 @@ private fun runScanForTarget(
                 finishedAtMillis = finishedAt,
                 targets = listOf(target.path),
                 mode = "single",
-                cancelled = cancelRequested.value || (job?.isActive == false && result.files.isEmpty()),
+                cancelled = cancelRequested.value || (scanJob?.isActive == false && result.files.isEmpty()),
                 totals = ScanReportTotals(
                     collectedCount = detectedCount,
                     detectedCount = detectedCount,
@@ -461,7 +464,7 @@ private fun runScanForTarget(
             if (report.cancelled) {
                 finishCancelledScan(taskCoordinator, notificationController)
                 onScanCancelled()
-                return@launch
+                return@scanJob
             }
             taskCoordinator.complete(
                 area = TaskArea.Scan,
@@ -476,7 +479,6 @@ private fun runScanForTarget(
             currentJob.value = null
         }
     }
-    currentJob.value = job
 }
 
 private fun runScanForAllTargets(
@@ -528,10 +530,13 @@ private fun runScanForAllTargets(
     ) ?: return
     notificationController.showActive(started)
 
-    var job: Job? = null
-    job = scope.launch {
+    launchTrackedScanJob(
+        scope = scope,
+        onJobStarted = { currentJob.value = it }
+    ) scanJob@{
         try {
             cancelRequested.value = false
+            val scanJob = coroutineContext[Job]
             state.value = ScanUiState.Scanning(scanned = 0, total = null)
             val startedAt = System.currentTimeMillis()
             var collectingStart = startedAt
@@ -607,7 +612,7 @@ private fun runScanForAllTargets(
                                     )
                                 }?.let(notificationController::showActive)
                             },
-                            shouldContinue = { job?.isActive == true }
+                            shouldContinue = { scanJob?.isActive != false }
                         )
                     }
                 }
@@ -636,11 +641,11 @@ private fun runScanForAllTargets(
                     onReportSaved()
                     finishCancelledScan(taskCoordinator, notificationController)
                     onScanCancelled()
-                    return@launch
+                    return@scanJob
                 }
 
                 val result = (execution as ScanExecution.Completed).value
-                if (cancelRequested.value || (job?.isActive == false && result.files.isEmpty())) {
+                if (cancelRequested.value || (scanJob?.isActive == false && result.files.isEmpty())) {
                     val finishedAt = System.currentTimeMillis()
                     val report = ScanReport(
                         id = UUID.randomUUID().toString(),
@@ -665,7 +670,7 @@ private fun runScanForAllTargets(
                     onReportSaved()
                     finishCancelledScan(taskCoordinator, notificationController)
                     onScanCancelled()
-                    return@launch
+                    return@scanJob
                 }
                 results.add(result)
             }
@@ -677,7 +682,7 @@ private fun runScanForAllTargets(
                     title = "Scan failed",
                     detail = "No valid targets to scan."
                 )?.let(notificationController::showTerminal)
-                return@launch
+                return@scanJob
             }
 
             val merged = ScanResultMerger.merge(
@@ -722,7 +727,6 @@ private fun runScanForAllTargets(
             currentJob.value = null
         }
     }
-    currentJob.value = job
 }
 
 private suspend fun persistScanReport(

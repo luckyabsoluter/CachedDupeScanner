@@ -26,6 +26,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Long-running scans now run with a foreground service while active so Android does not pause them after the app stays in the background.
+- Background scans no longer stop immediately when scan work starts before the UI job state is assigned.
 - Scans now repair existing same-size cache entries with missing hashes when a new collision is scanned, so interrupted deferred hashing no longer leaves duplicate groups incomplete.
 - Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
 - Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
