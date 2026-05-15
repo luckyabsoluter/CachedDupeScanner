@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Scan work now runs on an app-owned scope instead of the Compose screen scope so background scans are not paused with UI lifecycle changes.
 - Long-running scans now run with a foreground service while active so Android does not pause them after the app stays in the background.
 - Background scans no longer stop immediately when scan work starts before the UI job state is assigned.
 - Scans now repair existing same-size cache entries with missing hashes when a new collision is scanned, so interrupted deferred hashing no longer leaves duplicate groups incomplete.

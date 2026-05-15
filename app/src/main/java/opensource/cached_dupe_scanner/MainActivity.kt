@@ -344,7 +344,7 @@ class MainActivity : ComponentActivity() {
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
                                 targetsVersion = targetsVersion.value,
-                                scanScope = scope,
+                                scanScope = AppWorkScopes.scanScope,
                                 onReportSaved = { reportsRefreshVersion.value += 1 },
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
