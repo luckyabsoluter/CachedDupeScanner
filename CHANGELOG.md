@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- MainActivity now handles screen size, orientation, layout, and keyboard-hidden configuration changes so resizing does not recreate and crash experimental or other screens.
 - Scan work now runs on an app-owned scope instead of the Compose screen scope so background scans are not paused with UI lifecycle changes.
 - Long-running scans now run with a foreground service while active so Android does not pause them after the app stays in the background.
 - Background scans no longer stop immediately when scan work starts before the UI job state is assigned.
