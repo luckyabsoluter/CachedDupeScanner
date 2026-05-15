@@ -391,6 +391,60 @@ class SimilarityExperimentRepositoryTest {
         )
     }
 
+    @Test
+    fun clusterPagesLoadIncrementallyBySortOrder() {
+        val experimentId = "paged-clusters"
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(experimentId, "c", 2, 20L, "c", 1L),
+                SimilarityClusterEntity(experimentId, "a", 5, 10L, "a", 1L),
+                SimilarityClusterEntity(experimentId, "b", 5, 5L, "b", 1L),
+                SimilarityClusterEntity(experimentId, "d", 1, 40L, "d", 1L)
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao()
+        )
+
+        val firstPage = repository.loadFirstClusterPage(experimentId, limit = 2)
+        val secondPage = repository.loadClusterPageAfter(
+            experimentId = experimentId,
+            cursor = requireNotNull(firstPage.nextCursor),
+            limit = 2
+        )
+
+        assertEquals(listOf("a", "b"), firstPage.clusters.map { it.signature })
+        assertEquals(listOf("c", "d"), secondPage.clusters.map { it.signature })
+        assertEquals(false, firstPage.exhausted)
+        assertEquals(false, secondPage.exhausted)
+        assertEquals("b", firstPage.nextCursor?.signature)
+        assertEquals("d", secondPage.nextCursor?.signature)
+    }
+
+    @Test
+    fun clusterPageReportsExhaustedWhenFinalPageIsShort() {
+        val experimentId = "paged-clusters-short"
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(experimentId, "a", 2, 20L, "a", 1L),
+                SimilarityClusterEntity(experimentId, "b", 1, 10L, "b", 1L)
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao()
+        )
+
+        val page = repository.loadFirstClusterPage(experimentId, limit = 3)
+
+        assertEquals(listOf("a", "b"), page.clusters.map { it.signature })
+        assertTrue(page.exhausted)
+        assertEquals("b", page.nextCursor?.signature)
+    }
+
     private fun videoFile(name: String): File {
         val file = File(tempDir, name)
         file.writeText("video")

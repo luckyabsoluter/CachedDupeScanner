@@ -57,6 +57,7 @@ import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
@@ -73,6 +74,7 @@ import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
+import opensource.cached_dupe_scanner.storage.SimilarityClusterCursor
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
@@ -108,6 +110,8 @@ private enum class SimilarityExperimentPane {
 }
 
 internal const val SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX = 3
+private const val SIMILARITY_CLUSTER_PAGE_SIZE = 50
+private const val SIMILARITY_CLUSTER_LOAD_MORE_BUFFER = 12
 
 internal fun similarityClusterLoadIndicatorText(
     isRunDetailPane: Boolean,
@@ -165,6 +169,8 @@ fun SimilarityExperimentsScreen(
     var runStatusText by remember { mutableStateOf("No experiment running.") }
     val runs = remember { mutableStateListOf<SimilarityExperimentRunEntity>() }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    var clusterNextCursor by remember { mutableStateOf<SimilarityClusterCursor?>(null) }
+    var clustersExhausted by remember { mutableStateOf(true) }
     val durationNeighborMembers = remember { mutableStateListOf<SimilarityClusterMember>() }
     var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
@@ -251,6 +257,42 @@ fun SimilarityExperimentsScreen(
         grayscale = exact.grayscale
     }
 
+    fun appendDurationNeighborMembers(pageClusters: List<SimilarityClusterEntity>) {
+        if (!isDurationNeighborListExperiment(selectedRunExperimentId)) return
+        scope.launch {
+            durationNeighborMembersLoading = true
+            val nextMembers = withContext(Dispatchers.IO) {
+                pageClusters.flatMap { cluster -> repository.listClusterMemberRows(cluster) }
+            }
+            val knownPaths = durationNeighborMembers.map { member -> member.metadata.normalizedPath }.toHashSet()
+            durationNeighborMembers.addAll(
+                nextMembers.filter { member -> knownPaths.add(member.metadata.normalizedPath) }
+            )
+            durationNeighborMembersLoading = false
+        }
+    }
+
+    fun loadMoreClusters() {
+        if (clustersLoading || clustersExhausted) return
+        val runId = selectedRunExperimentId ?: return
+        val cursor = clusterNextCursor ?: return
+        clustersLoading = true
+        scope.launch {
+            val page = withContext(Dispatchers.IO) {
+                repository.loadClusterPageAfter(
+                    experimentId = runId,
+                    cursor = cursor,
+                    limit = SIMILARITY_CLUSTER_PAGE_SIZE
+                )
+            }
+            clusters.addAll(page.clusters)
+            clusterNextCursor = page.nextCursor
+            clustersExhausted = page.exhausted
+            clustersLoading = false
+            appendDurationNeighborMembers(page.clusters)
+        }
+    }
+
     fun refreshStoredResults(preferredRunExperimentId: String? = selectedRunExperimentId) {
         clustersLoading = preferredRunExperimentId != null
         durationNeighborMembersLoading = false
@@ -259,9 +301,15 @@ fun SimilarityExperimentsScreen(
             val nextSelectedRun = preferredRunExperimentId?.let { selectedId ->
                 nextRuns.firstOrNull { run -> run.experimentId == selectedId }
             }
-            val nextClusters = nextSelectedRun?.let { run ->
-                withContext(Dispatchers.IO) { repository.listClusters(run.experimentId) }
-            }.orEmpty()
+            val nextClusterPage = nextSelectedRun?.let { run ->
+                withContext(Dispatchers.IO) {
+                    repository.loadFirstClusterPage(
+                        experimentId = run.experimentId,
+                        limit = SIMILARITY_CLUSTER_PAGE_SIZE
+                    )
+                }
+            }
+            val nextClusters = nextClusterPage?.clusters.orEmpty()
             val nextIsDurationNeighborList = isDurationNeighborListExperiment(nextSelectedRun?.experimentId)
             durationNeighborMembersLoading = nextIsDurationNeighborList
             val nextDurationNeighborMembers = if (nextIsDurationNeighborList) {
@@ -284,6 +332,8 @@ fun SimilarityExperimentsScreen(
             selectedRunExperimentId = nextSelectedRun?.experimentId
             clusters.clear()
             clusters.addAll(nextClusters)
+            clusterNextCursor = nextClusterPage?.nextCursor
+            clustersExhausted = nextClusterPage?.exhausted ?: true
             durationNeighborMembers.clear()
             durationNeighborMembers.addAll(nextDurationNeighborMembers)
             durationNeighborStoredDurationCount = nextDurationNeighborStoredDurationCount
@@ -313,6 +363,8 @@ fun SimilarityExperimentsScreen(
         selectedClusterKey = null
         selectedDurationNeighborFile = null
         clusters.clear()
+        clusterNextCursor = null
+        clustersExhausted = true
         durationNeighborMembers.clear()
         durationNeighborStoredDurationCount = 0
         refreshStoredResults(null)
@@ -327,6 +379,8 @@ fun SimilarityExperimentsScreen(
         selectedClusterKey = null
         selectedDurationNeighborFile = null
         clusters.clear()
+        clusterNextCursor = null
+        clustersExhausted = true
         durationNeighborMembers.clear()
         durationNeighborStoredDurationCount = 0
     }
@@ -338,6 +392,8 @@ fun SimilarityExperimentsScreen(
         selectedClusterKey = null
         selectedDurationNeighborFile = null
         clusters.clear()
+        clusterNextCursor = null
+        clustersExhausted = true
         durationNeighborMembers.clear()
         durationNeighborStoredDurationCount = 0
     }
@@ -348,6 +404,8 @@ fun SimilarityExperimentsScreen(
         selectedClusterKey = null
         selectedDurationNeighborFile = null
         clusters.clear()
+        clusterNextCursor = null
+        clustersExhausted = true
         durationNeighborMembers.clear()
         durationNeighborStoredDurationCount = 0
         refreshStoredResults(run.experimentId)
@@ -394,6 +452,19 @@ fun SimilarityExperimentsScreen(
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect { topVisibleItemIndex = it }
+    }
+
+    LaunchedEffect(pane, selectedRunExperimentId, clusters.size, durationNeighborMembers.size) {
+        if (pane != SimilarityExperimentPane.RunDetail) return@LaunchedEffect
+        snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems = layoutInfo.totalItemsCount
+            lastVisible >= totalItems - SIMILARITY_CLUSTER_LOAD_MORE_BUFFER
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { loadMoreClusters() }
     }
 
     LaunchedEffect(mediaScope, minSizeBytes) {

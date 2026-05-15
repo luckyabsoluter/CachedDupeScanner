@@ -25,6 +25,37 @@ interface SimilarityExperimentDao {
     )
     fun listClusters(experimentId: String): List<SimilarityClusterEntity>
 
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+        ORDER BY fileCount DESC, totalBytes DESC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listFirstClusters(experimentId: String, limit: Int): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+          AND (
+            fileCount < :afterFileCount
+            OR (fileCount = :afterFileCount AND totalBytes < :afterTotalBytes)
+            OR (fileCount = :afterFileCount AND totalBytes = :afterTotalBytes AND signature > :afterSignature)
+          )
+        ORDER BY fileCount DESC, totalBytes DESC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listClustersAfter(
+        experimentId: String,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterSignature: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
     @Query("DELETE FROM similarity_experiment_runs WHERE experimentId = :experimentId")
     fun deleteRun(experimentId: String)
 

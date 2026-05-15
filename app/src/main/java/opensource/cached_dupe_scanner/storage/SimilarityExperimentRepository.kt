@@ -24,6 +24,18 @@ import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
 import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import java.io.File
 
+data class SimilarityClusterPage(
+    val clusters: List<SimilarityClusterEntity>,
+    val nextCursor: SimilarityClusterCursor?,
+    val exhausted: Boolean
+)
+
+data class SimilarityClusterCursor(
+    val fileCount: Int,
+    val totalBytes: Long,
+    val signature: String
+)
+
 data class SimilarityExperimentProgress(
     val total: Int,
     val processed: Int,
@@ -87,6 +99,29 @@ class SimilarityExperimentRepository(
             return clusters
         }
         return clusters.sortedBy { cluster -> durationNeighborSortMillis(cluster.signature) }
+    }
+
+    fun loadFirstClusterPage(experimentId: String, limit: Int): SimilarityClusterPage {
+        val safeLimit = limit.coerceAtLeast(0)
+        return experimentDao.listFirstClusters(
+            experimentId = experimentId,
+            limit = safeLimit
+        ).toClusterPage(limit = safeLimit)
+    }
+
+    fun loadClusterPageAfter(
+        experimentId: String,
+        cursor: SimilarityClusterCursor,
+        limit: Int
+    ): SimilarityClusterPage {
+        val safeLimit = limit.coerceAtLeast(0)
+        return experimentDao.listClustersAfter(
+            experimentId = experimentId,
+            afterFileCount = cursor.fileCount,
+            afterTotalBytes = cursor.totalBytes,
+            afterSignature = cursor.signature,
+            limit = safeLimit
+        ).toClusterPage(limit = safeLimit)
     }
 
     fun listClusterMembers(
@@ -674,6 +709,21 @@ private fun durationProgressBucket(
 ): Long {
     val bucketSizeMillis = toleranceMillis.coerceAtLeast(1L)
     return durationMillis.coerceAtLeast(0L) / bucketSizeMillis
+}
+
+private fun List<SimilarityClusterEntity>.toClusterPage(limit: Int): SimilarityClusterPage {
+    val cursor = lastOrNull()?.let { cluster ->
+        SimilarityClusterCursor(
+            fileCount = cluster.fileCount,
+            totalBytes = cluster.totalBytes,
+            signature = cluster.signature
+        )
+    }
+    return SimilarityClusterPage(
+        clusters = this,
+        nextCursor = cursor,
+        exhausted = size < limit
+    )
 }
 
 private fun durationToleranceClusters(
