@@ -61,6 +61,35 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
+    fun bulkDeletePreviewReadyMessageUsesExplicitCandidateCounts() {
+        val preview = ResultsBulkDeletePreview(
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 10,
+            filterMatchedGroupCount = 8,
+            candidates = listOf(
+                ResultsBulkDeleteCandidate(
+                    group = group(size = 10L, hash = "a", count = 3),
+                    survivor = file("/keep/original.mkv"),
+                    deleteTargets = listOf(file("/delete/sample.mkv"))
+                )
+            ),
+            candidateGroupCount = 4,
+            candidateFileCount = 7
+        )
+
+        assertEquals("4 groups and 7 files are ready.", preview.readyMessage())
+        assertEquals(7, preview.deleteTargetCount())
+        assertEquals(
+            listOf(
+                "10/10 groups loaded before filtering",
+                "8 groups passed the current filter",
+                "4 candidate groups · 7 files to delete"
+            ),
+            preview.progressSummaryLines()
+        )
+    }
+
+    @Test
     fun bulkDeletePreviewProgressLinesDescribeLoadedFilterAndCandidateCounts() {
         val progress = ResultsBulkDeletePreviewProgress(
             scannedGroupCount = 3,

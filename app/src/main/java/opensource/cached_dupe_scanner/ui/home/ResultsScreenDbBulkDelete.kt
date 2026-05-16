@@ -98,7 +98,9 @@ internal data class ResultsBulkDeletePreview(
     val snapshotUpdatedAtMillis: Long,
     val totalGroupCount: Int,
     val filterMatchedGroupCount: Int,
-    val candidates: List<ResultsBulkDeleteCandidate>
+    val candidates: List<ResultsBulkDeleteCandidate>,
+    val candidateGroupCount: Int = candidates.size,
+    val candidateFileCount: Int = candidates.sumOf { it.deleteTargets.size }
 )
 
 internal data class ResultsBulkDeletePreviewProgress(
@@ -122,14 +124,14 @@ internal data class ResultsBulkDeleteExecutionProgress(
 )
 
 internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
-    return candidates.sumOf { it.deleteTargets.size }
+    return candidateFileCount
 }
 
 internal fun ResultsBulkDeletePreview.readyMessage(): String {
-    return if (candidates.isEmpty()) {
+    return if (candidateGroupCount == 0) {
         "No groups matched this command."
     } else {
-        "${candidates.size} groups and ${deleteTargetCount()} files are ready."
+        "$candidateGroupCount groups and $candidateFileCount files are ready."
     }
 }
 
@@ -139,8 +141,8 @@ internal fun ResultsBulkDeletePreview.progressSummaryLines(): List<String> {
             scannedGroupCount = totalGroupCount,
             totalGroupCount = totalGroupCount,
             filterMatchedGroupCount = filterMatchedGroupCount,
-            candidateGroupCount = candidates.size,
-            candidateFileCount = deleteTargetCount()
+            candidateGroupCount = candidateGroupCount,
+            candidateFileCount = candidateFileCount
         )
     )
 }

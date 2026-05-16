@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Bulk-delete previews now track explicit candidate group and file counts separately from the displayed candidate list.
 - Results DB filters now evaluate group members page-by-page instead of materializing every member for member-dependent filters.
 - Similarity experiment run details now load result clusters incrementally instead of reading every stored cluster before showing results.
 - MainActivity now handles screen size, orientation, layout, and keyboard-hidden configuration changes so resizing does not recreate and crash experimental or other screens.
