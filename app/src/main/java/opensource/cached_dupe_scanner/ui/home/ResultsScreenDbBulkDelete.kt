@@ -88,6 +88,8 @@ internal data class KeepOneNonMatchBulkDeleteCommandConfig(
     val phrase: String = ""
 )
 
+internal const val BULK_DELETE_PREVIEW_SAMPLE_LIMIT = 50
+
 internal data class ResultsBulkDeleteCandidate(
     val group: DuplicateGroupEntity,
     val survivor: FileMetadata,
@@ -125,6 +127,10 @@ internal data class ResultsBulkDeleteExecutionProgress(
 
 internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
     return candidateFileCount
+}
+
+internal fun ResultsBulkDeletePreview.hasCappedCandidates(): Boolean {
+    return candidateGroupCount > candidates.size
 }
 
 internal fun ResultsBulkDeletePreview.readyMessage(): String {
@@ -337,6 +343,8 @@ private suspend fun buildBulkDeletePreview(
     val candidates = mutableListOf<ResultsBulkDeleteCandidate>()
     var sourceOffset = 0
     var filterMatchedGroupCount = 0
+    var candidateGroupCount = 0
+    var candidateFileCount = 0
     val safeTotalGroupCount = totalGroupCount.coerceAtLeast(0)
 
     onProgress(
@@ -367,7 +375,13 @@ private suspend fun buildBulkDeletePreview(
             }
             if (matchesResultsFilter(filterDefinition, group, members)) {
                 filterMatchedGroupCount += 1
-                buildCandidate(group, members)?.let { candidates += it }
+                buildCandidate(group, members)?.let { candidate ->
+                    candidateGroupCount += 1
+                    candidateFileCount += candidate.deleteTargets.size
+                    if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
+                        candidates += candidate
+                    }
+                }
             }
         }
 
@@ -377,8 +391,8 @@ private suspend fun buildBulkDeletePreview(
                 scannedGroupCount = sourceOffset.coerceAtMost(safeTotalGroupCount),
                 totalGroupCount = safeTotalGroupCount,
                 filterMatchedGroupCount = filterMatchedGroupCount,
-                candidateGroupCount = candidates.size,
-                candidateFileCount = candidates.sumOf { it.deleteTargets.size }
+                candidateGroupCount = candidateGroupCount,
+                candidateFileCount = candidateFileCount
             )
         )
         if (page.size < sourcePageSize) {
@@ -390,7 +404,9 @@ private suspend fun buildBulkDeletePreview(
         snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
         totalGroupCount = safeTotalGroupCount,
         filterMatchedGroupCount = filterMatchedGroupCount,
-        candidates = candidates
+        candidates = candidates,
+        candidateGroupCount = candidateGroupCount,
+        candidateFileCount = candidateFileCount
     )
 }
 
@@ -670,7 +686,8 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
         !isExecuting.value &&
         onDeleteFile != null &&
         currentPreview != null &&
-        currentPreview.candidates.isNotEmpty()
+        currentPreview.candidates.isNotEmpty() &&
+        !currentPreview.hasCappedCandidates()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -888,6 +905,13 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete listed files")
                             }
+                            if (builtPreview.hasCappedCandidates()) {
+                                Text(
+                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Rebuild execution paging before running this bulk delete.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
@@ -1035,7 +1059,8 @@ internal fun KeepByModifiedBulkDeleteScreen(
         !isExecuting.value &&
         onDeleteFile != null &&
         currentPreview != null &&
-        currentPreview.candidates.isNotEmpty()
+        currentPreview.candidates.isNotEmpty() &&
+        !currentPreview.hasCappedCandidates()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -1235,6 +1260,13 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 enabled = canExecute
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete listed files")
+                            }
+                            if (builtPreview.hasCappedCandidates()) {
+                                Text(
+                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Rebuild execution paging before running this bulk delete.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
                             }
                         }
                     }

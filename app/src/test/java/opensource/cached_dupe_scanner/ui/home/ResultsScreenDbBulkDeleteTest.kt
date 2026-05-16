@@ -1,5 +1,8 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -8,9 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import opensource.cached_dupe_scanner.cache.CacheDatabase
+import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
+import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import org.junit.After
@@ -135,6 +142,33 @@ class ResultsScreenDbBulkDeleteTest {
             ),
             preview.progressSummaryLines()
         )
+    }
+
+    @Test
+    fun buildKeepModifiedBulkDeletePreviewCapsDisplayedCandidatesAndKeepsTotalCounts() = runBlocking {
+        val database = newDb()
+        val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
+        val groupCount = BULK_DELETE_PREVIEW_SAMPLE_LIMIT + 2
+        repeat(groupCount) { index ->
+            insertCachedFile(database, "/group-$index/old.mkv", size = index + 1L, modified = 10L)
+            insertCachedFile(database, "/group-$index/new.mkv", size = index + 1L, modified = 20L)
+        }
+        resultsRepo.rebuildGroups(updatedAtMillis = 1L)
+
+        val preview = buildKeepModifiedBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = DuplicateGroupSortKey.PerFileSizeDesc,
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = groupCount,
+            filterDefinition = ResultsFilterDefinition(),
+            keepNewest = true,
+            sourcePageSize = 7
+        )
+
+        assertEquals(BULK_DELETE_PREVIEW_SAMPLE_LIMIT, preview.candidates.size)
+        assertEquals(groupCount, preview.candidateGroupCount)
+        assertEquals(groupCount, preview.candidateFileCount)
+        assertEquals(true, preview.hasCappedCandidates())
     }
 
     @Test
@@ -444,6 +478,30 @@ class ResultsScreenDbBulkDeleteTest {
         assertEquals(true, deleteSawBusyTrash.get())
         assertEquals(false, coordinator.isAreaBusy(TaskArea.Trash))
     }
+    private fun newDb(): CacheDatabase {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        return Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+    }
+
+    private fun insertCachedFile(
+        database: CacheDatabase,
+        path: String,
+        size: Long,
+        modified: Long
+    ) {
+        database.fileCacheDao().upsert(
+            CachedFileEntity(
+                normalizedPath = path,
+                path = path,
+                sizeBytes = size,
+                lastModifiedMillis = modified,
+                hashHex = "hash-$size"
+            )
+        )
+    }
+
     private fun file(path: String, modified: Long = 1L): FileMetadata {
         return FileMetadata(
             path = path,
