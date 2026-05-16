@@ -283,6 +283,29 @@ class ResultsDbRepository(
         return entities.map { it.toFileMetadata() }
     }
 
+    fun groupMemberPages(sizeBytes: Long, hashHex: String, pageSize: Int = 200): Sequence<List<FileMetadata>> {
+        if (pageSize <= 0) return emptySequence()
+        return sequence {
+            var afterPath: String? = null
+            while (true) {
+                val page = listGroupMembers(
+                    sizeBytes = sizeBytes,
+                    hashHex = hashHex,
+                    afterPath = afterPath,
+                    limit = pageSize
+                )
+                if (page.isEmpty()) {
+                    break
+                }
+                yield(page)
+                if (page.size < pageSize) {
+                    break
+                }
+                afterPath = page.last().normalizedPath
+            }
+        }
+    }
+
     fun listAllGroupMembers(sizeBytes: Long, hashHex: String, pageSize: Int = 200): List<FileMetadata> {
         if (pageSize <= 0) return emptyList()
         val allMembers = mutableListOf<FileMetadata>()

@@ -211,6 +211,118 @@ class ResultsScreenDbFilterPagingTest {
         db.close()
     }
 
+    @Test
+    fun memberDependentFilterStopsReadingMembersAfterPageMatch() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        repeat(250) { index ->
+            val path = if (index == 0) {
+                "/match/keep.jpg"
+            } else {
+                "/skip/member_${index.toString().padStart(3, '0')}.jpg"
+            }
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = path,
+                    path = path,
+                    sizeBytes = 100L,
+                    lastModifiedMillis = 1L,
+                    hashHex = "big"
+                )
+            )
+        }
+        val snapshot = repo.loadInitialSnapshot(
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            limit = 1,
+            rebuild = true
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Names",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            textOperator = ResultsFilterTextOperator.Contains,
+                            value = "keep"
+                        )
+                    )
+                )
+            )
+        )
+
+        val page = loadFilteredGroupsPage(
+            resultsRepo = repo,
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            snapshotUpdatedAtMillis = snapshot.updatedAtMillis ?: error("snapshot expected"),
+            definition = definition,
+            startOffset = 0,
+            minMatches = 1,
+            sourcePageSize = 1
+        )
+
+        assertEquals(listOf("big"), page.matchedGroups.map { it.hashHex })
+        assertEquals(10, page.previewMembersByGroupKey.values.single().size)
+        db.close()
+    }
+
+    @Test
+    fun pagedMemberFilterMatchesSameFolderOnlyAfterAllMemberPages() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+
+        repeat(250) { index ->
+            val path = "/same/member_${index.toString().padStart(3, '0')}.jpg"
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = path,
+                    path = path,
+                    sizeBytes = 200L,
+                    lastModifiedMillis = 1L,
+                    hashHex = "same"
+                )
+            )
+        }
+        val snapshot = repo.loadInitialSnapshot(
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            limit = 1,
+            rebuild = true
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same folder",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.SameFolder
+                        )
+                    )
+                )
+            )
+        )
+
+        val page = loadFilteredGroupsPage(
+            resultsRepo = repo,
+            sortKey = DuplicateGroupSortKey.CountDesc,
+            snapshotUpdatedAtMillis = snapshot.updatedAtMillis ?: error("snapshot expected"),
+            definition = definition,
+            startOffset = 0,
+            minMatches = 1,
+            sourcePageSize = 1
+        )
+
+        assertEquals(listOf("same"), page.matchedGroups.map { it.hashHex })
+        assertEquals(10, page.previewMembersByGroupKey.values.single().size)
+        db.close()
+    }
+
     private fun newDb(): CacheDatabase {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)

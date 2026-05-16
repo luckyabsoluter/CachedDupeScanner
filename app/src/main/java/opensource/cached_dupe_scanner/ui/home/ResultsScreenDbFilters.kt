@@ -177,14 +177,7 @@ internal fun matchesResultsFilter(
     group: DuplicateGroupEntity,
     members: List<FileMetadata>
 ): Boolean {
-    val activeClusters = definition.clusters.mapNotNull { cluster ->
-        if (!cluster.enabled) {
-            null
-        } else {
-            val rules = configuredRules(cluster)
-            if (rules.isEmpty()) null else cluster to rules
-        }
-    }
+    val activeClusters = activeResultFilterClusters(definition)
     if (activeClusters.isEmpty()) return true
     return activeClusters.all { (cluster, rules) ->
         val results = rules.map { rule ->
@@ -197,6 +190,172 @@ internal fun matchesResultsFilter(
         when (cluster.mode) {
             ResultsFilterClusterMode.All -> results.all { it }
             ResultsFilterClusterMode.Any -> results.any { it }
+        }
+    }
+}
+
+internal fun matchesResultsFilterPagedMembers(
+    definition: ResultsFilterDefinition,
+    group: DuplicateGroupEntity,
+    memberPages: () -> Sequence<List<FileMetadata>>,
+    onPreviewMembers: (List<FileMetadata>) -> Unit = {}
+): Boolean {
+    val activeClusters = activeResultFilterClusters(definition)
+    if (activeClusters.isEmpty()) return true
+    if (!definition.requiresGroupMembers()) {
+        return matchesResultsFilter(definition = definition, group = group, members = emptyList())
+    }
+
+    val clusters = activeClusters.map { (cluster, rules) ->
+        ResultFilterClusterProgress(
+            mode = cluster.mode,
+            rules = rules.map { rule -> ResultFilterRuleProgress(rule = rule, group = group) }
+        )
+    }
+    fun resolved(): Boolean? {
+        val results = clusters.map { it.result(ended = false) }
+        return when {
+            results.any { it == false } -> false
+            results.all { it == true } -> true
+            else -> null
+        }
+    }
+    resolved()?.let { return it }
+
+    val preview = mutableListOf<FileMetadata>()
+    memberPages().forEach { page ->
+        if (preview.size < 10) {
+            preview += page.take(10 - preview.size)
+        }
+        clusters.forEach { cluster -> cluster.consume(page) }
+        resolved()?.let { result ->
+            if (preview.isNotEmpty()) onPreviewMembers(preview)
+            return result
+        }
+    }
+
+    if (preview.isNotEmpty()) onPreviewMembers(preview)
+    return clusters.all { it.result(ended = true) == true }
+}
+
+private fun activeResultFilterClusters(
+    definition: ResultsFilterDefinition
+): List<Pair<ResultsFilterCluster, List<ResultsFilterRule>>> {
+    return definition.clusters.mapNotNull { cluster ->
+        if (!cluster.enabled) {
+            null
+        } else {
+            val rules = configuredRules(cluster)
+            if (rules.isEmpty()) null else cluster to rules
+        }
+    }
+}
+
+private class ResultFilterClusterProgress(
+    private val mode: ResultsFilterClusterMode,
+    private val rules: List<ResultFilterRuleProgress>
+) {
+    fun consume(page: List<FileMetadata>) {
+        rules.forEach { rule -> rule.consume(page) }
+    }
+
+    fun result(ended: Boolean): Boolean? {
+        val results = rules.map { rule -> rule.result(ended) }
+        return when (mode) {
+            ResultsFilterClusterMode.All -> when {
+                results.any { it == false } -> false
+                results.all { it == true } -> true
+                else -> null
+            }
+            ResultsFilterClusterMode.Any -> when {
+                results.any { it == true } -> true
+                results.all { it == false } -> false
+                else -> null
+            }
+        }
+    }
+}
+
+private class ResultFilterRuleProgress(
+    private val rule: ResultsFilterRule,
+    group: DuplicateGroupEntity
+) {
+    private var matched = false
+    private var sawMember = false
+    private var firstFolder: String? = null
+    private var folderMismatch = false
+    private val groupResult: Boolean? = if (rule.target == ResultsFilterTarget.GroupItemCount) {
+        val threshold = rule.value.trim().toIntOrNull()
+        if (threshold == null) {
+            false
+        } else {
+            when (rule.countOperator) {
+                ResultsFilterCountOperator.AtLeast -> group.fileCount >= threshold
+                ResultsFilterCountOperator.AtMost -> group.fileCount <= threshold
+                ResultsFilterCountOperator.Equals -> group.fileCount == threshold
+            }
+        }
+    } else {
+        null
+    }
+
+    fun consume(page: List<FileMetadata>) {
+        if (groupResult != null || matched && rule.target != ResultsFilterTarget.SameFolder) return
+        page.forEach { member ->
+            when (rule.target) {
+                ResultsFilterTarget.FileName -> {
+                    matched = matched || matchesTextOperator(
+                        source = fileNameFromPath(member.normalizedPath),
+                        expected = rule.value,
+                        operator = rule.textOperator
+                    )
+                }
+                ResultsFilterTarget.FolderPath -> {
+                    matched = matched || matchesTextOperator(
+                        source = folderPathFromPath(member.normalizedPath),
+                        expected = rule.value,
+                        operator = rule.textOperator
+                    )
+                }
+                ResultsFilterTarget.ModifiedTime -> {
+                    val timeValue = parseResultsFilterTimeValue(rule.value) ?: return@forEach
+                    matched = matched || matchesTimeOperator(
+                        sourceMillis = member.lastModifiedMillis,
+                        expected = timeValue,
+                        operator = rule.timeOperator
+                    )
+                }
+                ResultsFilterTarget.SameFolder -> {
+                    sawMember = true
+                    val folder = folderPathFromPath(member.normalizedPath).lowercase()
+                    val currentFirst = firstFolder
+                    if (currentFirst == null) {
+                        firstFolder = folder
+                    } else if (currentFirst != folder) {
+                        folderMismatch = true
+                    }
+                }
+                ResultsFilterTarget.GroupItemCount -> Unit
+            }
+        }
+    }
+
+    fun result(ended: Boolean): Boolean? {
+        groupResult?.let { return it }
+        return when (rule.target) {
+            ResultsFilterTarget.FileName,
+            ResultsFilterTarget.FolderPath,
+            ResultsFilterTarget.ModifiedTime -> when {
+                matched -> true
+                ended -> false
+                else -> null
+            }
+            ResultsFilterTarget.SameFolder -> when {
+                folderMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+            ResultsFilterTarget.GroupItemCount -> groupResult
         }
     }
 }

@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Results DB filters now evaluate group members page-by-page instead of materializing every member for member-dependent filters.
 - Similarity experiment run details now load result clusters incrementally instead of reading every stored cluster before showing results.
 - MainActivity now handles screen size, orientation, layout, and keyboard-hidden configuration changes so resizing does not recreate and crash experimental or other screens.
 - Scan work now runs on an app-owned scope instead of the Compose screen scope so background scans are not paused with UI lifecycle changes.

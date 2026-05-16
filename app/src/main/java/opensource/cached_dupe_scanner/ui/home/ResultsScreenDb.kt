@@ -1929,18 +1929,22 @@ internal fun loadFilteredGroupsPage(
             )
         },
         transformMatch = { group ->
-            val members = if (needsMembers) {
-                resultsRepo.listAllGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex
+            if (needsMembers) {
+                val matched = matchesResultsFilterPagedMembers(
+                    definition = definition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    },
+                    onPreviewMembers = { previewMembers ->
+                        previewMembersByGroupKey[groupStableKey(group)] = previewMembers
+                    }
                 )
-            } else {
-                emptyList()
-            }
-            if (matchesResultsFilter(definition, group, members)) {
-                if (members.isNotEmpty()) {
-                    previewMembersByGroupKey[groupStableKey(group)] = members.take(10)
-                }
+                if (matched) group else null
+            } else if (matchesResultsFilter(definition, group, emptyList())) {
                 group
             } else {
                 null
