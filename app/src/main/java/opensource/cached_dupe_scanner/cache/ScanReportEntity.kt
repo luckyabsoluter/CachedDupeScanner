@@ -7,7 +7,8 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "scan_reports",
     indices = [
-        Index(value = ["startedAtMillis"], name = "index_scan_reports_startedAtMillis")
+        Index(value = ["startedAtMillis"], name = "index_scan_reports_startedAtMillis"),
+        Index(value = ["startedAtMillis", "id"], name = "index_scan_reports_startedAtMillis_id")
     ]
 )
 /**

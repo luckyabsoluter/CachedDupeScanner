@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Scan reports now load incrementally from database pages instead of loading the full report history at once.
 - Simple confirmation dialogs now share one reusable dialog component instead of repeating confirm/cancel button structure.
 - Bulk-delete preview and execution status text now share helper formatting instead of duplicating message assembly across commands.
 - Sort dialogs now share one radio option row component instead of repeating local radio row markup.

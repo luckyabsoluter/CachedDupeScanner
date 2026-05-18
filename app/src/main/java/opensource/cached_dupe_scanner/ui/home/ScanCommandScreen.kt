@@ -95,7 +95,8 @@ fun ScanCommandScreen(
                 CacheMigrations.MIGRATION_11_12,
                 CacheMigrations.MIGRATION_12_13,
                 CacheMigrations.MIGRATION_13_14,
-                CacheMigrations.MIGRATION_14_15
+                CacheMigrations.MIGRATION_14_15,
+                CacheMigrations.MIGRATION_15_16
             )
             .build()
     }

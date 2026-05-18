@@ -14,6 +14,26 @@ class ScanReportRepository(
         return dao.getAll().map { it.toModel() }
     }
 
+    suspend fun countAll(): Int {
+        return dao.countAll()
+    }
+
+    suspend fun getFirstPage(limit: Int): List<ScanReport> {
+        return dao.getFirstPage(limit).map { it.toModel() }
+    }
+
+    suspend fun getPageBefore(
+        beforeMillis: Long,
+        beforeId: String,
+        limit: Int
+    ): List<ScanReport> {
+        return dao.getPageBefore(
+            beforeMillis = beforeMillis,
+            beforeId = beforeId,
+            limit = limit
+        ).map { it.toModel() }
+    }
+
     suspend fun loadById(id: String): ScanReport? {
         return dao.getById(id)?.toModel()
     }

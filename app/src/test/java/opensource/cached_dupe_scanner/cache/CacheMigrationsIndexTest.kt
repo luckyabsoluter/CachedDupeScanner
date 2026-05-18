@@ -330,6 +330,61 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration15to16CreatesScanReportPagingIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "scan-report-15-16-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(15) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS scan_reports (
+                                id TEXT NOT NULL PRIMARY KEY,
+                                startedAtMillis INTEGER NOT NULL,
+                                finishedAtMillis INTEGER NOT NULL,
+                                targetsText TEXT NOT NULL,
+                                mode TEXT NOT NULL,
+                                cancelled INTEGER NOT NULL,
+                                collectedCount INTEGER NOT NULL,
+                                detectedCount INTEGER NOT NULL,
+                                hashCandidates INTEGER NOT NULL,
+                                hashesComputed INTEGER NOT NULL,
+                                collectingMillis INTEGER NOT NULL,
+                                detectingMillis INTEGER NOT NULL,
+                                hashingMillis INTEGER NOT NULL
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            "CREATE INDEX IF NOT EXISTS index_scan_reports_startedAtMillis ON scan_reports(startedAtMillis)"
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_15_16.migrate(db)
+
+            assertTrue(hasIndex(db, "scan_reports", "index_scan_reports_startedAtMillis_id"))
+            assertEquals(
+                listOf("startedAtMillis", "id"),
+                indexColumns(db, "index_scan_reports_startedAtMillis_id")
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -426,6 +481,17 @@ class CacheMigrationsIndexTest {
             }
             return false
         }
+    }
+
+    private fun indexColumns(db: SupportSQLiteDatabase, indexName: String): List<String> {
+        val columns = mutableListOf<String>()
+        db.query("PRAGMA index_info('$indexName')").use { cursor ->
+            val nameIdx = cursor.getColumnIndex("name")
+            while (cursor.moveToNext()) {
+                if (nameIdx >= 0) columns += cursor.getString(nameIdx)
+            }
+        }
+        return columns
     }
 
     private fun hasTable(db: SupportSQLiteDatabase, tableName: String): Boolean {

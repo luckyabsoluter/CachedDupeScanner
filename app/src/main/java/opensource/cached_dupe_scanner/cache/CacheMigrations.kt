@@ -293,6 +293,14 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_scan_reports_startedAtMillis_id ON scan_reports(startedAtMillis, id)"
+            )
+        }
+    }
+
 }
 
 private fun tableColumns(
