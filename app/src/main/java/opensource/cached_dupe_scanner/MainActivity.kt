@@ -228,17 +228,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val restoreLastResult: () -> Unit = {
-                    scope.launch {
-                        val stored = withContext(Dispatchers.IO) {
-                            historyRepo.loadMergedHistory()
-                        }
-                        if (stored != null) {
-                            state.value = ScanUiState.Success(stored)
-                        } else {
-                            state.value = ScanUiState.Idle
-                        }
+                    if (state.value !is ScanUiState.Success) {
+                        state.value = ScanUiState.Idle
                     }
-                    Unit
                 }
 
                 BackHandler {
