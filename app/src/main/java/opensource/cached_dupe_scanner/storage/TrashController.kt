@@ -8,6 +8,8 @@ import opensource.cached_dupe_scanner.cache.TrashEntryEntity
 import java.io.File
 import java.util.UUID
 
+internal const val EMPTY_TRASH_PAGE_SIZE = 200
+
 class TrashController(
     private val context: Context,
     private val database: CacheDatabase,
@@ -150,45 +152,54 @@ class TrashController(
         shouldContinue: () -> Boolean,
         onProgress: (TrashProgress) -> Unit
     ): TrashRunSummary {
-        val entries = trashRepo.listAll()
+        val total = trashRepo.countAll()
         var deletedCount = 0
         var failedCount = 0
         var processed = 0
         var currentPath: String? = null
-        for (entry in entries) {
-            if (!shouldContinue()) {
-                return TrashRunSummary(
-                    total = entries.size,
-                    processed = processed,
-                    deleted = deletedCount,
-                    failed = failedCount,
-                    cancelled = true,
-                    currentPath = currentPath
+        var cancelled = false
+        var page = trashRepo.getFirstPage(EMPTY_TRASH_PAGE_SIZE)
+
+        while (page.isNotEmpty()) {
+            val cursor = page.last()
+            for (entry in page) {
+                if (!shouldContinue()) {
+                    cancelled = true
+                    break
+                }
+                currentPath = entry.originalPath
+                if (deletePermanently(entry)) {
+                    deletedCount += 1
+                } else {
+                    failedCount += 1
+                }
+                processed += 1
+                onProgress(
+                    TrashProgress(
+                        total = total,
+                        processed = processed,
+                        deleted = deletedCount,
+                        failed = failedCount,
+                        currentPath = currentPath
+                    )
                 )
             }
-            currentPath = entry.originalPath
-            if (deletePermanently(entry)) {
-                deletedCount += 1
-            } else {
-                failedCount += 1
+            if (cancelled) {
+                break
             }
-            processed += 1
-            onProgress(
-                TrashProgress(
-                    total = entries.size,
-                    processed = processed,
-                    deleted = deletedCount,
-                    failed = failedCount,
-                    currentPath = currentPath
-                )
+            page = trashRepo.getPageBefore(
+                beforeMillis = cursor.deletedAtMillis,
+                beforeId = cursor.id,
+                limit = EMPTY_TRASH_PAGE_SIZE
             )
         }
+
         return TrashRunSummary(
-            total = entries.size,
+            total = total,
             processed = processed,
             deleted = deletedCount,
             failed = failedCount,
-            cancelled = processed < entries.size,
+            cancelled = cancelled,
             currentPath = currentPath
         )
     }
