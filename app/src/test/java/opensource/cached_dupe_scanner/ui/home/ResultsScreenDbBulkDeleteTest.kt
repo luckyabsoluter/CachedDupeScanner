@@ -172,6 +172,103 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
+    fun executeBulkDeleteCommandDeletesTargetsBeyondPreviewSample() = runBlocking {
+        val database = newDb()
+        val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
+        val groupCount = BULK_DELETE_PREVIEW_SAMPLE_LIMIT + 2
+        repeat(groupCount) { index ->
+            insertCachedFile(database, "/group-$index/old.mkv", size = index + 1L, modified = 10L)
+            insertCachedFile(database, "/group-$index/new.mkv", size = index + 1L, modified = 20L)
+        }
+        resultsRepo.rebuildGroups(updatedAtMillis = 1L)
+        val preview = buildKeepModifiedBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = DuplicateGroupSortKey.PerFileSizeDesc,
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = groupCount,
+            filterDefinition = ResultsFilterDefinition(),
+            keepNewest = true,
+            sourcePageSize = 7
+        )
+        val previewPaths = preview.candidates.flatMap { candidate ->
+            candidate.deleteTargets.map { it.normalizedPath }
+        }.toSet()
+        val deletedPaths = mutableListOf<String>()
+
+        val outcome = executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = DuplicateGroupSortKey.PerFileSizeDesc,
+            snapshotUpdatedAtMillis = preview.snapshotUpdatedAtMillis,
+            totalGroupCount = groupCount,
+            filterDefinition = ResultsFilterDefinition(),
+            sourcePageSize = 7,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            onDeleteFile = { file ->
+                deletedPaths += file.normalizedPath
+                true
+            }
+        ) { group, members ->
+            buildKeepModifiedBulkDeleteCandidate(
+                group = group,
+                members = members,
+                keepNewest = true
+            )
+        }
+
+        assertEquals(groupCount, outcome.successCount)
+        assertEquals(groupCount, outcome.touchedGroups.size)
+        assertEquals(groupCount, deletedPaths.size)
+        assertEquals(true, deletedPaths.any { it !in previewPaths })
+    }
+
+    @Test
+    fun executeBulkDeleteCommandHonorsFilterAndReportsTouchedFailures() = runBlocking {
+        val database = newDb()
+        val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
+        insertCachedFile(database, "/show/episode-old.mkv", size = 10L, modified = 10L)
+        insertCachedFile(database, "/show/episode-new.mkv", size = 10L, modified = 20L)
+        insertCachedFile(database, "/movie/old.mkv", size = 20L, modified = 10L)
+        insertCachedFile(database, "/movie/new.mkv", size = 20L, modified = 20L)
+        resultsRepo.rebuildGroups(updatedAtMillis = 1L)
+
+        val outcome = executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = DuplicateGroupSortKey.PerFileSizeDesc,
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = 2,
+            filterDefinition = ResultsFilterDefinition(
+                clusters = listOf(
+                    ResultsFilterCluster(
+                        id = "cluster_1",
+                        name = "Episode only",
+                        rules = listOf(
+                            ResultsFilterRule(
+                                id = "rule_1",
+                                target = ResultsFilterTarget.FileName,
+                                textOperator = ResultsFilterTextOperator.Contains,
+                                value = "episode"
+                            )
+                        )
+                    )
+                )
+            ),
+            sourcePageSize = 1,
+            totalDeleteTargetCount = 1,
+            onDeleteFile = { false }
+        ) { group, members ->
+            buildKeepModifiedBulkDeleteCandidate(
+                group = group,
+                members = members,
+                keepNewest = true
+            )
+        }
+
+        assertEquals(0, outcome.successCount)
+        assertEquals(setOf("/show/episode-old.mkv"), outcome.failedPaths)
+        assertEquals(setOf(ResultsBulkDeleteTouchedGroupKey(10L, "hash-10")), outcome.touchedGroups)
+    }
+
+    @Test
     fun bulkDeleteExecutionOutcomeMessageReportsSuccessAndFailureCounts() {
         assertEquals(
             "No files were deleted.",
@@ -461,9 +558,13 @@ class ResultsScreenDbBulkDeleteTest {
             scope = taskScope,
             taskCoordinator = coordinator,
             notificationController = notificationController,
-            onDeleteFile = {
+            executeDelete = {
                 deleteSawBusyTrash.set(coordinator.isAreaBusy(TaskArea.Trash))
-                true
+                ResultsBulkDeleteExecutionOutcome(
+                    successCount = 1,
+                    failedPaths = emptySet(),
+                    touchedGroups = setOf(ResultsBulkDeleteTouchedGroupKey(10L, "a"))
+                )
             },
             onSnapshotChanged = { false },
             onRefreshGroups = {},
