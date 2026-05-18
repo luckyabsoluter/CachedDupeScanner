@@ -213,6 +213,120 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun pagedFilterMatchesFullFilterAcrossClusterModes() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "All rules",
+                    mode = ResultsFilterClusterMode.All,
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.GroupItemCount,
+                            countOperator = ResultsFilterCountOperator.AtLeast,
+                            value = "3"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_2",
+                            target = ResultsFilterTarget.FileName,
+                            textOperator = ResultsFilterTextOperator.Contains,
+                            value = "target"
+                        )
+                    )
+                ),
+                ResultsFilterCluster(
+                    id = "cluster_2",
+                    name = "Any rules",
+                    mode = ResultsFilterClusterMode.Any,
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_3",
+                            target = ResultsFilterTarget.FolderPath,
+                            textOperator = ResultsFilterTextOperator.Contains,
+                            value = "missing"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_4",
+                            target = ResultsFilterTarget.ModifiedTime,
+                            timeOperator = ResultsFilterTimeOperator.OnOrAfter,
+                            value = "100"
+                        )
+                    )
+                )
+            )
+        )
+        val members = listOf(
+            file("/library/a/first.jpg", modified = 1L),
+            file("/library/b/target.jpg", modified = 10L),
+            file("/library/c/third.jpg", modified = 100L)
+        )
+
+        assertEquals(
+            matchesResultsFilter(definition, group(fileCount = members.size), members),
+            pagedFilterResult(definition, group(fileCount = members.size), members, pageSize = 1)
+        )
+    }
+
+    @Test
+    fun pagedFilterEvaluatesSameFolderAcrossPages() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same folder",
+                    rules = listOf(ResultsFilterRule(id = "rule_1", target = ResultsFilterTarget.SameFolder))
+                )
+            )
+        )
+        val sameFolder = listOf(file("/same/a.jpg"), file("/same/b.jpg"), file("/same/c.jpg"))
+        val differentFolders = listOf(file("/same/a.jpg"), file("/other/b.jpg"), file("/same/c.jpg"))
+
+        assertEquals(
+            matchesResultsFilter(definition, group(fileCount = sameFolder.size), sameFolder),
+            pagedFilterResult(definition, group(fileCount = sameFolder.size), sameFolder, pageSize = 1)
+        )
+        assertEquals(
+            matchesResultsFilter(definition, group(fileCount = differentFolders.size), differentFolders),
+            pagedFilterResult(definition, group(fileCount = differentFolders.size), differentFolders, pageSize = 1)
+        )
+    }
+
+    @Test
+    fun pagedGroupCountFilterDoesNotLoadMembers() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Count",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.GroupItemCount,
+                            countOperator = ResultsFilterCountOperator.Equals,
+                            value = "2"
+                        )
+                    )
+                )
+            )
+        )
+        var loaderCalled = false
+
+        val matched = matchesResultsFilterPagedMembers(
+            definition = definition,
+            group = group(fileCount = 2),
+            memberPages = {
+                loaderCalled = true
+                sequenceOf(listOf(file("/unexpected/a.jpg")))
+            }
+        )
+
+        assertTrue(matched)
+        assertFalse(loaderCalled)
+    }
+
+
+    @Test
     fun modifiedTimeRuleMatchesWholeUtcDate() {
         val parsed = parseResultsFilterTimeValue("2026-04-20")
 
@@ -447,6 +561,34 @@ class ResultsScreenDbFiltersTest {
         assertTrue(rule.id.startsWith("rule_"))
         assertTrue(cluster.id.substringAfterLast('_').toLong() > 12L)
         assertTrue(rule.id.substringAfterLast('_').toLong() > 21L)
+    }
+
+    private fun pagedFilterResult(
+        definition: ResultsFilterDefinition,
+        group: DuplicateGroupEntity,
+        members: List<FileMetadata>,
+        pageSize: Int
+    ): Boolean {
+        return matchesResultsFilterPagedMembers(
+            definition = definition,
+            group = group,
+            memberPages = { pagedMembers(members, pageSize) }
+        )
+    }
+
+    private fun pagedMembers(
+        members: List<FileMetadata>,
+        pageSize: Int
+    ): Sequence<List<FileMetadata>> {
+        return sequence {
+            var offset = 0
+            while (offset < members.size) {
+                val page = members.drop(offset).take(pageSize)
+                if (page.isEmpty()) break
+                yield(page)
+                offset += page.size
+            }
+        }
     }
 
     private fun file(

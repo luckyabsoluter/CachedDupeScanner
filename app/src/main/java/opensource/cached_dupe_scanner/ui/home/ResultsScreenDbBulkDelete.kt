@@ -373,13 +373,25 @@ private suspend fun buildBulkDeletePreview(
         }
 
         page.forEach { group ->
-            val members = withContext(Dispatchers.IO) {
-                resultsRepo.listAllGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex
+            val matchesFilter = withContext(Dispatchers.IO) {
+                matchesResultsFilterPagedMembers(
+                    definition = filterDefinition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    }
                 )
             }
-            if (matchesResultsFilter(filterDefinition, group, members)) {
+            if (matchesFilter) {
+                val members = withContext(Dispatchers.IO) {
+                    resultsRepo.listAllGroupMembers(
+                        sizeBytes = group.sizeBytes,
+                        hashHex = group.hashHex
+                    )
+                }
                 filterMatchedGroupCount += 1
                 buildCandidate(group, members)?.let { candidate ->
                     candidateGroupCount += 1
@@ -452,13 +464,25 @@ internal suspend fun executeBulkDeleteCommand(
         }
 
         page.forEach { group ->
-            val members = withContext(Dispatchers.IO) {
-                resultsRepo.listAllGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex
+            val matchesFilter = withContext(Dispatchers.IO) {
+                matchesResultsFilterPagedMembers(
+                    definition = filterDefinition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    }
                 )
             }
-            if (matchesResultsFilter(filterDefinition, group, members)) {
+            if (matchesFilter) {
+                val members = withContext(Dispatchers.IO) {
+                    resultsRepo.listAllGroupMembers(
+                        sizeBytes = group.sizeBytes,
+                        hashHex = group.hashHex
+                    )
+                }
                 buildCandidate(group, members)?.let { candidate ->
                     touchedGroups += ResultsBulkDeleteTouchedGroupKey(
                         sizeBytes = candidate.group.sizeBytes,

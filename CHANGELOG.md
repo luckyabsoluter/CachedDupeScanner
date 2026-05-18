@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Filtered duplicate results and bulk-delete previews now stream duplicate-member filtering instead of materializing every member for groups excluded by filters.
 - Empty Trash now processes trash entries in bounded pages instead of loading the full trash ledger at once.
 - Scan reports now load incrementally from database pages instead of loading the full report history at once.
 - Simple confirmation dialogs now share one reusable dialog component instead of repeating confirm/cancel button structure.
