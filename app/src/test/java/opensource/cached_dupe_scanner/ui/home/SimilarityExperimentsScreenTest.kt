@@ -10,6 +10,32 @@ import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.buildThumbnailSignature
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
+import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeInput
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestBuildResult
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestDraft
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeInput
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.buildSimilarityRunRequest
+import opensource.cached_dupe_scanner.ui.home.similarity.defaultSizeInputForUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.defaultTimeInputForUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.durationNeighborListExperimentForRun
+import opensource.cached_dupe_scanner.ui.home.similarity.durationToleranceExperimentForRun
+import opensource.cached_dupe_scanner.ui.home.similarity.exactThumbnailExperimentForRun
+import opensource.cached_dupe_scanner.ui.home.similarity.executableDurationNeighborListStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableDurationToleranceStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableExactThumbnailStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableTemplateKind
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationNeighborListStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationToleranceMillis
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationToleranceStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedExactThumbnailStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedFrameSeconds
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
+import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
+import opensource.cached_dupe_scanner.ui.home.similarity.selectedSimilarityExperimentTemplate
+import opensource.cached_dupe_scanner.ui.home.similarity.selectedSimilarityRun
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -223,6 +249,148 @@ class SimilarityExperimentsScreenTest {
         assertEquals(duration, executableDurationNeighborListStep(durationTemplate))
         assertEquals("Executable duration neighbor-list experiment", executableTemplateKind(durationTemplate))
         assertEquals(null, executableDurationNeighborListStep(exactTemplate("exact")))
+    }
+
+    @Test
+    fun runFactoryBuildsExactThumbnailRequest() {
+        val template = exactTemplate("exact")
+
+        val result = buildSimilarityRunRequest(
+            template = template,
+            draft = SimilarityRunRequestDraft(
+                mediaScope = SimilarityMediaScope.Image,
+                minSizeBytes = 1024L,
+                exactThumbnailStep = ExactThumbnailHashStep(
+                    frameSeconds = listOf(0, 2),
+                    resizeWidthPx = 2,
+                    resizeHeightPx = 3,
+                    quantizationLevels = null,
+                    grayscale = true
+                )
+            )
+        )
+
+        val request = assertRequest(result)
+        assertEquals(SimilarityMediaScope.Image, request.mediaScope)
+        assertEquals(1024L, request.minSizeBytes)
+        assertEquals(listOf(0, 2), request.exactThumbnailStep?.frameSeconds)
+        assertEquals(null, request.durationToleranceStep)
+        assertEquals(null, request.durationNeighborListStep)
+    }
+
+    @Test
+    fun runFactoryRejectsExactThumbnailRequestWithoutFrames() {
+        val template = exactTemplate("exact")
+
+        val result = buildSimilarityRunRequest(
+            template = template,
+            draft = SimilarityRunRequestDraft(
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = 0L,
+                exactThumbnailStep = ExactThumbnailHashStep(
+                    frameSeconds = emptyList(),
+                    resizeWidthPx = 1,
+                    resizeHeightPx = 1,
+                    quantizationLevels = null,
+                    grayscale = false
+                )
+            )
+        )
+
+        assertEquals(
+            SimilarityRunRequestBuildResult.Invalid("Add at least one frame timestamp."),
+            result
+        )
+    }
+
+    @Test
+    fun runFactoryBuildsDurationToleranceRequest() {
+        val template = SimilarityExperimentSpec(
+            id = "duration",
+            name = "Duration",
+            description = "Duration",
+            defaultMinSizeBytes = 0L,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(DurationToleranceStep(toleranceMillis = 500L))
+        )
+
+        val result = buildSimilarityRunRequest(
+            template = template,
+            draft = SimilarityRunRequestDraft(
+                mediaScope = SimilarityMediaScope.Image,
+                minSizeBytes = 2048L,
+                durationToleranceStep = DurationToleranceStep(toleranceMillis = 250L)
+            )
+        )
+
+        val request = assertRequest(result)
+        assertEquals(SimilarityMediaScope.Video, request.mediaScope)
+        assertEquals(2048L, request.minSizeBytes)
+        assertEquals(250L, request.durationToleranceStep?.toleranceMillis)
+        assertEquals(null, request.exactThumbnailStep)
+        assertEquals(null, request.durationNeighborListStep)
+    }
+
+    @Test
+    fun runFactoryBuildsDurationNeighborRequest() {
+        val template = SimilarityExperimentSpec(
+            id = "duration-neighbor",
+            name = "Duration neighbor",
+            description = "Duration neighbor",
+            defaultMinSizeBytes = 0L,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(DurationNeighborListStep(toleranceMillis = 500L))
+        )
+
+        val result = buildSimilarityRunRequest(
+            template = template,
+            draft = SimilarityRunRequestDraft(
+                mediaScope = SimilarityMediaScope.Image,
+                minSizeBytes = 4096L,
+                durationNeighborListStep = DurationNeighborListStep(toleranceMillis = 750L)
+            )
+        )
+
+        val request = assertRequest(result)
+        assertEquals(SimilarityMediaScope.Video, request.mediaScope)
+        assertEquals(4096L, request.minSizeBytes)
+        assertEquals(750L, request.durationNeighborListStep?.toleranceMillis)
+        assertEquals(null, request.exactThumbnailStep)
+        assertEquals(null, request.durationToleranceStep)
+    }
+
+    @Test
+    fun runFactoryRejectsMethodologyOnlyTemplate() {
+        val template = SimilarityExperimentSpec(
+            id = "methodology",
+            name = "Methodology",
+            description = "Methodology",
+            defaultMinSizeBytes = 0L,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(
+                DurationToleranceStep(toleranceMillis = 500L),
+                ExactThumbnailHashStep(
+                    frameSeconds = listOf(0),
+                    resizeWidthPx = 1,
+                    resizeHeightPx = 1,
+                    quantizationLevels = null,
+                    grayscale = false
+                )
+            )
+        )
+
+        val result = buildSimilarityRunRequest(
+            template = template,
+            draft = SimilarityRunRequestDraft(
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = 0L
+            )
+        )
+
+        assertEquals(
+            SimilarityRunRequestBuildResult.Invalid("Selected experiment template is not directly runnable."),
+            result
+        )
     }
 
     @Test
@@ -474,6 +642,7 @@ class SimilarityExperimentsScreenTest {
     @Test
     fun screenStartsWithNewExperimentAndRunListBeforeDrillingIntoDetails() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
+        val taskRunnerContent = sourceText("similarity/SimilarityTaskRunner.kt")
 
         assertTrue(content.contains("private enum class SimilarityExperimentPane"))
         assertTrue(content.contains("SimilarityExperimentPane.List ->"))
@@ -484,8 +653,12 @@ class SimilarityExperimentsScreenTest {
         assertTrue(content.contains("onSelectExperiment = ::openTemplateDetailPane"))
         assertTrue(content.contains("SimilarityExperimentPane.RunDetail ->"))
         assertTrue(content.contains("DurationToleranceRunCard("))
-        assertTrue(content.contains("repository.runDurationToleranceExperiment("))
-        assertTrue(content.contains("repository.runDurationNeighborListExperiment("))
+        assertTrue(content.contains("buildSimilarityRunRequest("))
+        assertTrue(content.contains("SimilarityRunRequestDraft("))
+        assertFalse(content.contains("repository.runDurationToleranceExperiment("))
+        assertFalse(content.contains("repository.runDurationNeighborListExperiment("))
+        assertTrue(taskRunnerContent.contains("repository.runDurationToleranceExperiment("))
+        assertTrue(taskRunnerContent.contains("repository.runDurationNeighborListExperiment("))
         assertTrue(content.contains("repository.rebuildDurationNeighborListFromStoredDurations("))
         assertTrue(content.contains("toleranceUnit = durationToleranceUnit"))
         assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
@@ -657,6 +830,13 @@ class SimilarityExperimentsScreenTest {
             mediaScope = SimilarityMediaScope.Video,
             steps = listOf(step)
         )
+    }
+
+    private fun assertRequest(
+        result: SimilarityRunRequestBuildResult
+    ): SimilarityExperimentRunRequest {
+        assertTrue(result is SimilarityRunRequestBuildResult.Valid)
+        return (result as SimilarityRunRequestBuildResult.Valid).request
     }
 
     private fun sourceText(fileName: String): String {

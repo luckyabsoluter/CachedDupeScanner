@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -62,9 +61,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExperimentRunEntity
-import opensource.cached_dupe_scanner.core.DurationNeighborListStep
-import opensource.cached_dupe_scanner.core.DurationToleranceStep
-import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityExperimentStep
@@ -75,18 +71,9 @@ import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityClusterCursor
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
-import opensource.cached_dupe_scanner.tasks.TaskKind
-import opensource.cached_dupe_scanner.tasks.similarityExperimentCancelledDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentCompletedDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskTitle
-import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
@@ -94,7 +81,26 @@ import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
-import java.util.concurrent.atomic.AtomicBoolean
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestBuildResult
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestDraft
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeInput
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.buildSimilarityRunRequest
+import opensource.cached_dupe_scanner.ui.home.similarity.defaultSizeInputForUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.defaultTimeInputForUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.executableDurationNeighborListStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableDurationToleranceStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableExactThumbnailStep
+import opensource.cached_dupe_scanner.ui.home.similarity.executableTemplateKind
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationNeighborListStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationToleranceStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedExactThumbnailStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
+import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
+import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
+import opensource.cached_dupe_scanner.ui.home.similarity.selectedSimilarityExperimentTemplate
+import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityExperimentTask
 
 private data class SimilarityClusterMembersState(
     val members: List<FileMetadata>,
@@ -353,6 +359,35 @@ fun SimilarityExperimentsScreen(
             durationNeighborMembersLoading = false
             if (selectedClusterKey != null && nextClusters.none { clusterStableKey(it) == selectedClusterKey }) {
                 selectedClusterKey = null
+            }
+        }
+    }
+
+    fun startSelectedTemplateRun(draft: SimilarityRunRequestDraft) {
+        val template = selectedTemplate ?: return
+        when (
+            val result = buildSimilarityRunRequest(
+                template = template,
+                draft = draft
+            )
+        ) {
+            is SimilarityRunRequestBuildResult.Valid -> {
+                startSimilarityExperimentTask(
+                    repository = repository,
+                    request = result.request,
+                    scope = scope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onStatusText = { status -> runStatusText = status },
+                    onRunFinished = { summary ->
+                        selectedRunExperimentId = summary.experimentId
+                        pane = SimilarityExperimentPane.RunDetail
+                        refreshStoredResults(summary.experimentId)
+                    }
+                )
+            }
+            is SimilarityRunRequestBuildResult.Invalid -> {
+                runStatusText = result.message
             }
         }
     }
@@ -647,33 +682,12 @@ fun SimilarityExperimentsScreen(
                                 runStatusText = displayedRunStatusText,
                                 isRunning = activeSimilarityTask != null,
                                 onRun = {
-                                    val step = exactStep
-                                    if (step.frameSeconds.isEmpty()) {
-                                        runStatusText = "Add at least one frame timestamp."
-                                        return@ExactThumbnailRunCard
-                                    }
-                                    val experiment = exactThumbnailExperimentForRun(
-                                        mediaScope = mediaScope,
-                                        minSizeBytes = minSizeBytes,
-                                        step = step
-                                    )
-                                    startSimilarityExperimentTask(
-                                        repository = repository,
-                                        request = SimilarityExperimentRunRequest(
-                                            experiment = experiment,
+                                    startSelectedTemplateRun(
+                                        SimilarityRunRequestDraft(
                                             mediaScope = mediaScope,
                                             minSizeBytes = minSizeBytes,
-                                            exactThumbnailStep = step
-                                        ),
-                                        scope = scope,
-                                        taskCoordinator = taskCoordinator,
-                                        notificationController = notificationController,
-                                        onStatusText = { status -> runStatusText = status },
-                                        onRunFinished = { summary ->
-                                            selectedRunExperimentId = summary.experimentId
-                                            pane = SimilarityExperimentPane.RunDetail
-                                            refreshStoredResults(summary.experimentId)
-                                        }
+                                            exactThumbnailStep = exactStep
+                                        )
                                     )
                                 },
                                 onCancel = {
@@ -700,28 +714,12 @@ fun SimilarityExperimentsScreen(
                                 isRunning = activeSimilarityTask != null,
                                 runButtonText = "Run duration experiment",
                                 onRun = {
-                                    val step = durationStep
-                                    val experiment = durationToleranceExperimentForRun(
-                                        minSizeBytes = minSizeBytes,
-                                        step = step
-                                    )
-                                    startSimilarityExperimentTask(
-                                        repository = repository,
-                                        request = SimilarityExperimentRunRequest(
-                                            experiment = experiment,
+                                    startSelectedTemplateRun(
+                                        SimilarityRunRequestDraft(
                                             mediaScope = SimilarityMediaScope.Video,
                                             minSizeBytes = minSizeBytes,
-                                            durationToleranceStep = step
-                                        ),
-                                        scope = scope,
-                                        taskCoordinator = taskCoordinator,
-                                        notificationController = notificationController,
-                                        onStatusText = { status -> runStatusText = status },
-                                        onRunFinished = { summary ->
-                                            selectedRunExperimentId = summary.experimentId
-                                            pane = SimilarityExperimentPane.RunDetail
-                                            refreshStoredResults(summary.experimentId)
-                                        }
+                                            durationToleranceStep = durationStep
+                                        )
                                     )
                                 },
                                 onCancel = {
@@ -748,31 +746,15 @@ fun SimilarityExperimentsScreen(
                                 isRunning = activeSimilarityTask != null,
                                 runButtonText = "Run duration neighbor list",
                                 onRun = {
-                                    val step = parsedDurationNeighborListStep(
-                                        input = durationToleranceInput,
-                                        unit = durationToleranceUnit
-                                    )
-                                    val experiment = durationNeighborListExperimentForRun(
-                                        minSizeBytes = minSizeBytes,
-                                        step = step
-                                    )
-                                    startSimilarityExperimentTask(
-                                        repository = repository,
-                                        request = SimilarityExperimentRunRequest(
-                                            experiment = experiment,
+                                    startSelectedTemplateRun(
+                                        SimilarityRunRequestDraft(
                                             mediaScope = SimilarityMediaScope.Video,
                                             minSizeBytes = minSizeBytes,
-                                            durationNeighborListStep = step
-                                        ),
-                                        scope = scope,
-                                        taskCoordinator = taskCoordinator,
-                                        notificationController = notificationController,
-                                        onStatusText = { status -> runStatusText = status },
-                                        onRunFinished = { summary ->
-                                            selectedRunExperimentId = summary.experimentId
-                                            pane = SimilarityExperimentPane.RunDetail
-                                            refreshStoredResults(summary.experimentId)
-                                        }
+                                            durationNeighborListStep = parsedDurationNeighborListStep(
+                                                input = durationToleranceInput,
+                                                unit = durationToleranceUnit
+                                            )
+                                        )
                                     )
                                 },
                                 onCancel = {
@@ -2040,376 +2022,6 @@ private fun SimilarityStepRow(index: Int, step: SimilarityExperimentStep) {
             )
         }
     }
-}
-
-internal enum class SimilaritySizeUnit(
-    val label: String,
-    val bytes: Long
-) {
-    B("B", 1L),
-    KB("KB", 1024L),
-    MB("MB", 1024L * 1024L),
-    GB("GB", 1024L * 1024L * 1024L)
-}
-
-internal enum class SimilarityTimeUnit(
-    val label: String,
-    val millis: Long
-) {
-    S("s", 1_000L),
-    MS("ms", 1L),
-    MIN("min", 60_000L)
-}
-
-internal fun parsedMinSizeBytes(
-    input: String,
-    unit: SimilaritySizeUnit
-): Long {
-    val amount = input.toLongOrNull() ?: 0L
-    return amount.coerceAtLeast(0L) * unit.bytes
-}
-
-internal fun sanitizeFrameSecondsInput(input: String): String {
-    return input.filter { char -> char.isDigit() || char == ',' || char.isWhitespace() }
-}
-
-internal fun parsedFrameSeconds(input: String): List<Int> {
-    return input.split(',')
-        .mapNotNull { part -> part.trim().toIntOrNull() }
-        .map { second -> second.coerceAtLeast(0) }
-        .distinct()
-}
-
-internal fun parsedExactThumbnailStep(
-    frameSecondsInput: String,
-    resizeWidthInput: String,
-    resizeHeightInput: String,
-    quantizationEnabled: Boolean,
-    quantizationInput: String,
-    grayscale: Boolean
-): ExactThumbnailHashStep {
-    return ExactThumbnailHashStep(
-        frameSeconds = parsedFrameSeconds(frameSecondsInput),
-        resizeWidthPx = (resizeWidthInput.toIntOrNull() ?: 1).coerceAtLeast(1),
-        resizeHeightPx = (resizeHeightInput.toIntOrNull() ?: 1).coerceAtLeast(1),
-        quantizationLevels = if (quantizationEnabled) {
-            (quantizationInput.toIntOrNull() ?: 16).coerceAtLeast(2)
-        } else {
-            null
-        },
-        grayscale = grayscale
-    )
-}
-
-internal fun parsedDurationToleranceStep(
-    input: String,
-    unit: SimilarityTimeUnit = SimilarityTimeUnit.S
-): DurationToleranceStep {
-    return DurationToleranceStep(
-        toleranceMillis = parsedDurationToleranceMillis(
-            input = input,
-            unit = unit
-        )
-    )
-}
-
-internal fun parsedDurationNeighborListStep(
-    input: String,
-    unit: SimilarityTimeUnit = SimilarityTimeUnit.S
-): DurationNeighborListStep {
-    return DurationNeighborListStep(
-        toleranceMillis = parsedDurationToleranceMillis(
-            input = input,
-            unit = unit
-        )
-    )
-}
-
-internal fun parsedDurationToleranceMillis(
-    input: String,
-    unit: SimilarityTimeUnit
-): Long {
-    val amount = input.toLongOrNull() ?: 1L
-    return amount.coerceAtLeast(0L) * unit.millis
-}
-
-internal fun exactThumbnailExperimentForRun(
-    mediaScope: SimilarityMediaScope,
-    minSizeBytes: Long,
-    step: ExactThumbnailHashStep
-): SimilarityExperimentSpec {
-    val mode = if (step.grayscale) "gray" else "color"
-    val quantization = step.quantizationLevels?.let { "q$it" } ?: "raw"
-    val frames = step.frameSeconds.joinToString("-").ifBlank { "none" }
-    return SimilarityExperimentSpec(
-        id = "${mediaScope.name.lowercase()}-thumb-exact-${minSizeBytes}-${frames}-${step.resizeWidthPx}x${step.resizeHeightPx}-$quantization-$mode",
-        name = "${mediaScope.name} thumbnail exact hash",
-        description = "Runtime-configured exact thumbnail hash experiment.",
-        defaultMinSizeBytes = minSizeBytes,
-        mediaScope = mediaScope,
-        steps = listOf(step)
-    )
-}
-
-internal fun durationToleranceExperimentForRun(
-    minSizeBytes: Long,
-    step: DurationToleranceStep
-): SimilarityExperimentSpec {
-    val toleranceMillis = durationToleranceMillis(step)
-    return SimilarityExperimentSpec(
-        id = "video-duration-${minSizeBytes}-${toleranceMillis}",
-        name = "Video duration tolerance",
-        description = "Runtime-configured duration tolerance experiment.",
-        defaultMinSizeBytes = minSizeBytes,
-        mediaScope = SimilarityMediaScope.Video,
-        steps = listOf(step)
-    )
-}
-
-internal fun durationNeighborListExperimentForRun(
-    minSizeBytes: Long,
-    step: DurationNeighborListStep
-): SimilarityExperimentSpec {
-    val toleranceMillis = durationNeighborToleranceMillis(step)
-    return SimilarityExperimentSpec(
-        id = "video-duration-neighbor-${minSizeBytes}-${toleranceMillis}",
-        name = "Video duration neighbor list",
-        description = "Runtime-configured duration neighbor-list experiment.",
-        defaultMinSizeBytes = minSizeBytes,
-        mediaScope = SimilarityMediaScope.Video,
-        steps = listOf(step)
-    )
-}
-
-internal data class SimilaritySizeInput(
-    val input: String,
-    val unit: SimilaritySizeUnit
-)
-
-internal data class SimilarityTimeInput(
-    val input: String,
-    val unit: SimilarityTimeUnit
-)
-
-internal fun defaultSizeInputForUnit(
-    bytes: Long,
-    unit: SimilaritySizeUnit
-): SimilaritySizeInput {
-    if (unit.bytes > 0L && bytes % unit.bytes == 0L) {
-        return SimilaritySizeInput(
-            input = (bytes / unit.bytes).toString(),
-            unit = unit
-        )
-    }
-    return SimilaritySizeInput(
-        input = bytes.coerceAtLeast(0L).toString(),
-        unit = SimilaritySizeUnit.B
-    )
-}
-
-internal fun defaultTimeInputForUnit(
-    millis: Long,
-    unit: SimilarityTimeUnit
-): SimilarityTimeInput {
-    val safeMillis = millis.coerceAtLeast(0L)
-    if (unit.millis > 0L && safeMillis % unit.millis == 0L) {
-        return SimilarityTimeInput(
-            input = (safeMillis / unit.millis).toString(),
-            unit = unit
-        )
-    }
-    return SimilarityTimeInput(
-        input = safeMillis.toString(),
-        unit = SimilarityTimeUnit.MS
-    )
-}
-
-internal fun selectedSimilarityRun(
-    runs: List<SimilarityExperimentRunEntity>,
-    selectedId: String?
-): SimilarityExperimentRunEntity? {
-    if (selectedId != null) {
-        runs.firstOrNull { run -> run.experimentId == selectedId }?.let { return it }
-    }
-    return runs.firstOrNull()
-}
-
-internal fun selectedSimilarityExperimentTemplate(
-    experiments: List<SimilarityExperimentSpec>,
-    selectedId: String?
-): SimilarityExperimentSpec? {
-    if (selectedId != null) {
-        experiments.firstOrNull { experiment -> experiment.id == selectedId }?.let { return it }
-    }
-    return experiments.firstOrNull()
-}
-
-internal fun executableExactThumbnailStep(experiment: SimilarityExperimentSpec): ExactThumbnailHashStep? {
-    if (experiment.steps.size != 1) return null
-    return experiment.steps.singleOrNull() as? ExactThumbnailHashStep
-}
-
-internal fun executableDurationToleranceStep(experiment: SimilarityExperimentSpec): DurationToleranceStep? {
-    if (experiment.steps.size != 1) return null
-    return experiment.steps.singleOrNull() as? DurationToleranceStep
-}
-
-internal fun executableDurationNeighborListStep(experiment: SimilarityExperimentSpec): DurationNeighborListStep? {
-    if (experiment.steps.size != 1) return null
-    return experiment.steps.singleOrNull() as? DurationNeighborListStep
-}
-
-internal fun executableTemplateKind(experiment: SimilarityExperimentSpec): String {
-    return when {
-        executableExactThumbnailStep(experiment) != null -> "Executable exact-hash experiment"
-        executableDurationToleranceStep(experiment) != null -> "Executable duration experiment"
-        executableDurationNeighborListStep(experiment) != null -> "Executable duration neighbor-list experiment"
-        else -> "Methodology template"
-    }
-}
-
-internal fun startSimilarityExperimentTask(
-    repository: SimilarityExperimentRepository,
-    request: SimilarityExperimentRunRequest,
-    scope: CoroutineScope,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
-    onStatusText: (String) -> Unit,
-    onRunFinished: (SimilarityExperimentSummary) -> Unit
-): Boolean {
-    return startSimilarityExperimentTask(
-        request = request,
-        scope = scope,
-        taskCoordinator = taskCoordinator,
-        notificationController = notificationController,
-        onStatusText = onStatusText,
-        onRunFinished = onRunFinished
-    ) { shouldContinue, onProgress ->
-        when {
-            request.exactThumbnailStep != null -> repository.runExactThumbnailHashExperiment(
-                request = request,
-                shouldContinue = shouldContinue,
-                onProgress = onProgress
-            )
-            request.durationToleranceStep != null -> repository.runDurationToleranceExperiment(
-                request = request,
-                shouldContinue = shouldContinue,
-                onProgress = onProgress
-            )
-            request.durationNeighborListStep != null -> repository.runDurationNeighborListExperiment(
-                request = request,
-                shouldContinue = shouldContinue,
-                onProgress = onProgress
-            )
-            else -> error("Similarity experiment request has no executable step.")
-        }
-    }
-}
-
-internal fun startSimilarityExperimentTask(
-    request: SimilarityExperimentRunRequest,
-    scope: CoroutineScope,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
-    onStatusText: (String) -> Unit,
-    onRunFinished: (SimilarityExperimentSummary) -> Unit,
-    runExperiment: ((() -> Boolean), (SimilarityExperimentProgress) -> Unit) -> SimilarityExperimentSummary
-): Boolean {
-    val cancelRequested = AtomicBoolean(false)
-    val started = taskCoordinator.tryStart(
-        area = TaskArea.Similarity,
-        kind = TaskKind.SimilarityExperiment,
-        title = similarityExperimentTaskTitle(),
-        detail = "Starting ${request.experiment.name}.",
-        processed = 0,
-        total = null,
-        indeterminate = true,
-        isCancellable = true,
-        onCancel = {
-            cancelRequested.set(true)
-            requestImmediateSimilarityCancel(
-                taskCoordinator = taskCoordinator,
-                notificationController = notificationController
-            )
-        }
-    ) ?: return false
-    notificationController.showActive(started)
-    onStatusText(started.detail)
-
-    scope.launch {
-        runCatching {
-            withContext(Dispatchers.IO) {
-                runExperiment(
-                    { !cancelRequested.get() },
-                    { progress ->
-                        val detail = similarityExperimentTaskDetail(progress)
-                        taskCoordinator.update(TaskArea.Similarity) { task ->
-                            task.withLinearProgress(
-                                title = similarityExperimentTaskTitle(),
-                                detail = detail,
-                                currentPath = progress.currentPath,
-                                processed = progress.processed,
-                                total = progress.total
-                            )
-                        }?.let(notificationController::showActive)
-                        scope.launch { onStatusText(detail) }
-                    }
-                )
-            }
-        }.onSuccess { summary ->
-            val currentPath = taskCoordinator.activeTask(TaskArea.Similarity)?.currentPath
-            if (summary.cancelled) {
-                val detail = similarityExperimentCancelledDetail(summary)
-                taskCoordinator.cancel(
-                    area = TaskArea.Similarity,
-                    title = "Similarity experiment cancelled",
-                    detail = detail,
-                    currentPath = currentPath,
-                    processed = summary.processedCount,
-                    total = summary.candidateCount,
-                    indeterminate = summary.candidateCount <= 0
-                )?.let(notificationController::showTerminal)
-                onStatusText(detail)
-            } else {
-                val detail = similarityExperimentCompletedDetail(summary)
-                taskCoordinator.complete(
-                    area = TaskArea.Similarity,
-                    title = "Similarity experiment complete",
-                    detail = detail,
-                    currentPath = currentPath,
-                    processed = summary.processedCount,
-                    total = summary.candidateCount,
-                    indeterminate = summary.candidateCount <= 0
-                )?.let(notificationController::showTerminal)
-                onStatusText("Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files.")
-            }
-            onRunFinished(summary)
-        }.onFailure {
-            taskCoordinator.fail(
-                area = TaskArea.Similarity,
-                title = "Similarity experiment failed",
-                detail = "The similarity experiment did not finish."
-            )?.let(notificationController::showTerminal)
-            onStatusText("Similarity experiment failed.")
-        }
-    }
-    return true
-}
-
-private fun requestImmediateSimilarityCancel(
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController
-) {
-    val snapshot = taskCoordinator.activeTask(TaskArea.Similarity)
-    taskCoordinator.cancel(
-        area = TaskArea.Similarity,
-        title = "Similarity experiment cancelled",
-        detail = "Cancelling similarity experiment.",
-        currentPath = snapshot?.currentPath,
-        processed = snapshot?.processed,
-        total = snapshot?.total,
-        indeterminate = snapshot?.indeterminate ?: true
-    )?.let(notificationController::showTerminal)
 }
 
 private fun clusterStableKey(cluster: SimilarityClusterEntity): String {

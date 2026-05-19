@@ -28,6 +28,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Result filter and bulk-delete option controls now share one option-button grid component instead of separate local copies.
 - Cached file entity and metadata conversions now share one cache-boundary mapper instead of local repository copies.
 - Similarity experiment size and duration unit controls now open menus instead of cycling through units on each tap.
+- Similarity experiment setup now shares input parsing, run request creation, and task execution helpers instead of keeping each executable experiment path wired directly inside the screen.
 - Bulk delete execution now uses the shared task progress and notification flow while deleting files.
 
 ### Fixed

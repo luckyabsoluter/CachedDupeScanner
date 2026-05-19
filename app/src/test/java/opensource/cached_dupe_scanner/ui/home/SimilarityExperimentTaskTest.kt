@@ -18,6 +18,7 @@ import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.TaskStatus
+import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityExperimentTask
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
