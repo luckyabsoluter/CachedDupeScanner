@@ -579,6 +579,76 @@ class ScanHistoryRepositoryTest {
     }
 
     @Test
+    fun runMaintenanceWithOnlyDuplicateDetectedDeletesDuplicateEntriesAcrossGroupKeyPages() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            val duplicateFiles = (0 until 201).flatMap { index ->
+                val sizeBytes = 1_000L + index
+                val hashHex = "hash-$index"
+                listOf(
+                    FileMetadata(
+                        path = "/missing-duplicate-$index-a",
+                        normalizedPath = "/missing-duplicate-$index-a",
+                        sizeBytes = sizeBytes,
+                        lastModifiedMillis = 1L,
+                        hashHex = hashHex
+                    ),
+                    FileMetadata(
+                        path = "/missing-duplicate-$index-b",
+                        normalizedPath = "/missing-duplicate-$index-b",
+                        sizeBytes = sizeBytes,
+                        lastModifiedMillis = 1L,
+                        hashHex = hashHex
+                    )
+                )
+            }
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = duplicateFiles + FileMetadata(
+                        path = "/missing-singleton",
+                        normalizedPath = "/missing-singleton",
+                        sizeBytes = 9_999L,
+                        lastModifiedMillis = 1L,
+                        hashHex = "singleton"
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+
+            var lastProgress: DbMaintenanceProgress? = null
+            val summary = repo.runMaintenance(
+                deleteMissing = true,
+                rehashStale = false,
+                rehashMissing = false,
+                onlyDuplicateDetected = true,
+                shouldContinue = { true }
+            ) { progress ->
+                lastProgress = progress
+            }
+
+            assertEquals(402, summary.total)
+            assertEquals(402, summary.processed)
+            assertEquals(402, summary.deleted)
+            assertEquals(402, lastProgress?.processed)
+            assertEquals(1, database.fileCacheDao().countAll())
+            assertNotNull(database.fileCacheDao().getByNormalizedPath("/missing-singleton"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun runMaintenanceWithOnlyDuplicateDetectedRehashesOnlyDuplicateEntries() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)

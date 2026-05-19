@@ -265,6 +265,58 @@ interface FileCacheDao {
 
     @Query(
         """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listDuplicateGroupKeysFromCachePage(limit: Int): List<DuplicateGroupKeyRow>
+
+    @Query(
+        """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+           AND (
+               sizeBytes > :afterSizeBytes
+               OR (sizeBytes = :afterSizeBytes AND hashHex > :afterHashHex)
+           )
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listDuplicateGroupKeysFromCachePageAfter(
+        afterSizeBytes: Long,
+        afterHashHex: String,
+        limit: Int
+    ): List<DuplicateGroupKeyRow>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(groupCount), 0)
+        FROM (
+            SELECT COUNT(*) as groupCount
+            FROM cached_files
+            WHERE hashHex IS NOT NULL
+            GROUP BY sizeBytes, hashHex
+            HAVING COUNT(*) > 1
+        )
+        """
+    )
+    fun countDuplicateMembersFromCache(): Int
+
+    @Query(
+        """
         SELECT COUNT(*)
         FROM cached_files
         WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
