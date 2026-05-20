@@ -392,6 +392,51 @@ class SimilarityExperimentRepositoryTest {
     }
 
     @Test
+    fun clusterMemberRowsSupportOffsetAndLimit() {
+        val files = listOf(
+            videoFile("member-a.mp4"),
+            videoFile("member-b.mp4"),
+            videoFile("member-c.mp4"),
+            videoFile("member-d.mp4")
+        )
+        files.forEachIndexed { index, file ->
+            database.fileCacheDao().upsert(entity(file, sizeBytes = 10L + index))
+        }
+        val memberText = files.joinToString("\n") { file ->
+            file.absolutePath.replace('\\', '/').lowercase()
+        }
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(
+                    experimentId = "paged-members",
+                    signature = "duration-neighbor-v1:1000:0000000010000-0000000013000",
+                    fileCount = files.size,
+                    totalBytes = files.indices.sumOf { index -> 10L + index },
+                    memberNormalizedPathsText = memberText,
+                    updatedAtMillis = 1L
+                )
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao()
+        )
+
+        val cluster = repository.listClusters("paged-members").single()
+        val page = repository.listClusterMemberRows(
+            cluster = cluster,
+            offset = 1,
+            limit = 2
+        )
+
+        assertEquals(
+            files.drop(1).take(2).map { file -> file.absolutePath },
+            page.map { member -> member.metadata.path }
+        )
+    }
+
+    @Test
     fun clusterPagesLoadIncrementallyBySortOrder() {
         val experimentId = "paged-clusters"
         database.similarityExperimentDao().insertClusters(

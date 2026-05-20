@@ -136,9 +136,12 @@ class SimilarityExperimentRepository(
 
     fun listClusterMemberRows(
         cluster: SimilarityClusterEntity,
+        offset: Int = 0,
         limit: Int? = null
     ): List<SimilarityClusterMember> {
+        val safeOffset = offset.coerceAtLeast(0)
         val entries = parseSimilarityClusterMemberEntries(cluster.memberNormalizedPathsText)
+            .drop(safeOffset)
             .let { parsed ->
                 if (limit == null) parsed else parsed.take(limit.coerceAtLeast(0))
             }
