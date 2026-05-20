@@ -65,6 +65,7 @@ import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityExperimentStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
 import opensource.cached_dupe_scanner.core.durationToleranceMillis
 import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
@@ -75,6 +76,7 @@ import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
@@ -117,8 +119,9 @@ private enum class SimilarityExperimentPane {
 
 internal const val SIMILARITY_RUN_DETAIL_CLUSTER_FIRST_ITEM_INDEX = 3
 private const val SIMILARITY_CLUSTER_PAGE_SIZE = 50
-private const val DURATION_NEIGHBOR_MEMBER_PAGE_SIZE = 50
+private const val DURATION_NEIGHBOR_MEMBER_PAGE_SIZE = 200
 private const val SIMILARITY_CLUSTER_LOAD_MORE_BUFFER = 12
+private const val DURATION_NEIGHBOR_MEMBER_LOAD_MORE_BUFFER = 50
 
 internal fun similarityClusterLoadIndicatorText(
     isRunDetailPane: Boolean,
@@ -141,6 +144,31 @@ internal fun similarityClusterLoadIndicatorText(
         loaded = loadedForDisplay,
         total = totalClusterCount
     )
+}
+
+internal fun shouldLoadMoreSimilarityResults(
+    isRunDetailPane: Boolean,
+    isDurationNeighborList: Boolean,
+    lastVisibleItemIndex: Int,
+    totalItemsCount: Int,
+    clustersLoading: Boolean,
+    clustersExhausted: Boolean,
+    durationNeighborMembersLoading: Boolean,
+    durationNeighborMembersExhausted: Boolean
+): Boolean {
+    if (!isRunDetailPane || totalItemsCount <= 0) return false
+    val loadMoreBuffer = if (isDurationNeighborList) {
+        DURATION_NEIGHBOR_MEMBER_LOAD_MORE_BUFFER
+    } else {
+        SIMILARITY_CLUSTER_LOAD_MORE_BUFFER
+    }
+    val closeToEnd = lastVisibleItemIndex >= totalItemsCount - loadMoreBuffer
+    if (!closeToEnd) return false
+    return if (isDurationNeighborList) {
+        !durationNeighborMembersLoading && !durationNeighborMembersExhausted
+    } else {
+        !clustersLoading && !clustersExhausted
+    }
 }
 
 @Composable
@@ -179,8 +207,10 @@ fun SimilarityExperimentsScreen(
     var clusterNextCursor by remember { mutableStateOf<SimilarityClusterCursor?>(null) }
     var clustersExhausted by remember { mutableStateOf(true) }
     val durationNeighborMembers = remember { mutableStateListOf<SimilarityClusterMember>() }
+    var durationNeighborMemberNextOffset by remember { mutableStateOf(0) }
     var durationNeighborMembersExhausted by remember { mutableStateOf(true) }
     var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
+    var durationNeighborSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
@@ -285,30 +315,33 @@ fun SimilarityExperimentsScreen(
         }
     }
 
-    fun loadMoreDurationNeighborMembers() {
+    fun loadMoreDurationNeighborMembers(direction: SortDirection = durationNeighborSortDirection) {
         if (!isDurationNeighborListExperiment(selectedRunExperimentId)) return
         if (durationNeighborMembersLoading || durationNeighborMembersExhausted) return
         val cluster = clusters.firstOrNull() ?: return
         val totalMembers = selectedRun?.duplicateFileCount ?: cluster.fileCount
+        val offset = durationNeighborMemberNextOffset
         durationNeighborMembersLoading = true
         scope.launch {
             try {
                 val nextMembers = withContext(Dispatchers.IO) {
                     repository.listClusterMemberRows(
                         cluster = cluster,
-                        offset = durationNeighborMembers.size,
-                        limit = DURATION_NEIGHBOR_MEMBER_PAGE_SIZE
+                        offset = offset,
+                        limit = DURATION_NEIGHBOR_MEMBER_PAGE_SIZE,
+                        direction = direction
                     )
                 }
+                val nextDurationNeighborMemberNextOffset =
+                    (offset + DURATION_NEIGHBOR_MEMBER_PAGE_SIZE).coerceAtMost(totalMembers)
                 val knownPaths = durationNeighborMembers.map { member -> member.metadata.normalizedPath }.toHashSet()
                 durationNeighborMembers.addAll(
                     nextMembers
                         .distinctBy { member -> member.metadata.normalizedPath }
                         .filter { member -> knownPaths.add(member.metadata.normalizedPath) }
                 )
-                durationNeighborMembersExhausted =
-                    nextMembers.size < DURATION_NEIGHBOR_MEMBER_PAGE_SIZE ||
-                    durationNeighborMembers.size >= totalMembers
+                durationNeighborMemberNextOffset = nextDurationNeighborMemberNextOffset
+                durationNeighborMembersExhausted = nextDurationNeighborMemberNextOffset >= totalMembers
             } finally {
                 durationNeighborMembersLoading = false
             }
@@ -343,7 +376,8 @@ fun SimilarityExperimentsScreen(
                         repository.listClusterMemberRows(
                             cluster = firstCluster,
                             offset = 0,
-                            limit = DURATION_NEIGHBOR_MEMBER_PAGE_SIZE
+                            limit = DURATION_NEIGHBOR_MEMBER_PAGE_SIZE,
+                            direction = durationNeighborSortDirection
                         )
                         .distinctBy { member -> member.metadata.normalizedPath }
                     }
@@ -351,10 +385,18 @@ fun SimilarityExperimentsScreen(
             } else {
                 emptyList()
             }
+            val nextDurationNeighborTotalMembers = if (nextIsDurationNeighborList) {
+                nextSelectedRun?.duplicateFileCount ?: nextClusters.firstOrNull()?.fileCount ?: 0
+            } else {
+                0
+            }
+            val nextDurationNeighborMemberNextOffset = if (nextIsDurationNeighborList && nextClusters.isNotEmpty()) {
+                DURATION_NEIGHBOR_MEMBER_PAGE_SIZE.coerceAtMost(nextDurationNeighborTotalMembers)
+            } else {
+                0
+            }
             val nextDurationNeighborMembersExhausted = if (nextIsDurationNeighborList) {
-                val totalMembers = nextSelectedRun?.duplicateFileCount ?: nextClusters.firstOrNull()?.fileCount ?: 0
-                nextDurationNeighborMembers.size >= totalMembers ||
-                    nextDurationNeighborMembers.size < DURATION_NEIGHBOR_MEMBER_PAGE_SIZE
+                nextDurationNeighborMemberNextOffset >= nextDurationNeighborTotalMembers
             } else {
                 true
             }
@@ -374,6 +416,7 @@ fun SimilarityExperimentsScreen(
             clustersExhausted = nextClusterPage?.exhausted ?: true
             durationNeighborMembers.clear()
             durationNeighborMembers.addAll(nextDurationNeighborMembers)
+            durationNeighborMemberNextOffset = nextDurationNeighborMemberNextOffset
             durationNeighborMembersExhausted = nextDurationNeighborMembersExhausted
             durationNeighborStoredDurationCount = nextDurationNeighborStoredDurationCount
             if (nextIsDurationNeighborList) {
@@ -394,6 +437,18 @@ fun SimilarityExperimentsScreen(
                 selectedClusterKey = null
             }
         }
+    }
+
+    fun applyDurationNeighborSortDirection(direction: SortDirection) {
+        if (durationNeighborSortDirection == direction || durationNeighborMembersLoading) return
+        durationNeighborSortDirection = direction
+        selectedDurationNeighborFile = null
+        durationNeighborMembers.clear()
+        durationNeighborMemberNextOffset = 0
+        durationNeighborMembersExhausted =
+            (selectedRun?.duplicateFileCount ?: clusters.firstOrNull()?.fileCount ?: 0) <= 0
+        scope.launch { listState.scrollToItem(0) }
+        loadMoreDurationNeighborMembers(direction = direction)
     }
 
     fun startSelectedTemplateRun(draft: SimilarityRunRequestDraft) {
@@ -434,6 +489,7 @@ fun SimilarityExperimentsScreen(
         clusterNextCursor = null
         clustersExhausted = true
         durationNeighborMembers.clear()
+        durationNeighborMemberNextOffset = 0
         durationNeighborMembersExhausted = true
         durationNeighborStoredDurationCount = 0
         refreshStoredResults(null)
@@ -451,6 +507,7 @@ fun SimilarityExperimentsScreen(
         clusterNextCursor = null
         clustersExhausted = true
         durationNeighborMembers.clear()
+        durationNeighborMemberNextOffset = 0
         durationNeighborMembersExhausted = true
         durationNeighborStoredDurationCount = 0
     }
@@ -465,6 +522,7 @@ fun SimilarityExperimentsScreen(
         clusterNextCursor = null
         clustersExhausted = true
         durationNeighborMembers.clear()
+        durationNeighborMemberNextOffset = 0
         durationNeighborMembersExhausted = true
         durationNeighborStoredDurationCount = 0
     }
@@ -478,6 +536,7 @@ fun SimilarityExperimentsScreen(
         clusterNextCursor = null
         clustersExhausted = true
         durationNeighborMembers.clear()
+        durationNeighborMemberNextOffset = 0
         durationNeighborMembersExhausted = true
         durationNeighborStoredDurationCount = 0
         refreshStoredResults(run.experimentId)
@@ -526,13 +585,33 @@ fun SimilarityExperimentsScreen(
             .collect { topVisibleItemIndex = it }
     }
 
-    LaunchedEffect(pane, selectedRunExperimentId, clusters.size, durationNeighborMembers.size) {
+    LaunchedEffect(
+        pane,
+        selectedRunExperimentId,
+        clusters.size,
+        clustersLoading,
+        clustersExhausted,
+        durationNeighborMembers.size,
+        durationNeighborMemberNextOffset,
+        durationNeighborSortDirection,
+        durationNeighborMembersLoading,
+        durationNeighborMembersExhausted
+    ) {
         if (pane != SimilarityExperimentPane.RunDetail) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = layoutInfo.totalItemsCount
-            lastVisible >= totalItems - SIMILARITY_CLUSTER_LOAD_MORE_BUFFER
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = pane == SimilarityExperimentPane.RunDetail,
+                isDurationNeighborList = isDurationNeighborListExperiment(selectedRunExperimentId),
+                lastVisibleItemIndex = lastVisible,
+                totalItemsCount = totalItems,
+                clustersLoading = clustersLoading,
+                clustersExhausted = clustersExhausted,
+                durationNeighborMembersLoading = durationNeighborMembersLoading,
+                durationNeighborMembersExhausted = durationNeighborMembersExhausted
+            )
         }
             .distinctUntilChanged()
             .filter { it }
@@ -863,6 +942,13 @@ fun SimilarityExperimentsScreen(
                                         durationNeighborRebuildRunning ||
                                         resultItemsLoading,
                                     onRebuild = ::rebuildSelectedDurationNeighborList
+                                )
+                            }
+                            item(key = "duration_neighbor_sort") {
+                                DurationNeighborSortDirectionCard(
+                                    direction = durationNeighborSortDirection,
+                                    enabled = !durationNeighborMembersLoading,
+                                    onDirectionChange = ::applyDurationNeighborSortDirection
                                 )
                             }
                         }
@@ -1479,6 +1565,54 @@ private fun DurationNeighborStoredRebuildCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Rebuild from stored lengths")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DurationNeighborSortDirectionCard(
+    direction: SortDirection,
+    enabled: Boolean,
+    onDirectionChange: (SortDirection) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Duration order",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "Sort by extracted video length.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RadioOptionRow(
+                    option = SortDirection.Asc,
+                    selected = direction,
+                    label = "Ascending",
+                    onSelect = { selectedDirection ->
+                        if (enabled) onDirectionChange(selectedDirection)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                RadioOptionRow(
+                    option = SortDirection.Desc,
+                    selected = direction,
+                    label = "Descending",
+                    onSelect = { selectedDirection ->
+                        if (enabled) onDirectionChange(selectedDirection)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

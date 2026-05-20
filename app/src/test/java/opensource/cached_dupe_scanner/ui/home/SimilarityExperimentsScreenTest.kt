@@ -722,10 +722,20 @@ class SimilarityExperimentsScreenTest {
         assertTrue(durationNeighborBranch.contains("selectedDurationNeighborFile = member.metadata"))
         assertFalse(durationNeighborBranch.contains("SimilarityClusterCard("))
         assertFalse(durationNeighborBranch.contains("selectedClusterKey"))
-        assertTrue(content.contains("DURATION_NEIGHBOR_MEMBER_PAGE_SIZE"))
-        assertTrue(content.contains("fun loadMoreDurationNeighborMembers()"))
-        assertTrue(content.contains("offset = durationNeighborMembers.size"))
+        assertTrue(content.contains("DURATION_NEIGHBOR_MEMBER_PAGE_SIZE = 200"))
+        assertTrue(content.contains("DURATION_NEIGHBOR_MEMBER_LOAD_MORE_BUFFER = 50"))
+        assertTrue(content.contains("fun loadMoreDurationNeighborMembers("))
+        assertTrue(content.contains("durationNeighborSortDirection"))
+        assertTrue(content.contains("DurationNeighborSortDirectionCard("))
+        assertTrue(content.contains("onDirectionChange = ::applyDurationNeighborSortDirection"))
+        assertTrue(content.contains("offset = durationNeighborMemberNextOffset"))
+        assertTrue(content.contains("durationNeighborMemberNextOffset = nextDurationNeighborMemberNextOffset"))
         assertTrue(content.contains("limit = DURATION_NEIGHBOR_MEMBER_PAGE_SIZE"))
+        assertTrue(content.contains("direction = durationNeighborSortDirection"))
+        assertTrue(content.contains("direction = direction"))
+        assertTrue(content.contains("RadioOptionRow("))
+        assertTrue(content.contains("option = SortDirection.Asc"))
+        assertTrue(content.contains("option = SortDirection.Desc"))
         assertFalse(content.contains("nextClusters.flatMap { cluster -> repository.listClusterMemberRows(cluster) }"))
         assertTrue(content.contains(".distinctBy { member -> member.metadata.normalizedPath }"))
         assertTrue(content.contains("Card(\n        onClick = onOpen"))
@@ -765,6 +775,82 @@ class SimilarityExperimentsScreenTest {
                 loadedClusterCount = 8,
                 topVisibleItemIndex = 0,
                 clustersLoading = false
+            )
+        )
+    }
+
+    @Test
+    fun similarityResultLazyLoadingUsesNeighborListBufferAndWaitsForActivePageLoad() {
+        assertFalse(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = false,
+                lastVisibleItemIndex = 37,
+                totalItemsCount = 50,
+                clustersLoading = true,
+                clustersExhausted = false,
+                durationNeighborMembersLoading = false,
+                durationNeighborMembersExhausted = true
+            )
+        )
+        assertTrue(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = false,
+                lastVisibleItemIndex = 38,
+                totalItemsCount = 50,
+                clustersLoading = false,
+                clustersExhausted = false,
+                durationNeighborMembersLoading = false,
+                durationNeighborMembersExhausted = true
+            )
+        )
+        assertFalse(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = true,
+                lastVisibleItemIndex = 100,
+                totalItemsCount = 150,
+                clustersLoading = false,
+                clustersExhausted = true,
+                durationNeighborMembersLoading = true,
+                durationNeighborMembersExhausted = false
+            )
+        )
+        assertTrue(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = true,
+                lastVisibleItemIndex = 100,
+                totalItemsCount = 150,
+                clustersLoading = false,
+                clustersExhausted = true,
+                durationNeighborMembersLoading = false,
+                durationNeighborMembersExhausted = false
+            )
+        )
+        assertFalse(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = true,
+                lastVisibleItemIndex = 99,
+                totalItemsCount = 150,
+                clustersLoading = false,
+                clustersExhausted = true,
+                durationNeighborMembersLoading = false,
+                durationNeighborMembersExhausted = false
+            )
+        )
+        assertFalse(
+            shouldLoadMoreSimilarityResults(
+                isRunDetailPane = true,
+                isDurationNeighborList = false,
+                lastVisibleItemIndex = 10,
+                totalItemsCount = 50,
+                clustersLoading = false,
+                clustersExhausted = false,
+                durationNeighborMembersLoading = false,
+                durationNeighborMembersExhausted = true
             )
         )
     }

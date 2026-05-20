@@ -11,6 +11,7 @@ import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import org.junit.After
@@ -433,6 +434,18 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(
             files.drop(1).take(2).map { file -> file.absolutePath },
             page.map { member -> member.metadata.path }
+        )
+
+        val descendingPage = repository.listClusterMemberRows(
+            cluster = cluster,
+            offset = 1,
+            limit = 2,
+            direction = SortDirection.Desc
+        )
+
+        assertEquals(
+            files.asReversed().drop(1).take(2).map { file -> file.absolutePath },
+            descendingPage.map { member -> member.metadata.path }
         )
     }
 

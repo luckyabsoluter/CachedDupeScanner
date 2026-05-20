@@ -10,7 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
 - Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
-- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, lazy result browsing, and task progress notifications.
+- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, duration-neighbor sort direction controls, lazy result browsing, and task progress notifications.
 
 ### Changed
 
@@ -21,6 +21,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.
 - Bulk-delete execution now rescans the current snapshot, filter, and command so capped preview samples do not limit eligible deletions.
 - Results DB filters now evaluate member-dependent filters page-by-page instead of materializing every member at once.
+- Duration-neighbor similarity result lists now lazy-load larger member pages and prefetch earlier near the end of the visible list.
 - App screens now handle screen size, orientation, layout, and keyboard-hidden configuration changes without recreating and crashing active screens.
 - Scan work now runs on an app-owned scope with a foreground service so active scans continue when the UI lifecycle changes or the app stays in the background.
 - Background scans no longer stop immediately when scan work starts before the UI job state is assigned.

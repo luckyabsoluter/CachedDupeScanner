@@ -16,6 +16,7 @@ import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.buildDurationNeighborListSignature
@@ -126,21 +127,27 @@ class SimilarityExperimentRepository(
 
     fun listClusterMembers(
         cluster: SimilarityClusterEntity,
-        limit: Int? = null
+        limit: Int? = null,
+        direction: SortDirection = SortDirection.Asc
     ): List<FileMetadata> {
         return listClusterMemberRows(
             cluster = cluster,
-            limit = limit
+            limit = limit,
+            direction = direction
         ).map { member -> member.metadata }
     }
 
     fun listClusterMemberRows(
         cluster: SimilarityClusterEntity,
         offset: Int = 0,
-        limit: Int? = null
+        limit: Int? = null,
+        direction: SortDirection = SortDirection.Asc
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val entries = parseSimilarityClusterMemberEntries(cluster.memberNormalizedPathsText)
+            .let { parsed ->
+                if (direction == SortDirection.Desc) parsed.asReversed() else parsed
+            }
             .drop(safeOffset)
             .let { parsed ->
                 if (limit == null) parsed else parsed.take(limit.coerceAtLeast(0))
