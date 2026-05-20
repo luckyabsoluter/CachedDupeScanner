@@ -9,43 +9,27 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Added
 
 - Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
-- Similarity experiment controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, duration tolerances with seconds/milliseconds/minutes units, and tolerance-only rebuilds from stored video lengths.
-- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, lazy result browsing, and shared task progress/notification support.
+- Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
+- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, lazy result browsing, and task progress notifications.
 
 ### Changed
 
-- Scan cancellation now avoids eager full-cache restoration into an in-memory result.
-- Filtered duplicate results and bulk-delete previews now stream duplicate-member filtering instead of materializing every member for groups excluded by filters.
-- Empty Trash now processes trash entries in bounded pages instead of loading the full trash ledger at once.
-- Scan reports now load incrementally from database pages instead of loading the full report history at once.
-- Simple confirmation dialogs now share one reusable dialog component instead of repeating confirm/cancel button structure.
-- Removed the unused legacy Files screen that still rebuilt file history eagerly; the active files UI uses database paging.
-- Duplicate-only database maintenance now pages duplicate group keys and uses one aggregate duplicate-member count instead of eager-loading all group keys and counting each group separately.
-- Bulk-delete preview and execution status text now share helper formatting instead of duplicating message assembly across commands.
-- Sort dialogs now share one radio option row component instead of repeating local radio row markup.
-- Files and results DB filtering now share a pure filtered paging loop instead of separate source-page scanning implementations.
-- Active task progress cards now share one reusable task progress component across the task banner, DB management, scan, and trash screens.
-- Result filter and bulk-delete option controls now share one option-button grid component instead of separate local copies.
-- Cached file entity and metadata conversions now share one cache-boundary mapper instead of local repository copies.
-- Similarity experiment size and duration unit controls now open menus instead of cycling through units on each tap.
-- Similarity experiment setup now shares input parsing, run request creation, and task execution helpers instead of keeping each executable experiment path wired directly inside the screen.
-- Duration-neighbor similarity run details now page stored video cards instead of expanding the full member list before rendering.
-- Bulk delete execution now uses the shared task progress and notification flow while deleting files.
+- Bulk delete execution now shows shared task progress and notifications while deleting files.
 
 ### Fixed
 
-- Bulk-delete previews now track explicit candidate group and file counts separately from the displayed candidate list.
-- Bulk-delete previews now keep the displayed candidate list bounded while reporting full candidate totals.
+- Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.
 - Bulk-delete execution now rescans the current snapshot, filter, and command so capped preview samples do not limit eligible deletions.
-- Results DB filters now evaluate group members page-by-page instead of materializing every member for member-dependent filters.
-- Similarity experiment run details now load result clusters incrementally instead of reading every stored cluster before showing results.
-- MainActivity now handles screen size, orientation, layout, and keyboard-hidden configuration changes so resizing does not recreate and crash experimental or other screens.
-- Scan work now runs on an app-owned scope instead of the Compose screen scope so background scans are not paused with UI lifecycle changes.
-- Long-running scans now run with a foreground service while active so Android does not pause them after the app stays in the background.
+- Results DB filters now evaluate member-dependent filters page-by-page instead of materializing every member at once.
+- App screens now handle screen size, orientation, layout, and keyboard-hidden configuration changes without recreating and crashing active screens.
+- Scan work now runs on an app-owned scope with a foreground service so active scans continue when the UI lifecycle changes or the app stays in the background.
 - Background scans no longer stop immediately when scan work starts before the UI job state is assigned.
-- Scans now repair existing same-size cache entries with missing hashes when a new collision is scanned, so interrupted deferred hashing no longer leaves duplicate groups incomplete.
-- Rebuilding duplicate groups now repairs missing hashes for same-size cache collisions before creating the group snapshot.
+- Scans and duplicate-group rebuilds now repair same-size cache entries with missing hashes, so interrupted deferred hashing no longer leaves duplicate groups incomplete.
 - Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
+
+### Performance
+
+- Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
 
 ## [1.4.0] - 2026-04-30
 
