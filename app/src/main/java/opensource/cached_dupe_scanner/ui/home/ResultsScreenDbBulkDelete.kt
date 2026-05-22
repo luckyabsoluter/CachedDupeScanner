@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -764,6 +765,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
@@ -1080,7 +1082,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                         message.value = null
                         startBulkDeleteTask(
                             preview = currentPreview,
-                            scope = scope,
+                            scope = taskScope,
                             taskCoordinator = taskCoordinator,
                             notificationController = notificationController,
                             executeDelete = { executionProgress ->
@@ -1159,6 +1161,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
@@ -1457,7 +1460,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         message.value = null
                         startBulkDeleteTask(
                             preview = currentPreview,
-                            scope = scope,
+                            scope = taskScope,
                             taskCoordinator = taskCoordinator,
                             notificationController = notificationController,
                             executeDelete = { executionProgress ->

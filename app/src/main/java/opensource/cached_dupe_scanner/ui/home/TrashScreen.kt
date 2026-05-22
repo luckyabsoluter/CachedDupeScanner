@@ -43,6 +43,7 @@ import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -74,6 +75,7 @@ import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 fun TrashScreen(
     trashRepo: TrashRepository,
     trashController: TrashController,
+    appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onBack: () -> Unit,
@@ -272,7 +274,7 @@ fun TrashScreen(
                 confirmEmpty.value = false
                 startEmptyTrashTask(
                     trashController = trashController,
-                    scope = scope,
+                    scope = appScope,
                     taskCoordinator = taskCoordinator,
                     notificationController = notificationController,
                     onJobChanged = { job -> currentJob.value = job },

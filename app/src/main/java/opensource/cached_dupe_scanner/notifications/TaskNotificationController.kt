@@ -22,6 +22,7 @@ class TaskNotificationController(context: Context) {
     private val notificationManager = NotificationManagerCompat.from(appContext)
     private val lastUpdateAt = mutableMapOf<TaskArea, Long>()
     private val pendingSnapshots = mutableMapOf<TaskArea, TaskSnapshot>()
+    private val foregroundSnapshots = linkedMapOf<TaskArea, TaskSnapshot>()
 
     @SuppressLint("MissingPermission")
     fun showActive(snapshot: TaskSnapshot) {
@@ -29,15 +30,16 @@ class TaskNotificationController(context: Context) {
         val timeSinceLast = now - (lastUpdateAt[snapshot.area] ?: 0L)
         if (timeSinceLast < PROGRESS_UPDATE_THROTTLE_MS) {
             pendingSnapshots[snapshot.area] = snapshot
+            if (!foregroundSnapshots.containsKey(snapshot.area)) {
+                promoteForeground(snapshot)
+            }
             return
         }
         beginNotificationSession()
         ensureChannelIfNeeded()
         lastUpdateAt[snapshot.area] = now
         val effective = pendingSnapshots.remove(snapshot.area) ?: snapshot
-        if (effective.area == TaskArea.Scan) {
-            ScanForegroundService.show(appContext, effective)
-        }
+        promoteForeground(effective)
         if (!notificationPermissionGranted) return
         val content = buildTaskNotificationContent(effective)
         notificationManager.notify(
@@ -58,12 +60,11 @@ class TaskNotificationController(context: Context) {
     fun showTerminal(summary: TaskTerminalSummary) {
         beginNotificationSession()
         ensureChannelIfNeeded()
-        if (summary.area == TaskArea.Scan) {
-            ScanForegroundService.stop(appContext)
-        }
-        if (!notificationPermissionGranted) return
         pendingSnapshots.remove(summary.area)
         lastUpdateAt.remove(summary.area)
+        foregroundSnapshots.remove(summary.area)
+        refreshForegroundService()
+        if (!notificationPermissionGranted) return
         val content = buildTaskTerminalNotificationContent(summary)
         val builder = baseBuilder(appContext)
             .setOngoing(false)
@@ -79,9 +80,8 @@ class TaskNotificationController(context: Context) {
     fun clear(area: TaskArea) {
         pendingSnapshots.remove(area)
         lastUpdateAt.remove(area)
-        if (area == TaskArea.Scan) {
-            ScanForegroundService.stop(appContext)
-        }
+        foregroundSnapshots.remove(area)
+        refreshForegroundService()
         notificationManager.cancel(notificationIdFor(area))
     }
 
@@ -104,6 +104,21 @@ class TaskNotificationController(context: Context) {
 
     private fun beginNotificationSession() {
         notificationPermissionGranted = canPostNotifications()
+    }
+
+    private fun promoteForeground(effective: TaskSnapshot) {
+        foregroundSnapshots.remove(effective.area)
+        foregroundSnapshots[effective.area] = effective
+        TaskForegroundService.show(appContext, effective)
+    }
+
+    private fun refreshForegroundService() {
+        val remaining = foregroundSnapshots.values.lastOrNull()
+        if (remaining == null) {
+            TaskForegroundService.stop(appContext)
+        } else {
+            TaskForegroundService.show(appContext, remaining)
+        }
     }
 
     companion object {

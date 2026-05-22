@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -119,6 +120,7 @@ fun ResultsScreenDb(
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBulkDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    taskScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onBack: () -> Unit,
@@ -988,6 +990,7 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
+                    taskScope = taskScope,
                     taskCoordinator = taskCoordinator,
                     notificationController = notificationController,
                     onDeleteFile = onBulkDeleteFile,
@@ -1011,6 +1014,7 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
+                    taskScope = taskScope,
                     taskCoordinator = taskCoordinator,
                     notificationController = notificationController,
                     onDeleteFile = onBulkDeleteFile,

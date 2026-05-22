@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -174,6 +175,7 @@ internal fun shouldLoadMoreSimilarityResults(
 @Composable
 fun SimilarityExperimentsScreen(
     repository: SimilarityExperimentRepository,
+    appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     keepLoadedThumbnailsInMemory: Boolean,
@@ -463,7 +465,7 @@ fun SimilarityExperimentsScreen(
                 startSimilarityExperimentTask(
                     repository = repository,
                     request = result.request,
-                    scope = scope,
+                    scope = appScope,
                     taskCoordinator = taskCoordinator,
                     notificationController = notificationController,
                     onStatusText = { status -> runStatusText = status },
@@ -553,7 +555,7 @@ fun SimilarityExperimentsScreen(
         clustersLoading = true
         durationNeighborMembersLoading = true
         runStatusText = "Rebuilding duration-neighbor list from stored video lengths."
-        scope.launch {
+        appScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     repository.rebuildDurationNeighborListFromStoredDurations(

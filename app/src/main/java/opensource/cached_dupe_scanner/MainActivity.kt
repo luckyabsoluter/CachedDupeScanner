@@ -106,8 +106,8 @@ class MainActivity : ComponentActivity() {
                 val backStack = rememberSaveable(saver = ScreenBackStackSaver) {
                     mutableStateListOf(Screen.Dashboard)
                 }
-                val taskCoordinator = remember { TaskCoordinator(context) }
-                val notificationController = remember { TaskNotificationController(context) }
+                val taskCoordinator = remember { AppWorkScopes.taskCoordinator(context) }
+                val notificationController = remember { AppWorkScopes.notificationController(context) }
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),
                     onResult = {}
@@ -310,7 +310,7 @@ class MainActivity : ComponentActivity() {
                                 historyRepo = historyRepo,
                                 resultsRepo = resultsRepo,
                                 uiState = dbManagementUiState,
-                                appScope = scope,
+                                appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onMaintenanceApplied = {
@@ -373,6 +373,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
+                                taskScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onBack = {
@@ -399,6 +400,7 @@ class MainActivity : ComponentActivity() {
 
                             Screen.SimilarityExperiments -> SimilarityExperimentsScreen(
                                 repository = similarityRepo,
+                                appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
@@ -449,6 +451,7 @@ class MainActivity : ComponentActivity() {
                             Screen.Trash -> TrashScreen(
                                 trashRepo = trashRepo,
                                 trashController = trashController,
+                                appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onBack = { pop(backStack) },

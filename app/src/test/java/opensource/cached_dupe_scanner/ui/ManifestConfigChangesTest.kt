@@ -27,7 +27,7 @@ class ManifestConfigChangesTest {
     }
 
     @Test
-    fun scanForegroundServiceIsDeclaredForBackgroundScanning() {
+    fun taskForegroundServiceIsDeclaredForBackgroundTasks() {
         val document = parseManifest()
         val manifest = document.documentElement
         val permissions = (0 until manifest.getElementsByTagName("uses-permission").length)
@@ -36,26 +36,26 @@ class ManifestConfigChangesTest {
             .map { it.getAttributeNS(ANDROID_NS, "name") }
 
         assertTrue(
-            "Scan foreground service should have the base foreground service permission",
+            "Task foreground service should have the base foreground service permission",
             permissions.contains("android.permission.FOREGROUND_SERVICE")
         )
         assertTrue(
-            "Scan foreground service should declare the dataSync foreground service permission",
+            "Task foreground service should declare the dataSync foreground service permission",
             permissions.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
         )
 
         val services = document.getElementsByTagName("service")
-        val scanService = (0 until services.length)
+        val taskService = (0 until services.length)
             .map { services.item(it) }
             .mapNotNull { it as? org.w3c.dom.Element }
             .firstOrNull {
                 val name = it.getAttributeNS(ANDROID_NS, "name")
-                name == ".notifications.ScanForegroundService" || name.endsWith(".notifications.ScanForegroundService")
+                name == ".notifications.TaskForegroundService" || name.endsWith(".notifications.TaskForegroundService")
             }
 
-        assertTrue("ScanForegroundService should be declared", scanService != null)
-        assertEquals("false", scanService?.getAttributeNS(ANDROID_NS, "exported"))
-        assertEquals("dataSync", scanService?.getAttributeNS(ANDROID_NS, "foregroundServiceType"))
+        assertTrue("TaskForegroundService should be declared", taskService != null)
+        assertEquals("false", taskService?.getAttributeNS(ANDROID_NS, "exported"))
+        assertEquals("dataSync", taskService?.getAttributeNS(ANDROID_NS, "foregroundServiceType"))
     }
 
     private fun mainActivityConfigChanges(): List<String> {
