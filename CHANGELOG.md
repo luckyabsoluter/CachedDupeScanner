@@ -15,6 +15,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
+- File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.
 
 ### Fixed
 

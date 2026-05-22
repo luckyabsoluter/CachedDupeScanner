@@ -35,6 +35,7 @@ fun FileDetailsDialogUi(
                 Text("Path: ${file.normalizedPath}")
                 Text("Size: ${formatBytesWithExact(file.sizeBytes)}")
                 Text("Modified: ${formatDate(file.lastModifiedMillis)}")
+                Text("Hash: ${file.hashHex?.takeIf { it.isNotBlank() } ?: "No hash"}")
             }
         },
         confirmButton = {
