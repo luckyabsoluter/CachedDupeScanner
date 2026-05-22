@@ -441,7 +441,9 @@ internal suspend fun executeBulkDeleteCommand(
     buildCandidate: (DuplicateGroupEntity, List<FileMetadata>) -> ResultsBulkDeleteCandidate?
 ): ResultsBulkDeleteExecutionOutcome {
     val total = totalDeleteTargetCount.coerceAtLeast(0)
-    var sourceOffset = 0
+    var afterSizeBytes: Long? = null
+    var afterHashHex: String? = null
+    var visitedGroupCount = 0
     var processed = 0
     var successCount = 0
     val failedPaths = linkedSetOf<String>()
@@ -452,10 +454,10 @@ internal suspend fun executeBulkDeleteCommand(
 
     while (true) {
         val page = withContext(Dispatchers.IO) {
-            resultsRepo.loadPageAtSnapshot(
-                sortKey = sortKey,
+            resultsRepo.loadKeyPageAtSnapshot(
                 snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
-                offset = sourceOffset,
+                afterSizeBytes = afterSizeBytes,
+                afterHashHex = afterHashHex,
                 limit = sourcePageSize
             )
         }
@@ -464,6 +466,9 @@ internal suspend fun executeBulkDeleteCommand(
         }
 
         page.forEach { group ->
+            afterSizeBytes = group.sizeBytes
+            afterHashHex = group.hashHex
+            visitedGroupCount += 1
             val matchesFilter = withContext(Dispatchers.IO) {
                 matchesResultsFilterPagedMembers(
                     definition = filterDefinition,
@@ -509,8 +514,9 @@ internal suspend fun executeBulkDeleteCommand(
             }
         }
 
-        sourceOffset += page.size
-        if (page.size < sourcePageSize || sourceOffset >= safeTotalGroupCount) {
+        if (page.size < sourcePageSize ||
+            (safeTotalGroupCount > 0 && visitedGroupCount >= safeTotalGroupCount)
+        ) {
             break
         }
     }

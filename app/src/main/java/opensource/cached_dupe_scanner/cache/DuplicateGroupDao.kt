@@ -244,6 +244,37 @@ interface DuplicateGroupDao {
 
     @Query(
         """
+        SELECT *
+        FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listPageByKeyAt(updatedAtMillis: Long, limit: Int): List<DuplicateGroupEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM dupe_groups
+        WHERE updatedAtMillis = :updatedAtMillis
+          AND (
+              sizeBytes > :afterSizeBytes
+              OR (sizeBytes = :afterSizeBytes AND hashHex > :afterHashHex)
+          )
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listPageByKeyAtAfter(
+        updatedAtMillis: Long,
+        afterSizeBytes: Long,
+        afterHashHex: String,
+        limit: Int
+    ): List<DuplicateGroupEntity>
+
+    @Query(
+        """
         SELECT
             sizeBytes as sizeBytes,
             hashHex as hashHex,

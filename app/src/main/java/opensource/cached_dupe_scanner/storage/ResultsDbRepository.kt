@@ -274,6 +274,28 @@ class ResultsDbRepository(
         }
     }
 
+    fun loadKeyPageAtSnapshot(
+        snapshotUpdatedAtMillis: Long,
+        afterSizeBytes: Long?,
+        afterHashHex: String?,
+        limit: Int
+    ): List<DuplicateGroupEntity> {
+        if (limit <= 0) return emptyList()
+        return if (afterSizeBytes == null || afterHashHex == null) {
+            groupDao.listPageByKeyAt(
+                updatedAtMillis = snapshotUpdatedAtMillis,
+                limit = limit
+            )
+        } else {
+            groupDao.listPageByKeyAtAfter(
+                updatedAtMillis = snapshotUpdatedAtMillis,
+                afterSizeBytes = afterSizeBytes,
+                afterHashHex = afterHashHex,
+                limit = limit
+            )
+        }
+    }
+
     fun listGroupMembers(sizeBytes: Long, hashHex: String, afterPath: String?, limit: Int): List<FileMetadata> {
         val entities = if (afterPath == null) {
             fileDao.listMembersBySizeAndHash(sizeBytes, hashHex, limit)

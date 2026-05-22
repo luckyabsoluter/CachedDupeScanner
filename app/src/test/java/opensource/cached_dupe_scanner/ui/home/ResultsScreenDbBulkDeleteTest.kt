@@ -222,6 +222,57 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
+    fun executeBulkDeleteCommandKeepsPagingStableWhenDeleteRefreshesGroups() = runBlocking {
+        val database = newDb()
+        val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
+        val groupCount = 4
+        repeat(groupCount) { index ->
+            insertCachedFile(database, "/group-$index/old.mkv", size = index + 1L, modified = 10L)
+            insertCachedFile(database, "/group-$index/new.mkv", size = index + 1L, modified = 20L)
+        }
+        resultsRepo.rebuildGroups(updatedAtMillis = 1L)
+        val deletedPaths = mutableListOf<String>()
+
+        val outcome = executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = DuplicateGroupSortKey.PerFileSizeDesc,
+            snapshotUpdatedAtMillis = 1L,
+            totalGroupCount = groupCount,
+            filterDefinition = ResultsFilterDefinition(),
+            sourcePageSize = 2,
+            totalDeleteTargetCount = groupCount,
+            onDeleteFile = { file ->
+                val hash = file.hashHex
+                if (hash == null) {
+                    false
+                } else {
+                    deletedPaths += file.normalizedPath
+                    database.fileCacheDao().deleteByNormalizedPath(file.normalizedPath)
+                    resultsRepo.refreshSingleGroup(
+                        sizeBytes = file.sizeBytes,
+                        hashHex = hash
+                    )
+                    true
+                }
+            }
+        ) { group, members ->
+            buildKeepModifiedBulkDeleteCandidate(
+                group = group,
+                members = members,
+                keepNewest = true
+            )
+        }
+
+        assertEquals(groupCount, outcome.successCount)
+        assertEquals(emptySet<String>(), outcome.failedPaths)
+        assertEquals(
+            (0 until groupCount).map { index -> "/group-$index/old.mkv" }.toSet(),
+            deletedPaths.toSet()
+        )
+        assertEquals(0, database.duplicateGroupDao().countGroups())
+    }
+
+    @Test
     fun executeBulkDeleteCommandHonorsFilterAndReportsTouchedFailures() = runBlocking {
         val database = newDb()
         val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())

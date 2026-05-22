@@ -19,6 +19,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Bulk-delete execution now keeps paging stable while successful deletes refresh duplicate groups, preventing later groups from being skipped.
 - Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.
 - Bulk-delete execution now rescans the current snapshot, filter, and command so capped preview samples do not limit eligible deletions.
 - Results DB filters now evaluate member-dependent filters page-by-page instead of materializing every member at once.
