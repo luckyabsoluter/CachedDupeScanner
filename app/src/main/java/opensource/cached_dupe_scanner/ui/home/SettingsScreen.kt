@@ -3,13 +3,11 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,9 +37,7 @@ import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 
 @Composable
 fun SettingsScreen(
@@ -108,17 +104,15 @@ fun SettingsScreen(
         }
     }
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AppTopBar(title = "Settings", onBack = onBack)
+    Column(
+        modifier = modifier
+            .padding(Spacing.screenPadding)
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        AppTopBar(title = "Settings", onBack = onBack)
 
-            SettingsSectionCard(section = zeroSizeSection) {
+        SettingsSectionCard(section = zeroSizeSection) {
                 zeroSizeSection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -150,7 +144,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = trashScanSection) {
+        SettingsSectionCard(section = trashScanSection) {
                 trashScanSection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -178,7 +172,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = memoryOverlaySection) {
+        SettingsSectionCard(section = memoryOverlaySection) {
                 memoryOverlaySection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -201,7 +195,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = thumbnailMemorySection) {
+        SettingsSectionCard(section = thumbnailMemorySection) {
                 thumbnailMemorySection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -225,7 +219,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = videoPreviewMemorySection) {
+        SettingsSectionCard(section = videoPreviewMemorySection) {
                 videoPreviewMemorySection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -248,7 +242,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = thumbnailSizeSection) {
+        SettingsSectionCard(section = thumbnailSizeSection) {
                 PreviewSizeSettingControl(
                     selectedPercent = settings.value.thumbnailSizePercent,
                     onPercentSelected = { percent ->
@@ -259,7 +253,7 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSectionCard(section = videoPreviewSizeSection) {
+        SettingsSectionCard(section = videoPreviewSizeSection) {
                 PreviewSizeSettingControl(
                     selectedPercent = settings.value.videoPreviewSizePercent,
                     onPercentSelected = { percent ->
@@ -270,7 +264,7 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSectionCard(section = videoPreviewLineCountSection) {
+        SettingsSectionCard(section = videoPreviewLineCountSection) {
                 PreviewLineCountSettingControl(
                     selectedCount = settings.value.videoPreviewLineCount,
                     onCountSelected = { count ->
@@ -281,7 +275,7 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSectionCard(section = videoPreviewSnapSection) {
+        SettingsSectionCard(section = videoPreviewSnapSection) {
                 videoPreviewSnapSection.toggles.forEachIndexed { index, toggle ->
                     if (index > 0) {
                         HorizontalDivider()
@@ -304,7 +298,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSectionCard(section = backupSection) {
+        SettingsSectionCard(section = backupSection) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -331,15 +325,6 @@ fun SettingsScreen(
                     )
                 }
             }
-        }
-
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 4.dp)
-        )
     }
 }
 
