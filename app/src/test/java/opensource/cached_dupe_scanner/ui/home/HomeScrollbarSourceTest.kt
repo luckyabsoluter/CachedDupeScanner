@@ -1,13 +1,12 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
 class HomeScrollbarSourceTest {
     @Test
-    fun simpleHomeScreensDoNotRenderStandaloneScrollbars() {
+    fun simpleHomeScreensKeepResultStyleSideScrollbars() {
         listOf(
             "DashboardScreen.kt",
             "AboutScreen.kt",
@@ -18,13 +17,17 @@ class HomeScrollbarSourceTest {
             "SettingsScreen.kt"
         ).forEach { fileName ->
             val content = homeSource(fileName)
-            assertFalse(
-                "$fileName should not render standalone VerticalScrollbar; result-style list scrollbars are the app standard",
+            assertTrue(
+                "$fileName should keep a visible side scrollbar instead of relying on hidden platform scrolling",
                 content.contains("VerticalScrollbar(")
             )
-            assertFalse(
-                "$fileName should not reserve right-side scrollbar padding after removing standalone scrollbars",
-                content.contains("ScrollbarDefaults")
+            assertTrue(
+                "$fileName should reserve the same scrollbar gutter used by result detail screens",
+                content.contains("ScrollbarDefaults.ThumbWidth")
+            )
+            assertTrue(
+                "$fileName should bind the scrollbar to the screen scroll state",
+                content.contains("scrollState = scrollState")
             )
         }
     }
