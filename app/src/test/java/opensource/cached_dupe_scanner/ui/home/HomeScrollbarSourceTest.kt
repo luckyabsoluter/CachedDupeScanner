@@ -6,7 +6,7 @@ import java.io.File
 
 class HomeScrollbarSourceTest {
     @Test
-    fun simpleHomeScreensKeepResultStyleSideScrollbars() {
+    fun simpleHomeScreensUseResultStyleLazySideScrollbars() {
         listOf(
             "DashboardScreen.kt",
             "AboutScreen.kt",
@@ -18,18 +18,32 @@ class HomeScrollbarSourceTest {
         ).forEach { fileName ->
             val content = homeSource(fileName)
             assertTrue(
-                "$fileName should keep a visible side scrollbar instead of relying on hidden platform scrolling",
-                content.contains("VerticalScrollbar(")
+                "$fileName should use the shared result-style lazy scrollbar container",
+                content.contains("ScreenScrollColumn(")
             )
             assertTrue(
-                "$fileName should reserve the same scrollbar gutter used by result detail screens",
-                content.contains("ScrollbarDefaults.ThumbWidth")
+                "$fileName should not use the standalone ScrollState scrollbar",
+                !content.contains("VerticalScrollbar(")
             )
             assertTrue(
-                "$fileName should bind the scrollbar to the screen scroll state",
-                content.contains("scrollState = scrollState")
+                "$fileName should not use verticalScroll with a separate scrollbar implementation",
+                !content.contains(".verticalScroll(")
             )
         }
+    }
+
+    @Test
+    fun sharedSimpleScreenScrollbarUsesVerticalLazyScrollbar() {
+        val content = source("app/src/main/java/opensource/cached_dupe_scanner/ui/components/ScreenScrollColumn.kt")
+
+        assertTrue(
+            "Simple screens should share the same lazy scrollbar implementation used by result lists",
+            content.contains("VerticalLazyScrollbar(")
+        )
+        assertTrue(
+            "The shared scrollbar container should reserve the result-style gutter",
+            content.contains("ScrollbarDefaults.ThumbWidth")
+        )
     }
 
     @Test
@@ -49,9 +63,8 @@ class HomeScrollbarSourceTest {
         }
     }
 
-    private fun homeSource(fileName: String): String {
+    private fun source(relativePath: String): String {
         val projectDir = File(requireNotNull(System.getProperty("user.dir")))
-        val relativePath = "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName"
         val sourceFile = sequenceOf(
             File(projectDir, relativePath),
             File(projectDir.parentFile ?: projectDir, relativePath)
@@ -59,5 +72,9 @@ class HomeScrollbarSourceTest {
 
         assertTrue("$relativePath should exist", sourceFile != null)
         return sourceFile!!.readText()
+    }
+
+    private fun homeSource(fileName: String): String {
+        return source("app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName")
     }
 }

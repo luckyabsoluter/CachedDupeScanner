@@ -2,15 +2,11 @@ package opensource.cached_dupe_scanner.ui.home
 
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +16,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.room.Room
@@ -56,10 +51,9 @@ import opensource.cached_dupe_scanner.tasks.scanTaskCompletedDetail
 import opensource.cached_dupe_scanner.tasks.scanTaskDetail
 import opensource.cached_dupe_scanner.tasks.scanTaskTitle
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.storage.TrashPaths
 
@@ -135,7 +129,6 @@ internal fun ScanCommandScreen(
     scanner: IncrementalScanner,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val context = LocalContext.current
     val store = remember { ScanTargetStore(context) }
     val targets = remember { mutableStateOf(store.loadTargets()) }
@@ -152,100 +145,105 @@ internal fun ScanCommandScreen(
         targets.value = store.loadTargets()
     }
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
-                .verticalScroll(scrollState)
-        ) {
+    ScreenScrollColumn(modifier = modifier) {
+        item {
             AppTopBar(title = "Scan command", onBack = onBack)
-            Spacer(modifier = Modifier.height(Spacing.itemGap))
+        }
 
-            if (targets.value.isEmpty()) {
+        item {
+            Spacer(modifier = Modifier.height(Spacing.itemGap))
+        }
+
+        if (targets.value.isEmpty()) {
+            item {
                 Text("No scan targets yet. Add one first.")
-                return@Column
+            }
+        } else {
+            item {
+                Text("Select a target:")
             }
 
-            Text("Select a target:")
-            Spacer(modifier = Modifier.height(Spacing.compactGap))
+            item {
+                Spacer(modifier = Modifier.height(Spacing.compactGap))
+            }
 
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
-                targets.value.forEach { target ->
-                    TargetScanRow(
-                        target = target,
-                        enabled = !isBusy,
-                        onScan = {
-                            val settings = settingsStore.load()
-                            runScanForTarget(
-                                scope = scanScope,
-                                scanner = scanner,
-                                state = state,
-                                target = target,
-                                onScanComplete = onScanComplete,
-                                onScanCancelled = onScanCancelled,
-                                reportRepo = reportRepo,
-                                skipZeroSizeInDb = settings.skipZeroSizeInDb,
-                                skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
-                                onReportSaved = onReportSaved,
-                                taskCoordinator = taskCoordinator,
-                                notificationController = notificationController,
-                                currentJob = currentJob,
-                                cancelRequested = cancelRequested
-                            )
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)) {
+                    targets.value.forEach { target ->
+                        TargetScanRow(
+                            target = target,
+                            enabled = !isBusy,
+                            onScan = {
+                                val settings = settingsStore.load()
+                                runScanForTarget(
+                                    scope = scanScope,
+                                    scanner = scanner,
+                                    state = state,
+                                    target = target,
+                                    onScanComplete = onScanComplete,
+                                    onScanCancelled = onScanCancelled,
+                                    reportRepo = reportRepo,
+                                    skipZeroSizeInDb = settings.skipZeroSizeInDb,
+                                    skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
+                                    onReportSaved = onReportSaved,
+                                    taskCoordinator = taskCoordinator,
+                                    notificationController = notificationController,
+                                    currentJob = currentJob,
+                                    cancelRequested = cancelRequested
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(Spacing.sectionGap))
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val settings = settingsStore.load()
+                        runScanForAllTargets(
+                            scope = scanScope,
+                            scanner = scanner,
+                            state = state,
+                            targets = targets.value,
+                            onScanComplete = onScanComplete,
+                            onScanCancelled = onScanCancelled,
+                            reportRepo = reportRepo,
+                            skipZeroSizeInDb = settings.skipZeroSizeInDb,
+                            skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
+                            onReportSaved = onReportSaved,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            currentJob = currentJob,
+                            cancelRequested = cancelRequested
+                        )
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Scan all targets")
+                }
+            }
+
+            activeTask?.let { task ->
+                item {
+                    Spacer(modifier = Modifier.height(Spacing.sectionGap))
+                    TaskProgressCard(
+                        task = task,
+                        onCancel = { taskCoordinator.requestCancel(TaskArea.Scan) },
+                        cancelText = "Stop scan",
+                        currentPathText = { current -> "Current: $current" },
+                        extraContent = {
+                            Text("Scanned: ${task.processed ?: 0} / ${task.total?.toString() ?: "?"}")
                         }
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(Spacing.sectionGap))
-            Button(
-                onClick = {
-                    val settings = settingsStore.load()
-                    runScanForAllTargets(
-                        scope = scanScope,
-                        scanner = scanner,
-                        state = state,
-                        targets = targets.value,
-                        onScanComplete = onScanComplete,
-                        onScanCancelled = onScanCancelled,
-                        reportRepo = reportRepo,
-                        skipZeroSizeInDb = settings.skipZeroSizeInDb,
-                        skipTrashBinContentsInScan = settings.skipTrashBinContentsInScan,
-                        onReportSaved = onReportSaved,
-                        taskCoordinator = taskCoordinator,
-                        notificationController = notificationController,
-                        currentJob = currentJob,
-                        cancelRequested = cancelRequested
-                    )
-                },
-                enabled = !isBusy,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Scan all targets")
-            }
-
-            activeTask?.let { task ->
-                Spacer(modifier = Modifier.height(Spacing.sectionGap))
-                TaskProgressCard(
-                    task = task,
-                    onCancel = { taskCoordinator.requestCancel(TaskArea.Scan) },
-                    cancelText = "Stop scan",
-                    currentPathText = { current -> "Current: $current" },
-                    extraContent = {
-                        Text("Scanned: ${task.processed ?: 0} / ${task.total?.toString() ?: "?"}")
-                    }
-                )
-            }
         }
-
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = Spacing.xs)
-        )
     }
 }
 

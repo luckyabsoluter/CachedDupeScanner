@@ -1,18 +1,12 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -53,10 +47,9 @@ import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TaskProgressContent
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 
 @Composable
 fun DbManagementScreen(
@@ -71,7 +64,6 @@ fun DbManagementScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
@@ -95,17 +87,15 @@ fun DbManagementScreen(
     val isBusy = activeTask != null || uiState.isRunning || uiState.isRebuilding || uiState.isClearing
     val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
-        ) {
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
+    ) {
+        item {
             AppTopBar(title = "DB management", onBack = onBack)
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -132,7 +122,9 @@ fun DbManagementScreen(
                     )
                 }
             }
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -182,7 +174,9 @@ fun DbManagementScreen(
                     }
                 }
             }
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -279,7 +273,9 @@ fun DbManagementScreen(
                     )
                 }
             }
+        }
 
+        item {
             OutlinedButton(
                 onClick = { clearDialogOpen.value = true },
                 enabled = !isBusy,
@@ -288,14 +284,6 @@ fun DbManagementScreen(
                 Text("Clear all cached results")
             }
         }
-
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = Spacing.xs)
-        )
     }
 
     if (clearDialogOpen.value) {

@@ -19,7 +19,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
-- Simple home, permission, settings, scan, and DB screens keep visible result-style side scrollbars instead of dropping scrollbar affordances.
+- Simple home, permission, settings, scan, and DB screens now use the shared result-style lazy side scrollbar instead of the standalone scroll-state scrollbar.
 - Background DB, trash, bulk-delete, and similarity work now use the app-owned task runtime and foreground service, so UI lifecycle changes no longer cancel tracked tasks or reset active task monitoring.
 - Bulk-delete execution now keeps paging stable while successful deletes refresh duplicate groups, preventing later groups from being skipped.
 - Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.

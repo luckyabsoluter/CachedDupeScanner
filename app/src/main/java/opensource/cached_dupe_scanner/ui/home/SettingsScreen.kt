@@ -3,21 +3,17 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -39,9 +35,8 @@ import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.components.Spacing
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 
 @Composable
 fun SettingsScreen(
@@ -50,7 +45,6 @@ fun SettingsScreen(
     onSettingsChanged: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val settings = remember { mutableStateOf(settingsStore.load()) }
     val context = LocalContext.current
     val targetStore = remember { ScanTargetStore(context) }
@@ -108,12 +102,10 @@ fun SettingsScreen(
         }
     }
 
-    Box(modifier = modifier) {
+    ScreenScrollColumn(modifier = modifier) {
+        item {
         Column(
-            modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                .verticalScroll(scrollState),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AppTopBar(title = "Settings", onBack = onBack)
@@ -332,14 +324,7 @@ fun SettingsScreen(
                 }
             }
         }
-
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 4.dp)
-        )
+        }
     }
 }
 
