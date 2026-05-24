@@ -661,7 +661,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(taskRunnerContent.contains("repository.runDurationNeighborListExperiment("))
         assertTrue(content.contains("repository.rebuildDurationNeighborListFromStoredDurations("))
         assertTrue(content.contains("toleranceUnit = durationToleranceUnit"))
-        assertTrue(content.contains("sortMembersByPath = durationNeighborExplanation == null"))
+        assertTrue(content.contains("sortingEnabled = durationNeighborExplanation == null"))
         assertTrue(content.contains("StoredSimilarityResultsHeader("))
         assertTrue(content.contains("items("))
         assertTrue(content.contains("SimilarityClusterLoadingIndicator("))

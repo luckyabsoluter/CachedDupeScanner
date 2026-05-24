@@ -104,6 +104,16 @@ fun ResultsScreen(
             .getOrDefault(SortDirection.Desc)
         mutableStateOf(dir)
     }
+    val groupMemberSortKey = remember {
+        val parsed = runCatching { ResultGroupMemberSortKey.valueOf(settingsSnapshot.resultGroupSortKey) }
+            .getOrDefault(ResultGroupMemberSortKey.Path)
+        mutableStateOf(parsed)
+    }
+    val groupMemberSortDirection = remember {
+        val parsed = runCatching { SortDirection.valueOf(settingsSnapshot.resultGroupSortDirection) }
+            .getOrDefault(SortDirection.Asc)
+        mutableStateOf(parsed)
+    }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
     val pendingSortDirection = remember { mutableStateOf(SortDirection.Desc) }
@@ -389,6 +399,14 @@ fun ResultsScreen(
                                     imageLoader = imageLoader,
                                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                                     rememberedPreviewCache = rememberedPreviewCache,
+                                    sortKey = groupMemberSortKey.value,
+                                    sortDirection = groupMemberSortDirection.value,
+                                    onApplySort = { key, direction ->
+                                        groupMemberSortKey.value = key
+                                        groupMemberSortDirection.value = direction
+                                        settingsStore.setResultGroupSortKey(key.name)
+                                        settingsStore.setResultGroupSortDirection(direction.name)
+                                    },
                                     onDeleteFile = { file ->
                                         val handler = onDeleteFile ?: return@GroupDetailContent false
                                         handler(file)
@@ -514,6 +532,9 @@ private fun GroupDetailContent(
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
     onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
     val groupCount = group.files.size
@@ -535,6 +556,9 @@ private fun GroupDetailContent(
         rememberedPreviewCache = rememberedPreviewCache,
         previewMemoryKey = previewMemoryKey,
         previewHeight = 180.dp,
+        sortKey = sortKey,
+        sortDirection = sortDirection,
+        onApplySort = onApplySort,
         onDeleteFile = onDeleteFile
     )
 }

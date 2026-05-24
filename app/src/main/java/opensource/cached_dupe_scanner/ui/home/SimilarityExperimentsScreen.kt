@@ -210,6 +210,8 @@ fun SimilarityExperimentsScreen(
     var durationNeighborMembersExhausted by remember { mutableStateOf(true) }
     var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
     var durationNeighborSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var similarityGroupMemberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
+    var similarityGroupMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
@@ -652,6 +654,12 @@ fun SimilarityExperimentsScreen(
             onDeleteFile = onDeleteFile,
             loadedClusterMembers = loadedClusterMembers,
             clusterMemberLoadErrors = clusterMemberLoadErrors,
+            sortKey = similarityGroupMemberSortKey,
+            sortDirection = similarityGroupMemberSortDirection,
+            onApplySort = { key, direction ->
+                similarityGroupMemberSortKey = key
+                similarityGroupMemberSortDirection = direction
+            },
             onBack = { selectedClusterKey = null },
             modifier = modifier
         )
@@ -1966,6 +1974,9 @@ private fun SimilarityClusterDetailScreen(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     loadedClusterMembers: MutableMap<String, SimilarityClusterMembersState>,
     clusterMemberLoadErrors: MutableMap<String, String>,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2057,7 +2068,10 @@ private fun SimilarityClusterDetailScreen(
                             previewMemoryKey = clusterPreviewMemoryKey(cluster),
                             previewHeight = previewHeight,
                             showMemberThumbnails = true,
-                            sortMembersByPath = durationNeighborExplanation == null,
+                            sortKey = sortKey,
+                            sortDirection = sortDirection,
+                            sortingEnabled = durationNeighborExplanation == null,
+                            onApplySort = onApplySort,
                             onDeleteFile = onDeleteFile
                         )
                     }

@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.SortDirection
 
 @Composable
 internal fun DuplicateGroupDetailContent(
@@ -40,7 +42,10 @@ internal fun DuplicateGroupDetailContent(
     previewMemoryKey: String,
     previewHeight: Dp,
     showMemberThumbnails: Boolean = false,
-    sortMembersByPath: Boolean = true,
+    sortKey: ResultGroupMemberSortKey = ResultGroupMemberSortKey.Path,
+    sortDirection: SortDirection = SortDirection.Asc,
+    sortingEnabled: Boolean = true,
+    onApplySort: ((ResultGroupMemberSortKey, SortDirection) -> Unit)? = null,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?
 ) {
     val context = LocalContext.current
@@ -67,18 +72,38 @@ internal fun DuplicateGroupDetailContent(
         )
         Spacer(modifier = Modifier.height(8.dp))
     }
-    Text("$memberCount files · Total ${formatBytes(totalBytes)}")
-    summaryLines.forEach { line ->
-        Text(
-            text = line,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("$memberCount files · Total ${formatBytes(totalBytes)}")
+            summaryLines.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (sortingEnabled && onApplySort != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            GroupMemberSortButton(
+                sortKey = sortKey,
+                sortDirection = sortDirection,
+                onApplySort = onApplySort
+            )
+        }
     }
     Spacer(modifier = Modifier.height(8.dp))
 
-    val displayedMembers = if (sortMembersByPath) {
-        members.sortedBy { it.normalizedPath }
+    val displayedMembers = if (sortingEnabled) {
+        sortGroupMembers(
+            members = members,
+            sortKey = sortKey,
+            direction = sortDirection
+        )
     } else {
         members
     }

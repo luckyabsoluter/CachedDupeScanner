@@ -103,11 +103,6 @@ internal data class FilteredGroupsPage(
     val exhausted: Boolean
 )
 
-internal enum class ResultGroupMemberSortKey(val label: String) {
-    Path("Path"),
-    Modified("Modified")
-}
-
 @Composable
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
@@ -1179,9 +1174,6 @@ private fun GroupDetailDb(
     val confirmBulkDelete = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
-    val groupSortDialogOpen = remember { mutableStateOf(false) }
-    val pendingGroupSortKey = remember { mutableStateOf(sortKey) }
-    val pendingGroupSortDirection = remember { mutableStateOf(sortDirection) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
     val cursor = entry.cursor
@@ -1301,15 +1293,11 @@ private fun GroupDetailDb(
             Text("${group.fileCount} files · Total ${formatBytes(group.totalBytes)}")
             Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
         }
-        OutlinedButton(
-            onClick = {
-                pendingGroupSortKey.value = sortKey
-                pendingGroupSortDirection.value = sortDirection
-                groupSortDialogOpen.value = true
-            }
-        ) {
-            Text("Sort")
-        }
+        GroupMemberSortButton(
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            onApplySort = onApplySort
+        )
     }
     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1673,83 +1661,6 @@ private fun GroupDetailDb(
         )
     }
 
-    if (groupSortDialogOpen.value) {
-        AlertDialog(
-            onDismissRequest = { groupSortDialogOpen.value = false },
-            title = { Text("Group sort options") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Sort by")
-                    RadioOptionRow(
-                        option = ResultGroupMemberSortKey.Path,
-                        selected = pendingGroupSortKey.value,
-                        label = ResultGroupMemberSortKey.Path.label,
-                        onSelect = { pendingGroupSortKey.value = it }
-                    )
-                    RadioOptionRow(
-                        option = ResultGroupMemberSortKey.Modified,
-                        selected = pendingGroupSortKey.value,
-                        label = ResultGroupMemberSortKey.Modified.label,
-                        onSelect = { pendingGroupSortKey.value = it }
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Direction")
-                    RadioOptionRow(
-                        option = SortDirection.Asc,
-                        selected = pendingGroupSortDirection.value,
-                        label = SortDirection.Asc.label,
-                        onSelect = { pendingGroupSortDirection.value = it }
-                    )
-                    RadioOptionRow(
-                        option = SortDirection.Desc,
-                        selected = pendingGroupSortDirection.value,
-                        label = SortDirection.Desc.label,
-                        onSelect = { pendingGroupSortDirection.value = it }
-                    )
-                }
-            },
-            confirmButton = {
-                OutlinedButton(
-                    onClick = {
-                        onApplySort(
-                            pendingGroupSortKey.value,
-                            pendingGroupSortDirection.value
-                        )
-                        groupSortDialogOpen.value = false
-                    }
-                ) {
-                    Text("Apply")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { groupSortDialogOpen.value = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-internal fun sortGroupMembers(
-    members: List<FileMetadata>,
-    sortKey: ResultGroupMemberSortKey,
-    direction: SortDirection
-): List<FileMetadata> {
-    val comparator = when (sortKey) {
-        ResultGroupMemberSortKey.Path -> {
-            compareBy<FileMetadata> { it.normalizedPath }
-        }
-        ResultGroupMemberSortKey.Modified -> {
-            compareBy<FileMetadata> { it.lastModifiedMillis }
-                .thenBy { it.normalizedPath }
-        }
-    }
-    return if (direction == SortDirection.Asc) {
-        members.sortedWith(comparator)
-    } else {
-        members.sortedWith(comparator.reversed())
-    }
 }
 
 internal fun togglePathSelection(selectedPaths: Set<String>, path: String): Set<String> {
