@@ -63,6 +63,31 @@ class HomeScrollbarSourceTest {
         }
     }
 
+    @Test
+    fun homeScreensDoNotUseStandaloneScrollStateSideScrollbars() {
+        val projectDir = File(requireNotNull(System.getProperty("user.dir")))
+        val homeDir = sequenceOf(
+            File(projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home"),
+            File(projectDir.parentFile ?: projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home")
+        ).firstOrNull { it.exists() }
+
+        assertTrue("home source directory should exist", homeDir != null)
+        homeDir!!
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .forEach { sourceFile ->
+                val content = sourceFile.readText()
+                assertTrue(
+                    "${sourceFile.name} should not use the standalone ScrollState scrollbar",
+                    !content.contains("VerticalScrollbar(")
+                )
+                assertTrue(
+                    "${sourceFile.name} should use lazy scrollbar containers instead of verticalScroll",
+                    !content.contains(".verticalScroll(")
+                )
+            }
+    }
+
     private fun source(relativePath: String): String {
         val projectDir = File(requireNotNull(System.getProperty("user.dir")))
         val sourceFile = sequenceOf(

@@ -21,8 +21,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -82,7 +80,6 @@ import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestBuildResult
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityRunRequestDraft
@@ -1972,7 +1969,7 @@ private fun SimilarityClusterDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val detailScrollState = rememberScrollState()
+    val detailListState = rememberLazyListState()
     val clusterKey = remember(cluster.experimentId, cluster.signature) { clusterStableKey(cluster) }
     val memberState = loadedClusterMembers[clusterKey]
     val members = memberState?.members.orEmpty()
@@ -2011,62 +2008,65 @@ private fun SimilarityClusterDetailScreen(
 
     BackHandler(onBack = onBack)
     Box(modifier = modifier.fillMaxSize()) {
-        Column(
+        LazyColumn(
+            state = detailListState,
             modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                .verticalScroll(detailScrollState)
+                .fillMaxSize()
+                .padding(Spacing.screenPadding),
+            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
         ) {
-            AppTopBar(
-                title = if (durationNeighborExplanation != null) {
-                    "Similarity list detail"
-                } else {
-                    "Similarity cluster detail"
-                },
-                onBack = onBack
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            when {
-                isLoading -> Text("Loading cluster members...")
-                loadError != null -> {
-                    Text(loadError, style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = {
-                        clusterMemberLoadErrors.remove(clusterKey)
-                        loadAttempt += 1
-                    }) {
-                        Text("Retry")
+            item {
+                AppTopBar(
+                    title = if (durationNeighborExplanation != null) {
+                        "Similarity list detail"
+                    } else {
+                        "Similarity cluster detail"
+                    },
+                    onBack = onBack
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                when {
+                    isLoading -> Text("Loading cluster members...")
+                    loadError != null -> {
+                        Text(loadError, style = MaterialTheme.typography.bodySmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = {
+                            clusterMemberLoadErrors.remove(clusterKey)
+                            loadAttempt += 1
+                        }) {
+                            Text("Retry")
+                        }
                     }
-                }
-                else -> {
-                    ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DuplicateGroupDetailContent(
-                        title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
-                        memberCount = cluster.fileCount,
-                        totalBytes = cluster.totalBytes,
-                        summaryLines = similarityClusterDetailLines(
-                            cluster = cluster,
-                            exactHashExplanation = exactHashExplanation,
-                            durationNeighborExplanation = durationNeighborExplanation
-                        ),
-                        members = members,
-                        deletedPaths = deletedPaths,
-                        imageLoader = imageLoader,
-                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                        rememberedPreviewCache = rememberedPreviewCache,
-                        previewMemoryKey = clusterPreviewMemoryKey(cluster),
-                        previewHeight = previewHeight,
-                        showMemberThumbnails = true,
-                        sortMembersByPath = durationNeighborExplanation == null,
-                        onDeleteFile = onDeleteFile
-                    )
+                    else -> {
+                        ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        DuplicateGroupDetailContent(
+                            title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
+                            memberCount = cluster.fileCount,
+                            totalBytes = cluster.totalBytes,
+                            summaryLines = similarityClusterDetailLines(
+                                cluster = cluster,
+                                exactHashExplanation = exactHashExplanation,
+                                durationNeighborExplanation = durationNeighborExplanation
+                            ),
+                            members = members,
+                            deletedPaths = deletedPaths,
+                            imageLoader = imageLoader,
+                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                            rememberedPreviewCache = rememberedPreviewCache,
+                            previewMemoryKey = clusterPreviewMemoryKey(cluster),
+                            previewHeight = previewHeight,
+                            showMemberThumbnails = true,
+                            sortMembersByPath = durationNeighborExplanation == null,
+                            onDeleteFile = onDeleteFile
+                        )
+                    }
                 }
             }
         }
 
-        VerticalScrollbar(
-            scrollState = detailScrollState,
+        VerticalLazyScrollbar(
+            listState = detailListState,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()

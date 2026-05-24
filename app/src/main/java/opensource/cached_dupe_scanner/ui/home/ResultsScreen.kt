@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -61,7 +59,6 @@ import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.util.Locale
 import androidx.compose.runtime.rememberCoroutineScope
@@ -364,44 +361,47 @@ fun ResultsScreen(
 
         if (selectedGroupIndex != null && result != null) {
             val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
-            val detailScrollState = rememberScrollState()
+            val detailListState = rememberLazyListState()
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 Box {
-                    Column(
+                    LazyColumn(
+                        state = detailListState,
                         modifier = Modifier
-                            .padding(Spacing.screenPadding)
-                            .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                            .verticalScroll(detailScrollState)
+                            .fillMaxSize()
+                            .padding(Spacing.screenPadding),
+                        contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
                     ) {
-                        AppTopBar(
-                            title = "Group detail",
-                            onBack = {
-                                onBackToDashboard()
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (group != null) {
-                            GroupDetailContent(
-                                group = group,
-                                deletedPaths = deletedPaths,
-                                imageLoader = imageLoader,
-                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                                rememberedPreviewCache = rememberedPreviewCache,
-                                onDeleteFile = { file ->
-                                    val handler = onDeleteFile ?: return@GroupDetailContent false
-                                    handler(file)
+                        item {
+                            AppTopBar(
+                                title = "Group detail",
+                                onBack = {
+                                    onBackToDashboard()
                                 }
                             )
-                        } else {
-                            Text("Group not found.")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (group != null) {
+                                GroupDetailContent(
+                                    group = group,
+                                    deletedPaths = deletedPaths,
+                                    imageLoader = imageLoader,
+                                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                    rememberedPreviewCache = rememberedPreviewCache,
+                                    onDeleteFile = { file ->
+                                        val handler = onDeleteFile ?: return@GroupDetailContent false
+                                        handler(file)
+                                    }
+                                )
+                            } else {
+                                Text("Group not found.")
+                            }
                         }
                     }
 
-                    VerticalScrollbar(
-                        scrollState = detailScrollState,
+                    VerticalLazyScrollbar(
+                        listState = detailListState,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .fillMaxHeight()

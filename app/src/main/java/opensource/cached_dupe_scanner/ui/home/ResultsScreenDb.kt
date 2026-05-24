@@ -2,7 +2,6 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -20,10 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -77,7 +76,6 @@ import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 private class MembersCacheEntry {
@@ -804,7 +802,7 @@ fun ResultsScreenDb(
         val entry = remember(cacheKey) {
             if (cacheKey == null) null else membersCache.getOrPut(cacheKey) { MembersCacheEntry() }
         }
-        val detailScrollState = rememberScrollState()
+        val detailListState = rememberLazyListState()
         val detailLoadIndicatorText = run {
             if (group == null || entry == null) {
                 null
@@ -812,8 +810,8 @@ fun ResultsScreenDb(
                 val total = group.fileCount
                 val loaded = entry.members.size.coerceAtMost(total)
                 val current = estimateCurrentFromScroll(
-                    scrollValue = detailScrollState.value,
-                    maxScrollValue = detailScrollState.maxValue,
+                    scrollValue = detailListState.firstVisibleItemScrollOffset,
+                    maxScrollValue = detailLazyMaxScrollValue(detailListState),
                     loadedCount = loaded
                 )
                 formatLoadProgressText(
@@ -828,42 +826,45 @@ fun ResultsScreenDb(
             color = MaterialTheme.colorScheme.background
         ) {
             Box {
-                Column(
+                LazyColumn(
+                    state = detailListState,
                     modifier = Modifier
-                        .padding(Spacing.screenPadding)
-                        .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                        .verticalScroll(detailScrollState)
+                        .fillMaxSize()
+                        .padding(Spacing.screenPadding),
+                    contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
                 ) {
-                    AppTopBar(title = "Group detail", onBack = onBack)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (group == null) {
-                        Text("Group not found.")
-                    } else {
-                        GroupDetailDb(
-                            resultsRepo = resultsRepo,
-                            group = group,
-                            deletedPaths = deletedPaths,
-                            onDeleteFile = onDeleteFile,
-                            onGroupEdited = { _ -> },
-                            imageLoader = imageLoader,
-                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                            groupPreviewHeightDp = groupDetailPreviewHeightDp,
-                            rememberedPreviewCache = rememberedPreviewCache,
-                            cacheEntry = entry,
-                            detailScrollState = detailScrollState,
-                            sortKey = groupMemberSortKey.value,
-                            sortDirection = groupMemberSortDirection.value,
-                            onApplySort = { key, direction ->
-                                groupMemberSortKey.value = key
-                                groupMemberSortDirection.value = direction
-                                settingsStore.setResultGroupSortKey(key.name)
-                                settingsStore.setResultGroupSortDirection(direction.name)
-                            }
-                        )
+                    item {
+                        AppTopBar(title = "Group detail", onBack = onBack)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (group == null) {
+                            Text("Group not found.")
+                        } else {
+                            GroupDetailDb(
+                                resultsRepo = resultsRepo,
+                                group = group,
+                                deletedPaths = deletedPaths,
+                                onDeleteFile = onDeleteFile,
+                                onGroupEdited = { _ -> },
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                groupPreviewHeightDp = groupDetailPreviewHeightDp,
+                                rememberedPreviewCache = rememberedPreviewCache,
+                                cacheEntry = entry,
+                                detailListState = detailListState,
+                                sortKey = groupMemberSortKey.value,
+                                sortDirection = groupMemberSortDirection.value,
+                                onApplySort = { key, direction ->
+                                    groupMemberSortKey.value = key
+                                    groupMemberSortDirection.value = direction
+                                    settingsStore.setResultGroupSortKey(key.name)
+                                    settingsStore.setResultGroupSortDirection(direction.name)
+                                }
+                            )
+                        }
                     }
                 }
-                VerticalScrollbar(
-                    scrollState = detailScrollState,
+                VerticalLazyScrollbar(
+                    listState = detailListState,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
@@ -1163,7 +1164,7 @@ private fun GroupDetailDb(
     groupPreviewHeightDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     cacheEntry: MembersCacheEntry?,
-    detailScrollState: ScrollState,
+    detailListState: LazyListState,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
@@ -1254,12 +1255,12 @@ private fun GroupDetailDb(
             selectedPaths.value = filtered
         }
     }
-    LaunchedEffect(group.sizeBytes, group.hashHex, detailScrollState) {
+    LaunchedEffect(group.sizeBytes, group.hashHex, detailListState) {
         val thresholdPx = 240
         snapshotFlow {
             shouldTriggerDetailAutoLoad(
-                scrollValue = detailScrollState.value,
-                maxScrollValue = detailScrollState.maxValue,
+                scrollValue = detailListState.firstVisibleItemScrollOffset,
+                maxScrollValue = detailLazyMaxScrollValue(detailListState),
                 thresholdPx = thresholdPx,
                 isLoading = entry.isLoading.value,
                 isComplete = entry.isComplete.value
@@ -1815,6 +1816,14 @@ internal fun estimateCurrentFromScroll(
     if (maxScrollValue <= 0) return 1
     val ratio = scrollValue.toDouble() / maxScrollValue.toDouble()
     return (1 + (ratio * (safeLoaded - 1)).toInt()).coerceIn(1, safeLoaded)
+}
+
+private fun detailLazyMaxScrollValue(listState: LazyListState): Int {
+    val layoutInfo = listState.layoutInfo
+    val visibleItem = layoutInfo.visibleItemsInfo.firstOrNull() ?: return 0
+    val viewportHeight = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
+        .coerceAtLeast(0)
+    return (visibleItem.size - viewportHeight).coerceAtLeast(0)
 }
 
 internal fun shouldTriggerDetailAutoLoad(
