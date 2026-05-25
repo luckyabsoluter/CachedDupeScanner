@@ -775,6 +775,23 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun similarityClusterDetailLoadsMembersLazilyByPage() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val detail = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterDetailScreen(",
+            end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
+        )
+
+        assertTrue(content.contains("SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 200"))
+        assertTrue(detail.contains("offset = if (reset) 0 else currentMembers.size"))
+        assertTrue(detail.contains("limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE"))
+        assertTrue(detail.contains("shouldTriggerDetailAutoLoad("))
+        assertTrue(detail.contains("loadClusterMemberPage(reset = false)"))
+        assertFalse(detail.contains("repository.listClusterMemberRows(cluster = cluster)"))
+    }
+
+    @Test
     fun similarityClusterLoadIndicatorTextTracksVisibleLazyCluster() {
         assertEquals(
             "Loading 0/12 clusters",

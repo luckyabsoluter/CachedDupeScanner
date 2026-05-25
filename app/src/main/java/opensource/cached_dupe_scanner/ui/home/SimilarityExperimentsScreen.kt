@@ -2129,32 +2129,53 @@ private fun SimilarityClusterDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val detailListState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val clusterKey = remember(cluster.experimentId, cluster.signature) { clusterStableKey(cluster) }
     val memberState = loadedClusterMembers[clusterKey]
     val members = memberState?.members.orEmpty()
     val loadError = clusterMemberLoadErrors[clusterKey]
-    var isLoading by remember(clusterKey) { mutableStateOf(memberState?.complete != true) }
+    var isLoading by remember(clusterKey) { mutableStateOf(false) }
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
     val exactHashExplanation = exactThumbnailClusterExplanation(cluster.signature)
     val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.signature)
 
-    LaunchedEffect(clusterKey, loadAttempt) {
-        if (loadedClusterMembers[clusterKey]?.complete == true) {
-            isLoading = false
-            return@LaunchedEffect
-        }
+    suspend fun loadClusterMemberPage(reset: Boolean) {
+        if (isLoading) return
+        val currentState = if (reset) null else loadedClusterMembers[clusterKey]
+        if (!reset && currentState?.complete == true) return
+        val currentMembers = currentState?.members.orEmpty()
         isLoading = true
         val result = runCatching {
             withContext(Dispatchers.IO) {
-                repository.listClusterMemberRows(cluster = cluster)
+                repository.listClusterMemberRows(
+                    cluster = cluster,
+                    offset = if (reset) 0 else currentMembers.size,
+                    limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                )
             }
         }
         result.fold(
-            onSuccess = {
+            onSuccess = { nextRows ->
+                val knownPaths = currentMembers.mapTo(hashSetOf()) { member -> member.normalizedPath }
+                val nextMembers = nextRows
+                    .map { member -> member.metadata }
+                    .filter { member -> reset || knownPaths.add(member.normalizedPath) }
+                val combinedMembers = if (reset) {
+                    nextMembers
+                } else {
+                    currentMembers + nextMembers
+                }
+                val durationMillisByNormalizedPath = if (reset) {
+                    similarityMemberDurationMap(nextRows)
+                } else {
+                    currentState?.durationMillisByNormalizedPath.orEmpty() +
+                        similarityMemberDurationMap(nextRows)
+                }
                 loadedClusterMembers[clusterKey] = SimilarityClusterMembersState(
-                    members = it.map { member -> member.metadata },
-                    durationMillisByNormalizedPath = similarityMemberDurationMap(it),
-                    complete = true
+                    members = combinedMembers,
+                    durationMillisByNormalizedPath = durationMillisByNormalizedPath,
+                    complete = combinedMembers.size >= cluster.fileCount ||
+                        nextRows.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
                 )
                 clusterMemberLoadErrors.remove(clusterKey)
             },
@@ -2163,6 +2184,29 @@ private fun SimilarityClusterDetailScreen(
             }
         )
         isLoading = false
+    }
+
+    LaunchedEffect(clusterKey, loadAttempt) {
+        val currentState = loadedClusterMembers[clusterKey]
+        if (currentState?.complete == true) return@LaunchedEffect
+        loadClusterMemberPage(reset = currentState?.members.isNullOrEmpty())
+    }
+
+    LaunchedEffect(clusterKey, detailListState) {
+        snapshotFlow {
+            shouldTriggerDetailAutoLoad(
+                scrollValue = detailListState.firstVisibleItemScrollOffset,
+                maxScrollValue = similarityDetailLazyMaxScrollValue(detailListState),
+                thresholdPx = SIMILARITY_CLUSTER_DETAIL_LOAD_MORE_THRESHOLD_PX,
+                isLoading = isLoading,
+                isComplete = loadedClusterMembers[clusterKey]?.complete == true
+            )
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                loadClusterMemberPage(reset = false)
+            }
     }
 
     BackHandler(onBack = onBack)
@@ -2185,8 +2229,10 @@ private fun SimilarityClusterDetailScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 when {
-                    isLoading -> Text("Loading cluster members...")
-                    loadError != null -> {
+                    members.isEmpty() && (isLoading || loadError == null) -> {
+                        Text("Loading cluster members...")
+                    }
+                    members.isEmpty() && loadError != null -> {
                         Text(loadError, style = MaterialTheme.typography.bodySmall)
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = {
@@ -2222,6 +2268,26 @@ private fun SimilarityClusterDetailScreen(
                             onApplySort = onApplySort,
                             onDeleteFile = onDeleteFile
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        loadError?.let { message ->
+                            Text(message, style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch { loadClusterMemberPage(reset = false) }
+                            },
+                            enabled = !isLoading && loadedClusterMembers[clusterKey]?.complete != true,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                when {
+                                    loadedClusterMembers[clusterKey]?.complete == true -> "All loaded"
+                                    isLoading -> "Loading…"
+                                    else -> "Load more"
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -2371,6 +2437,14 @@ private fun clusterStableKey(cluster: SimilarityClusterEntity): String {
 
 private fun clusterPreviewMemoryKey(cluster: SimilarityClusterEntity): String {
     return "similarity:${clusterStableKey(cluster)}"
+}
+
+private fun similarityDetailLazyMaxScrollValue(listState: LazyListState): Int {
+    val layoutInfo = listState.layoutInfo
+    val visibleItem = layoutInfo.visibleItemsInfo.firstOrNull() ?: return 0
+    val viewportHeight = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
+        .coerceAtLeast(0)
+    return (visibleItem.size - viewportHeight).coerceAtLeast(0)
 }
 
 internal data class ExactThumbnailClusterExplanation(
@@ -2809,5 +2883,7 @@ private fun isDurationNeighborListSignature(signature: String): Boolean {
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 10
 private const val SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT = 4
 private const val SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE = 2
+private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 200
+private const val SIMILARITY_CLUSTER_DETAIL_LOAD_MORE_THRESHOLD_PX = 240
 private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32
 private const val DURATION_NEIGHBOR_LIST_EXPERIMENT_ID_PREFIX = "video-duration-neighbor"
