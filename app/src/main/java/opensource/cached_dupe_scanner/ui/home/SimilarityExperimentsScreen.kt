@@ -1,8 +1,12 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -2245,10 +2249,10 @@ private fun SimilarityClusterDetailScreen(
                     else -> {
                         ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
                         Spacer(modifier = Modifier.height(8.dp))
-                        DuplicateGroupDetailContent(
+                        SimilarityClusterDetailContent(
+                            repository = repository,
+                            cluster = cluster,
                             title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
-                            memberCount = cluster.fileCount,
-                            totalBytes = cluster.totalBytes,
                             summaryLines = similarityClusterDetailLines(
                                 cluster = cluster,
                                 exactHashExplanation = exactHashExplanation,
@@ -2266,28 +2270,14 @@ private fun SimilarityClusterDetailScreen(
                             sortDirection = sortDirection,
                             sortingEnabled = durationNeighborExplanation == null,
                             onApplySort = onApplySort,
-                            onDeleteFile = onDeleteFile
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        loadError?.let { message ->
-                            Text(message, style = MaterialTheme.typography.bodySmall)
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                        OutlinedButton(
-                            onClick = {
+                            onDeleteFile = onDeleteFile,
+                            isLoading = isLoading,
+                            isComplete = loadedClusterMembers[clusterKey]?.complete == true,
+                            loadError = loadError,
+                            onLoadMore = {
                                 scope.launch { loadClusterMemberPage(reset = false) }
-                            },
-                            enabled = !isLoading && loadedClusterMembers[clusterKey]?.complete != true,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                when {
-                                    loadedClusterMembers[clusterKey]?.complete == true -> "All loaded"
-                                    isLoading -> "Loading…"
-                                    else -> "Load more"
-                                }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -2301,6 +2291,475 @@ private fun SimilarityClusterDetailScreen(
                 .padding(end = 4.dp)
         )
     }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun SimilarityClusterDetailContent(
+    repository: SimilarityExperimentRepository,
+    cluster: SimilarityClusterEntity,
+    title: String,
+    summaryLines: List<String>,
+    members: List<FileMetadata>,
+    deletedPaths: Set<String>,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    previewMemoryKey: String,
+    previewHeight: Dp,
+    showMemberThumbnails: Boolean,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    sortingEnabled: Boolean,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    isLoading: Boolean,
+    isComplete: Boolean,
+    loadError: String?,
+    onLoadMore: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val selectedFile = remember(previewMemoryKey) { mutableStateOf<FileMetadata?>(null) }
+    val isSelectAllMode = remember(previewMemoryKey) { mutableStateOf(false) }
+    val selectedPaths = remember(previewMemoryKey) { mutableStateOf<Set<String>>(emptySet()) }
+    val deselectedPathsInSelectAll = remember(previewMemoryKey) { mutableStateOf<Set<String>>(emptySet()) }
+    val confirmBulkDelete = remember(previewMemoryKey) { mutableStateOf(false) }
+    val isBulkDeleting = remember(previewMemoryKey) { mutableStateOf(false) }
+    val bulkDeleteMessage = remember(previewMemoryKey) { mutableStateOf<String?>(null) }
+    val selectionMode = isSelectAllMode.value || selectedPaths.value.isNotEmpty()
+    val allSelectedAcrossCluster = isSelectAllMode.value && deselectedPathsInSelectAll.value.isEmpty()
+    val hasPreviewMedia = members.any { isMediaFile(it.normalizedPath) }
+    val previewCandidates = mediaPreviewCandidates(
+        files = members,
+        deletedPaths = deletedPaths
+    )
+    val displayedMembers = if (sortingEnabled) {
+        sortGroupMembers(
+            members = members,
+            sortKey = sortKey,
+            direction = sortDirection
+        )
+    } else {
+        members
+    }
+
+    LaunchedEffect(displayedMembers, deletedPaths) {
+        if (isSelectAllMode.value) return@LaunchedEffect
+        val filtered = selectedPaths.value.filterTo(linkedSetOf()) { path ->
+            displayedMembers.any { file -> file.normalizedPath == path } &&
+                !deletedPaths.contains(path)
+        }
+        if (filtered != selectedPaths.value) {
+            selectedPaths.value = filtered
+        }
+    }
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) {
+            selectedFile.value = null
+        }
+    }
+
+    Text(title)
+    Spacer(modifier = Modifier.height(8.dp))
+    if (hasPreviewMedia) {
+        GroupPreviewThumbnail(
+            candidatePaths = previewCandidates,
+            previewMemoryKey = previewMemoryKey,
+            rememberedPreviewCache = rememberedPreviewCache,
+            imageLoader = imageLoader,
+            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+            contentDescription = "Thumbnail",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(previewHeight)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("${cluster.fileCount} files · Total ${formatBytes(cluster.totalBytes)}")
+            summaryLines.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (sortingEnabled) {
+            Spacer(modifier = Modifier.width(8.dp))
+            GroupMemberSortButton(
+                sortKey = sortKey,
+                sortDirection = sortDirection,
+                onApplySort = onApplySort
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+
+    if (selectionMode) {
+        Text(
+            text = selectionStatusText(
+                totalCount = cluster.fileCount,
+                selectAllMode = isSelectAllMode.value,
+                selectedPaths = selectedPaths.value,
+                deselectedPaths = deselectedPathsInSelectAll.value
+            ),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    if (allSelectedAcrossCluster) {
+                        isSelectAllMode.value = false
+                        selectedPaths.value = emptySet()
+                        deselectedPathsInSelectAll.value = emptySet()
+                    } else {
+                        isSelectAllMode.value = true
+                        selectedPaths.value = emptySet()
+                        deselectedPathsInSelectAll.value = emptySet()
+                    }
+                    bulkDeleteMessage.value = null
+                },
+                enabled = !isBulkDeleting.value
+            ) {
+                Text(if (allSelectedAcrossCluster) "Deselect all" else "Select all")
+            }
+            OutlinedButton(
+                onClick = { confirmBulkDelete.value = true },
+                enabled = onDeleteFile != null && !isBulkDeleting.value
+            ) {
+                Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
+            }
+        }
+        if (isSelectAllMode.value && !isComplete) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Select all includes not-loaded files in delete queries.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    bulkDeleteMessage.value?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    displayedMembers.forEach { file ->
+        val date = formatDate(file.lastModifiedMillis)
+        val isDeleted = deletedPaths.contains(file.normalizedPath)
+        val isSelected = isPathSelectedForMode(
+            path = file.normalizedPath,
+            selectAllMode = isSelectAllMode.value,
+            selectedPaths = selectedPaths.value,
+            deselectedPaths = deselectedPathsInSelectAll.value
+        )
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {
+                        if (selectionMode) {
+                            if (isSelectAllMode.value) {
+                                deselectedPathsInSelectAll.value = togglePathSelection(
+                                    selectedPaths = deselectedPathsInSelectAll.value,
+                                    path = file.normalizedPath
+                                )
+                            } else if (!isDeleted) {
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
+                            }
+                            bulkDeleteMessage.value = null
+                        } else {
+                            selectedFile.value = file
+                        }
+                    },
+                    onLongClick = {
+                        if (isSelectAllMode.value) {
+                            deselectedPathsInSelectAll.value = togglePathSelection(
+                                selectedPaths = deselectedPathsInSelectAll.value,
+                                path = file.normalizedPath
+                            )
+                        } else if (!isDeleted) {
+                            selectedPaths.value = togglePathSelection(
+                                selectedPaths = selectedPaths.value,
+                                path = file.normalizedPath
+                            )
+                        }
+                        bulkDeleteMessage.value = null
+                    }
+                ),
+            colors = if (isDeleted) {
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            } else {
+                CardDefaults.cardColors()
+            }
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(10.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        enabled = !isDeleted || isSelectAllMode.value,
+                        onCheckedChange = {
+                            if (isSelectAllMode.value) {
+                                deselectedPathsInSelectAll.value = togglePathSelection(
+                                    selectedPaths = deselectedPathsInSelectAll.value,
+                                    path = file.normalizedPath
+                                )
+                            } else if (!isDeleted) {
+                                selectedPaths.value = togglePathSelection(
+                                    selectedPaths = selectedPaths.value,
+                                    path = file.normalizedPath
+                                )
+                            }
+                            bulkDeleteMessage.value = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
+                    GroupPreviewThumbnail(
+                        candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
+                        previewMemoryKey = similarityMemberPreviewMemoryKey(
+                            previewMemoryKey = previewMemoryKey,
+                            file = file
+                        ),
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        imageLoader = imageLoader,
+                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                        contentDescription = "Member thumbnail",
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = file.normalizedPath,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatBytesWithExact(file.sizeBytes)} · $date",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    loadError?.let { message ->
+        Text(message, style = MaterialTheme.typography.bodySmall)
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+    OutlinedButton(
+        onClick = onLoadMore,
+        enabled = !isLoading && !isComplete,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            when {
+                isComplete -> "All loaded"
+                isLoading -> "Loading…"
+                else -> "Load more"
+            }
+        )
+    }
+
+    if (!selectionMode) {
+        selectedFile.value?.let { file ->
+            FileDetailsDialogWithDeleteConfirm(
+                file = file,
+                showName = false,
+                onOpen = {
+                    openFile(context, file.normalizedPath)
+                    selectedFile.value = null
+                },
+                onDelete = {
+                    val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
+                    handler(file)
+                },
+                onDeleteResult = { deleted ->
+                    if (deleted) {
+                        selectedFile.value = null
+                    }
+                },
+                onDismiss = { selectedFile.value = null }
+            )
+        }
+    }
+
+    if (confirmBulkDelete.value) {
+        val immediateTargets = if (isSelectAllMode.value) {
+            emptyList()
+        } else {
+            selectedFilesForDelete(
+                members = members,
+                selectedPaths = selectedPaths.value,
+                deletedPaths = deletedPaths
+            )
+        }
+        val selectedCountLabel = if (isSelectAllMode.value) {
+            countSelectedForDisplay(
+                totalCount = cluster.fileCount,
+                selectAllMode = true,
+                selectedPaths = emptySet(),
+                deselectedPaths = deselectedPathsInSelectAll.value
+            )
+        } else {
+            immediateTargets.size
+        }
+        AlertDialog(
+            onDismissRequest = {
+                if (!isBulkDeleting.value) {
+                    confirmBulkDelete.value = false
+                }
+            },
+            title = { Text("Delete selected files?") },
+            text = {
+                if (selectedCountLabel <= 0) {
+                    Text("No deletable files are selected.")
+                } else if (isSelectAllMode.value) {
+                    if (deselectedPathsInSelectAll.value.isEmpty()) {
+                        Text("Select all is active. $selectedCountLabel files will be deleted, including not-loaded files.")
+                    } else {
+                        Text("Select all is active with ${deselectedPathsInSelectAll.value.size} exclusions. $selectedCountLabel files will be deleted.")
+                    }
+                } else {
+                    Text("$selectedCountLabel selected files will be deleted (moved to app trash).")
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        val handler = onDeleteFile ?: return@OutlinedButton
+                        val selectAllSnapshot = isSelectAllMode.value
+                        val selectedPathsSnapshot = selectedPaths.value
+                        val excludedFromAllSnapshot = deselectedPathsInSelectAll.value
+                        val deletedPathsSnapshot = deletedPaths
+
+                        isBulkDeleting.value = true
+                        bulkDeleteMessage.value = null
+                        scope.launch {
+                            var successCount = 0
+                            val failedPaths = linkedSetOf<String>()
+                            if (selectAllSnapshot) {
+                                var offset = 0
+                                while (offset < cluster.fileCount) {
+                                    val page = withContext(Dispatchers.IO) {
+                                        repository.listClusterMemberRows(
+                                            cluster = cluster,
+                                            offset = offset,
+                                            limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                                        )
+                                    }
+                                    if (page.isEmpty()) break
+                                    page.forEach { member ->
+                                        val file = member.metadata
+                                        val path = file.normalizedPath
+                                        if (
+                                            !excludedFromAllSnapshot.contains(path) &&
+                                            !deletedPathsSnapshot.contains(path)
+                                        ) {
+                                            val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                            if (deleted) {
+                                                successCount += 1
+                                            } else {
+                                                failedPaths.add(path)
+                                            }
+                                        }
+                                    }
+                                    offset += SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                                }
+                            } else {
+                                selectedFilesForDelete(
+                                    members = members,
+                                    selectedPaths = selectedPathsSnapshot,
+                                    deletedPaths = deletedPathsSnapshot
+                                ).forEach { file ->
+                                    val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                    if (deleted) {
+                                        successCount += 1
+                                    } else {
+                                        failedPaths.add(file.normalizedPath)
+                                    }
+                                }
+                            }
+
+                            isSelectAllMode.value = false
+                            deselectedPathsInSelectAll.value = emptySet()
+                            selectedPaths.value = failedPaths
+                            bulkDeleteMessage.value = when {
+                                successCount == 0 && failedPaths.isEmpty() -> "No files deleted."
+                                failedPaths.isEmpty() -> "$successCount files deleted."
+                                successCount == 0 -> "Delete failed for ${failedPaths.size} files."
+                                else -> "$successCount deleted, ${failedPaths.size} failed."
+                            }
+                            isBulkDeleting.value = false
+                            confirmBulkDelete.value = false
+                        }
+                    },
+                    enabled = onDeleteFile != null && selectedCountLabel > 0 && !isBulkDeleting.value
+                ) {
+                    Text(if (isBulkDeleting.value) "Deleting..." else "Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { confirmBulkDelete.value = false },
+                    enabled = !isBulkDeleting.value
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+private fun similarityMemberPreviewMemoryKey(
+    previewMemoryKey: String,
+    file: FileMetadata
+): String {
+    return "$previewMemoryKey:${file.normalizedPath}"
 }
 
 @Composable
