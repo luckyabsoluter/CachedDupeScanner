@@ -25,10 +25,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,6 +73,7 @@ import opensource.cached_dupe_scanner.core.defaultSimilarityExperimentSpecs
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityClusterCursor
+import opensource.cached_dupe_scanner.storage.SimilarityClusterSortKey
 import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
@@ -210,6 +213,8 @@ fun SimilarityExperimentsScreen(
     var durationNeighborMembersExhausted by remember { mutableStateOf(true) }
     var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
     var durationNeighborSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var similarityClusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
+    var similarityClusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
     var similarityGroupMemberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
     var similarityGroupMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
@@ -306,7 +311,9 @@ fun SimilarityExperimentsScreen(
                 repository.loadClusterPageAfter(
                     experimentId = runId,
                     cursor = cursor,
-                    limit = SIMILARITY_CLUSTER_PAGE_SIZE
+                    limit = SIMILARITY_CLUSTER_PAGE_SIZE,
+                    sortKey = similarityClusterSortKey,
+                    direction = similarityClusterSortDirection
                 )
             }
             clusters.addAll(page.clusters)
@@ -361,7 +368,9 @@ fun SimilarityExperimentsScreen(
                 withContext(Dispatchers.IO) {
                     repository.loadFirstClusterPage(
                         experimentId = run.experimentId,
-                        limit = SIMILARITY_CLUSTER_PAGE_SIZE
+                        limit = SIMILARITY_CLUSTER_PAGE_SIZE,
+                        sortKey = similarityClusterSortKey,
+                        direction = similarityClusterSortDirection
                     )
                 }
             }
@@ -450,6 +459,46 @@ fun SimilarityExperimentsScreen(
             (selectedRun?.duplicateFileCount ?: clusters.firstOrNull()?.fileCount ?: 0) <= 0
         scope.launch { listState.scrollToItem(0) }
         loadMoreDurationNeighborMembers(direction = direction)
+    }
+
+    fun applySimilarityClusterSort(
+        sortKey: SimilarityClusterSortKey,
+        direction: SortDirection
+    ) {
+        if (
+            similarityClusterSortKey == sortKey &&
+            similarityClusterSortDirection == direction
+        ) {
+            return
+        }
+        similarityClusterSortKey = sortKey
+        similarityClusterSortDirection = direction
+        val runId = selectedRunExperimentId ?: return
+        if (isDurationNeighborListExperiment(runId)) return
+        clusters.clear()
+        clusterNextCursor = null
+        clustersExhausted = false
+        clustersLoading = true
+        selectedClusterKey = null
+        scope.launch {
+            try {
+                listState.scrollToItem(0)
+                val page = withContext(Dispatchers.IO) {
+                    repository.loadFirstClusterPage(
+                        experimentId = runId,
+                        limit = SIMILARITY_CLUSTER_PAGE_SIZE,
+                        sortKey = sortKey,
+                        direction = direction
+                    )
+                }
+                clusters.clear()
+                clusters.addAll(page.clusters)
+                clusterNextCursor = page.nextCursor
+                clustersExhausted = page.exhausted
+            } finally {
+                clustersLoading = false
+            }
+        }
     }
 
     fun startSelectedTemplateRun(draft: SimilarityRunRequestDraft) {
@@ -964,7 +1013,10 @@ fun SimilarityExperimentsScreen(
                                 selectedRun = selectedRun,
                                 clusters = clusters,
                                 durationNeighborVideoCount = durationNeighborMembers.size,
-                                isLoading = resultItemsLoading
+                                isLoading = resultItemsLoading,
+                                clusterSortKey = similarityClusterSortKey,
+                                clusterSortDirection = similarityClusterSortDirection,
+                                onApplyClusterSort = ::applySimilarityClusterSort
                             )
                         }
                         if (resultItemsLoading && loadedResultItemCount == 0) {
@@ -1578,6 +1630,83 @@ private fun DurationNeighborStoredRebuildCard(
 }
 
 @Composable
+private fun SimilarityClusterSortButton(
+    sortKey: SimilarityClusterSortKey,
+    sortDirection: SortDirection,
+    enabled: Boolean,
+    onApplySort: (SimilarityClusterSortKey, SortDirection) -> Unit
+) {
+    var dialogOpen by remember { mutableStateOf(false) }
+    var pendingSortKey by remember { mutableStateOf(sortKey) }
+    var pendingSortDirection by remember { mutableStateOf(sortDirection) }
+
+    OutlinedButton(
+        enabled = enabled,
+        onClick = {
+            pendingSortKey = sortKey
+            pendingSortDirection = sortDirection
+            dialogOpen = true
+        }
+    ) {
+        Text("Sort")
+    }
+
+    if (dialogOpen) {
+        AlertDialog(
+            onDismissRequest = { dialogOpen = false },
+            title = { Text("Cluster sort options") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Sort by")
+                    RadioOptionRow(
+                        option = SimilarityClusterSortKey.FileCount,
+                        selected = pendingSortKey,
+                        label = SimilarityClusterSortKey.FileCount.label,
+                        onSelect = { pendingSortKey = it }
+                    )
+                    RadioOptionRow(
+                        option = SimilarityClusterSortKey.TotalSize,
+                        selected = pendingSortKey,
+                        label = SimilarityClusterSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Direction")
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection,
+                        label = "Descending",
+                        onSelect = { pendingSortDirection = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection,
+                        label = "Ascending",
+                        onSelect = { pendingSortDirection = it }
+                    )
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        onApplySort(pendingSortKey, pendingSortDirection)
+                        dialogOpen = false
+                    }
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { dialogOpen = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
 private fun DurationNeighborSortDirectionCard(
     direction: SortDirection,
     enabled: Boolean,
@@ -1630,7 +1759,10 @@ private fun StoredSimilarityResultsHeader(
     selectedRun: SimilarityExperimentRunEntity?,
     clusters: List<SimilarityClusterEntity>,
     durationNeighborVideoCount: Int = 0,
-    isLoading: Boolean
+    isLoading: Boolean,
+    clusterSortKey: SimilarityClusterSortKey,
+    clusterSortDirection: SortDirection,
+    onApplyClusterSort: (SimilarityClusterSortKey, SortDirection) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1645,14 +1777,30 @@ private fun StoredSimilarityResultsHeader(
             }
         )
         val isDurationNeighborList = isDurationNeighborListExperiment(selectedRun?.experimentId)
-        Text(
-            text = if (isDurationNeighborList) {
-                "Selected duration-neighbor videos"
-            } else {
-                "Selected experiment clusters"
-            },
-            style = MaterialTheme.typography.titleMedium
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = if (isDurationNeighborList) {
+                    "Selected duration-neighbor videos"
+                } else {
+                    "Selected experiment clusters"
+                },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (selectedRun != null && !isDurationNeighborList) {
+                Spacer(modifier = Modifier.width(8.dp))
+                SimilarityClusterSortButton(
+                    sortKey = clusterSortKey,
+                    sortDirection = clusterSortDirection,
+                    enabled = !isLoading,
+                    onApplySort = onApplyClusterSort
+                )
+            }
+        }
         if (selectedRun == null) {
             Text(
                 text = "Select or run an experiment to review its saved results.",

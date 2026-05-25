@@ -39,6 +39,36 @@ interface SimilarityExperimentDao {
         """
         SELECT * FROM similarity_clusters
         WHERE experimentId = :experimentId
+        ORDER BY fileCount ASC, totalBytes ASC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listFirstClustersByCountAsc(experimentId: String, limit: Int): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+        ORDER BY totalBytes DESC, fileCount DESC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listFirstClustersByTotalBytesDesc(experimentId: String, limit: Int): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+        ORDER BY totalBytes ASC, fileCount ASC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listFirstClustersByTotalBytesAsc(experimentId: String, limit: Int): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
           AND (
             fileCount < :afterFileCount
             OR (fileCount = :afterFileCount AND totalBytes < :afterTotalBytes)
@@ -49,6 +79,69 @@ interface SimilarityExperimentDao {
         """
     )
     fun listClustersAfter(
+        experimentId: String,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterSignature: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+          AND (
+            fileCount > :afterFileCount
+            OR (fileCount = :afterFileCount AND totalBytes > :afterTotalBytes)
+            OR (fileCount = :afterFileCount AND totalBytes = :afterTotalBytes AND signature > :afterSignature)
+          )
+        ORDER BY fileCount ASC, totalBytes ASC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listClustersAfterCountAsc(
+        experimentId: String,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterSignature: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+          AND (
+            totalBytes < :afterTotalBytes
+            OR (totalBytes = :afterTotalBytes AND fileCount < :afterFileCount)
+            OR (totalBytes = :afterTotalBytes AND fileCount = :afterFileCount AND signature > :afterSignature)
+          )
+        ORDER BY totalBytes DESC, fileCount DESC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listClustersAfterTotalBytesDesc(
+        experimentId: String,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterSignature: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT * FROM similarity_clusters
+        WHERE experimentId = :experimentId
+          AND (
+            totalBytes > :afterTotalBytes
+            OR (totalBytes = :afterTotalBytes AND fileCount > :afterFileCount)
+            OR (totalBytes = :afterTotalBytes AND fileCount = :afterFileCount AND signature > :afterSignature)
+          )
+        ORDER BY totalBytes ASC, fileCount ASC, signature ASC
+        LIMIT :limit
+        """
+    )
+    fun listClustersAfterTotalBytesAsc(
         experimentId: String,
         afterFileCount: Int,
         afterTotalBytes: Long,

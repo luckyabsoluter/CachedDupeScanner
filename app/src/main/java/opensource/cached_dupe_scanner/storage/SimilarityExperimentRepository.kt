@@ -37,6 +37,11 @@ data class SimilarityClusterCursor(
     val signature: String
 )
 
+enum class SimilarityClusterSortKey(val label: String) {
+    FileCount("Files"),
+    TotalSize("Total size")
+}
+
 data class SimilarityExperimentProgress(
     val total: Int,
     val processed: Int,
@@ -102,27 +107,81 @@ class SimilarityExperimentRepository(
         return clusters.sortedBy { cluster -> durationNeighborSortMillis(cluster.signature) }
     }
 
-    fun loadFirstClusterPage(experimentId: String, limit: Int): SimilarityClusterPage {
+    fun loadFirstClusterPage(
+        experimentId: String,
+        limit: Int,
+        sortKey: SimilarityClusterSortKey = SimilarityClusterSortKey.FileCount,
+        direction: SortDirection = SortDirection.Desc
+    ): SimilarityClusterPage {
         val safeLimit = limit.coerceAtLeast(0)
-        return experimentDao.listFirstClusters(
-            experimentId = experimentId,
-            limit = safeLimit
-        ).toClusterPage(limit = safeLimit)
+        val clusters = when (sortKey) {
+            SimilarityClusterSortKey.FileCount -> {
+                if (direction == SortDirection.Asc) {
+                    experimentDao.listFirstClustersByCountAsc(experimentId, safeLimit)
+                } else {
+                    experimentDao.listFirstClusters(experimentId, safeLimit)
+                }
+            }
+            SimilarityClusterSortKey.TotalSize -> {
+                if (direction == SortDirection.Asc) {
+                    experimentDao.listFirstClustersByTotalBytesAsc(experimentId, safeLimit)
+                } else {
+                    experimentDao.listFirstClustersByTotalBytesDesc(experimentId, safeLimit)
+                }
+            }
+        }
+        return clusters.toClusterPage(limit = safeLimit)
     }
 
     fun loadClusterPageAfter(
         experimentId: String,
         cursor: SimilarityClusterCursor,
-        limit: Int
+        limit: Int,
+        sortKey: SimilarityClusterSortKey = SimilarityClusterSortKey.FileCount,
+        direction: SortDirection = SortDirection.Desc
     ): SimilarityClusterPage {
         val safeLimit = limit.coerceAtLeast(0)
-        return experimentDao.listClustersAfter(
-            experimentId = experimentId,
-            afterFileCount = cursor.fileCount,
-            afterTotalBytes = cursor.totalBytes,
-            afterSignature = cursor.signature,
-            limit = safeLimit
-        ).toClusterPage(limit = safeLimit)
+        val clusters = when (sortKey) {
+            SimilarityClusterSortKey.FileCount -> {
+                if (direction == SortDirection.Asc) {
+                    experimentDao.listClustersAfterCountAsc(
+                        experimentId = experimentId,
+                        afterFileCount = cursor.fileCount,
+                        afterTotalBytes = cursor.totalBytes,
+                        afterSignature = cursor.signature,
+                        limit = safeLimit
+                    )
+                } else {
+                    experimentDao.listClustersAfter(
+                        experimentId = experimentId,
+                        afterFileCount = cursor.fileCount,
+                        afterTotalBytes = cursor.totalBytes,
+                        afterSignature = cursor.signature,
+                        limit = safeLimit
+                    )
+                }
+            }
+            SimilarityClusterSortKey.TotalSize -> {
+                if (direction == SortDirection.Asc) {
+                    experimentDao.listClustersAfterTotalBytesAsc(
+                        experimentId = experimentId,
+                        afterFileCount = cursor.fileCount,
+                        afterTotalBytes = cursor.totalBytes,
+                        afterSignature = cursor.signature,
+                        limit = safeLimit
+                    )
+                } else {
+                    experimentDao.listClustersAfterTotalBytesDesc(
+                        experimentId = experimentId,
+                        afterFileCount = cursor.fileCount,
+                        afterTotalBytes = cursor.totalBytes,
+                        afterSignature = cursor.signature,
+                        limit = safeLimit
+                    )
+                }
+            }
+        }
+        return clusters.toClusterPage(limit = safeLimit)
     }
 
     fun listClusterMembers(

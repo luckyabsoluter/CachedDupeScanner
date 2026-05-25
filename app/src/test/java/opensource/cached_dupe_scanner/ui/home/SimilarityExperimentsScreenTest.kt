@@ -746,6 +746,35 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun similarityClusterRunDetailExposesClusterSortOptions() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val runDetail = sourceSection(
+            content = content,
+            start = "SimilarityExperimentPane.RunDetail -> {",
+            end = "@Composable\nprivate fun SimilarityExperimentLazyPane"
+        )
+        val header = sourceSection(
+            content = content,
+            start = "private fun StoredSimilarityResultsHeader(",
+            end = "@Composable\nprivate fun SimilarityClusterLoadingIndicator"
+        )
+
+        assertTrue(content.contains("similarityClusterSortKey"))
+        assertTrue(content.contains("similarityClusterSortDirection"))
+        assertTrue(runDetail.contains("clusterSortKey = similarityClusterSortKey"))
+        assertTrue(runDetail.contains("clusterSortDirection = similarityClusterSortDirection"))
+        assertTrue(runDetail.contains("onApplyClusterSort = ::applySimilarityClusterSort"))
+        assertTrue(header.contains("SimilarityClusterSortButton("))
+        assertTrue(header.contains("!isDurationNeighborList"))
+        assertTrue(content.contains("private fun SimilarityClusterSortButton("))
+        assertTrue(content.contains("Cluster sort options"))
+        assertTrue(content.contains("SimilarityClusterSortKey.FileCount"))
+        assertTrue(content.contains("SimilarityClusterSortKey.TotalSize"))
+        assertTrue(content.contains("sortKey = similarityClusterSortKey"))
+        assertTrue(content.contains("direction = similarityClusterSortDirection"))
+    }
+
+    @Test
     fun similarityClusterLoadIndicatorTextTracksVisibleLazyCluster() {
         assertEquals(
             "Loading 0/12 clusters",

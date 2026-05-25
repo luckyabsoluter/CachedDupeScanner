@@ -482,6 +482,45 @@ class SimilarityExperimentRepositoryTest {
     }
 
     @Test
+    fun clusterPagesCanSortByTotalSizeAsc() {
+        val experimentId = "paged-clusters-total-size"
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(experimentId, "large", 2, 200L, "large", 1L),
+                SimilarityClusterEntity(experimentId, "small", 5, 10L, "small", 1L),
+                SimilarityClusterEntity(experimentId, "medium", 3, 100L, "medium", 1L),
+                SimilarityClusterEntity(experimentId, "tie", 1, 100L, "tie", 1L)
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao()
+        )
+
+        val firstPage = repository.loadFirstClusterPage(
+            experimentId = experimentId,
+            limit = 2,
+            sortKey = SimilarityClusterSortKey.TotalSize,
+            direction = SortDirection.Asc
+        )
+        val secondPage = repository.loadClusterPageAfter(
+            experimentId = experimentId,
+            cursor = requireNotNull(firstPage.nextCursor),
+            limit = 2,
+            sortKey = SimilarityClusterSortKey.TotalSize,
+            direction = SortDirection.Asc
+        )
+
+        assertEquals(listOf("small", "tie"), firstPage.clusters.map { it.signature })
+        assertEquals(listOf("medium", "large"), secondPage.clusters.map { it.signature })
+        assertEquals(false, firstPage.exhausted)
+        assertEquals(false, secondPage.exhausted)
+        assertEquals("tie", firstPage.nextCursor?.signature)
+        assertEquals("large", secondPage.nextCursor?.signature)
+    }
+
+    @Test
     fun clusterPageReportsExhaustedWhenFinalPageIsShort() {
         val experimentId = "paged-clusters-short"
         database.similarityExperimentDao().insertClusters(
