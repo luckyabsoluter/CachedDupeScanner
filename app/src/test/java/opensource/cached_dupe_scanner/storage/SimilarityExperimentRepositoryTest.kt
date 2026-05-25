@@ -450,6 +450,45 @@ class SimilarityExperimentRepositoryTest {
     }
 
     @Test
+    fun clusterMemberRowsStayUnderSqliteBindingLimit() {
+        val files = (0 until 500).map { index ->
+            videoFile("large-member-${index.toString().padStart(3, '0')}.mp4")
+        }
+        val entities = files.mapIndexed { index, file ->
+            entity(file, sizeBytes = 10L + index)
+        }
+        database.fileCacheDao().upsertAll(entities)
+        val memberText = files.joinToString("\n") { file ->
+            file.absolutePath.replace('\\', '/').lowercase()
+        }
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(
+                    experimentId = "large-paged-members",
+                    signature = "large",
+                    fileCount = files.size,
+                    totalBytes = entities.sumOf { entity -> entity.sizeBytes },
+                    memberNormalizedPathsText = memberText,
+                    updatedAtMillis = 1L
+                )
+            )
+        )
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao()
+        )
+
+        val members = repository.listClusterMemberRows(
+            repository.listClusters("large-paged-members").single()
+        )
+
+        assertEquals(files.size, members.size)
+        assertEquals(files.first().absolutePath, members.first().metadata.path)
+        assertEquals(files.last().absolutePath, members.last().metadata.path)
+    }
+
+    @Test
     fun clusterPagesLoadIncrementallyBySortOrder() {
         val experimentId = "paged-clusters"
         database.similarityExperimentDao().insertClusters(

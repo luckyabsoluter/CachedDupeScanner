@@ -1011,5 +1011,6 @@ internal fun parseSimilarityClusterMemberPaths(text: String): List<String> {
 private const val SIMILARITY_EXPERIMENT_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_INSERT_CHUNK_SIZE = 100
 private const val SIMILARITY_DURATION_CANDIDATE_INSERT_CHUNK_SIZE = 500
-private const val SIMILARITY_CLUSTER_MEMBER_LOOKUP_CHUNK_SIZE = 500
+private const val SQLITE_VARIABLE_SAFE_LIMIT = 900
+private const val SIMILARITY_CLUSTER_MEMBER_LOOKUP_CHUNK_SIZE = SQLITE_VARIABLE_SAFE_LIMIT / 2
 private const val DURATION_NEIGHBOR_EXPERIMENT_ID_PREFIX = "video-duration-neighbor"

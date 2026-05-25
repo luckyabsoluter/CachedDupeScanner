@@ -21,6 +21,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
 - Simple and result-detail screens now use result-style lazy side scrollbars instead of standalone scroll-state scrollbars.
 - Background DB, trash, bulk-delete, and similarity work now use the app-owned task runtime and foreground service, so UI lifecycle changes no longer cancel tracked tasks or reset active task monitoring.
 - Bulk-delete execution now keeps paging stable while successful deletes refresh duplicate groups, preventing later groups from being skipped.
