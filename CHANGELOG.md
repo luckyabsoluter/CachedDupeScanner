@@ -11,6 +11,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
 - Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
+- Duplicate group detail views now support long-press member selection and selected-file deletion.
 
 ### Changed
 
