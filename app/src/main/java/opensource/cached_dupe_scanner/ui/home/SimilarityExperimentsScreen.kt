@@ -183,8 +183,13 @@ fun SimilarityExperimentsScreen(
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
     thumbnailSizeScale: Float,
+    videoPreviewSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     showFullPaths: Boolean,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
@@ -240,8 +245,10 @@ fun SimilarityExperimentsScreen(
     val loadedClusterMembers = remember { mutableStateMapOf<String, SimilarityClusterMembersState>() }
     val clusterMemberLoadErrors = remember { mutableStateMapOf<String, String>() }
     val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
+    val normalizedVideoPreviewScale = videoPreviewSizeScale.coerceAtLeast(0f)
     val groupCardThumbnailSizeDp = 72.dp * normalizedThumbnailScale
     val groupDetailPreviewHeightDp = 180.dp * normalizedThumbnailScale
+    val videoPreviewFrameHeightDp = 44.dp * normalizedVideoPreviewScale
     val minSizeBytes = parsedMinSizeBytes(
         input = minSizeInput,
         unit = minSizeUnit
@@ -702,8 +709,13 @@ fun SimilarityExperimentsScreen(
             deletedPaths = deletedPaths,
             imageLoader = imageLoader,
             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+            keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+            snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+            videoPreviewLineCount = videoPreviewLineCount,
             rememberedPreviewCache = rememberedPreviewCache,
+            rememberedVideoPreviewCache = rememberedVideoPreviewCache,
             previewHeight = groupDetailPreviewHeightDp,
+            videoPreviewFrameHeight = videoPreviewFrameHeightDp,
             onDeleteFile = onDeleteFile,
             loadedClusterMembers = loadedClusterMembers,
             clusterMemberLoadErrors = clusterMemberLoadErrors,
@@ -2121,8 +2133,13 @@ private fun SimilarityClusterDetailScreen(
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     previewHeight: Dp,
+    videoPreviewFrameHeight: Dp,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     loadedClusterMembers: MutableMap<String, SimilarityClusterMembersState>,
     clusterMemberLoadErrors: MutableMap<String, String>,
@@ -2262,9 +2279,14 @@ private fun SimilarityClusterDetailScreen(
                             deletedPaths = deletedPaths,
                             imageLoader = imageLoader,
                             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                            keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                            snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                            videoPreviewLineCount = videoPreviewLineCount,
                             rememberedPreviewCache = rememberedPreviewCache,
+                            rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                             previewMemoryKey = clusterPreviewMemoryKey(cluster),
                             previewHeight = previewHeight,
+                            videoPreviewFrameHeight = videoPreviewFrameHeight,
                             showMemberThumbnails = true,
                             sortKey = sortKey,
                             sortDirection = sortDirection,
@@ -2304,9 +2326,14 @@ private fun SimilarityClusterDetailContent(
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     previewMemoryKey: String,
     previewHeight: Dp,
+    videoPreviewFrameHeight: Dp,
     showMemberThumbnails: Boolean,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
@@ -2445,6 +2472,7 @@ private fun SimilarityClusterDetailContent(
     displayedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
+        val isVideo = isVideoFile(file.normalizedPath)
         val isSelected = lazySelection.isPathSelected(file.normalizedPath)
         Card(
             modifier = Modifier
@@ -2534,6 +2562,19 @@ private fun SimilarityClusterDetailContent(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
+                    if (showMemberThumbnails && isVideo && !isDeleted) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        VideoTimelinePreviewStrip(
+                            filePath = file.normalizedPath,
+                            rememberedPreviewCache = rememberedVideoPreviewCache,
+                            imageLoader = imageLoader,
+                            keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                            snapToFillWidth = snapVideoPreviewFramesToWidth,
+                            lineCount = videoPreviewLineCount,
+                            frameHeight = videoPreviewFrameHeight,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }

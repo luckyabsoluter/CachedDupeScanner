@@ -814,6 +814,35 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
+    fun similarityClusterDetailShowsVideoTimelinePreviewsForVideoMembers() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val detailScreen = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterDetailScreen(",
+            end = "@Composable\n@OptIn(ExperimentalFoundationApi::class)\nprivate fun SimilarityClusterDetailContent("
+        )
+        val detailContent = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterDetailContent(",
+            end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
+        )
+        val mainActivity = projectSourceText("app/src/main/java/opensource/cached_dupe_scanner/MainActivity.kt")
+
+        assertTrue(detailScreen.contains("rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>"))
+        assertTrue(detailScreen.contains("videoPreviewFrameHeight: Dp"))
+        assertTrue(detailScreen.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
+        assertTrue(detailContent.contains("val isVideo = isVideoFile(file.normalizedPath)"))
+        assertTrue(detailContent.contains("VideoTimelinePreviewStrip("))
+        assertTrue(detailContent.contains("rememberedPreviewCache = rememberedVideoPreviewCache"))
+        assertTrue(detailContent.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory"))
+        assertTrue(detailContent.contains("snapToFillWidth = snapVideoPreviewFramesToWidth"))
+        assertTrue(detailContent.contains("lineCount = videoPreviewLineCount"))
+        assertTrue(detailContent.contains("frameHeight = videoPreviewFrameHeight"))
+        assertTrue(mainActivity.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
+        assertTrue(mainActivity.contains("keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory"))
+    }
+
+    @Test
     fun similarityClusterLoadIndicatorTextTracksVisibleLazyCluster() {
         assertEquals(
             "Loading 0/12 clusters",
@@ -999,13 +1028,17 @@ class SimilarityExperimentsScreenTest {
     }
 
     private fun sourceText(fileName: String): String {
+        return projectSourceText("app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName")
+    }
+
+    private fun projectSourceText(relativePath: String): String {
         val projectDir = File(System.getProperty("user.dir") ?: ".")
         val sourceFile = sequenceOf(
-            File(projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName"),
-            File(projectDir.parentFile ?: projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName")
+            File(projectDir, relativePath),
+            File(projectDir.parentFile ?: projectDir, relativePath)
         ).firstOrNull { it.exists() }
 
-        assertTrue("$fileName should exist", sourceFile != null)
+        assertTrue("$relativePath should exist", sourceFile != null)
         return sourceFile!!.readText()
     }
 
