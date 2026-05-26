@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +34,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -2158,6 +2162,7 @@ private fun SimilarityClusterDetailScreen(
     var isLoading by remember(clusterKey) { mutableStateOf(false) }
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
     val showVideoPreviews = remember(clusterKey) { mutableStateOf(false) }
+    val videoPreviewMenuExpanded = remember(clusterKey) { mutableStateOf(false) }
     val hasVideoMembers = members.any { file ->
         isVideoFile(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
     }
@@ -2219,6 +2224,7 @@ private fun SimilarityClusterDetailScreen(
     LaunchedEffect(clusterKey, hasVideoMembers) {
         if (!hasVideoMembers) {
             showVideoPreviews.value = false
+            videoPreviewMenuExpanded.value = false
         }
     }
 
@@ -2255,7 +2261,32 @@ private fun SimilarityClusterDetailScreen(
                     } else {
                         "Similarity cluster detail"
                     },
-                    onBack = onBack
+                    onBack = onBack,
+                    actions = {
+                        if (hasVideoMembers) {
+                            IconButton(onClick = { videoPreviewMenuExpanded.value = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                            }
+                            DropdownMenu(
+                                expanded = videoPreviewMenuExpanded.value,
+                                onDismissRequest = { videoPreviewMenuExpanded.value = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Video preview") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = showVideoPreviews.value,
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showVideoPreviews.value = !showVideoPreviews.value
+                                        videoPreviewMenuExpanded.value = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 when {
@@ -2297,9 +2328,7 @@ private fun SimilarityClusterDetailScreen(
                             previewHeight = previewHeight,
                             videoPreviewFrameHeight = videoPreviewFrameHeight,
                             showMemberThumbnails = true,
-                            showVideoPreviewOption = hasVideoMembers,
                             showVideoPreviews = showVideoPreviews.value && hasVideoMembers,
-                            onToggleVideoPreviews = { enabled -> showVideoPreviews.value = enabled },
                             sortKey = sortKey,
                             sortDirection = sortDirection,
                             sortingEnabled = durationNeighborExplanation == null,
@@ -2347,9 +2376,7 @@ private fun SimilarityClusterDetailContent(
     previewHeight: Dp,
     videoPreviewFrameHeight: Dp,
     showMemberThumbnails: Boolean,
-    showVideoPreviewOption: Boolean,
     showVideoPreviews: Boolean,
-    onToggleVideoPreviews: (Boolean) -> Unit,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     sortingEnabled: Boolean,
@@ -2435,23 +2462,6 @@ private fun SimilarityClusterDetailContent(
         }
     }
     Spacer(modifier = Modifier.height(8.dp))
-
-    if (showVideoPreviewOption) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleVideoPreviews(!showVideoPreviews) },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = showVideoPreviews,
-                onCheckedChange = onToggleVideoPreviews
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Video preview")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
 
     if (lazySelection.isSelectionMode) {
         Text(
