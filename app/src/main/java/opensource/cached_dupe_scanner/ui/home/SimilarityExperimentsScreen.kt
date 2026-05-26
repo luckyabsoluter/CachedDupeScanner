@@ -2321,14 +2321,10 @@ private fun SimilarityClusterDetailContent(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedFile = remember(previewMemoryKey) { mutableStateOf<FileMetadata?>(null) }
-    val isSelectAllMode = remember(previewMemoryKey) { mutableStateOf(false) }
-    val selectedPaths = remember(previewMemoryKey) { mutableStateOf<Set<String>>(emptySet()) }
-    val deselectedPathsInSelectAll = remember(previewMemoryKey) { mutableStateOf<Set<String>>(emptySet()) }
+    val lazySelection = rememberLazyDetailSelectionState(previewMemoryKey)
     val confirmBulkDelete = remember(previewMemoryKey) { mutableStateOf(false) }
     val isBulkDeleting = remember(previewMemoryKey) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(previewMemoryKey) { mutableStateOf<String?>(null) }
-    val selectionMode = isSelectAllMode.value || selectedPaths.value.isNotEmpty()
-    val allSelectedAcrossCluster = isSelectAllMode.value && deselectedPathsInSelectAll.value.isEmpty()
     val hasPreviewMedia = members.any { isMediaFile(it.normalizedPath) }
     val previewCandidates = mediaPreviewCandidates(
         files = members,
@@ -2345,17 +2341,13 @@ private fun SimilarityClusterDetailContent(
     }
 
     LaunchedEffect(displayedMembers, deletedPaths) {
-        if (isSelectAllMode.value) return@LaunchedEffect
-        val filtered = selectedPaths.value.filterTo(linkedSetOf()) { path ->
-            displayedMembers.any { file -> file.normalizedPath == path } &&
-                !deletedPaths.contains(path)
-        }
-        if (filtered != selectedPaths.value) {
-            selectedPaths.value = filtered
-        }
+        lazySelection.filterPartialSelectionToLoadedMembers(
+            members = displayedMembers,
+            deletedPaths = deletedPaths
+        )
     }
-    LaunchedEffect(selectionMode) {
-        if (selectionMode) {
+    LaunchedEffect(lazySelection.isSelectionMode) {
+        if (lazySelection.isSelectionMode) {
             selectedFile.value = null
         }
     }
@@ -2402,14 +2394,9 @@ private fun SimilarityClusterDetailContent(
     }
     Spacer(modifier = Modifier.height(8.dp))
 
-    if (selectionMode) {
+    if (lazySelection.isSelectionMode) {
         Text(
-            text = selectionStatusText(
-                totalCount = cluster.fileCount,
-                selectAllMode = isSelectAllMode.value,
-                selectedPaths = selectedPaths.value,
-                deselectedPaths = deselectedPathsInSelectAll.value
-            ),
+            text = lazySelection.statusText(totalCount = cluster.fileCount),
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -2421,20 +2408,12 @@ private fun SimilarityClusterDetailContent(
         ) {
             OutlinedButton(
                 onClick = {
-                    if (allSelectedAcrossCluster) {
-                        isSelectAllMode.value = false
-                        selectedPaths.value = emptySet()
-                        deselectedPathsInSelectAll.value = emptySet()
-                    } else {
-                        isSelectAllMode.value = true
-                        selectedPaths.value = emptySet()
-                        deselectedPathsInSelectAll.value = emptySet()
-                    }
+                    lazySelection.toggleSelectAll()
                     bulkDeleteMessage.value = null
                 },
                 enabled = !isBulkDeleting.value
             ) {
-                Text(if (allSelectedAcrossCluster) "Deselect all" else "Select all")
+                Text(if (lazySelection.allSelectedAcrossGroup) "Deselect all" else "Select all")
             }
             OutlinedButton(
                 onClick = { confirmBulkDelete.value = true },
@@ -2443,7 +2422,7 @@ private fun SimilarityClusterDetailContent(
                 Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
             }
         }
-        if (isSelectAllMode.value && !isComplete) {
+        if (lazySelection.isSelectAllMode && !isComplete) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Select all includes not-loaded files in delete queries.",
@@ -2466,46 +2445,27 @@ private fun SimilarityClusterDetailContent(
     displayedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
-        val isSelected = isPathSelectedForMode(
-            path = file.normalizedPath,
-            selectAllMode = isSelectAllMode.value,
-            selectedPaths = selectedPaths.value,
-            deselectedPaths = deselectedPathsInSelectAll.value
-        )
+        val isSelected = lazySelection.isPathSelected(file.normalizedPath)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = {
-                        if (selectionMode) {
-                            if (isSelectAllMode.value) {
-                                deselectedPathsInSelectAll.value = togglePathSelection(
-                                    selectedPaths = deselectedPathsInSelectAll.value,
-                                    path = file.normalizedPath
-                                )
-                            } else if (!isDeleted) {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
-                            }
+                        if (lazySelection.isSelectionMode) {
+                            lazySelection.togglePath(
+                                path = file.normalizedPath,
+                                isDeleted = isDeleted
+                            )
                             bulkDeleteMessage.value = null
                         } else {
                             selectedFile.value = file
                         }
                     },
                     onLongClick = {
-                        if (isSelectAllMode.value) {
-                            deselectedPathsInSelectAll.value = togglePathSelection(
-                                selectedPaths = deselectedPathsInSelectAll.value,
-                                path = file.normalizedPath
-                            )
-                        } else if (!isDeleted) {
-                            selectedPaths.value = togglePathSelection(
-                                selectedPaths = selectedPaths.value,
-                                path = file.normalizedPath
-                            )
-                        }
+                        lazySelection.togglePath(
+                            path = file.normalizedPath,
+                            isDeleted = isDeleted
+                        )
                         bulkDeleteMessage.value = null
                     }
                 ),
@@ -2523,22 +2483,15 @@ private fun SimilarityClusterDetailContent(
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (selectionMode) {
+                if (lazySelection.isSelectionMode) {
                     Checkbox(
                         checked = isSelected,
-                        enabled = !isDeleted || isSelectAllMode.value,
+                        enabled = !isDeleted || lazySelection.isSelectAllMode,
                         onCheckedChange = {
-                            if (isSelectAllMode.value) {
-                                deselectedPathsInSelectAll.value = togglePathSelection(
-                                    selectedPaths = deselectedPathsInSelectAll.value,
-                                    path = file.normalizedPath
-                                )
-                            } else if (!isDeleted) {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
-                            }
+                            lazySelection.togglePath(
+                                path = file.normalizedPath,
+                                isDeleted = isDeleted
+                            )
                             bulkDeleteMessage.value = null
                         }
                     )
@@ -2605,7 +2558,7 @@ private fun SimilarityClusterDetailContent(
         )
     }
 
-    if (!selectionMode) {
+    if (!lazySelection.isSelectionMode) {
         selectedFile.value?.let { file ->
             FileDetailsDialogWithDeleteConfirm(
                 file = file,
@@ -2629,25 +2582,11 @@ private fun SimilarityClusterDetailContent(
     }
 
     if (confirmBulkDelete.value) {
-        val immediateTargets = if (isSelectAllMode.value) {
-            emptyList()
-        } else {
-            selectedFilesForDelete(
-                members = members,
-                selectedPaths = selectedPaths.value,
-                deletedPaths = deletedPaths
-            )
-        }
-        val selectedCountLabel = if (isSelectAllMode.value) {
-            countSelectedForDisplay(
-                totalCount = cluster.fileCount,
-                selectAllMode = true,
-                selectedPaths = emptySet(),
-                deselectedPaths = deselectedPathsInSelectAll.value
-            )
-        } else {
-            immediateTargets.size
-        }
+        val immediateTargets = lazySelection.selectedLoadedFilesForDelete(
+            members = members,
+            deletedPaths = deletedPaths
+        )
+        val selectedCountLabel = lazySelection.selectedCount(totalCount = cluster.fileCount)
         AlertDialog(
             onDismissRequest = {
                 if (!isBulkDeleting.value) {
@@ -2658,11 +2597,11 @@ private fun SimilarityClusterDetailContent(
             text = {
                 if (selectedCountLabel <= 0) {
                     Text("No deletable files are selected.")
-                } else if (isSelectAllMode.value) {
-                    if (deselectedPathsInSelectAll.value.isEmpty()) {
+                } else if (lazySelection.isSelectAllMode) {
+                    if (lazySelection.deselectedPathsInSelectAll.isEmpty()) {
                         Text("Select all is active. $selectedCountLabel files will be deleted, including not-loaded files.")
                     } else {
-                        Text("Select all is active with ${deselectedPathsInSelectAll.value.size} exclusions. $selectedCountLabel files will be deleted.")
+                        Text("Select all is active with ${lazySelection.deselectedPathsInSelectAll.size} exclusions. $selectedCountLabel files will be deleted.")
                     }
                 } else {
                     Text("$selectedCountLabel selected files will be deleted (moved to app trash).")
@@ -2672,9 +2611,9 @@ private fun SimilarityClusterDetailContent(
                 OutlinedButton(
                     onClick = {
                         val handler = onDeleteFile ?: return@OutlinedButton
-                        val selectAllSnapshot = isSelectAllMode.value
-                        val selectedPathsSnapshot = selectedPaths.value
-                        val excludedFromAllSnapshot = deselectedPathsInSelectAll.value
+                        val selectAllSnapshot = lazySelection.isSelectAllMode
+                        val selectedPathsSnapshot = lazySelection.selectedPaths
+                        val excludedFromAllSnapshot = lazySelection.deselectedPathsInSelectAll
                         val deletedPathsSnapshot = deletedPaths
 
                         isBulkDeleting.value = true
@@ -2725,9 +2664,7 @@ private fun SimilarityClusterDetailContent(
                                 }
                             }
 
-                            isSelectAllMode.value = false
-                            deselectedPathsInSelectAll.value = emptySet()
-                            selectedPaths.value = failedPaths
+                            lazySelection.markFailedPaths(failedPaths)
                             bulkDeleteMessage.value = when {
                                 successCount == 0 && failedPaths.isEmpty() -> "No files deleted."
                                 failedPaths.isEmpty() -> "$successCount files deleted."

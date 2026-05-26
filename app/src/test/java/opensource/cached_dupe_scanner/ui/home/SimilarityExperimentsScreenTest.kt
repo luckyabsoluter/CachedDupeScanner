@@ -800,16 +800,17 @@ class SimilarityExperimentsScreenTest {
             end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
         )
 
-        assertTrue(detailContent.contains("val isSelectAllMode = remember"))
-        assertTrue(detailContent.contains("val deselectedPathsInSelectAll = remember"))
-        assertTrue(detailContent.contains("selectionStatusText("))
+        assertTrue(detailContent.contains("rememberLazyDetailSelectionState(previewMemoryKey)"))
+        assertTrue(detailContent.contains("lazySelection.statusText("))
         assertTrue(detailContent.contains("Select all includes not-loaded files in delete queries."))
-        assertTrue(detailContent.contains("if (isSelectAllMode.value)"))
+        assertTrue(detailContent.contains("lazySelection.isSelectAllMode"))
         assertTrue(detailContent.contains("while (offset < cluster.fileCount)"))
         assertTrue(detailContent.contains("repository.listClusterMemberRows("))
         assertTrue(detailContent.contains("offset = offset"))
-        assertTrue(detailContent.contains("selectedFilesForDelete("))
+        assertTrue(detailContent.contains("lazySelection.selectedLoadedFilesForDelete("))
         assertFalse(detailContent.contains("DuplicateGroupDetailContent("))
+        assertFalse(detailContent.contains("val isSelectAllMode = remember"))
+        assertFalse(detailContent.contains("val deselectedPathsInSelectAll = remember"))
     }
 
     @Test

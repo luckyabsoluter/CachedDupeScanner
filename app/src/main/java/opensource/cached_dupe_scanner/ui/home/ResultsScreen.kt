@@ -544,7 +544,7 @@ private fun GroupDetailContent(
         "${group.files.firstOrNull()?.sizeBytes ?: 0L}:${group.hashHex}"
     }
 
-    DuplicateGroupDetailContent(
+    EagerDuplicateGroupDetailContent(
         title = "Group detail",
         memberCount = groupCount,
         totalBytes = groupSize,

@@ -6,9 +6,11 @@ import java.io.File
 
 class DuplicateGroupDetailContentSourceTest {
     @Test
-    fun duplicateGroupDetailSupportsLongPressSelection() {
+    fun eagerDuplicateGroupDetailSupportsLongPressSelection() {
         val detailContent = sourceText("DuplicateGroupDetailContent.kt")
 
+        assertTrue(detailContent.contains("internal fun EagerDuplicateGroupDetailContent("))
+        assertTrue(detailContent.contains("Use only when the complete member list is already loaded."))
         assertTrue(detailContent.contains("import androidx.compose.foundation.combinedClickable"))
         assertTrue(detailContent.contains("val selectedPaths = remember"))
         assertTrue(detailContent.contains("val selectionMode = selectedPaths.value.isNotEmpty()"))

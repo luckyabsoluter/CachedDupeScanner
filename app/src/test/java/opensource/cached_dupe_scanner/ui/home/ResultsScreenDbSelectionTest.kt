@@ -3,7 +3,10 @@ package opensource.cached_dupe_scanner.ui.home
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ResultsScreenDbSelectionTest {
     @Test
@@ -103,6 +106,40 @@ class ResultsScreenDbSelectionTest {
         )
 
         assertEquals(setOf("/a/file1.jpg"), filtered)
+    }
+
+    @Test
+    fun lazyDetailSelectionStateKeepsSelectAllAndExclusionsTogether() {
+        val selection = LazyDetailSelectionState()
+
+        selection.toggleSelectAll()
+        selection.togglePath(path = "/a/file2.jpg", isDeleted = false)
+        selection.filterPartialSelectionToLoadedMembers(
+            members = listOf(file("/a/file1.jpg")),
+            deletedPaths = emptySet()
+        )
+
+        assertEquals(true, selection.isSelectAllMode)
+        assertEquals(setOf("/a/file2.jpg"), selection.deselectedPathsInSelectAll)
+        assertEquals("Select all active · 1 excluded · 2 selected", selection.statusText(totalCount = 3))
+        assertEquals(false, selection.isPathSelected("/a/file2.jpg"))
+        assertEquals(true, selection.isPathSelected("/a/file3.jpg"))
+    }
+
+    @Test
+    fun dbGroupDetailUsesSharedLazySelectionState() {
+        val content = sourceText("ResultsScreenDb.kt")
+        val detail = sourceSection(
+            content = content,
+            start = "private fun GroupDetailDb(",
+            end = "internal fun countSelectedForDisplay("
+        )
+
+        assertTrue(detail.contains("rememberLazyDetailSelectionState(previewMemoryKey)"))
+        assertTrue(detail.contains("lazySelection.statusText("))
+        assertTrue(detail.contains("lazySelection.selectedLoadedFilesForDelete("))
+        assertFalse(detail.contains("val isSelectAllMode = remember"))
+        assertFalse(detail.contains("val deselectedPathsInSelectAll = remember"))
     }
 
     @Test
@@ -374,5 +411,24 @@ class ResultsScreenDbSelectionTest {
             totalBytes = size * 2,
             updatedAtMillis = 1L
         )
+    }
+
+    private fun sourceText(fileName: String): String {
+        val projectDir = File(requireNotNull(System.getProperty("user.dir")))
+        val sourceFile = sequenceOf(
+            File(projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName"),
+            File(projectDir.parentFile ?: projectDir, "app/src/main/java/opensource/cached_dupe_scanner/ui/home/$fileName")
+        ).firstOrNull { it.exists() }
+
+        assertTrue("$fileName should exist", sourceFile != null)
+        return sourceFile!!.readText()
+    }
+
+    private fun sourceSection(content: String, start: String, end: String): String {
+        val startIndex = content.indexOf(start)
+        val endIndex = content.indexOf(end, startIndex + start.length)
+        assertTrue("source start should exist", startIndex >= 0)
+        assertTrue("source end should exist", endIndex > startIndex)
+        return content.substring(startIndex, endIndex)
     }
 }

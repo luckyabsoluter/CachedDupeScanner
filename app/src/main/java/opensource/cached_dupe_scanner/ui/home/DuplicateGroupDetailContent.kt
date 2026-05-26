@@ -37,9 +37,12 @@ import kotlinx.coroutines.launch
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SortDirection
 
+/**
+ * Use only when the complete member list is already loaded.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun DuplicateGroupDetailContent(
+internal fun EagerDuplicateGroupDetailContent(
     title: String,
     memberCount: Int,
     totalBytes: Long,
