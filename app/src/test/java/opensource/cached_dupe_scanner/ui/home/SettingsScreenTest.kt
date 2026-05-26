@@ -164,8 +164,10 @@ class SettingsScreenTest {
         )
 
         assertEquals("Video preview memory", section.title)
+        assertTrue(section.description.contains("similarity cluster details"))
         assertEquals(1, section.toggles.size)
         assertEquals(ToggleSettingId.KeepLoadedVideoPreviewsInMemory, section.toggles[0].id)
+        assertTrue(section.toggles[0].description.contains("similarity cluster details"))
         assertTrue(section.toggles[0].checked)
     }
 
@@ -194,6 +196,7 @@ class SettingsScreenTest {
 
         assertEquals("Video preview size", section.title)
         assertTrue(section.description.contains("timeline"))
+        assertTrue(section.description.contains("similarity cluster details"))
         assertTrue(section.toggles.isEmpty())
     }
 
@@ -224,6 +227,7 @@ class SettingsScreenTest {
         )
 
         assertEquals("Video preview width snap", section.title)
+        assertTrue(section.description.contains("similarity cluster details"))
         assertEquals(1, section.toggles.size)
         assertEquals(ToggleSettingId.SnapVideoPreviewFramesToWidth, section.toggles[0].id)
         assertTrue(section.toggles[0].checked)
@@ -235,6 +239,7 @@ class SettingsScreenTest {
 
         assertEquals("Video preview lines", section.title)
         assertTrue(section.description.contains("rows"))
+        assertTrue(section.description.contains("similarity cluster details"))
         assertTrue(section.toggles.isEmpty())
     }
 

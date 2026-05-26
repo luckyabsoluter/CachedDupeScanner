@@ -842,7 +842,7 @@ class SimilarityExperimentsScreenTest {
         assertTrue(detailContent.contains("onToggleVideoPreviews: (Boolean) -> Unit"))
         assertTrue(detailContent.contains("Text(\"Video preview\")"))
         assertTrue(detailContent.contains("VideoTimelinePreviewStrip("))
-        assertTrue(detailContent.contains("if (showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted)"))
+        assertTrue(detailContent.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
         assertTrue(detailContent.contains("rememberedPreviewCache = rememberedVideoPreviewCache"))
         assertTrue(detailContent.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory"))
         assertTrue(detailContent.contains("snapToFillWidth = snapVideoPreviewFramesToWidth"))
@@ -850,6 +850,32 @@ class SimilarityExperimentsScreenTest {
         assertTrue(detailContent.contains("frameHeight = videoPreviewFrameHeight"))
         assertTrue(mainActivity.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
         assertTrue(mainActivity.contains("keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory"))
+    }
+
+    @Test
+    fun similarityClusterDetailPlacesVideoTimelineBelowMemberRow() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val detailContent = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterDetailContent(",
+            end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
+        )
+        val memberSection = sourceSection(
+            content = detailContent,
+            start = "displayedMembers.forEach { file ->",
+            end = "loadError?.let"
+        )
+        val textColumn = sourceSection(
+            content = memberSection,
+            start = "Column(modifier = Modifier.fillMaxWidth()) {",
+            end = "SimilarityClusterMemberVideoPreview("
+        )
+
+        assertTrue(memberSection.contains("Column(\n                modifier = Modifier\n                    .padding(10.dp)\n                    .fillMaxWidth()"))
+        assertTrue(memberSection.contains("Row(\n                    modifier = Modifier.fillMaxWidth(),"))
+        assertTrue(memberSection.contains("SimilarityClusterMemberVideoPreview("))
+        assertTrue(memberSection.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
+        assertFalse(textColumn.contains("VideoTimelinePreviewStrip("))
     }
 
     @Test

@@ -622,12 +622,12 @@ internal fun thumbnailMemorySettingsSection(settings: AppSettings): SettingsSect
 internal fun videoPreviewMemorySettingsSection(settings: AppSettings): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview memory",
-        description = "Keep generated video timeline preview frames in RAM for faster revisit while browsing files. Enabled by default.",
+        description = "Keep generated video timeline preview frames in RAM for faster revisit while browsing files and similarity cluster details. Enabled by default.",
         toggles = listOf(
             ToggleSettingModel(
                 id = ToggleSettingId.KeepLoadedVideoPreviewsInMemory,
                 title = "Keep video previews in RAM",
-                description = "Caches start/middle/end timeline frames for video preview mode in the file list.",
+                description = "Caches start/middle/end timeline frames for video preview mode in the file list and similarity cluster details.",
                 checked = settings.keepLoadedVideoPreviewsInMemory
             )
         )
@@ -644,21 +644,21 @@ internal fun thumbnailSizeSettingsSection(): SettingsSectionModel {
 internal fun videoPreviewSizeSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview size",
-        description = "Choose the timeline frame size used in the video preview mode on the files screen."
+        description = "Choose the timeline frame size used in video preview mode on the files screen and similarity cluster details."
     )
 }
 
 internal fun videoPreviewLineCountSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview lines",
-        description = "Choose how many timeline rows are rendered for each video preview card."
+        description = "Choose how many timeline rows are rendered for each video preview card in files and similarity cluster details."
     )
 }
 
 internal fun videoPreviewSnapSettingsSection(settings: AppSettings): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Video preview width snap",
-        description = "Snap timeline frames so each row expands to exactly fill the available width.",
+        description = "Snap timeline frames so each row expands to exactly fill the available width in files and similarity cluster details.",
         toggles = listOf(
             ToggleSettingModel(
                 id = ToggleSettingId.SnapVideoPreviewFramesToWidth,

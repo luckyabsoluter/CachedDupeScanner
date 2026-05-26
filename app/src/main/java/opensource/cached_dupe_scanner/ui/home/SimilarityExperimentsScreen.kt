@@ -2537,77 +2537,78 @@ private fun SimilarityClusterDetailContent(
                 CardDefaults.cardColors()
             }
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .padding(10.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
             ) {
-                if (lazySelection.isSelectionMode) {
-                    Checkbox(
-                        checked = isSelected,
-                        enabled = !isDeleted || lazySelection.isSelectAllMode,
-                        onCheckedChange = {
-                            lazySelection.togglePath(
-                                path = file.normalizedPath,
-                                isDeleted = isDeleted
-                            )
-                            bulkDeleteMessage.value = null
-                        }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
-                    GroupPreviewThumbnail(
-                        candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
-                        previewMemoryKey = similarityMemberPreviewMemoryKey(
-                            previewMemoryKey = previewMemoryKey,
-                            file = file
-                        ),
-                        rememberedPreviewCache = rememberedPreviewCache,
-                        imageLoader = imageLoader,
-                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-                        contentDescription = "Member thumbnail",
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = file.normalizedPath,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${formatBytesWithExact(file.sizeBytes)} · $date",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                    if (showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        VideoTimelinePreviewStrip(
-                            filePath = file.normalizedPath,
-                            rememberedPreviewCache = rememberedVideoPreviewCache,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (lazySelection.isSelectionMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            enabled = !isDeleted || lazySelection.isSelectAllMode,
+                            onCheckedChange = {
+                                lazySelection.togglePath(
+                                    path = file.normalizedPath,
+                                    isDeleted = isDeleted
+                                )
+                                bulkDeleteMessage.value = null
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
+                        GroupPreviewThumbnail(
+                            candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
+                            previewMemoryKey = similarityMemberPreviewMemoryKey(
+                                previewMemoryKey = previewMemoryKey,
+                                file = file
+                            ),
+                            rememberedPreviewCache = rememberedPreviewCache,
                             imageLoader = imageLoader,
-                            keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
-                            snapToFillWidth = snapVideoPreviewFramesToWidth,
-                            lineCount = videoPreviewLineCount,
-                            frameHeight = videoPreviewFrameHeight,
-                            modifier = Modifier.fillMaxWidth()
+                            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                            contentDescription = "Member thumbnail",
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = file.normalizedPath,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (isDeleted) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${formatBytesWithExact(file.sizeBytes)} · $date",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDeleted) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                 }
+                SimilarityClusterMemberVideoPreview(
+                    visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted,
+                    filePath = file.normalizedPath,
+                    rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                    imageLoader = imageLoader,
+                    keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                    snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                    videoPreviewLineCount = videoPreviewLineCount,
+                    videoPreviewFrameHeight = videoPreviewFrameHeight
+                )
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -2770,6 +2771,31 @@ private fun similarityMemberPreviewMemoryKey(
     file: FileMetadata
 ): String {
     return "$previewMemoryKey:${file.normalizedPath}"
+}
+
+@Composable
+private fun SimilarityClusterMemberVideoPreview(
+    visible: Boolean,
+    filePath: String,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    videoPreviewFrameHeight: Dp
+) {
+    if (!visible) return
+    Spacer(modifier = Modifier.height(8.dp))
+    VideoTimelinePreviewStrip(
+        filePath = filePath,
+        rememberedPreviewCache = rememberedVideoPreviewCache,
+        imageLoader = imageLoader,
+        keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+        snapToFillWidth = snapVideoPreviewFramesToWidth,
+        lineCount = videoPreviewLineCount,
+        frameHeight = videoPreviewFrameHeight,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
