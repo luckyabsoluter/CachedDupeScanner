@@ -2157,6 +2157,10 @@ private fun SimilarityClusterDetailScreen(
     val loadError = clusterMemberLoadErrors[clusterKey]
     var isLoading by remember(clusterKey) { mutableStateOf(false) }
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
+    val showVideoPreviews = remember(clusterKey) { mutableStateOf(false) }
+    val hasVideoMembers = members.any { file ->
+        isVideoFile(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
+    }
     val exactHashExplanation = exactThumbnailClusterExplanation(cluster.signature)
     val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.signature)
 
@@ -2211,6 +2215,11 @@ private fun SimilarityClusterDetailScreen(
         val currentState = loadedClusterMembers[clusterKey]
         if (currentState?.complete == true) return@LaunchedEffect
         loadClusterMemberPage(reset = currentState?.members.isNullOrEmpty())
+    }
+    LaunchedEffect(clusterKey, hasVideoMembers) {
+        if (!hasVideoMembers) {
+            showVideoPreviews.value = false
+        }
     }
 
     LaunchedEffect(clusterKey, detailListState) {
@@ -2288,6 +2297,9 @@ private fun SimilarityClusterDetailScreen(
                             previewHeight = previewHeight,
                             videoPreviewFrameHeight = videoPreviewFrameHeight,
                             showMemberThumbnails = true,
+                            showVideoPreviewOption = hasVideoMembers,
+                            showVideoPreviews = showVideoPreviews.value && hasVideoMembers,
+                            onToggleVideoPreviews = { enabled -> showVideoPreviews.value = enabled },
                             sortKey = sortKey,
                             sortDirection = sortDirection,
                             sortingEnabled = durationNeighborExplanation == null,
@@ -2335,6 +2347,9 @@ private fun SimilarityClusterDetailContent(
     previewHeight: Dp,
     videoPreviewFrameHeight: Dp,
     showMemberThumbnails: Boolean,
+    showVideoPreviewOption: Boolean,
+    showVideoPreviews: Boolean,
+    onToggleVideoPreviews: (Boolean) -> Unit,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     sortingEnabled: Boolean,
@@ -2420,6 +2435,23 @@ private fun SimilarityClusterDetailContent(
         }
     }
     Spacer(modifier = Modifier.height(8.dp))
+
+    if (showVideoPreviewOption) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleVideoPreviews(!showVideoPreviews) },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = showVideoPreviews,
+                onCheckedChange = onToggleVideoPreviews
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Video preview")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
 
     if (lazySelection.isSelectionMode) {
         Text(
@@ -2562,7 +2594,7 @@ private fun SimilarityClusterDetailContent(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-                    if (showMemberThumbnails && isVideo && !isDeleted) {
+                    if (showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted) {
                         Spacer(modifier = Modifier.height(8.dp))
                         VideoTimelinePreviewStrip(
                             filePath = file.normalizedPath,

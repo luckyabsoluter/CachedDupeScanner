@@ -814,7 +814,7 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
-    fun similarityClusterDetailShowsVideoTimelinePreviewsForVideoMembers() {
+    fun similarityClusterDetailOffersVideoTimelinePreviewOptionForVideoMembers() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
         val detailScreen = sourceSection(
             content = content,
@@ -830,9 +830,19 @@ class SimilarityExperimentsScreenTest {
 
         assertTrue(detailScreen.contains("rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>"))
         assertTrue(detailScreen.contains("videoPreviewFrameHeight: Dp"))
+        assertTrue(detailScreen.contains("val showVideoPreviews = remember(clusterKey) { mutableStateOf(false) }"))
+        assertTrue(detailScreen.contains("val hasVideoMembers = members.any"))
+        assertTrue(detailScreen.contains("showVideoPreviewOption = hasVideoMembers"))
+        assertTrue(detailScreen.contains("showVideoPreviews = showVideoPreviews.value && hasVideoMembers"))
+        assertTrue(detailScreen.contains("onToggleVideoPreviews = { enabled -> showVideoPreviews.value = enabled }"))
         assertTrue(detailScreen.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
         assertTrue(detailContent.contains("val isVideo = isVideoFile(file.normalizedPath)"))
+        assertTrue(detailContent.contains("showVideoPreviewOption: Boolean"))
+        assertTrue(detailContent.contains("showVideoPreviews: Boolean"))
+        assertTrue(detailContent.contains("onToggleVideoPreviews: (Boolean) -> Unit"))
+        assertTrue(detailContent.contains("Text(\"Video preview\")"))
         assertTrue(detailContent.contains("VideoTimelinePreviewStrip("))
+        assertTrue(detailContent.contains("if (showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted)"))
         assertTrue(detailContent.contains("rememberedPreviewCache = rememberedVideoPreviewCache"))
         assertTrue(detailContent.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory"))
         assertTrue(detailContent.contains("snapToFillWidth = snapVideoPreviewFramesToWidth"))
