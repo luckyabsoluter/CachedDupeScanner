@@ -25,6 +25,11 @@ class FilesScreenDbVideoPreviewSourceTest {
             content.contains("FilesPreviewMode.VideoTimeline.name") &&
                 content.contains("FilesPreviewMode.Compact.name")
         )
+        assertTrue(
+            "Files menu should expose the video duration option",
+            content.contains("Text(\"Video duration\")") &&
+                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value")
+        )
     }
 
     @Test
@@ -59,6 +64,10 @@ class FilesScreenDbVideoPreviewSourceTest {
         assertTrue(
             "Video timeline strip should use configurable frame height",
             content.contains("frameHeight = videoPreviewFrameHeightDp")
+        )
+        assertTrue(
+            "Video timeline strip should receive the optional duration display setting",
+            content.contains("showDuration = showVideoPreviewDuration.value")
         )
         assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",

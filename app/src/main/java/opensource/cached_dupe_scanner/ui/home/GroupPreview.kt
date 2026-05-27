@@ -35,7 +35,11 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.videoFramePercent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import java.io.File
 import kotlin.math.min
 
@@ -129,6 +133,31 @@ internal fun buildVideoTimelineFrames(frameCount: Int = DEFAULT_VIDEO_TIMELINE_F
     }
 }
 
+internal fun videoDurationLabel(durationMillis: Long): String {
+    val safeDuration = durationMillis.coerceAtLeast(0L)
+    val totalSeconds = safeDuration / 1_000L
+    val millis = safeDuration % 1_000L
+    val seconds = totalSeconds % 60L
+    val minutes = (totalSeconds / 60L) % 60L
+    val hours = totalSeconds / 3_600L
+    val secondsText = seconds.toString().padStart(2, '0') + if (millis == 0L) {
+        ""
+    } else {
+        ".${millis.toString().padStart(3, '0')}"
+    }
+
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:$secondsText"
+    } else {
+        "$minutes:$secondsText"
+    }
+}
+
+internal fun videoDurationPreviewText(durationMillis: Long?): String {
+    return durationMillis?.let { duration -> "Duration ${videoDurationLabel(duration)}" }
+        ?: "Duration unavailable"
+}
+
 @Composable
 internal fun VideoTimelinePreviewStrip(
     filePath: String,
@@ -138,16 +167,42 @@ internal fun VideoTimelinePreviewStrip(
     snapToFillWidth: Boolean = false,
     lineCount: Int = 1,
     frameHeight: Dp = 44.dp,
+    showDuration: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val safeLineCount = lineCount.coerceAtLeast(1)
+    var durationMillis by remember(filePath) { mutableStateOf<Long?>(null) }
+    var durationLoaded by remember(filePath) { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(filePath, showDuration) {
+        if (!showDuration) {
+            durationMillis = null
+            durationLoaded = false
+            return@LaunchedEffect
+        }
+
+        durationLoaded = false
+        durationMillis = withContext(Dispatchers.IO) {
+            AndroidVideoDurationExtractor().durationMillis(
+                file = File(filePath),
+                shouldContinue = { isActive }
+            )
+        }
+        durationLoaded = true
+    }
 
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        val loadedDurationText = videoDurationPreviewText(durationMillis)
+        val durationText = if (durationLoaded) loadedDurationText else "Duration loading..."
         Text(
-            text = "Start - ... - Middle - ... - End",
+            text = if (showDuration) {
+                "$durationText · Start - ... - Middle - ... - End"
+            } else {
+                "Start - ... - Middle - ... - End"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

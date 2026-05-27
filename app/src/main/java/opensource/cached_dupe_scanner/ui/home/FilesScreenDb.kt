@@ -94,6 +94,7 @@ fun FilesScreenDb(
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterScreenOpen = remember { mutableStateOf(false) }
     val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
+    val showVideoPreviewDuration = rememberSaveable { mutableStateOf(false) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -342,6 +343,19 @@ fun FilesScreenDb(
                                     menuExpanded.value = false
                                 }
                             )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Video duration") },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = showVideoPreviewDuration.value,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    showVideoPreviewDuration.value = !showVideoPreviewDuration.value
+                                    menuExpanded.value = false
+                                }
+                            )
                         }
                     }
                 )
@@ -453,6 +467,7 @@ fun FilesScreenDb(
                                     snapToFillWidth = snapVideoPreviewFramesToWidth,
                                     lineCount = videoPreviewLineCount,
                                     frameHeight = videoPreviewFrameHeightDp,
+                                    showDuration = showVideoPreviewDuration.value,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }

@@ -122,4 +122,17 @@ class GroupPreviewLogicTest {
         assertEquals(4, rows[1].size)
         assertEquals(2, rows[2].size)
     }
+
+    @Test
+    fun videoDurationLabelUsesClockStyleText() {
+        assertEquals("0:10", videoDurationLabel(10_000L))
+        assertEquals("1:05.250", videoDurationLabel(65_250L))
+        assertEquals("1:02:03", videoDurationLabel(3_723_000L))
+    }
+
+    @Test
+    fun videoDurationPreviewTextHandlesMissingDuration() {
+        assertEquals("Duration 1:05", videoDurationPreviewText(65_000L))
+        assertEquals("Duration unavailable", videoDurationPreviewText(null))
+    }
 }

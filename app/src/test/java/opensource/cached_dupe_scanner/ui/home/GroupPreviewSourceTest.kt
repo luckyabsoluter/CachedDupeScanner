@@ -65,5 +65,12 @@ class GroupPreviewSourceTest {
                 content.contains("totalTimelineFrameCount(") &&
                 content.contains("timelineFrameRows(")
         )
+        assertTrue(
+            "GroupPreview timeline should support optional visible-only duration loading",
+            content.contains("showDuration: Boolean = false") &&
+                content.contains("AndroidVideoDurationExtractor().durationMillis(") &&
+                content.contains("withContext(Dispatchers.IO)") &&
+                content.contains("videoDurationPreviewText(durationMillis)")
+        )
     }
 }
