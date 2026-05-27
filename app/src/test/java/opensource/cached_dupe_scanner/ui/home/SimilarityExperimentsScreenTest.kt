@@ -794,23 +794,38 @@ class SimilarityExperimentsScreenTest {
     @Test
     fun similarityClusterDetailKeepsLazySelectAllLongPressBehavior() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
-        val detailContent = sourceSection(
+        val detailScreen = sourceSection(
             content = content,
-            start = "private fun SimilarityClusterDetailContent(",
+            start = "private fun SimilarityClusterDetailScreen(",
             end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
         )
 
-        assertTrue(detailContent.contains("rememberLazyDetailSelectionState(previewMemoryKey)"))
-        assertTrue(detailContent.contains("lazySelection.statusText("))
-        assertTrue(detailContent.contains("Select all includes not-loaded files in delete queries."))
-        assertTrue(detailContent.contains("lazySelection.isSelectAllMode"))
-        assertTrue(detailContent.contains("while (offset < cluster.fileCount)"))
-        assertTrue(detailContent.contains("repository.listClusterMemberRows("))
-        assertTrue(detailContent.contains("offset = offset"))
-        assertTrue(detailContent.contains("lazySelection.selectedLoadedFilesForDelete("))
-        assertFalse(detailContent.contains("DuplicateGroupDetailContent("))
-        assertFalse(detailContent.contains("val isSelectAllMode = remember"))
-        assertFalse(detailContent.contains("val deselectedPathsInSelectAll = remember"))
+        assertTrue(detailScreen.contains("rememberLazyDetailSelectionState(previewMemoryKey)"))
+        assertTrue(detailScreen.contains("lazySelection.statusText("))
+        assertTrue(detailScreen.contains("Select all includes not-loaded files in delete queries."))
+        assertTrue(detailScreen.contains("lazySelection.isSelectAllMode"))
+        assertTrue(detailScreen.contains("while (offset < cluster.fileCount)"))
+        assertTrue(detailScreen.contains("repository.listClusterMemberRows("))
+        assertTrue(detailScreen.contains("offset = offset"))
+        assertTrue(detailScreen.contains("lazySelection.selectedLoadedFilesForDelete("))
+        assertFalse(detailScreen.contains("DuplicateGroupDetailContent("))
+        assertFalse(detailScreen.contains("val isSelectAllMode = remember"))
+        assertFalse(detailScreen.contains("val deselectedPathsInSelectAll = remember"))
+    }
+
+    @Test
+    fun similarityClusterDetailRendersMembersAsLazyItems() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val detailContent = sourceSection(
+            content = content,
+            start = "private fun LazyListScope.SimilarityClusterDetailContent(",
+            end = "@Composable\n@OptIn(ExperimentalFoundationApi::class)\nprivate fun SimilarityClusterMemberCard("
+        )
+
+        assertTrue(detailContent.contains("items(\n        items = displayedMembers,"))
+        assertTrue(detailContent.contains("key = { file -> \"similarity-cluster-detail-member:${'$'}{file.normalizedPath}\" }"))
+        assertTrue(detailContent.contains("SimilarityClusterMemberCard("))
+        assertFalse(detailContent.contains("displayedMembers.forEach { file ->"))
     }
 
     @Test
@@ -819,11 +834,21 @@ class SimilarityExperimentsScreenTest {
         val detailScreen = sourceSection(
             content = content,
             start = "private fun SimilarityClusterDetailScreen(",
-            end = "@Composable\n@OptIn(ExperimentalFoundationApi::class)\nprivate fun SimilarityClusterDetailContent("
+            end = "@OptIn(ExperimentalFoundationApi::class)\nprivate fun LazyListScope.SimilarityClusterDetailContent("
         )
         val detailContent = sourceSection(
             content = content,
-            start = "private fun SimilarityClusterDetailContent(",
+            start = "private fun LazyListScope.SimilarityClusterDetailContent(",
+            end = "@Composable\n@OptIn(ExperimentalFoundationApi::class)\nprivate fun SimilarityClusterMemberCard("
+        )
+        val memberCard = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterMemberCard(",
+            end = "@Composable\nprivate fun SimilarityClusterDetailDialogs("
+        )
+        val videoPreview = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterMemberVideoPreview(",
             end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
         )
         val mainActivity = projectSourceText("app/src/main/java/opensource/cached_dupe_scanner/MainActivity.kt")
@@ -845,19 +870,20 @@ class SimilarityExperimentsScreenTest {
         assertFalse(detailScreen.contains("showVideoPreviewOption = hasVideoMembers"))
         assertFalse(detailScreen.contains("onToggleVideoPreviews = { enabled -> showVideoPreviews.value = enabled }"))
         assertTrue(detailScreen.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
-        assertTrue(detailContent.contains("val isVideo = isVideoFile(file.normalizedPath)"))
+        assertTrue(memberCard.contains("val isVideo = isVideoFile(file.normalizedPath)"))
         assertTrue(detailContent.contains("showVideoPreviews: Boolean"))
         assertFalse(detailContent.contains("showVideoPreviewOption: Boolean"))
         assertFalse(detailContent.contains("onToggleVideoPreviews: (Boolean) -> Unit"))
         assertFalse(detailContent.contains("Text(\"Video preview\")"))
         assertFalse(detailContent.contains(".clickable { onToggleVideoPreviews(!showVideoPreviews) }"))
-        assertTrue(detailContent.contains("VideoTimelinePreviewStrip("))
-        assertTrue(detailContent.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
-        assertTrue(detailContent.contains("rememberedPreviewCache = rememberedVideoPreviewCache"))
-        assertTrue(detailContent.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory"))
-        assertTrue(detailContent.contains("snapToFillWidth = snapVideoPreviewFramesToWidth"))
-        assertTrue(detailContent.contains("lineCount = videoPreviewLineCount"))
-        assertTrue(detailContent.contains("frameHeight = videoPreviewFrameHeight"))
+        assertTrue(memberCard.contains("SimilarityClusterMemberVideoPreview("))
+        assertTrue(memberCard.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
+        assertTrue(videoPreview.contains("VideoTimelinePreviewStrip("))
+        assertTrue(videoPreview.contains("rememberedPreviewCache = rememberedVideoPreviewCache"))
+        assertTrue(videoPreview.contains("keepLoadedInMemory = keepLoadedVideoPreviewsInMemory"))
+        assertTrue(videoPreview.contains("snapToFillWidth = snapVideoPreviewFramesToWidth"))
+        assertTrue(videoPreview.contains("lineCount = videoPreviewLineCount"))
+        assertTrue(videoPreview.contains("frameHeight = videoPreviewFrameHeight"))
         assertTrue(mainActivity.contains("rememberedVideoPreviewCache = rememberedVideoPreviewCache"))
         assertTrue(mainActivity.contains("keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory"))
     }
@@ -865,26 +891,21 @@ class SimilarityExperimentsScreenTest {
     @Test
     fun similarityClusterDetailPlacesVideoTimelineBelowMemberRow() {
         val content = sourceText("SimilarityExperimentsScreen.kt")
-        val detailContent = sourceSection(
+        val memberCard = sourceSection(
             content = content,
-            start = "private fun SimilarityClusterDetailContent(",
-            end = "@Composable\nprivate fun ExactHashReductionPreviewCard"
-        )
-        val memberSection = sourceSection(
-            content = detailContent,
-            start = "displayedMembers.forEach { file ->",
-            end = "loadError?.let"
+            start = "private fun SimilarityClusterMemberCard(",
+            end = "@Composable\nprivate fun SimilarityClusterDetailDialogs("
         )
         val textColumn = sourceSection(
-            content = memberSection,
+            content = memberCard,
             start = "Column(modifier = Modifier.fillMaxWidth()) {",
             end = "SimilarityClusterMemberVideoPreview("
         )
 
-        assertTrue(memberSection.contains("Column(\n                modifier = Modifier\n                    .padding(10.dp)\n                    .fillMaxWidth()"))
-        assertTrue(memberSection.contains("Row(\n                    modifier = Modifier.fillMaxWidth(),"))
-        assertTrue(memberSection.contains("SimilarityClusterMemberVideoPreview("))
-        assertTrue(memberSection.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
+        assertTrue(memberCard.contains("Column(\n            modifier = Modifier\n                .padding(10.dp)\n                .fillMaxWidth()"))
+        assertTrue(memberCard.contains("Row(\n                modifier = Modifier.fillMaxWidth(),"))
+        assertTrue(memberCard.contains("SimilarityClusterMemberVideoPreview("))
+        assertTrue(memberCard.contains("visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted"))
         assertFalse(textColumn.contains("VideoTimelinePreviewStrip("))
     }
 

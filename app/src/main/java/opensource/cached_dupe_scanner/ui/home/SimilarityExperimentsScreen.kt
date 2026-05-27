@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -43,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -2153,6 +2155,7 @@ private fun SimilarityClusterDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val detailListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clusterKey = remember(cluster.experimentId, cluster.signature) { clusterStableKey(cluster) }
@@ -2168,6 +2171,22 @@ private fun SimilarityClusterDetailScreen(
     }
     val exactHashExplanation = exactThumbnailClusterExplanation(cluster.signature)
     val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.signature)
+    val previewMemoryKey = remember(clusterKey) { clusterPreviewMemoryKey(cluster) }
+    val selectedFile = remember(previewMemoryKey) { mutableStateOf<FileMetadata?>(null) }
+    val lazySelection = rememberLazyDetailSelectionState(previewMemoryKey)
+    val confirmBulkDelete = remember(previewMemoryKey) { mutableStateOf(false) }
+    val isBulkDeleting = remember(previewMemoryKey) { mutableStateOf(false) }
+    val bulkDeleteMessage = remember(previewMemoryKey) { mutableStateOf<String?>(null) }
+    val sortingEnabled = durationNeighborExplanation == null
+    val displayedMembers = if (sortingEnabled) {
+        sortGroupMembers(
+            members = members,
+            sortKey = sortKey,
+            direction = sortDirection
+        )
+    } else {
+        members
+    }
 
     suspend fun loadClusterMemberPage(reset: Boolean) {
         if (isLoading) return
@@ -2225,6 +2244,17 @@ private fun SimilarityClusterDetailScreen(
         if (!hasVideoMembers) {
             showVideoPreviews.value = false
             videoPreviewMenuExpanded.value = false
+        }
+    }
+    LaunchedEffect(displayedMembers, deletedPaths) {
+        lazySelection.filterPartialSelectionToLoadedMembers(
+            members = displayedMembers,
+            deletedPaths = deletedPaths
+        )
+    }
+    LaunchedEffect(lazySelection.isSelectionMode) {
+        if (lazySelection.isSelectionMode) {
+            selectedFile.value = null
         }
     }
 
@@ -2289,11 +2319,15 @@ private fun SimilarityClusterDetailScreen(
                     }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                when {
-                    members.isEmpty() && (isLoading || loadError == null) -> {
+            }
+            when {
+                members.isEmpty() && (isLoading || loadError == null) -> {
+                    item {
                         Text("Loading cluster members...")
                     }
-                    members.isEmpty() && loadError != null -> {
+                }
+                members.isEmpty() && loadError != null -> {
+                    item {
                         Text(loadError, style = MaterialTheme.typography.bodySmall)
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = {
@@ -2303,45 +2337,52 @@ private fun SimilarityClusterDetailScreen(
                             Text("Retry")
                         }
                     }
-                    else -> {
+                }
+                else -> {
+                    item {
                         ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
                         Spacer(modifier = Modifier.height(8.dp))
-                        SimilarityClusterDetailContent(
-                            repository = repository,
-                            cluster = cluster,
-                            title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
-                            summaryLines = similarityClusterDetailLines(
-                                cluster = cluster,
-                                exactHashExplanation = exactHashExplanation,
-                                durationNeighborExplanation = durationNeighborExplanation
-                            ),
-                            members = members,
-                            deletedPaths = deletedPaths,
-                            imageLoader = imageLoader,
-                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                            keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
-                            snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
-                            videoPreviewLineCount = videoPreviewLineCount,
-                            rememberedPreviewCache = rememberedPreviewCache,
-                            rememberedVideoPreviewCache = rememberedVideoPreviewCache,
-                            previewMemoryKey = clusterPreviewMemoryKey(cluster),
-                            previewHeight = previewHeight,
-                            videoPreviewFrameHeight = videoPreviewFrameHeight,
-                            showMemberThumbnails = true,
-                            showVideoPreviews = showVideoPreviews.value && hasVideoMembers,
-                            sortKey = sortKey,
-                            sortDirection = sortDirection,
-                            sortingEnabled = durationNeighborExplanation == null,
-                            onApplySort = onApplySort,
-                            onDeleteFile = onDeleteFile,
-                            isLoading = isLoading,
-                            isComplete = loadedClusterMembers[clusterKey]?.complete == true,
-                            loadError = loadError,
-                            onLoadMore = {
-                                scope.launch { loadClusterMemberPage(reset = false) }
-                            }
-                        )
                     }
+                    SimilarityClusterDetailContent(
+                        cluster = cluster,
+                        title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
+                        summaryLines = similarityClusterDetailLines(
+                            cluster = cluster,
+                            exactHashExplanation = exactHashExplanation,
+                            durationNeighborExplanation = durationNeighborExplanation
+                        ),
+                        members = members,
+                        displayedMembers = displayedMembers,
+                        deletedPaths = deletedPaths,
+                        imageLoader = imageLoader,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                        snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                        videoPreviewLineCount = videoPreviewLineCount,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                        previewMemoryKey = previewMemoryKey,
+                        previewHeight = previewHeight,
+                        videoPreviewFrameHeight = videoPreviewFrameHeight,
+                        showMemberThumbnails = true,
+                        showVideoPreviews = showVideoPreviews.value && hasVideoMembers,
+                        sortKey = sortKey,
+                        sortDirection = sortDirection,
+                        sortingEnabled = sortingEnabled,
+                        onApplySort = onApplySort,
+                        onDeleteFile = onDeleteFile,
+                        lazySelection = lazySelection,
+                        selectedFile = selectedFile,
+                        confirmBulkDelete = confirmBulkDelete,
+                        isBulkDeleting = isBulkDeleting,
+                        bulkDeleteMessage = bulkDeleteMessage,
+                        isLoading = isLoading,
+                        isComplete = loadedClusterMembers[clusterKey]?.complete == true,
+                        loadError = loadError,
+                        onLoadMore = {
+                            scope.launch { loadClusterMemberPage(reset = false) }
+                        }
+                    )
                 }
             }
         }
@@ -2354,16 +2395,30 @@ private fun SimilarityClusterDetailScreen(
                 .padding(end = 4.dp)
         )
     }
+
+    SimilarityClusterDetailDialogs(
+        context = context,
+        repository = repository,
+        scope = scope,
+        cluster = cluster,
+        members = members,
+        deletedPaths = deletedPaths,
+        onDeleteFile = onDeleteFile,
+        lazySelection = lazySelection,
+        selectedFile = selectedFile,
+        confirmBulkDelete = confirmBulkDelete,
+        isBulkDeleting = isBulkDeleting,
+        bulkDeleteMessage = bulkDeleteMessage
+    )
 }
 
-@Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun SimilarityClusterDetailContent(
-    repository: SimilarityExperimentRepository,
+private fun LazyListScope.SimilarityClusterDetailContent(
     cluster: SimilarityClusterEntity,
     title: String,
     summaryLines: List<String>,
     members: List<FileMetadata>,
+    displayedMembers: List<FileMetadata>,
     deletedPaths: Set<String>,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
@@ -2382,266 +2437,307 @@ private fun SimilarityClusterDetailContent(
     sortingEnabled: Boolean,
     onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    lazySelection: LazyDetailSelectionState,
+    selectedFile: MutableState<FileMetadata?>,
+    confirmBulkDelete: MutableState<Boolean>,
+    isBulkDeleting: MutableState<Boolean>,
+    bulkDeleteMessage: MutableState<String?>,
     isLoading: Boolean,
     isComplete: Boolean,
     loadError: String?,
     onLoadMore: () -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val selectedFile = remember(previewMemoryKey) { mutableStateOf<FileMetadata?>(null) }
-    val lazySelection = rememberLazyDetailSelectionState(previewMemoryKey)
-    val confirmBulkDelete = remember(previewMemoryKey) { mutableStateOf(false) }
-    val isBulkDeleting = remember(previewMemoryKey) { mutableStateOf(false) }
-    val bulkDeleteMessage = remember(previewMemoryKey) { mutableStateOf<String?>(null) }
     val hasPreviewMedia = members.any { isMediaFile(it.normalizedPath) }
     val previewCandidates = mediaPreviewCandidates(
         files = members,
         deletedPaths = deletedPaths
     )
-    val displayedMembers = if (sortingEnabled) {
-        sortGroupMembers(
-            members = members,
-            sortKey = sortKey,
-            direction = sortDirection
-        )
-    } else {
-        members
-    }
 
-    LaunchedEffect(displayedMembers, deletedPaths) {
-        lazySelection.filterPartialSelectionToLoadedMembers(
-            members = displayedMembers,
-            deletedPaths = deletedPaths
-        )
-    }
-    LaunchedEffect(lazySelection.isSelectionMode) {
-        if (lazySelection.isSelectionMode) {
-            selectedFile.value = null
-        }
-    }
-
-    Text(title)
-    Spacer(modifier = Modifier.height(8.dp))
-    if (hasPreviewMedia) {
-        GroupPreviewThumbnail(
-            candidatePaths = previewCandidates,
-            previewMemoryKey = previewMemoryKey,
-            rememberedPreviewCache = rememberedPreviewCache,
-            imageLoader = imageLoader,
-            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-            contentDescription = "Thumbnail",
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(previewHeight)
-        )
+    item(key = "similarity-cluster-detail-summary") {
+        Text(title)
         Spacer(modifier = Modifier.height(8.dp))
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("${cluster.fileCount} files · Total ${formatBytes(cluster.totalBytes)}")
-            summaryLines.forEach { line ->
+        if (hasPreviewMedia) {
+            GroupPreviewThumbnail(
+                candidatePaths = previewCandidates,
+                previewMemoryKey = previewMemoryKey,
+                rememberedPreviewCache = rememberedPreviewCache,
+                imageLoader = imageLoader,
+                keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                contentDescription = "Thumbnail",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(previewHeight)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("${cluster.fileCount} files · Total ${formatBytes(cluster.totalBytes)}")
+                summaryLines.forEach { line ->
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (sortingEnabled) {
+                Spacer(modifier = Modifier.width(8.dp))
+                GroupMemberSortButton(
+                    sortKey = sortKey,
+                    sortDirection = sortDirection,
+                    onApplySort = onApplySort
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (lazySelection.isSelectionMode) {
+            Text(
+                text = lazySelection.statusText(totalCount = cluster.fileCount),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        lazySelection.toggleSelectAll()
+                        bulkDeleteMessage.value = null
+                    },
+                    enabled = !isBulkDeleting.value
+                ) {
+                    Text(if (lazySelection.allSelectedAcrossGroup) "Deselect all" else "Select all")
+                }
+                OutlinedButton(
+                    onClick = { confirmBulkDelete.value = true },
+                    enabled = onDeleteFile != null && !isBulkDeleting.value
+                ) {
+                    Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
+                }
+            }
+            if (lazySelection.isSelectAllMode && !isComplete) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = line,
+                    text = "Select all includes not-loaded files in delete queries.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            Spacer(modifier = Modifier.height(8.dp))
         }
-        if (sortingEnabled) {
-            Spacer(modifier = Modifier.width(8.dp))
-            GroupMemberSortButton(
-                sortKey = sortKey,
-                sortDirection = sortDirection,
-                onApplySort = onApplySort
-            )
-        }
-    }
-    Spacer(modifier = Modifier.height(8.dp))
 
-    if (lazySelection.isSelectionMode) {
-        Text(
-            text = lazySelection.statusText(totalCount = cluster.fileCount),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = {
-                    lazySelection.toggleSelectAll()
-                    bulkDeleteMessage.value = null
-                },
-                enabled = !isBulkDeleting.value
-            ) {
-                Text(if (lazySelection.allSelectedAcrossGroup) "Deselect all" else "Select all")
-            }
-            OutlinedButton(
-                onClick = { confirmBulkDelete.value = true },
-                enabled = onDeleteFile != null && !isBulkDeleting.value
-            ) {
-                Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
-            }
-        }
-        if (lazySelection.isSelectAllMode && !isComplete) {
-            Spacer(modifier = Modifier.height(4.dp))
+        bulkDeleteMessage.value?.let { message ->
             Text(
-                text = "Select all includes not-loaded files in delete queries.",
+                text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(8.dp))
         }
-        Spacer(modifier = Modifier.height(8.dp))
     }
 
-    bulkDeleteMessage.value?.let { message ->
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    items(
+        items = displayedMembers,
+        key = { file -> "similarity-cluster-detail-member:${file.normalizedPath}" }
+    ) { file ->
+        SimilarityClusterMemberCard(
+            file = file,
+            deletedPaths = deletedPaths,
+            imageLoader = imageLoader,
+            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+            keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+            snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+            videoPreviewLineCount = videoPreviewLineCount,
+            rememberedPreviewCache = rememberedPreviewCache,
+            rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+            previewMemoryKey = previewMemoryKey,
+            videoPreviewFrameHeight = videoPreviewFrameHeight,
+            showMemberThumbnails = showMemberThumbnails,
+            showVideoPreviews = showVideoPreviews,
+            lazySelection = lazySelection,
+            selectedFile = selectedFile,
+            bulkDeleteMessage = bulkDeleteMessage
         )
         Spacer(modifier = Modifier.height(8.dp))
     }
 
-    displayedMembers.forEach { file ->
-        val date = formatDate(file.lastModifiedMillis)
-        val isDeleted = deletedPaths.contains(file.normalizedPath)
-        val isVideo = isVideoFile(file.normalizedPath)
-        val isSelected = lazySelection.isPathSelected(file.normalizedPath)
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = {
-                        if (lazySelection.isSelectionMode) {
-                            lazySelection.togglePath(
-                                path = file.normalizedPath,
-                                isDeleted = isDeleted
-                            )
-                            bulkDeleteMessage.value = null
-                        } else {
-                            selectedFile.value = file
-                        }
-                    },
-                    onLongClick = {
+    item(key = "similarity-cluster-detail-load-more") {
+        loadError?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        OutlinedButton(
+            onClick = onLoadMore,
+            enabled = !isLoading && !isComplete,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                when {
+                    isComplete -> "All loaded"
+                    isLoading -> "Loading…"
+                    else -> "Load more"
+                }
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun SimilarityClusterMemberCard(
+    file: FileMetadata,
+    deletedPaths: Set<String>,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
+    previewMemoryKey: String,
+    videoPreviewFrameHeight: Dp,
+    showMemberThumbnails: Boolean,
+    showVideoPreviews: Boolean,
+    lazySelection: LazyDetailSelectionState,
+    selectedFile: MutableState<FileMetadata?>,
+    bulkDeleteMessage: MutableState<String?>
+) {
+    val date = formatDate(file.lastModifiedMillis)
+    val isDeleted = deletedPaths.contains(file.normalizedPath)
+    val isVideo = isVideoFile(file.normalizedPath)
+    val isSelected = lazySelection.isPathSelected(file.normalizedPath)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {
+                    if (lazySelection.isSelectionMode) {
                         lazySelection.togglePath(
                             path = file.normalizedPath,
                             isDeleted = isDeleted
                         )
                         bulkDeleteMessage.value = null
+                    } else {
+                        selectedFile.value = file
                     }
-                ),
-            colors = if (isDeleted) {
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            } else {
-                CardDefaults.cardColors()
-            }
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(10.dp)
-                    .fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (lazySelection.isSelectionMode) {
-                        Checkbox(
-                            checked = isSelected,
-                            enabled = !isDeleted || lazySelection.isSelectAllMode,
-                            onCheckedChange = {
-                                lazySelection.togglePath(
-                                    path = file.normalizedPath,
-                                    isDeleted = isDeleted
-                                )
-                                bulkDeleteMessage.value = null
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
-                        GroupPreviewThumbnail(
-                            candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
-                            previewMemoryKey = similarityMemberPreviewMemoryKey(
-                                previewMemoryKey = previewMemoryKey,
-                                file = file
-                            ),
-                            rememberedPreviewCache = rememberedPreviewCache,
-                            imageLoader = imageLoader,
-                            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-                            contentDescription = "Member thumbnail",
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = file.normalizedPath,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            color = if (isDeleted) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${formatBytesWithExact(file.sizeBytes)} · $date",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDeleted) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    }
+                },
+                onLongClick = {
+                    lazySelection.togglePath(
+                        path = file.normalizedPath,
+                        isDeleted = isDeleted
+                    )
+                    bulkDeleteMessage.value = null
                 }
-                SimilarityClusterMemberVideoPreview(
-                    visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted,
-                    filePath = file.normalizedPath,
-                    rememberedVideoPreviewCache = rememberedVideoPreviewCache,
-                    imageLoader = imageLoader,
-                    keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
-                    snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
-                    videoPreviewLineCount = videoPreviewLineCount,
-                    videoPreviewFrameHeight = videoPreviewFrameHeight
-                )
-            }
+            ),
+        colors = if (isDeleted) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        } else {
+            CardDefaults.cardColors()
         }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-
-    loadError?.let { message ->
-        Text(message, style = MaterialTheme.typography.bodySmall)
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-    OutlinedButton(
-        onClick = onLoadMore,
-        enabled = !isLoading && !isComplete,
-        modifier = Modifier.fillMaxWidth()
     ) {
-        Text(
-            when {
-                isComplete -> "All loaded"
-                isLoading -> "Loading…"
-                else -> "Load more"
+        Column(
+            modifier = Modifier
+                .padding(10.dp)
+                .fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (lazySelection.isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        enabled = !isDeleted || lazySelection.isSelectAllMode,
+                        onCheckedChange = {
+                            lazySelection.togglePath(
+                                path = file.normalizedPath,
+                                isDeleted = isDeleted
+                            )
+                            bulkDeleteMessage.value = null
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
+                    GroupPreviewThumbnail(
+                        candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
+                        previewMemoryKey = similarityMemberPreviewMemoryKey(
+                            previewMemoryKey = previewMemoryKey,
+                            file = file
+                        ),
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        imageLoader = imageLoader,
+                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                        contentDescription = "Member thumbnail",
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = file.normalizedPath,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatBytesWithExact(file.sizeBytes)} · $date",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDeleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
-        )
+            SimilarityClusterMemberVideoPreview(
+                visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted,
+                filePath = file.normalizedPath,
+                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                imageLoader = imageLoader,
+                keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                videoPreviewLineCount = videoPreviewLineCount,
+                videoPreviewFrameHeight = videoPreviewFrameHeight
+            )
+        }
     }
+}
 
+@Composable
+private fun SimilarityClusterDetailDialogs(
+    context: Context,
+    repository: SimilarityExperimentRepository,
+    scope: CoroutineScope,
+    cluster: SimilarityClusterEntity,
+    members: List<FileMetadata>,
+    deletedPaths: Set<String>,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    lazySelection: LazyDetailSelectionState,
+    selectedFile: MutableState<FileMetadata?>,
+    confirmBulkDelete: MutableState<Boolean>,
+    isBulkDeleting: MutableState<Boolean>,
+    bulkDeleteMessage: MutableState<String?>
+) {
     if (!lazySelection.isSelectionMode) {
         selectedFile.value?.let { file ->
             FileDetailsDialogWithDeleteConfirm(
@@ -2670,7 +2766,11 @@ private fun SimilarityClusterDetailContent(
             members = members,
             deletedPaths = deletedPaths
         )
-        val selectedCountLabel = lazySelection.selectedCount(totalCount = cluster.fileCount)
+        val selectedCountLabel = if (lazySelection.isSelectAllMode) {
+            lazySelection.selectedCount(totalCount = cluster.fileCount)
+        } else {
+            immediateTargets.size
+        }
         AlertDialog(
             onDismissRequest = {
                 if (!isBulkDeleting.value) {
@@ -2696,7 +2796,6 @@ private fun SimilarityClusterDetailContent(
                     onClick = {
                         val handler = onDeleteFile ?: return@OutlinedButton
                         val selectAllSnapshot = lazySelection.isSelectAllMode
-                        val selectedPathsSnapshot = lazySelection.selectedPaths
                         val excludedFromAllSnapshot = lazySelection.deselectedPathsInSelectAll
                         val deletedPathsSnapshot = deletedPaths
 
@@ -2734,11 +2833,7 @@ private fun SimilarityClusterDetailContent(
                                     offset += SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
                                 }
                             } else {
-                                selectedFilesForDelete(
-                                    members = members,
-                                    selectedPaths = selectedPathsSnapshot,
-                                    deletedPaths = deletedPathsSnapshot
-                                ).forEach { file ->
+                                immediateTargets.forEach { file ->
                                     val deleted = runCatching { handler(file) }.getOrDefault(false)
                                     if (deleted) {
                                         successCount += 1

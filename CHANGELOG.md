@@ -41,6 +41,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Similarity cluster detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
 - Similarity cluster detail screens now load members page-by-page instead of materializing entire large clusters at once.
 - Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
 
