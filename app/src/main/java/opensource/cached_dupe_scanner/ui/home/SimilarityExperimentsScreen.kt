@@ -2315,6 +2315,10 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviews.value = !showVideoPreviews.value
+                                        if (!showVideoPreviews.value) {
+                                            showVideoPreviewDurations.value = false
+                                            showVideoPreviewResolutions.value = false
+                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
@@ -2328,6 +2332,9 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewDurations.value = !showVideoPreviewDurations.value
+                                        if (showVideoPreviewDurations.value) {
+                                            showVideoPreviews.value = true
+                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
@@ -2341,6 +2348,9 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewResolutions.value = !showVideoPreviewResolutions.value
+                                        if (showVideoPreviewResolutions.value) {
+                                            showVideoPreviews.value = true
+                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )

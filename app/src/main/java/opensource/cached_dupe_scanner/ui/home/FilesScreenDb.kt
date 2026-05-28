@@ -337,6 +337,8 @@ fun FilesScreenDb(
                                 },
                                 onClick = {
                                     previewMode.value = if (isVideoTimelinePreviewEnabled()) {
+                                        showVideoPreviewDuration.value = false
+                                        showVideoPreviewResolution.value = false
                                         FilesPreviewMode.Compact.name
                                     } else {
                                         FilesPreviewMode.VideoTimeline.name
@@ -354,6 +356,9 @@ fun FilesScreenDb(
                                 },
                                 onClick = {
                                     showVideoPreviewDuration.value = !showVideoPreviewDuration.value
+                                    if (showVideoPreviewDuration.value) {
+                                        previewMode.value = FilesPreviewMode.VideoTimeline.name
+                                    }
                                     menuExpanded.value = false
                                 }
                             )
@@ -367,6 +372,9 @@ fun FilesScreenDb(
                                 },
                                 onClick = {
                                     showVideoPreviewResolution.value = !showVideoPreviewResolution.value
+                                    if (showVideoPreviewResolution.value) {
+                                        previewMode.value = FilesPreviewMode.VideoTimeline.name
+                                    }
                                     menuExpanded.value = false
                                 }
                             )

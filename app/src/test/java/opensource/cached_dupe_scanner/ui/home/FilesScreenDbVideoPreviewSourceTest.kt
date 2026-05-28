@@ -26,14 +26,21 @@ class FilesScreenDbVideoPreviewSourceTest {
                 content.contains("FilesPreviewMode.Compact.name")
         )
         assertTrue(
-            "Files menu should expose the video duration option",
-            content.contains("Text(\"Video duration\")") &&
-                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value")
+            "Turning video preview off should clear hidden metadata options",
+            content.contains("showVideoPreviewDuration.value = false") &&
+                content.contains("showVideoPreviewResolution.value = false")
         )
         assertTrue(
-            "Files menu should expose the video resolution option",
+            "Files menu should expose the video duration option and enable the preview surface",
+            content.contains("Text(\"Video duration\")") &&
+                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value") &&
+                content.contains("if (showVideoPreviewDuration.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
+        )
+        assertTrue(
+            "Files menu should expose the video resolution option and enable the preview surface",
             content.contains("Text(\"Video resolution\")") &&
-                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value")
+                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value") &&
+                content.contains("if (showVideoPreviewResolution.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
         )
     }
 
