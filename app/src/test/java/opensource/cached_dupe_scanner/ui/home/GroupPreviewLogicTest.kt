@@ -135,4 +135,21 @@ class GroupPreviewLogicTest {
         assertEquals("Duration 1:05", videoDurationPreviewText(65_000L))
         assertEquals("Duration unavailable", videoDurationPreviewText(null))
     }
+
+    @Test
+    fun normalizedVideoResolutionUsesDisplayOrientation() {
+        assertEquals(VideoResolution(width = 1920, height = 1080), normalizedVideoResolution(1920, 1080, 0))
+        assertEquals(VideoResolution(width = 1080, height = 1920), normalizedVideoResolution(1920, 1080, 90))
+        assertEquals(VideoResolution(width = 1080, height = 1920), normalizedVideoResolution(1920, 1080, 270))
+        assertEquals(null, normalizedVideoResolution(0, 1080, 0))
+    }
+
+    @Test
+    fun videoResolutionPreviewTextHandlesMissingResolution() {
+        assertEquals(
+            "Resolution 1920x1080",
+            videoResolutionPreviewText(VideoResolution(width = 1920, height = 1080))
+        )
+        assertEquals("Resolution unavailable", videoResolutionPreviewText(null))
+    }
 }

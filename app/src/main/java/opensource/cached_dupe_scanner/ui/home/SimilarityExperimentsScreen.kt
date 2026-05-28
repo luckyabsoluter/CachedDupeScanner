@@ -2166,6 +2166,7 @@ private fun SimilarityClusterDetailScreen(
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
     val showVideoPreviews = remember(clusterKey) { mutableStateOf(false) }
     val showVideoPreviewDurations = remember(clusterKey) { mutableStateOf(false) }
+    val showVideoPreviewResolutions = remember(clusterKey) { mutableStateOf(false) }
     val videoPreviewMenuExpanded = remember(clusterKey) { mutableStateOf(false) }
     val hasVideoMembers = members.any { file ->
         isVideoFile(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
@@ -2245,6 +2246,7 @@ private fun SimilarityClusterDetailScreen(
         if (!hasVideoMembers) {
             showVideoPreviews.value = false
             showVideoPreviewDurations.value = false
+            showVideoPreviewResolutions.value = false
             videoPreviewMenuExpanded.value = false
         }
     }
@@ -2329,6 +2331,19 @@ private fun SimilarityClusterDetailScreen(
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Video resolution") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = showVideoPreviewResolutions.value,
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showVideoPreviewResolutions.value = !showVideoPreviewResolutions.value
+                                        videoPreviewMenuExpanded.value = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -2382,6 +2397,7 @@ private fun SimilarityClusterDetailScreen(
                         showMemberThumbnails = true,
                         showVideoPreviews = showVideoPreviews.value && hasVideoMembers,
                         showVideoPreviewDurations = showVideoPreviewDurations.value && hasVideoMembers,
+                        showVideoPreviewResolutions = showVideoPreviewResolutions.value && hasVideoMembers,
                         sortKey = sortKey,
                         sortDirection = sortDirection,
                         sortingEnabled = sortingEnabled,
@@ -2449,6 +2465,7 @@ private fun LazyListScope.SimilarityClusterDetailContent(
     showMemberThumbnails: Boolean,
     showVideoPreviews: Boolean,
     showVideoPreviewDurations: Boolean,
+    showVideoPreviewResolutions: Boolean,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     sortingEnabled: Boolean,
@@ -2581,6 +2598,7 @@ private fun LazyListScope.SimilarityClusterDetailContent(
             showMemberThumbnails = showMemberThumbnails,
             showVideoPreviews = showVideoPreviews,
             showVideoPreviewDurations = showVideoPreviewDurations,
+            showVideoPreviewResolutions = showVideoPreviewResolutions,
             lazySelection = lazySelection,
             selectedFile = selectedFile,
             bulkDeleteMessage = bulkDeleteMessage
@@ -2626,6 +2644,7 @@ private fun SimilarityClusterMemberCard(
     showMemberThumbnails: Boolean,
     showVideoPreviews: Boolean,
     showVideoPreviewDurations: Boolean,
+    showVideoPreviewResolutions: Boolean,
     lazySelection: LazyDetailSelectionState,
     selectedFile: MutableState<FileMetadata?>,
     bulkDeleteMessage: MutableState<String?>
@@ -2737,7 +2756,8 @@ private fun SimilarityClusterMemberCard(
                 snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
                 videoPreviewLineCount = videoPreviewLineCount,
                 videoPreviewFrameHeight = videoPreviewFrameHeight,
-                showDuration = showVideoPreviewDurations
+                showDuration = showVideoPreviewDurations,
+                showResolution = showVideoPreviewResolutions
             )
         }
     }
@@ -2908,7 +2928,8 @@ private fun SimilarityClusterMemberVideoPreview(
     snapVideoPreviewFramesToWidth: Boolean,
     videoPreviewLineCount: Int,
     videoPreviewFrameHeight: Dp,
-    showDuration: Boolean
+    showDuration: Boolean,
+    showResolution: Boolean
 ) {
     if (!visible) return
     Spacer(modifier = Modifier.height(8.dp))
@@ -2921,6 +2942,7 @@ private fun SimilarityClusterMemberVideoPreview(
         lineCount = videoPreviewLineCount,
         frameHeight = videoPreviewFrameHeight,
         showDuration = showDuration,
+        showResolution = showResolution,
         modifier = Modifier.fillMaxWidth()
     )
 }

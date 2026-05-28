@@ -72,5 +72,12 @@ class GroupPreviewSourceTest {
                 content.contains("withContext(Dispatchers.IO)") &&
                 content.contains("videoDurationPreviewText(durationMillis)")
         )
+        assertTrue(
+            "GroupPreview timeline should support optional visible-only resolution loading",
+            content.contains("showResolution: Boolean = false") &&
+                content.contains("readVideoResolution(") &&
+                content.contains("MediaMetadataRetriever") &&
+                content.contains("videoResolutionPreviewText(videoResolution)")
+        )
     }
 }

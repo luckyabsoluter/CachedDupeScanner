@@ -30,6 +30,11 @@ class FilesScreenDbVideoPreviewSourceTest {
             content.contains("Text(\"Video duration\")") &&
                 content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value")
         )
+        assertTrue(
+            "Files menu should expose the video resolution option",
+            content.contains("Text(\"Video resolution\")") &&
+                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value")
+        )
     }
 
     @Test
@@ -68,6 +73,10 @@ class FilesScreenDbVideoPreviewSourceTest {
         assertTrue(
             "Video timeline strip should receive the optional duration display setting",
             content.contains("showDuration = showVideoPreviewDuration.value")
+        )
+        assertTrue(
+            "Video timeline strip should receive the optional resolution display setting",
+            content.contains("showResolution = showVideoPreviewResolution.value")
         )
         assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",
