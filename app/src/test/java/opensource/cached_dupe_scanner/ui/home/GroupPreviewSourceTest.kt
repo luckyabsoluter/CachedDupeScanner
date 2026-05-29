@@ -79,5 +79,10 @@ class GroupPreviewSourceTest {
                 content.contains("MediaMetadataRetriever") &&
                 content.contains("videoResolutionPreviewText(videoResolution)")
         )
+        assertTrue(
+            "GroupPreview should expose video metadata labels separately from timeline frames",
+            content.contains("VideoMetadataLabelText(") &&
+                content.contains("suffixText = guideText")
+        )
     }
 }

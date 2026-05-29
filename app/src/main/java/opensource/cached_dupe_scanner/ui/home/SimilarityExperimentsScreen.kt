@@ -2319,10 +2319,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviews.value = !showVideoPreviews.value
-                                        if (!showVideoPreviews.value) {
-                                            showVideoPreviewDurations.value = false
-                                            showVideoPreviewResolutions.value = false
-                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
@@ -2336,9 +2332,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewDurations.value = !showVideoPreviewDurations.value
-                                        if (showVideoPreviewDurations.value) {
-                                            showVideoPreviews.value = true
-                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
@@ -2352,9 +2345,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewResolutions.value = !showVideoPreviewResolutions.value
-                                        if (showVideoPreviewResolutions.value) {
-                                            showVideoPreviews.value = true
-                                        }
                                         videoPreviewMenuExpanded.value = false
                                     }
                                 )
@@ -2761,6 +2751,12 @@ private fun SimilarityClusterMemberCard(
                     )
                 }
             }
+            SimilarityClusterMemberVideoMetadata(
+                visible = !showVideoPreviews && (showVideoPreviewDurations || showVideoPreviewResolutions) && isVideo && !isDeleted,
+                filePath = file.normalizedPath,
+                showDuration = showVideoPreviewDurations,
+                showResolution = showVideoPreviewResolutions
+            )
             SimilarityClusterMemberVideoPreview(
                 visible = showVideoPreviews && showMemberThumbnails && isVideo && !isDeleted,
                 filePath = file.normalizedPath,
@@ -2775,6 +2771,23 @@ private fun SimilarityClusterMemberCard(
             )
         }
     }
+}
+
+@Composable
+private fun SimilarityClusterMemberVideoMetadata(
+    visible: Boolean,
+    filePath: String,
+    showDuration: Boolean,
+    showResolution: Boolean
+) {
+    if (!visible) return
+    Spacer(modifier = Modifier.height(8.dp))
+    VideoMetadataLabelText(
+        filePath = filePath,
+        showDuration = showDuration,
+        showResolution = showResolution,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

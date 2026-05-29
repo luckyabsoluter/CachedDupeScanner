@@ -26,21 +26,19 @@ class FilesScreenDbVideoPreviewSourceTest {
                 content.contains("FilesPreviewMode.Compact.name")
         )
         assertTrue(
-            "Turning video preview off should clear hidden metadata options",
-            content.contains("showVideoPreviewDuration.value = false") &&
-                content.contains("showVideoPreviewResolution.value = false")
-        )
-        assertTrue(
-            "Files menu should expose the video duration option and enable the preview surface",
+            "Files menu should expose the video duration option without enabling preview frames",
             content.contains("Text(\"Video duration\")") &&
-                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value") &&
-                content.contains("if (showVideoPreviewDuration.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
+                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value")
         )
         assertTrue(
-            "Files menu should expose the video resolution option and enable the preview surface",
+            "Files menu should expose the video resolution option without enabling preview frames",
             content.contains("Text(\"Video resolution\")") &&
-                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value") &&
-                content.contains("if (showVideoPreviewResolution.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
+                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value")
+        )
+        assertTrue(
+            "Video metadata options should not switch the preview mode",
+            !content.contains("if (showVideoPreviewDuration.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }") &&
+                !content.contains("if (showVideoPreviewResolution.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
         )
     }
 
@@ -84,6 +82,11 @@ class FilesScreenDbVideoPreviewSourceTest {
         assertTrue(
             "Video timeline strip should receive the optional resolution display setting",
             content.contains("showResolution = showVideoPreviewResolution.value")
+        )
+        assertTrue(
+            "Video metadata labels should render without enabling timeline preview frames",
+            content.contains("if ((showVideoPreviewDuration.value || showVideoPreviewResolution.value) && !isVideoTimelinePreviewEnabled() && isVideo)") &&
+                content.contains("VideoMetadataLabelText(")
         )
         assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",

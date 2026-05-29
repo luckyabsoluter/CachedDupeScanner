@@ -185,19 +185,15 @@ internal fun videoResolutionPreviewText(videoResolution: VideoResolution?): Stri
 }
 
 @Composable
-internal fun VideoTimelinePreviewStrip(
+internal fun VideoMetadataLabelText(
     filePath: String,
-    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
-    imageLoader: ImageLoader,
-    keepLoadedInMemory: Boolean,
-    snapToFillWidth: Boolean = false,
-    lineCount: Int = 1,
-    frameHeight: Dp = 44.dp,
-    showDuration: Boolean = false,
-    showResolution: Boolean = false,
-    modifier: Modifier = Modifier
+    showDuration: Boolean,
+    showResolution: Boolean,
+    modifier: Modifier = Modifier,
+    suffixText: String? = null
 ) {
-    val safeLineCount = lineCount.coerceAtLeast(1)
+    if (!showDuration && !showResolution && suffixText == null) return
+
     var durationMillis by remember(filePath) { mutableStateOf<Long?>(null) }
     var durationLoaded by remember(filePath) { mutableStateOf(false) }
     var videoResolution by remember(filePath) { mutableStateOf<VideoResolution?>(null) }
@@ -237,27 +233,53 @@ internal fun VideoTimelinePreviewStrip(
         resolutionLoaded = true
     }
 
+    val loadedDurationText = videoDurationPreviewText(durationMillis)
+    val durationText = if (durationLoaded) loadedDurationText else "Duration loading..."
+    val loadedResolutionText = videoResolutionPreviewText(videoResolution)
+    val resolutionText = if (resolutionLoaded) loadedResolutionText else "Resolution loading..."
+    val metadataText = listOfNotNull(
+        if (showDuration) durationText else null,
+        if (showResolution) resolutionText else null
+    ).joinToString(" · ")
+    val labelText = listOfNotNull(
+        metadataText.takeIf { it.isNotEmpty() },
+        suffixText
+    ).joinToString(" · ")
+    if (labelText.isEmpty()) return
+
+    Text(
+        text = labelText,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
+}
+
+@Composable
+internal fun VideoTimelinePreviewStrip(
+    filePath: String,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedInMemory: Boolean,
+    snapToFillWidth: Boolean = false,
+    lineCount: Int = 1,
+    frameHeight: Dp = 44.dp,
+    showDuration: Boolean = false,
+    showResolution: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val safeLineCount = lineCount.coerceAtLeast(1)
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        val loadedDurationText = videoDurationPreviewText(durationMillis)
-        val durationText = if (durationLoaded) loadedDurationText else "Duration loading..."
-        val loadedResolutionText = videoResolutionPreviewText(videoResolution)
-        val resolutionText = if (resolutionLoaded) loadedResolutionText else "Resolution loading..."
         val guideText = "Start - ... - Middle - ... - End"
-        val metadataText = listOfNotNull(
-            if (showDuration) durationText else null,
-            if (showResolution) resolutionText else null
-        ).joinToString(" · ")
-        Text(
-            text = if (metadataText.isNotEmpty()) {
-                "$metadataText · $guideText"
-            } else {
-                guideText
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        VideoMetadataLabelText(
+            filePath = filePath,
+            showDuration = showDuration,
+            showResolution = showResolution,
+            suffixText = guideText
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val framesPerRow = remember(maxWidth, frameHeight) {

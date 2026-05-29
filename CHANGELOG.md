@@ -12,7 +12,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
 - Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
-- Video timeline previews now provide optional duration and resolution labels in the Files and similarity cluster detail menus, and selecting either label option opens the preview surface that displays it.
+- Video timeline preview menus now provide optional duration and resolution labels in Files and similarity cluster details without forcing timeline frames on.
 - Duplicate group detail views now support long-press member selection and selected-file deletion.
 
 ### Changed
