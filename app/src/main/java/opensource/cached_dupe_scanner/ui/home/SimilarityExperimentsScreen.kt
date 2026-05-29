@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -227,11 +228,14 @@ fun SimilarityExperimentsScreen(
     var durationNeighborMemberNextOffset by remember { mutableStateOf(0) }
     var durationNeighborMembersExhausted by remember { mutableStateOf(true) }
     var durationNeighborStoredDurationCount by remember { mutableStateOf(0) }
-    var durationNeighborSortDirection by remember { mutableStateOf(SortDirection.Asc) }
-    var similarityClusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
-    var similarityClusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
-    var similarityGroupMemberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
-    var similarityGroupMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var durationNeighborSortDirection by rememberSaveable { mutableStateOf(SortDirection.Asc) }
+    var similarityClusterSortKey by rememberSaveable { mutableStateOf(SimilarityClusterSortKey.FileCount) }
+    var similarityClusterSortDirection by rememberSaveable { mutableStateOf(SortDirection.Desc) }
+    var similarityGroupMemberSortKey by rememberSaveable { mutableStateOf(ResultGroupMemberSortKey.Path) }
+    var similarityGroupMemberSortDirection by rememberSaveable { mutableStateOf(SortDirection.Asc) }
+    val showSimilarityDetailVideoPreviews = rememberSaveable { mutableStateOf(false) }
+    val showSimilarityDetailVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
+    val showSimilarityDetailVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
     var selectedTemplateId by remember { mutableStateOf<String?>(null) }
     var selectedRunExperimentId by remember { mutableStateOf<String?>(null) }
     var selectedClusterKey by remember { mutableStateOf<String?>(null) }
@@ -725,6 +729,9 @@ fun SimilarityExperimentsScreen(
             onDeleteFile = onDeleteFile,
             loadedClusterMembers = loadedClusterMembers,
             clusterMemberLoadErrors = clusterMemberLoadErrors,
+            showVideoPreviews = showSimilarityDetailVideoPreviews,
+            showVideoPreviewDurations = showSimilarityDetailVideoPreviewDurations,
+            showVideoPreviewResolutions = showSimilarityDetailVideoPreviewResolutions,
             sortKey = similarityGroupMemberSortKey,
             sortDirection = similarityGroupMemberSortDirection,
             onApplySort = { key, direction ->
@@ -2149,6 +2156,9 @@ private fun SimilarityClusterDetailScreen(
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     loadedClusterMembers: MutableMap<String, SimilarityClusterMembersState>,
     clusterMemberLoadErrors: MutableMap<String, String>,
+    showVideoPreviews: MutableState<Boolean>,
+    showVideoPreviewDurations: MutableState<Boolean>,
+    showVideoPreviewResolutions: MutableState<Boolean>,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
@@ -2164,9 +2174,6 @@ private fun SimilarityClusterDetailScreen(
     val loadError = clusterMemberLoadErrors[clusterKey]
     var isLoading by remember(clusterKey) { mutableStateOf(false) }
     var loadAttempt by remember(clusterKey) { mutableStateOf(0) }
-    val showVideoPreviews = remember(clusterKey) { mutableStateOf(false) }
-    val showVideoPreviewDurations = remember(clusterKey) { mutableStateOf(false) }
-    val showVideoPreviewResolutions = remember(clusterKey) { mutableStateOf(false) }
     val videoPreviewMenuExpanded = remember(clusterKey) { mutableStateOf(false) }
     val hasVideoMembers = members.any { file ->
         isVideoFile(file.normalizedPath) && !deletedPaths.contains(file.normalizedPath)
@@ -2244,9 +2251,6 @@ private fun SimilarityClusterDetailScreen(
     }
     LaunchedEffect(clusterKey, hasVideoMembers) {
         if (!hasVideoMembers) {
-            showVideoPreviews.value = false
-            showVideoPreviewDurations.value = false
-            showVideoPreviewResolutions.value = false
             videoPreviewMenuExpanded.value = false
         }
     }
