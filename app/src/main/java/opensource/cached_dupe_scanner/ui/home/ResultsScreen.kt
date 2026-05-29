@@ -236,7 +236,6 @@ fun ResultsScreen(
                                     onClick = {
                                         showFullPaths.value = !showFullPaths.value
                                         settingsStore.setShowFullPaths(showFullPaths.value)
-                                        menuExpanded.value = false
                                     }
                                 )
                             }

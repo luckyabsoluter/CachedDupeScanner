@@ -2319,7 +2319,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviews.value = !showVideoPreviews.value
-                                        videoPreviewMenuExpanded.value = false
                                     }
                                 )
                                 DropdownMenuItem(
@@ -2332,7 +2331,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewDurations.value = !showVideoPreviewDurations.value
-                                        videoPreviewMenuExpanded.value = false
                                     }
                                 )
                                 DropdownMenuItem(
@@ -2345,7 +2343,6 @@ private fun SimilarityClusterDetailScreen(
                                     },
                                     onClick = {
                                         showVideoPreviewResolutions.value = !showVideoPreviewResolutions.value
-                                        videoPreviewMenuExpanded.value = false
                                     }
                                 )
                             }

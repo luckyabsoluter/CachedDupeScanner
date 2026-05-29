@@ -24,6 +24,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Top-right checkbox menu items now stay open after toggling preview and path display options.
 - Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
 - Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.
 - Lazy result and similarity detail selection now share one selection state contract, while eager-only detail content is explicitly separated from paged detail screens.

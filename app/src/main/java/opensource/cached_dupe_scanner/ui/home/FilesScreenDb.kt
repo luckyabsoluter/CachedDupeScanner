@@ -341,7 +341,6 @@ fun FilesScreenDb(
                                     } else {
                                         FilesPreviewMode.VideoTimeline.name
                                     }
-                                    menuExpanded.value = false
                                 }
                             )
                             androidx.compose.material3.DropdownMenuItem(
@@ -354,7 +353,6 @@ fun FilesScreenDb(
                                 },
                                 onClick = {
                                     showVideoPreviewDuration.value = !showVideoPreviewDuration.value
-                                    menuExpanded.value = false
                                 }
                             )
                             androidx.compose.material3.DropdownMenuItem(
@@ -367,7 +365,6 @@ fun FilesScreenDb(
                                 },
                                 onClick = {
                                     showVideoPreviewResolution.value = !showVideoPreviewResolution.value
-                                    menuExpanded.value = false
                                 }
                             )
                         }
