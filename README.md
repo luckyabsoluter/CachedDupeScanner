@@ -28,13 +28,14 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Manage duplicates**: group-detail views with multi-select, select-all, and specific delete tracking.
 - **Scan reports**: timings, phase durations, hash candidate counts.
 - **Export**: JSON/CSV utilities for results.
-- **System-wide task monitoring**: floating banners and draggable bubble UI to track long-running operations (scans, DB, trash) across screens.
+- **System-wide task monitoring**: floating banners and draggable bubble UI to track long-running operations (scans, DB, trash, similarity experiments) across screens.
 - **Background reliability**: Uses partial WakeLocks to ensure tasks run smoothly without interruption.
 - **Performance controls**: optional memory usage overlay, shared RAM thumbnail retention, and configurable thumbnail/timeline preview sizing for heavy workloads.
 - **Rich media previews**: Timeline video preview mode with a dedicated RAM cache policy, width snapping, and multi-line frame rows.
 - **Smart filters**: Saved filters, filter editing, "same-folder" duplicate rules, and modified-time rules that persist across sessions.
 - **Advanced bulk delete**: "Keep-oldest" and "keep-newest" configurable commands mapped to a preview flow with thumbnails.
 - **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to detected duplicate groups. Actionable via notification-backed execution.
+- **Similarity experiments**: run independent video/image similarity clustering experiments with configurable candidate filters and reusable duplicate-group browsing for saved clusters.
 
 ## How scanning works
 
@@ -77,6 +78,7 @@ Room database (scan-cache.db) core tables:
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
 - **dupe_groups**: materialized snapshot of duplicate groups for fast paginated browsing
+- **similarity_experiment_runs / similarity_clusters / similarity_duration_candidates**: independent experiment snapshots, member path lists, and reusable duration candidates for similarity-based duplicate candidates
 
 
 ## Module map

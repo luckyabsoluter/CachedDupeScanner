@@ -1,14 +1,20 @@
 package opensource.cached_dupe_scanner
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -46,6 +52,7 @@ import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
+import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
@@ -63,6 +70,7 @@ import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityExperimentsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
@@ -98,8 +106,23 @@ class MainActivity : ComponentActivity() {
                 val backStack = rememberSaveable(saver = ScreenBackStackSaver) {
                     mutableStateListOf(Screen.Dashboard)
                 }
-                val taskCoordinator = remember { TaskCoordinator(context) }
-                val notificationController = remember { TaskNotificationController(context) }
+                val taskCoordinator = remember { AppWorkScopes.taskCoordinator(context) }
+                val notificationController = remember { AppWorkScopes.notificationController(context) }
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission(),
+                    onResult = {}
+                )
+                LaunchedEffect(Unit) {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
                 val database = remember {
                     Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
                         .addMigrations(
@@ -113,7 +136,11 @@ class MainActivity : ComponentActivity() {
                             CacheMigrations.MIGRATION_8_9,
                             CacheMigrations.MIGRATION_9_10,
                             CacheMigrations.MIGRATION_10_11,
-                            CacheMigrations.MIGRATION_11_12
+                            CacheMigrations.MIGRATION_11_12,
+                            CacheMigrations.MIGRATION_12_13,
+                            CacheMigrations.MIGRATION_13_14,
+                            CacheMigrations.MIGRATION_14_15,
+                            CacheMigrations.MIGRATION_15_16
                         )
                         .build()
                 }
@@ -130,6 +157,13 @@ class MainActivity : ComponentActivity() {
                 val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
                 val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
                 val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
+                val similarityRepo = remember {
+                    SimilarityExperimentRepository(
+                        database = database,
+                        fileDao = database.fileCacheDao(),
+                        experimentDao = database.similarityExperimentDao()
+                    )
+                }
 
                 LaunchedEffect(Unit) {
                     // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
@@ -194,17 +228,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val restoreLastResult: () -> Unit = {
-                    scope.launch {
-                        val stored = withContext(Dispatchers.IO) {
-                            historyRepo.loadMergedHistory()
-                        }
-                        if (stored != null) {
-                            state.value = ScanUiState.Success(stored)
-                        } else {
-                            state.value = ScanUiState.Idle
-                        }
+                    if (state.value !is ScanUiState.Success) {
+                        state.value = ScanUiState.Idle
                     }
-                    Unit
                 }
 
                 BackHandler {
@@ -242,6 +268,9 @@ class MainActivity : ComponentActivity() {
                                 onOpenFiles = { navigateTo(backStack, screenCache, Screen.Files) },
                                 onOpenTrash = { navigateTo(backStack, screenCache, Screen.Trash) },
                                 onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
+                                onOpenSimilarityExperiments = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityExperiments)
+                                },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
                                 onOpenAbout = { navigateTo(backStack, screenCache, Screen.About) },
@@ -281,7 +310,7 @@ class MainActivity : ComponentActivity() {
                                 historyRepo = historyRepo,
                                 resultsRepo = resultsRepo,
                                 uiState = dbManagementUiState,
-                                appScope = scope,
+                                appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onMaintenanceApplied = {
@@ -308,7 +337,7 @@ class MainActivity : ComponentActivity() {
                                 reportRepo = reportRepo,
                                 settingsStore = settingsStore,
                                 targetsVersion = targetsVersion.value,
-                                scanScope = scope,
+                                scanScope = AppWorkScopes.scanScope,
                                 onReportSaved = { reportsRefreshVersion.value += 1 },
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
@@ -335,6 +364,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
+                                onBulkDeleteFile = { file ->
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                taskScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 onBack = {
                                     if (selectedResultsGroupIndex.value != null) {
                                         selectedResultsGroupIndex.value = null
@@ -354,6 +395,37 @@ class MainActivity : ComponentActivity() {
                                 settingsStore = settingsStore,
                                 onBack = { pop(backStack) },
                                 onSettingsChanged = { settingsVersion.value += 1 },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityExperiments -> SimilarityExperimentsScreen(
+                                repository = similarityRepo,
+                                appScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,
+                                videoPreviewLineCount = settingsSnapshot.videoPreviewLineCount,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
+                                rememberedPreviewCache = rememberedThumbnailCache,
+                                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                                deletedPaths = deletedPaths.value,
+                                showFullPaths = settingsSnapshot.showFullPaths,
+                                onDeleteFile = { file ->
+                                    if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
+                                        return@SimilarityExperimentsScreen false
+                                    }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
 
@@ -384,6 +456,7 @@ class MainActivity : ComponentActivity() {
                             Screen.Trash -> TrashScreen(
                                 trashRepo = trashRepo,
                                 trashController = trashController,
+                                appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onBack = { pop(backStack) },
@@ -480,6 +553,7 @@ private fun screenForTaskArea(area: TaskArea): Screen {
         TaskArea.Scan -> Screen.ScanCommand
         TaskArea.Db -> Screen.DbManagement
         TaskArea.Trash -> Screen.Trash
+        TaskArea.Similarity -> Screen.SimilarityExperiments
     }
 }
 
@@ -513,6 +587,7 @@ internal sealed class Screen {
     data object ScanCommand : Screen()
     data object Results : Screen()
     data object Settings : Screen()
+    data object SimilarityExperiments : Screen()
     data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
@@ -528,6 +603,7 @@ internal sealed class Screen {
             ScanCommand -> "scan-command"
             Results -> "results"
             Settings -> "settings"
+            SimilarityExperiments -> "similarity-experiments"
             About -> "about"
             Reports -> "reports"
             is ReportDetail -> "report-detail:$id"
@@ -546,6 +622,7 @@ internal sealed class Screen {
                 token == "scan-command" -> ScanCommand
                 token == "results" -> Results
                 token == "settings" -> Settings
+                token == "similarity-experiments" -> SimilarityExperiments
                 token == "about" -> About
                 token == "reports" -> Reports
                 token.startsWith("report-detail:") -> ReportDetail(token.removePrefix("report-detail:"))

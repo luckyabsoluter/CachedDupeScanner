@@ -14,6 +14,8 @@ import org.robolectric.RobolectricTestRunner
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.core.Hashing
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class ResultsDbRepositoryTest {
@@ -102,6 +104,126 @@ class ResultsDbRepositoryTest {
         )
 
         db.close()
+    }
+
+    @Test
+    fun rebuildGroupsRepairsMissingHashesForSizeCollisionsBeforeSnapshot() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+        val hashedFile = File.createTempFile("cached-dupe", ".hashed")
+        val missingHashFile = File.createTempFile("cached-dupe", ".missing-hash")
+        val uniqueFile = File.createTempFile("cached-dupe", ".unique")
+        try {
+            hashedFile.writeText("same-content")
+            missingHashFile.writeText("same-content")
+            uniqueFile.writeText("same-size---")
+            val sharedHash = Hashing.sha256Hex(hashedFile)
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = hashedFile.absolutePath,
+                    path = hashedFile.absolutePath,
+                    sizeBytes = hashedFile.length(),
+                    lastModifiedMillis = hashedFile.lastModified(),
+                    hashHex = sharedHash
+                )
+            )
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = missingHashFile.absolutePath,
+                    path = missingHashFile.absolutePath,
+                    sizeBytes = missingHashFile.length(),
+                    lastModifiedMillis = missingHashFile.lastModified(),
+                    hashHex = null
+                )
+            )
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = uniqueFile.absolutePath,
+                    path = uniqueFile.absolutePath,
+                    sizeBytes = uniqueFile.length(),
+                    lastModifiedMillis = uniqueFile.lastModified(),
+                    hashHex = null
+                )
+            )
+
+            val snapshot = repo.loadInitialSnapshot(
+                sortKey = DuplicateGroupSortKey.CountDesc,
+                limit = 10,
+                rebuild = true
+            )
+
+            assertEquals(1, snapshot.groupCount)
+            assertEquals(sharedHash, fileDao.getByNormalizedPath(missingHashFile.absolutePath)?.hashHex)
+            assertEquals(Hashing.sha256Hex(uniqueFile), fileDao.getByNormalizedPath(uniqueFile.absolutePath)?.hashHex)
+            val group = snapshot.firstPage.single()
+            assertEquals(sharedHash, group.hashHex)
+            assertEquals(2, group.fileCount)
+        } finally {
+            hashedFile.delete()
+            missingHashFile.delete()
+            uniqueFile.delete()
+            db.close()
+        }
+    }
+
+    @Test
+    fun rebuildGroupsReportsMissingHashRepairProgress() {
+        val db = newDb()
+        val fileDao = db.fileCacheDao()
+        val hashedFile = File.createTempFile("cached-dupe", ".hashed")
+        val missingHashFile = File.createTempFile("cached-dupe", ".missing-hash")
+        try {
+            val repo = ResultsDbRepository(fileDao, db.duplicateGroupDao())
+            hashedFile.writeText("same-content")
+            missingHashFile.writeText("same-content")
+            val sharedHash = Hashing.sha256Hex(hashedFile)
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = hashedFile.absolutePath,
+                    path = hashedFile.absolutePath,
+                    sizeBytes = hashedFile.length(),
+                    lastModifiedMillis = hashedFile.lastModified(),
+                    hashHex = sharedHash
+                )
+            )
+            fileDao.upsert(
+                CachedFileEntity(
+                    normalizedPath = missingHashFile.absolutePath,
+                    path = missingHashFile.absolutePath,
+                    sizeBytes = missingHashFile.length(),
+                    lastModifiedMillis = missingHashFile.lastModified(),
+                    hashHex = null
+                )
+            )
+            val progressEvents = mutableListOf<RebuildGroupsProgress>()
+
+            val summary = repo.rebuildGroups(
+                shouldContinue = { true },
+                onProgress = progressEvents::add
+            )
+
+            assertFalse(summary.cancelled)
+            assertTrue(
+                progressEvents.any {
+                    it.phase == RebuildGroupsPhase.RepairingMissingHashes &&
+                        it.total == 1 &&
+                        it.processed == 1 &&
+                        it.currentPath == missingHashFile.absolutePath
+                }
+            )
+            assertTrue(
+                progressEvents.any {
+                    it.phase == RebuildGroupsPhase.RebuildingGroups &&
+                        it.total == 1 &&
+                        it.processed == 1
+                }
+            )
+        } finally {
+            hashedFile.delete()
+            missingHashFile.delete()
+            db.close()
+        }
     }
 
     @Test
@@ -314,8 +436,10 @@ class ResultsDbRepositoryTest {
         var allow = true
         val summary = repo.rebuildGroups(
             shouldContinue = { allow }
-        ) {
-            allow = false
+        ) { progress ->
+            if (progress.phase == RebuildGroupsPhase.RebuildingGroups && progress.processed > 0) {
+                allow = false
+            }
         }
 
         assertTrue(summary.cancelled)

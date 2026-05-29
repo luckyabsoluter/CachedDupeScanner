@@ -1,35 +1,20 @@
 package opensource.cached_dupe_scanner.core
 
-import android.os.Build
-import java.nio.file.Paths
-
 object PathNormalizer {
     fun normalize(path: String): String {
-        return normalizeForSdk(path, Build.VERSION.SDK_INT)
+        return normalizeForSdk(path)
     }
 
     internal fun normalizeForSdk(
         path: String,
-        sdkInt: Int
+        sdkInt: Int = 0
     ): String {
         val trimmed = path.trim()
         if (trimmed.isEmpty()) {
             return trimmed
         }
 
-        val cleaned = trimmed.replace('\\', '/')
-        return if (sdkInt >= Build.VERSION_CODES.O) {
-            try {
-                Paths.get(cleaned)
-                    .normalize()
-                    .toString()
-                    .replace('\\', '/')
-            } catch (exception: Exception) {
-                normalizeFallback(cleaned)
-            }
-        } else {
-            normalizeFallback(cleaned)
-        }
+        return normalizeFallback(trimmed.replace('\\', '/'))
     }
 
     private fun normalizeFallback(path: String): String {

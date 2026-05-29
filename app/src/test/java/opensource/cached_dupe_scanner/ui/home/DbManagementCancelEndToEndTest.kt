@@ -25,6 +25,8 @@ import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ClearCacheSummary
+import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
+import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
@@ -205,6 +207,84 @@ class DbManagementCancelEndToEndTest {
         assertTrue(
             composeRule.onAllNodesWithText("Rebuilding groups").fetchSemanticsNodes().isEmpty()
         )
+    }
+
+    @Test
+    fun rebuildGroupsProgressAppearsWithCurrentRepairPath() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settingsStore = AppSettingsStore(context)
+        val historyRepo = ScanHistoryRepository(
+            dao = database.fileCacheDao(),
+            settingsStore = settingsStore,
+            groupDao = database.duplicateGroupDao(),
+            database = database
+        )
+        val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
+        val uiState = DbManagementUiState()
+        val taskCoordinator = TaskCoordinator()
+        val notificationController = TaskNotificationController(context)
+        val enteredTask = AtomicBoolean(false)
+
+        composeRule.setContent {
+            DbManagementHarness(
+                historyRepo = historyRepo,
+                resultsRepo = resultsRepo,
+                uiState = uiState,
+                appScope = appScope,
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController
+            )
+        }
+
+        composeRule.runOnIdle {
+            startRebuildGroupsTask(
+                uiState = uiState,
+                appScope = appScope,
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController,
+                onMaintenanceApplied = {},
+                refreshOverview = {},
+                runRebuildGroups = { shouldContinue, onProgress ->
+                    onProgress(
+                        RebuildGroupsProgress(
+                            total = 2,
+                            processed = 1,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes,
+                            currentPath = "/storage/emulated/0/Download/missing.mp4"
+                        )
+                    )
+                    enteredTask.set(true)
+                    while (shouldContinue()) {
+                        Thread.sleep(10)
+                    }
+                    RebuildGroupsSummary(
+                        total = 2,
+                        processed = 1,
+                        cancelled = true,
+                        phase = RebuildGroupsPhase.RepairingMissingHashes
+                    )
+                }
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            enteredTask.get() &&
+                taskCoordinator.activeTask(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
+                    ?.detail == "Repairing missing hashes 1/2 before rebuilding groups."
+        }
+        assertTrue(
+            composeRule.onAllNodesWithText("Repairing missing hashes 1/2 before rebuilding groups.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        )
+        composeRule.onNodeWithText("Current: /storage/emulated/0/Download/missing.mp4").fetchSemanticsNode()
+
+        composeRule.runOnIdle {
+            assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Db))
+        }
+        composeRule.waitUntil(5_000) {
+            !taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
+        }
     }
 
     @Test

@@ -35,6 +35,18 @@ class MainActivityNavigationStateTest {
     }
 
     @Test
+    fun restoreScreenStackKeepsSimilarityExperimentsScreen() {
+        val restored = restoreScreenStack(
+            listOf(
+                Screen.Dashboard.toSaveToken(),
+                Screen.SimilarityExperiments.toSaveToken()
+            )
+        )
+
+        assertEquals(listOf(Screen.Dashboard, Screen.SimilarityExperiments), restored)
+    }
+
+    @Test
     fun restoreScreenStackFallsBackToDashboardForEmptySavedState() {
         assertEquals(listOf(Screen.Dashboard), restoreScreenStack(emptyList()))
     }

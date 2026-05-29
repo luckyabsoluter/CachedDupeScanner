@@ -1,6 +1,8 @@
 package opensource.cached_dupe_scanner.notifications
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -20,23 +22,30 @@ class TaskNotificationController(context: Context) {
     private val notificationManager = NotificationManagerCompat.from(appContext)
     private val lastUpdateAt = mutableMapOf<TaskArea, Long>()
     private val pendingSnapshots = mutableMapOf<TaskArea, TaskSnapshot>()
+    private val foregroundSnapshots = linkedMapOf<TaskArea, TaskSnapshot>()
 
+    @SuppressLint("MissingPermission")
     fun showActive(snapshot: TaskSnapshot) {
         val now = SystemClock.elapsedRealtime()
         val timeSinceLast = now - (lastUpdateAt[snapshot.area] ?: 0L)
         if (timeSinceLast < PROGRESS_UPDATE_THROTTLE_MS) {
             pendingSnapshots[snapshot.area] = snapshot
+            if (!foregroundSnapshots.containsKey(snapshot.area)) {
+                promoteForeground(snapshot)
+            }
             return
         }
         beginNotificationSession()
-        if (!notificationPermissionGranted) return
         ensureChannelIfNeeded()
         lastUpdateAt[snapshot.area] = now
         val effective = pendingSnapshots.remove(snapshot.area) ?: snapshot
+        promoteForeground(effective)
+        if (!notificationPermissionGranted) return
         val content = buildTaskNotificationContent(effective)
         notificationManager.notify(
             notificationIdFor(effective.area),
-            buildProgressNotification(
+            buildTaskProgressNotification(
+                context = appContext,
                 title = content.title,
                 text = content.text,
                 subText = content.subText,
@@ -47,14 +56,17 @@ class TaskNotificationController(context: Context) {
         )
     }
 
+    @SuppressLint("MissingPermission")
     fun showTerminal(summary: TaskTerminalSummary) {
         beginNotificationSession()
-        if (!notificationPermissionGranted) return
         ensureChannelIfNeeded()
         pendingSnapshots.remove(summary.area)
         lastUpdateAt.remove(summary.area)
+        foregroundSnapshots.remove(summary.area)
+        refreshForegroundService()
+        if (!notificationPermissionGranted) return
         val content = buildTaskTerminalNotificationContent(summary)
-        val builder = baseBuilder()
+        val builder = baseBuilder(appContext)
             .setOngoing(false)
             .setAutoCancel(true)
             .setContentTitle(content.title)
@@ -68,54 +80,15 @@ class TaskNotificationController(context: Context) {
     fun clear(area: TaskArea) {
         pendingSnapshots.remove(area)
         lastUpdateAt.remove(area)
+        foregroundSnapshots.remove(area)
+        refreshForegroundService()
         notificationManager.cancel(notificationIdFor(area))
     }
 
     private fun ensureChannelIfNeeded() {
         if (channelEnsured) return
-        ensureChannel()
+        ensureTaskNotificationChannel(appContext)
         channelEnsured = true
-    }
-
-    private fun baseBuilder(): NotificationCompat.Builder {
-        return NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setShowWhen(false)
-    }
-
-    private fun buildProgressNotification(
-        title: String,
-        text: String,
-        subText: String?,
-        progress: Int?,
-        total: Int?,
-        indeterminate: Boolean
-    ) = baseBuilder()
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setContentTitle(title)
-        .setContentText(text)
-        .setSubText(subText)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .setProgress(
-            if (!indeterminate && total != null && total > 0) total else 0,
-            if (!indeterminate && total != null && total > 0) (progress ?: 0).coerceAtMost(total) else 0,
-            indeterminate || total == null || total <= 0
-        )
-        .build()
-
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Background tasks",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Shows progress while scans, DB tasks, and trash tasks are running"
-        }
-        val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(channel)
     }
 
     private fun canPostNotifications(): Boolean {
@@ -133,11 +106,71 @@ class TaskNotificationController(context: Context) {
         notificationPermissionGranted = canPostNotifications()
     }
 
+    private fun promoteForeground(effective: TaskSnapshot) {
+        foregroundSnapshots.remove(effective.area)
+        foregroundSnapshots[effective.area] = effective
+        TaskForegroundService.show(appContext, effective)
+    }
+
+    private fun refreshForegroundService() {
+        val remaining = foregroundSnapshots.values.lastOrNull()
+        if (remaining == null) {
+            TaskForegroundService.stop(appContext)
+        } else {
+            TaskForegroundService.show(appContext, remaining)
+        }
+    }
+
     companion object {
-        private const val CHANNEL_ID = "task_progress"
         private const val PROGRESS_UPDATE_THROTTLE_MS = 1000L
     }
 
     @Volatile private var notificationPermissionGranted: Boolean = true
     @Volatile private var channelEnsured: Boolean = false
+}
+
+internal const val TASK_NOTIFICATION_CHANNEL_ID = "task_progress"
+
+internal fun buildTaskProgressNotification(
+    context: Context,
+    title: String,
+    text: String,
+    subText: String?,
+    progress: Int?,
+    total: Int?,
+    indeterminate: Boolean
+): Notification {
+    return baseBuilder(context)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setContentTitle(title)
+        .setContentText(text)
+        .setSubText(subText)
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setProgress(
+            if (!indeterminate && total != null && total > 0) total else 0,
+            if (!indeterminate && total != null && total > 0) (progress ?: 0).coerceAtMost(total) else 0,
+            indeterminate || total == null || total <= 0
+        )
+        .build()
+}
+
+internal fun ensureTaskNotificationChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val channel = NotificationChannel(
+        TASK_NOTIFICATION_CHANNEL_ID,
+        "Background tasks",
+        NotificationManager.IMPORTANCE_LOW
+    ).apply {
+        description = "Shows progress while scans, DB tasks, trash tasks, and similarity experiments are running"
+    }
+    val manager = context.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    manager.createNotificationChannel(channel)
+}
+
+private fun baseBuilder(context: Context): NotificationCompat.Builder {
+    return NotificationCompat.Builder(context.applicationContext, TASK_NOTIFICATION_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+        .setShowWhen(false)
 }

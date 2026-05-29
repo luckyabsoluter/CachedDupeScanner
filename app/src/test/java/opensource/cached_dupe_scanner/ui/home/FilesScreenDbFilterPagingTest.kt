@@ -105,6 +105,50 @@ class FilesScreenDbFilterPagingTest {
         db.close()
     }
 
+    @Test
+    fun loadFilteredFilesPageReturnsExhaustedForInvalidSourcePageSize() {
+        val db = newDb()
+        val repo = PagedFileRepository(db.fileCacheDao())
+
+        val page = loadFilteredFilesPage(
+            fileRepo = repo,
+            sortKey = PagedFileRepository.SortKey.Name,
+            direction = PagedFileRepository.SortDirection.Asc,
+            cursor = PagedFileRepository.Cursor.Start,
+            definition = ResultsFilterDefinition(),
+            minMatches = 1,
+            sourcePageSize = 0
+        )
+
+        assertEquals(emptyList<String>(), page.items.map { it.normalizedPath })
+        assertEquals(PagedFileRepository.Cursor.Start, page.nextCursor)
+        assertEquals(0, page.sourceLoadedCount)
+        assertTrue(page.exhausted)
+        db.close()
+    }
+
+    @Test
+    fun loadFilteredFilesPageReturnsExhaustedForInvalidMinMatches() {
+        val db = newDb()
+        val repo = PagedFileRepository(db.fileCacheDao())
+
+        val page = loadFilteredFilesPage(
+            fileRepo = repo,
+            sortKey = PagedFileRepository.SortKey.Name,
+            direction = PagedFileRepository.SortDirection.Asc,
+            cursor = PagedFileRepository.Cursor.Start,
+            definition = ResultsFilterDefinition(),
+            minMatches = 0,
+            sourcePageSize = 1
+        )
+
+        assertEquals(emptyList<String>(), page.items.map { it.normalizedPath })
+        assertEquals(PagedFileRepository.Cursor.Start, page.nextCursor)
+        assertEquals(0, page.sourceLoadedCount)
+        assertTrue(page.exhausted)
+        db.close()
+    }
+
     private fun newDb(): CacheDatabase {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)

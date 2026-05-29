@@ -65,5 +65,24 @@ class GroupPreviewSourceTest {
                 content.contains("totalTimelineFrameCount(") &&
                 content.contains("timelineFrameRows(")
         )
+        assertTrue(
+            "GroupPreview timeline should support optional visible-only duration loading",
+            content.contains("showDuration: Boolean = false") &&
+                content.contains("AndroidVideoDurationExtractor().durationMillis(") &&
+                content.contains("withContext(Dispatchers.IO)") &&
+                content.contains("videoDurationPreviewText(durationMillis)")
+        )
+        assertTrue(
+            "GroupPreview timeline should support optional visible-only resolution loading",
+            content.contains("showResolution: Boolean = false") &&
+                content.contains("readVideoResolution(") &&
+                content.contains("MediaMetadataRetriever") &&
+                content.contains("videoResolutionPreviewText(videoResolution)")
+        )
+        assertTrue(
+            "GroupPreview should expose video metadata labels separately from timeline frames",
+            content.contains("VideoMetadataLabelText(") &&
+                content.contains("suffixText = guideText")
+        )
     }
 }

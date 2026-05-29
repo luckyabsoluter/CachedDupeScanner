@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +54,7 @@ import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -94,6 +94,8 @@ fun FilesScreenDb(
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterScreenOpen = remember { mutableStateOf(false) }
     val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
+    val showVideoPreviewDuration = rememberSaveable { mutableStateOf(false) }
+    val showVideoPreviewResolution = rememberSaveable { mutableStateOf(false) }
 
     val imageLoader = remember {
         ImageLoader.Builder(context)
@@ -339,7 +341,30 @@ fun FilesScreenDb(
                                     } else {
                                         FilesPreviewMode.VideoTimeline.name
                                     }
-                                    menuExpanded.value = false
+                                }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Video duration") },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = showVideoPreviewDuration.value,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    showVideoPreviewDuration.value = !showVideoPreviewDuration.value
+                                }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Video resolution") },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = showVideoPreviewResolution.value,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    showVideoPreviewResolution.value = !showVideoPreviewResolution.value
                                 }
                             )
                         }
@@ -443,6 +468,16 @@ fun FilesScreenDb(
                                 }
                             }
 
+                            if ((showVideoPreviewDuration.value || showVideoPreviewResolution.value) && !isVideoTimelinePreviewEnabled() && isVideo) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                VideoMetadataLabelText(
+                                    filePath = file.normalizedPath,
+                                    showDuration = showVideoPreviewDuration.value,
+                                    showResolution = showVideoPreviewResolution.value,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
                             if (isVideoTimelinePreviewEnabled() && isVideo) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 VideoTimelinePreviewStrip(
@@ -453,6 +488,8 @@ fun FilesScreenDb(
                                     snapToFillWidth = snapVideoPreviewFramesToWidth,
                                     lineCount = videoPreviewLineCount,
                                     frameHeight = videoPreviewFrameHeightDp,
+                                    showDuration = showVideoPreviewDuration.value,
+                                    showResolution = showVideoPreviewResolution.value,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -518,44 +555,39 @@ fun FilesScreenDb(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Name,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Name }
-                        )
-                        Text("Name")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Size,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Size }
-                        )
-                        Text("Size")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == PagedFileRepository.SortKey.Modified,
-                            onClick = { pendingSortKey.value = PagedFileRepository.SortKey.Modified }
-                        )
-                        Text("Modified")
-                    }
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Name,
+                        selected = pendingSortKey.value,
+                        label = "Name",
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Size,
+                        selected = pendingSortKey.value,
+                        label = "Size",
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortKey.Modified,
+                        selected = pendingSortKey.value,
+                        label = "Modified",
+                        onSelect = { pendingSortKey.value = it }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == PagedFileRepository.SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = PagedFileRepository.SortDirection.Asc }
-                        )
-                        Text("Ascending")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == PagedFileRepository.SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = PagedFileRepository.SortDirection.Desc }
-                        )
-                        Text("Descending")
-                    }
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = "Ascending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = PagedFileRepository.SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = "Descending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {
@@ -633,34 +665,31 @@ internal fun loadFilteredFilesPage(
         )
     }
 
-    val matchedItems = mutableListOf<FileMetadata>()
-    var sourceLoaded = 0
-    var nextCursor: PagedFileRepository.Cursor? = cursor
-    var exhausted = false
-
-    while (matchedItems.size < minMatches && !exhausted) {
-        val page = fileRepo.loadPage(
-            sortKey = sortKey,
-            direction = direction,
-            cursor = nextCursor ?: cursor,
-            limit = sourcePageSize
-        )
-        if (page.items.isEmpty()) {
-            exhausted = true
-            nextCursor = null
-            break
+    val page = loadFilteredSourcePage(
+        startCursor = cursor,
+        minMatches = minMatches,
+        loadPage = { currentCursor ->
+            val sourcePage = fileRepo.loadPage(
+                sortKey = sortKey,
+                direction = direction,
+                cursor = currentCursor,
+                limit = sourcePageSize
+            )
+            SourcePage(
+                items = sourcePage.items,
+                nextCursor = sourcePage.nextCursor,
+                exhausted = sourcePage.items.isEmpty()
+            )
+        },
+        transformMatch = { file ->
+            if (matchesFileFilter(definition, file)) file else null
         }
-        sourceLoaded += page.items.size
-        matchedItems += page.items.filter { file ->
-            matchesFileFilter(definition, file)
-        }
-        nextCursor = page.nextCursor
-    }
+    )
 
     return FilteredFilesPage(
-        items = matchedItems.take(minMatches),
-        nextCursor = nextCursor,
-        exhausted = exhausted,
-        sourceLoadedCount = sourceLoaded
+        items = page.items,
+        nextCursor = page.nextCursor,
+        exhausted = page.exhausted,
+        sourceLoadedCount = page.sourceLoadedCount
     )
 }

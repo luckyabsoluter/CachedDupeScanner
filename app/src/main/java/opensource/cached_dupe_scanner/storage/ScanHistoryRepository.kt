@@ -5,6 +5,8 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.cache.PathGroupKey
+import opensource.cached_dupe_scanner.cache.toCachedFileEntity
+import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.Hashing
 import opensource.cached_dupe_scanner.core.ScanResult
@@ -24,15 +26,7 @@ class ScanHistoryRepository(
         val settings = settingsStore.load()
         val files = result.files
             .filter { file -> !settings.skipZeroSizeInDb || file.sizeBytes > 0 }
-            .map { file ->
-                CachedFileEntity(
-                    normalizedPath = file.normalizedPath,
-                    path = file.path,
-                    sizeBytes = file.sizeBytes,
-                    lastModifiedMillis = file.lastModifiedMillis,
-                    hashHex = file.hashHex
-                )
-            }
+            .map { file -> file.toCachedFileEntity() }
 
         files.chunked(RECORD_SCAN_CHUNK_SIZE).forEach { chunk ->
             runInConsistencyTransaction {
@@ -51,7 +45,7 @@ class ScanHistoryRepository(
     }
 
     fun loadMergedHistory(): ScanResult? {
-        val files = dao.getAll().map { it.toMetadata() }
+        val files = dao.getAll().map { it.toFileMetadata() }
         if (files.isEmpty()) {
             return null
         }
@@ -59,7 +53,7 @@ class ScanHistoryRepository(
     }
 
     fun loadAllFiles(): List<FileMetadata> {
-        return dao.getAll().map { it.toMetadata() }
+        return dao.getAll().map { it.toFileMetadata() }
     }
 
     fun countAll(): Int {
@@ -164,18 +158,8 @@ class ScanHistoryRepository(
         shouldContinue: () -> Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
     ): DbMaintenanceSummary {
-        val duplicateGroupKeys = if (onlyDuplicateDetected) {
-            dao.listDuplicateGroupKeysFromCache()
-        } else {
-            emptyList()
-        }
         val total = if (onlyDuplicateDetected) {
-            duplicateGroupKeys.sumOf { key ->
-                dao.countBySizeAndHash(
-                    sizeBytes = key.sizeBytes,
-                    hashHex = key.hashHex
-                )
-            }
+            dao.countDuplicateMembersFromCache()
         } else {
             dao.countAll()
         }
@@ -271,51 +255,64 @@ class ScanHistoryRepository(
         }
 
         if (onlyDuplicateDetected) {
-            for (groupKey in duplicateGroupKeys) {
-                var memberAfterPath: String? = null
-                while (true) {
-                    if (!shouldContinue()) {
-                        return DbMaintenanceSummary(
-                            total = total,
-                            processed = processed,
-                            deleted = deleted,
-                            rehashed = rehashed,
-                            missingHashed = missingHashed,
-                            cancelled = true,
-                            currentPath = currentPath
-                        )
-                    }
-
-                    val batch = if (memberAfterPath == null) {
-                        dao.listMembersBySizeAndHash(
-                            sizeBytes = groupKey.sizeBytes,
-                            hashHex = groupKey.hashHex,
-                            limit = batchSize
-                        )
-                    } else {
-                        dao.listMembersBySizeAndHashAfter(
-                            sizeBytes = groupKey.sizeBytes,
-                            hashHex = groupKey.hashHex,
-                            afterPath = memberAfterPath,
-                            limit = batchSize
-                        )
-                    }
-                    if (batch.isEmpty()) {
-                        break
-                    }
-
-                    for (entity in batch) {
-                        val cancelledSummary = applyMaintenanceToEntity(entity)
-                        if (cancelledSummary != null) {
-                            return cancelledSummary
+            var groupKeyPage = dao.listDuplicateGroupKeysFromCachePage(limit = batchSize)
+            while (groupKeyPage.isNotEmpty()) {
+                for (groupKey in groupKeyPage) {
+                    var memberAfterPath: String? = null
+                    while (true) {
+                        if (!shouldContinue()) {
+                            return DbMaintenanceSummary(
+                                total = total,
+                                processed = processed,
+                                deleted = deleted,
+                                rehashed = rehashed,
+                                missingHashed = missingHashed,
+                                cancelled = true,
+                                currentPath = currentPath
+                            )
                         }
-                    }
 
-                    if (batch.size < batchSize) {
-                        break
+                        val batch = if (memberAfterPath == null) {
+                            dao.listMembersBySizeAndHash(
+                                sizeBytes = groupKey.sizeBytes,
+                                hashHex = groupKey.hashHex,
+                                limit = batchSize
+                            )
+                        } else {
+                            dao.listMembersBySizeAndHashAfter(
+                                sizeBytes = groupKey.sizeBytes,
+                                hashHex = groupKey.hashHex,
+                                afterPath = memberAfterPath,
+                                limit = batchSize
+                            )
+                        }
+                        if (batch.isEmpty()) {
+                            break
+                        }
+
+                        for (entity in batch) {
+                            val cancelledSummary = applyMaintenanceToEntity(entity)
+                            if (cancelledSummary != null) {
+                                return cancelledSummary
+                            }
+                        }
+
+                        if (batch.size < batchSize) {
+                            break
+                        }
+                        memberAfterPath = batch.last().normalizedPath
                     }
-                    memberAfterPath = batch.last().normalizedPath
                 }
+
+                val lastGroupKey = groupKeyPage.last()
+                if (groupKeyPage.size < batchSize) {
+                    break
+                }
+                groupKeyPage = dao.listDuplicateGroupKeysFromCachePageAfter(
+                    afterSizeBytes = lastGroupKey.sizeBytes,
+                    afterHashHex = lastGroupKey.hashHex,
+                    limit = batchSize
+                )
             }
 
             return DbMaintenanceSummary(
@@ -528,13 +525,3 @@ private fun PathGroupKey.toGroupKey(): GroupKey? {
 
 private const val RECORD_SCAN_CHUNK_SIZE = 500
 private const val PATH_QUERY_CHUNK_SIZE = 800
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
-}

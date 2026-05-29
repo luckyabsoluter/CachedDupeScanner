@@ -1,10 +1,12 @@
 package opensource.cached_dupe_scanner.storage
 
-import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.Hashing
+import java.io.File
 
 data class ResultsSnapshot(
     val fileCount: Int,
@@ -15,7 +17,10 @@ data class ResultsSnapshot(
 
 class ResultsDbRepository(
     private val fileDao: FileCacheDao,
-    private val groupDao: DuplicateGroupDao
+    private val groupDao: DuplicateGroupDao,
+    private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
+        Hashing.sha256Hex(file, shouldContinue = shouldContinue)
+    }
 ) {
     fun countFiles(): Int = fileDao.countAll()
 
@@ -30,7 +35,32 @@ class ResultsDbRepository(
         shouldContinue: () -> Boolean,
         onProgress: (RebuildGroupsProgress) -> Unit
     ): RebuildGroupsSummary {
+        val repairTotal = fileDao.countMissingHashSizeCollisionCandidates()
+        if (repairTotal > 0) {
+            onProgress(
+                RebuildGroupsProgress(
+                    total = repairTotal,
+                    processed = 0,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            )
+        }
+        val repairSummary = repairMissingHashesForSizeCollisions(
+            total = repairTotal,
+            shouldContinue = shouldContinue,
+            onProgress = onProgress
+        )
+        if (repairSummary.cancelled) {
+            return repairSummary
+        }
         val total = groupDao.countGroupsFromCache()
+        onProgress(
+            RebuildGroupsProgress(
+                total = total,
+                processed = 0,
+                phase = RebuildGroupsPhase.RebuildingGroups
+            )
+        )
         var processed = 0
         var offset = 0
         val batchSize = 200
@@ -66,8 +96,105 @@ class ResultsDbRepository(
         return RebuildGroupsSummary(
             total = total,
             processed = processed,
-            cancelled = processed < total
+            cancelled = processed < total,
+            phase = RebuildGroupsPhase.RebuildingGroups
         )
+    }
+
+    private fun repairMissingHashesForSizeCollisions(
+        total: Int,
+        shouldContinue: () -> Boolean,
+        onProgress: (RebuildGroupsProgress) -> Unit
+    ): RebuildGroupsSummary {
+        var afterPath = ""
+        var processed = 0
+        val batchSize = 200
+        while (true) {
+            if (!shouldContinue()) {
+                return RebuildGroupsSummary(
+                    total = total,
+                    processed = processed,
+                    cancelled = true,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            }
+            val batch = fileDao.listMissingHashSizeCollisionCandidatesAfter(
+                afterPath = afterPath,
+                limit = batchSize
+            )
+            if (batch.isEmpty()) {
+                return RebuildGroupsSummary(
+                    total = total,
+                    processed = processed,
+                    cancelled = false,
+                    phase = RebuildGroupsPhase.RepairingMissingHashes
+                )
+            }
+            for (entity in batch) {
+                afterPath = entity.normalizedPath
+                if (!shouldContinue()) {
+                    return RebuildGroupsSummary(
+                        total = total,
+                        processed = processed,
+                        cancelled = true,
+                        phase = RebuildGroupsPhase.RepairingMissingHashes
+                    )
+                }
+                val path = entity.path.ifBlank { entity.normalizedPath }
+                val file = File(path)
+                if (!file.exists()) {
+                    processed += 1
+                    onProgress(
+                        RebuildGroupsProgress(
+                            total = total,
+                            processed = processed,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes,
+                            currentPath = path
+                        )
+                    )
+                    continue
+                }
+                val hash = runCatching {
+                    hashFile(file, shouldContinue)
+                }.getOrNull()
+                if (hash == null) {
+                    if (!shouldContinue()) {
+                        return RebuildGroupsSummary(
+                            total = total,
+                            processed = processed,
+                            cancelled = true,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes
+                        )
+                    }
+                    processed += 1
+                    onProgress(
+                        RebuildGroupsProgress(
+                            total = total,
+                            processed = processed,
+                            phase = RebuildGroupsPhase.RepairingMissingHashes,
+                            currentPath = path
+                        )
+                    )
+                    continue
+                }
+                fileDao.upsert(
+                    entity.copy(
+                        sizeBytes = file.length(),
+                        lastModifiedMillis = file.lastModified(),
+                        hashHex = hash
+                    )
+                )
+                processed += 1
+                onProgress(
+                    RebuildGroupsProgress(
+                        total = total,
+                        processed = processed,
+                        phase = RebuildGroupsPhase.RepairingMissingHashes,
+                        currentPath = path
+                    )
+                )
+            }
+        }
     }
 
     fun refreshSingleGroup(sizeBytes: Long, hashHex: String, updatedAtMillis: Long = System.currentTimeMillis()) {
@@ -147,13 +274,58 @@ class ResultsDbRepository(
         }
     }
 
+    fun loadKeyPageAtSnapshot(
+        snapshotUpdatedAtMillis: Long,
+        afterSizeBytes: Long?,
+        afterHashHex: String?,
+        limit: Int
+    ): List<DuplicateGroupEntity> {
+        if (limit <= 0) return emptyList()
+        return if (afterSizeBytes == null || afterHashHex == null) {
+            groupDao.listPageByKeyAt(
+                updatedAtMillis = snapshotUpdatedAtMillis,
+                limit = limit
+            )
+        } else {
+            groupDao.listPageByKeyAtAfter(
+                updatedAtMillis = snapshotUpdatedAtMillis,
+                afterSizeBytes = afterSizeBytes,
+                afterHashHex = afterHashHex,
+                limit = limit
+            )
+        }
+    }
+
     fun listGroupMembers(sizeBytes: Long, hashHex: String, afterPath: String?, limit: Int): List<FileMetadata> {
         val entities = if (afterPath == null) {
             fileDao.listMembersBySizeAndHash(sizeBytes, hashHex, limit)
         } else {
             fileDao.listMembersBySizeAndHashAfter(sizeBytes, hashHex, afterPath, limit)
         }
-        return entities.map { it.toMetadata() }
+        return entities.map { it.toFileMetadata() }
+    }
+
+    fun groupMemberPages(sizeBytes: Long, hashHex: String, pageSize: Int = 200): Sequence<List<FileMetadata>> {
+        if (pageSize <= 0) return emptySequence()
+        return sequence {
+            var afterPath: String? = null
+            while (true) {
+                val page = listGroupMembers(
+                    sizeBytes = sizeBytes,
+                    hashHex = hashHex,
+                    afterPath = afterPath,
+                    limit = pageSize
+                )
+                if (page.isEmpty()) {
+                    break
+                }
+                yield(page)
+                if (page.size < pageSize) {
+                    break
+                }
+                afterPath = page.last().normalizedPath
+            }
+        }
     }
 
     fun listAllGroupMembers(sizeBytes: Long, hashHex: String, pageSize: Int = 200): List<FileMetadata> {
@@ -178,14 +350,4 @@ class ResultsDbRepository(
         }
         return allMembers
     }
-}
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
 }

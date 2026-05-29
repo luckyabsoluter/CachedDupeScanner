@@ -17,9 +17,12 @@ import androidx.room.RoomDatabase
         CachedFileEntity::class,
         ScanReportEntity::class,
         TrashEntryEntity::class,
-        DuplicateGroupEntity::class
+        DuplicateGroupEntity::class,
+        SimilarityExperimentRunEntity::class,
+        SimilarityClusterEntity::class,
+        SimilarityDurationCandidateEntity::class
     ],
-    version = 12,
+    version = 16,
     exportSchema = false
 )
 abstract class CacheDatabase : RoomDatabase() {
@@ -27,4 +30,5 @@ abstract class CacheDatabase : RoomDatabase() {
     abstract fun scanReportDao(): ScanReportDao
     abstract fun trashDao(): TrashDao
     abstract fun duplicateGroupDao(): DuplicateGroupDao
+    abstract fun similarityExperimentDao(): SimilarityExperimentDao
 }

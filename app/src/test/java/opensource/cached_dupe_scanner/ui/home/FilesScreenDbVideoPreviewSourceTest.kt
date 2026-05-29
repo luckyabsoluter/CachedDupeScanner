@@ -25,6 +25,21 @@ class FilesScreenDbVideoPreviewSourceTest {
             content.contains("FilesPreviewMode.VideoTimeline.name") &&
                 content.contains("FilesPreviewMode.Compact.name")
         )
+        assertTrue(
+            "Files menu should expose the video duration option without enabling preview frames",
+            content.contains("Text(\"Video duration\")") &&
+                content.contains("showVideoPreviewDuration.value = !showVideoPreviewDuration.value")
+        )
+        assertTrue(
+            "Files menu should expose the video resolution option without enabling preview frames",
+            content.contains("Text(\"Video resolution\")") &&
+                content.contains("showVideoPreviewResolution.value = !showVideoPreviewResolution.value")
+        )
+        assertTrue(
+            "Video metadata options should not switch the preview mode",
+            !content.contains("if (showVideoPreviewDuration.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }") &&
+                !content.contains("if (showVideoPreviewResolution.value) {\n                                        previewMode.value = FilesPreviewMode.VideoTimeline.name\n                                    }")
+        )
     }
 
     @Test
@@ -59,6 +74,19 @@ class FilesScreenDbVideoPreviewSourceTest {
         assertTrue(
             "Video timeline strip should use configurable frame height",
             content.contains("frameHeight = videoPreviewFrameHeightDp")
+        )
+        assertTrue(
+            "Video timeline strip should receive the optional duration display setting",
+            content.contains("showDuration = showVideoPreviewDuration.value")
+        )
+        assertTrue(
+            "Video timeline strip should receive the optional resolution display setting",
+            content.contains("showResolution = showVideoPreviewResolution.value")
+        )
+        assertTrue(
+            "Video metadata labels should render without enabling timeline preview frames",
+            content.contains("if ((showVideoPreviewDuration.value || showVideoPreviewResolution.value) && !isVideoTimelinePreviewEnabled() && isVideo)") &&
+                content.contains("VideoMetadataLabelText(")
         )
         assertTrue(
             "Primary thumbnail should keep using thumbnail cache and setting",

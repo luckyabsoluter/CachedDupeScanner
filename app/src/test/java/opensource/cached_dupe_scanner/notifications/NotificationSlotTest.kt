@@ -11,11 +11,14 @@ class NotificationSlotTest {
         val scanId = notificationIdFor(TaskArea.Scan)
         val dbTaskId = notificationIdFor(TaskArea.Db)
         val trashId = notificationIdFor(TaskArea.Trash)
+        val similarityId = notificationIdFor(TaskArea.Similarity)
 
         assertEquals(1001, scanId)
         assertEquals(1002, dbTaskId)
         assertEquals(1003, trashId)
+        assertEquals(1004, similarityId)
         assertNotEquals(scanId, dbTaskId)
         assertNotEquals(dbTaskId, trashId)
+        assertNotEquals(trashId, similarityId)
     }
 }

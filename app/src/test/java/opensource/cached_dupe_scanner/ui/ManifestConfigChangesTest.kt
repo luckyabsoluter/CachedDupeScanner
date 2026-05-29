@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.ui
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -7,7 +8,82 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 class ManifestConfigChangesTest {
     @Test
-    fun mainActivityHandlesUiModeChanges() {
+    fun mainActivityHandlesUiAndScreenSizeChanges() {
+        val configList = mainActivityConfigChanges()
+
+        listOf(
+            "uiMode",
+            "orientation",
+            "screenSize",
+            "smallestScreenSize",
+            "screenLayout",
+            "keyboardHidden"
+        ).forEach { expectedChange ->
+            assertTrue(
+                "MainActivity should handle $expectedChange config changes",
+                configList.contains(expectedChange)
+            )
+        }
+    }
+
+    @Test
+    fun taskForegroundServiceIsDeclaredForBackgroundTasks() {
+        val document = parseManifest()
+        val manifest = document.documentElement
+        val permissions = (0 until manifest.getElementsByTagName("uses-permission").length)
+            .map { manifest.getElementsByTagName("uses-permission").item(it) }
+            .mapNotNull { it as? org.w3c.dom.Element }
+            .map { it.getAttributeNS(ANDROID_NS, "name") }
+
+        assertTrue(
+            "Task foreground service should have the base foreground service permission",
+            permissions.contains("android.permission.FOREGROUND_SERVICE")
+        )
+        assertTrue(
+            "Task foreground service should declare the dataSync foreground service permission",
+            permissions.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
+        )
+
+        val services = document.getElementsByTagName("service")
+        val taskService = (0 until services.length)
+            .map { services.item(it) }
+            .mapNotNull { it as? org.w3c.dom.Element }
+            .firstOrNull {
+                val name = it.getAttributeNS(ANDROID_NS, "name")
+                name == ".notifications.TaskForegroundService" || name.endsWith(".notifications.TaskForegroundService")
+            }
+
+        assertTrue("TaskForegroundService should be declared", taskService != null)
+        assertEquals("false", taskService?.getAttributeNS(ANDROID_NS, "exported"))
+        assertEquals("dataSync", taskService?.getAttributeNS(ANDROID_NS, "foregroundServiceType"))
+    }
+
+    private fun mainActivityConfigChanges(): List<String> {
+        val document = parseManifest()
+        val activities = document.getElementsByTagName("activity")
+
+        for (index in 0 until activities.length) {
+            val node = activities.item(index)
+            val element = node as? org.w3c.dom.Element ?: continue
+            val name = element.getAttributeNS(
+                ANDROID_NS,
+                "name"
+            )
+            if (name == ".MainActivity" || name.endsWith(".MainActivity")) {
+                return element.getAttributeNS(
+                    ANDROID_NS,
+                    "configChanges"
+                )
+                    .split("|")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            }
+        }
+
+        error("MainActivity should be declared in the manifest")
+    }
+
+    private fun parseManifest(): org.w3c.dom.Document {
         val projectDir = File(requireNotNull(System.getProperty("user.dir")))
         val manifestFile = sequenceOf(
             File(projectDir, "app/src/main/AndroidManifest.xml"),
@@ -15,38 +91,14 @@ class ManifestConfigChangesTest {
         ).firstOrNull { it.exists() }
         assertTrue("AndroidManifest.xml should exist", manifestFile != null)
 
-        val document = DocumentBuilderFactory.newInstance().apply {
+        return DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
         }
             .newDocumentBuilder()
             .parse(manifestFile!!)
-        val activities = document.getElementsByTagName("activity")
+    }
 
-        var found = false
-        var configChanges: String? = null
-        for (index in 0 until activities.length) {
-            val node = activities.item(index)
-            val element = node as? org.w3c.dom.Element ?: continue
-            val name = element.getAttributeNS(
-                "http://schemas.android.com/apk/res/android",
-                "name"
-            )
-            if (name == ".MainActivity" || name.endsWith(".MainActivity")) {
-                found = true
-                configChanges = element.getAttributeNS(
-                    "http://schemas.android.com/apk/res/android",
-                    "configChanges"
-                )
-                break
-            }
-        }
-
-        assertTrue("MainActivity should be declared in the manifest", found)
-        val configList = configChanges
-            ?.split("|")
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?: emptyList()
-        assertTrue("MainActivity should handle uiMode config changes", configList.contains("uiMode"))
+    private companion object {
+        private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
     }
 }

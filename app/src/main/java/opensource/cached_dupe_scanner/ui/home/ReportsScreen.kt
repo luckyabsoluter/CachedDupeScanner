@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
@@ -30,11 +32,11 @@ import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ReportsScreen(
@@ -46,44 +48,65 @@ fun ReportsScreen(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val reports = remember { mutableStateOf<List<ScanReport>>(emptyList()) }
-    val isLoading = remember { mutableStateOf(true) }
+    val totalCount = remember { mutableStateOf(0) }
+    val cursor = remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val isLoading = remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
-    val selectedReport = selectedReportId?.let { id -> reports.value.firstOrNull { it.id == id } }
+    val selectedById = remember { mutableStateOf<ScanReport?>(null) }
     val pageSize = 50
     val buffer = 20
-    val visibleCount = remember { mutableStateOf(0) }
     val topVisibleIndex = remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        isLoading.value = true
-        val loaded = withContext(Dispatchers.IO) {
-            reportRepo.loadAll()
+    fun resetAndLoad() {
+        scope.launch {
+            isLoading.value = true
+            val count = withContext(Dispatchers.IO) { reportRepo.countAll() }
+            val first = withContext(Dispatchers.IO) { reportRepo.getFirstPage(pageSize) }
+            totalCount.value = count
+            reports.value = first
+            cursor.value = first.lastOrNull()?.let { report -> report.startedAtMillis to report.id }
+            topVisibleIndex.value = 0
+            isLoading.value = false
         }
-        reports.value = loaded
-        isLoading.value = false
+    }
+
+    fun loadMore() {
+        if (isLoading.value || reports.value.size >= totalCount.value) return
+        val before = cursor.value ?: return
+        scope.launch {
+            isLoading.value = true
+            val next = withContext(Dispatchers.IO) {
+                reportRepo.getPageBefore(
+                    beforeMillis = before.first,
+                    beforeId = before.second,
+                    limit = pageSize
+                )
+            }
+            if (next.isNotEmpty()) {
+                reports.value = reports.value + next
+                cursor.value = next.last().let { report -> report.startedAtMillis to report.id }
+            }
+            isLoading.value = false
+        }
     }
 
     LaunchedEffect(refreshVersion) {
-        isLoading.value = true
-        val loaded = withContext(Dispatchers.IO) {
-            reportRepo.loadAll()
-        }
-        reports.value = loaded
-        isLoading.value = false
+        resetAndLoad()
     }
 
-    LaunchedEffect(reports.value.size) {
-        if (reports.value.isNotEmpty()) {
-            val initial = pageSize.coerceAtMost(reports.value.size)
-            if (visibleCount.value == 0) {
-                visibleCount.value = initial
-            } else {
-                visibleCount.value = visibleCount.value.coerceAtMost(reports.value.size)
-            }
+    LaunchedEffect(selectedReportId, refreshVersion) {
+        selectedById.value = if (selectedReportId == null) {
+            null
+        } else {
+            withContext(Dispatchers.IO) { reportRepo.loadById(selectedReportId) }
         }
     }
 
+    val selectedReport = selectedReportId?.let { id ->
+        reports.value.firstOrNull { it.id == id } ?: selectedById.value
+    }
     val reportIndexById = remember(reports.value) {
         reports.value.mapIndexed { index, report -> report.id to index }.toMap()
     }
@@ -103,29 +126,27 @@ fun ReportsScreen(
             }
     }
 
-    LaunchedEffect(reports.value.size) {
-        if (reports.value.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(totalCount.value, reports.value.size) {
+        if (totalCount.value <= 0) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems = layoutInfo.totalItemsCount
-            val remaining = reports.value.size - visibleCount.value
-            lastVisible >= (totalItems - buffer) && remaining > 0
+            val hasMore = reports.value.size < totalCount.value
+            val closeToEnd = lastVisible >= (totalItems - buffer)
+            closeToEnd && hasMore && !isLoading.value
         }
             .distinctUntilChanged()
             .filter { it }
-            .collect {
-                visibleCount.value = (visibleCount.value + pageSize)
-                    .coerceAtMost(reports.value.size)
-            }
+            .collect { loadMore() }
     }
 
     val loadIndicatorText = run {
-        val total = reports.value.size
+        val total = totalCount.value
         if (selectedReportId != null || total == 0) {
             null
         } else {
-            val loaded = visibleCount.value.coerceAtMost(total).coerceAtLeast(1)
+            val loaded = reports.value.size.coerceAtMost(total).coerceAtLeast(1)
             val current = (topVisibleIndex.value + 1).coerceAtLeast(1)
             val currentPercent = ((current.toDouble() / loaded.toDouble()) * 100).toInt()
             val loadedPercent = ((loaded.toDouble() / total.toDouble()) * 100).toInt()
@@ -155,7 +176,7 @@ fun ReportsScreen(
                 return@LazyColumn
             }
 
-            if (isLoading.value) {
+            if (isLoading.value && reports.value.isEmpty()) {
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -169,8 +190,7 @@ fun ReportsScreen(
             } else if (reports.value.isEmpty()) {
                 item { Text("No scan reports yet.") }
             } else {
-                val reportsToShow = reports.value.take(visibleCount.value)
-                items(reportsToShow, key = { it.id }) { report ->
+                items(reports.value, key = { it.id }) { report ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -193,6 +213,16 @@ fun ReportsScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (isLoading.value) {
+                    item {
+                        Text(
+                            text = "Loading more reports...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }

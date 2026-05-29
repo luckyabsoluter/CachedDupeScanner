@@ -16,6 +16,7 @@ Build a high-performance duplicate file scanner with a persistent cache that spe
 - Optimize large-scale operations with bounded batching/chunking and avoid unnecessary global rebuilds in runtime paths.
 - For large mutations, apply transaction boundaries that keep source data and derived data consistent per batch, so interruptions still leave committed batches in a valid state.
 - Keep expensive external I/O outside DB transactions when possible to reduce lock duration.
+- Run Gradle through `mise x -- ./gradlew ...` without prefixing `ANDROID_HOME`; rely on the repo/local SDK configuration unless Gradle cannot discover the SDK.
 
 ## Required Workflow
 

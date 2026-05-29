@@ -16,7 +16,7 @@ class PathNormalizerTest {
     }
 
     @Test
-    fun normalizeForSdk_oOrAbove_usesPathsNormalization() {
+    fun normalizeForSdk_oOrAbove_usesSharedFallbackNormalization() {
         val normalized = PathNormalizer.normalizeForSdk(
             path = "root/dir/../file.txt",
             sdkInt = Build.VERSION_CODES.O

@@ -37,14 +37,24 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.bulkDeleteCompletedDetail
+import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskDetail
+import opensource.cached_dupe_scanner.tasks.bulkDeleteTaskTitle
+import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
@@ -79,6 +89,8 @@ internal data class KeepOneNonMatchBulkDeleteCommandConfig(
     val phrase: String = ""
 )
 
+internal const val BULK_DELETE_PREVIEW_SAMPLE_LIMIT = 50
+
 internal data class ResultsBulkDeleteCandidate(
     val group: DuplicateGroupEntity,
     val survivor: FileMetadata,
@@ -89,7 +101,9 @@ internal data class ResultsBulkDeletePreview(
     val snapshotUpdatedAtMillis: Long,
     val totalGroupCount: Int,
     val filterMatchedGroupCount: Int,
-    val candidates: List<ResultsBulkDeleteCandidate>
+    val candidates: List<ResultsBulkDeleteCandidate>,
+    val candidateGroupCount: Int = candidates.size,
+    val candidateFileCount: Int = candidates.sumOf { it.deleteTargets.size }
 )
 
 internal data class ResultsBulkDeletePreviewProgress(
@@ -100,10 +114,80 @@ internal data class ResultsBulkDeletePreviewProgress(
     val candidateFileCount: Int = 0
 )
 
+internal data class ResultsBulkDeleteTouchedGroupKey(
+    val sizeBytes: Long,
+    val hashHex: String
+)
+
 internal data class ResultsBulkDeleteExecutionOutcome(
     val successCount: Int,
-    val failedPaths: Set<String>
+    val failedPaths: Set<String>,
+    val touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey> = emptySet()
 )
+
+internal data class ResultsBulkDeleteExecutionProgress(
+    val processed: Int = 0,
+    val total: Int = 0,
+    val failed: Int = 0,
+    val currentPath: String? = null
+)
+
+internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
+    return candidateFileCount
+}
+
+internal fun ResultsBulkDeletePreview.hasCappedCandidates(): Boolean {
+    return candidateGroupCount > candidates.size
+}
+
+internal fun ResultsBulkDeletePreview.readyMessage(): String {
+    return if (candidateGroupCount == 0) {
+        "No groups matched this command."
+    } else {
+        "$candidateGroupCount groups and $candidateFileCount files are ready."
+    }
+}
+
+internal fun ResultsBulkDeletePreview.progressSummaryLines(): List<String> {
+    return bulkDeletePreviewProgressLines(
+        ResultsBulkDeletePreviewProgress(
+            scannedGroupCount = totalGroupCount,
+            totalGroupCount = totalGroupCount,
+            filterMatchedGroupCount = filterMatchedGroupCount,
+            candidateGroupCount = candidateGroupCount,
+            candidateFileCount = candidateFileCount
+        )
+    )
+}
+
+internal fun ResultsBulkDeletePreviewProgress.progressLines(): List<String> {
+    return bulkDeletePreviewProgressLines(this)
+}
+
+private fun bulkDeletePreviewProgressLines(
+    progress: ResultsBulkDeletePreviewProgress
+): List<String> {
+    return listOf(
+        "${progress.scannedGroupCount}/${progress.totalGroupCount} groups loaded before filtering",
+        "${progress.filterMatchedGroupCount} groups passed the current filter",
+        "${progress.candidateGroupCount} candidate groups · ${progress.candidateFileCount} files to delete"
+    )
+}
+
+internal fun ResultsBulkDeleteExecutionOutcome.message(): String {
+    return when {
+        successCount == 0 && failedPaths.isEmpty() -> "No files were deleted."
+        failedPaths.isEmpty() -> "$successCount files deleted."
+        successCount == 0 -> "Delete failed for ${failedPaths.size} files."
+        else -> "$successCount files deleted, ${failedPaths.size} failed."
+    }
+}
+
+internal fun ResultsBulkDeletePreview.firstDeleteTargetPath(): String? {
+    return candidates.firstNotNullOfOrNull { candidate ->
+        candidate.deleteTargets.firstOrNull()?.normalizedPath
+    }
+}
 
 internal fun buildKeepModifiedBulkDeleteCandidate(
     group: DuplicateGroupEntity,
@@ -266,6 +350,8 @@ private suspend fun buildBulkDeletePreview(
     val candidates = mutableListOf<ResultsBulkDeleteCandidate>()
     var sourceOffset = 0
     var filterMatchedGroupCount = 0
+    var candidateGroupCount = 0
+    var candidateFileCount = 0
     val safeTotalGroupCount = totalGroupCount.coerceAtLeast(0)
 
     onProgress(
@@ -288,15 +374,33 @@ private suspend fun buildBulkDeletePreview(
         }
 
         page.forEach { group ->
-            val members = withContext(Dispatchers.IO) {
-                resultsRepo.listAllGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex
+            val matchesFilter = withContext(Dispatchers.IO) {
+                matchesResultsFilterPagedMembers(
+                    definition = filterDefinition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    }
                 )
             }
-            if (matchesResultsFilter(filterDefinition, group, members)) {
+            if (matchesFilter) {
+                val members = withContext(Dispatchers.IO) {
+                    resultsRepo.listAllGroupMembers(
+                        sizeBytes = group.sizeBytes,
+                        hashHex = group.hashHex
+                    )
+                }
                 filterMatchedGroupCount += 1
-                buildCandidate(group, members)?.let { candidates += it }
+                buildCandidate(group, members)?.let { candidate ->
+                    candidateGroupCount += 1
+                    candidateFileCount += candidate.deleteTargets.size
+                    if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
+                        candidates += candidate
+                    }
+                }
             }
         }
 
@@ -306,8 +410,8 @@ private suspend fun buildBulkDeletePreview(
                 scannedGroupCount = sourceOffset.coerceAtMost(safeTotalGroupCount),
                 totalGroupCount = safeTotalGroupCount,
                 filterMatchedGroupCount = filterMatchedGroupCount,
-                candidateGroupCount = candidates.size,
-                candidateFileCount = candidates.sumOf { it.deleteTargets.size }
+                candidateGroupCount = candidateGroupCount,
+                candidateFileCount = candidateFileCount
             )
         )
         if (page.size < sourcePageSize) {
@@ -319,30 +423,244 @@ private suspend fun buildBulkDeletePreview(
         snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
         totalGroupCount = safeTotalGroupCount,
         filterMatchedGroupCount = filterMatchedGroupCount,
-        candidates = candidates
+        candidates = candidates,
+        candidateGroupCount = candidateGroupCount,
+        candidateFileCount = candidateFileCount
+    )
+}
+
+internal suspend fun executeBulkDeleteCommand(
+    resultsRepo: ResultsDbRepository,
+    sortKey: DuplicateGroupSortKey,
+    snapshotUpdatedAtMillis: Long,
+    totalGroupCount: Int,
+    filterDefinition: ResultsFilterDefinition,
+    sourcePageSize: Int = 100,
+    totalDeleteTargetCount: Int = 0,
+    onDeleteFile: suspend (FileMetadata) -> Boolean,
+    onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit = {},
+    buildCandidate: (DuplicateGroupEntity, List<FileMetadata>) -> ResultsBulkDeleteCandidate?
+): ResultsBulkDeleteExecutionOutcome {
+    val total = totalDeleteTargetCount.coerceAtLeast(0)
+    var afterSizeBytes: Long? = null
+    var afterHashHex: String? = null
+    var visitedGroupCount = 0
+    var processed = 0
+    var successCount = 0
+    val failedPaths = linkedSetOf<String>()
+    val touchedGroups = linkedSetOf<ResultsBulkDeleteTouchedGroupKey>()
+    val safeTotalGroupCount = totalGroupCount.coerceAtLeast(0)
+
+    onProgress(ResultsBulkDeleteExecutionProgress(total = total))
+
+    while (true) {
+        val page = withContext(Dispatchers.IO) {
+            resultsRepo.loadKeyPageAtSnapshot(
+                snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+                afterSizeBytes = afterSizeBytes,
+                afterHashHex = afterHashHex,
+                limit = sourcePageSize
+            )
+        }
+        if (page.isEmpty()) {
+            break
+        }
+
+        page.forEach { group ->
+            afterSizeBytes = group.sizeBytes
+            afterHashHex = group.hashHex
+            visitedGroupCount += 1
+            val matchesFilter = withContext(Dispatchers.IO) {
+                matchesResultsFilterPagedMembers(
+                    definition = filterDefinition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    }
+                )
+            }
+            if (matchesFilter) {
+                val members = withContext(Dispatchers.IO) {
+                    resultsRepo.listAllGroupMembers(
+                        sizeBytes = group.sizeBytes,
+                        hashHex = group.hashHex
+                    )
+                }
+                buildCandidate(group, members)?.let { candidate ->
+                    touchedGroups += ResultsBulkDeleteTouchedGroupKey(
+                        sizeBytes = candidate.group.sizeBytes,
+                        hashHex = candidate.group.hashHex
+                    )
+                    candidate.deleteTargets.forEach { file ->
+                        val deleted = runCatching { onDeleteFile(file) }.getOrDefault(false)
+                        processed += 1
+                        if (deleted) {
+                            successCount += 1
+                        } else {
+                            failedPaths += file.normalizedPath
+                        }
+                        onProgress(
+                            ResultsBulkDeleteExecutionProgress(
+                                processed = processed,
+                                total = total,
+                                failed = failedPaths.size,
+                                currentPath = file.normalizedPath
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if (page.size < sourcePageSize ||
+            (safeTotalGroupCount > 0 && visitedGroupCount >= safeTotalGroupCount)
+        ) {
+            break
+        }
+    }
+
+    return ResultsBulkDeleteExecutionOutcome(
+        successCount = successCount,
+        failedPaths = failedPaths,
+        touchedGroups = touchedGroups
     )
 }
 
 internal suspend fun executeBulkDeletePreview(
     preview: ResultsBulkDeletePreview,
-    onDeleteFile: suspend (FileMetadata) -> Boolean
+    onDeleteFile: suspend (FileMetadata) -> Boolean,
+    onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit = {}
 ): ResultsBulkDeleteExecutionOutcome {
+    val total = preview.deleteTargetCount()
+    var processed = 0
     var successCount = 0
     val failedPaths = linkedSetOf<String>()
+    onProgress(ResultsBulkDeleteExecutionProgress(total = total))
     preview.candidates.forEach { candidate ->
         candidate.deleteTargets.forEach { file ->
             val deleted = runCatching { onDeleteFile(file) }.getOrDefault(false)
+            processed += 1
             if (deleted) {
                 successCount += 1
             } else {
                 failedPaths += file.normalizedPath
             }
+            onProgress(
+                ResultsBulkDeleteExecutionProgress(
+                    processed = processed,
+                    total = total,
+                    failed = failedPaths.size,
+                    currentPath = file.normalizedPath
+                )
+            )
         }
     }
     return ResultsBulkDeleteExecutionOutcome(
         successCount = successCount,
         failedPaths = failedPaths
     )
+}
+
+internal fun startBulkDeleteTask(
+    preview: ResultsBulkDeletePreview,
+    scope: kotlinx.coroutines.CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    executeDelete: suspend (
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ) -> ResultsBulkDeleteExecutionOutcome,
+    onSnapshotChanged: suspend () -> Boolean,
+    onRefreshGroups: suspend (Set<ResultsBulkDeleteTouchedGroupKey>) -> Unit,
+    onSuccess: (ResultsBulkDeleteExecutionOutcome) -> Unit,
+    onSnapshotStale: () -> Unit,
+    onFailure: () -> Unit,
+    onFinished: () -> Unit
+) {
+    val total = preview.deleteTargetCount()
+    val started = taskCoordinator.tryStart(
+        area = TaskArea.Trash,
+        kind = TaskKind.BulkDelete,
+        title = bulkDeleteTaskTitle(),
+        detail = bulkDeleteTaskDetail(processed = 0, total = total, failed = 0),
+        currentPath = preview.firstDeleteTargetPath(),
+        processed = 0,
+        total = total,
+        indeterminate = total <= 0,
+        isCancellable = false
+    ) ?: run {
+        onFailure()
+        onFinished()
+        return
+    }
+    notificationController.showActive(started)
+    scope.launch {
+        var terminalShown = false
+        try {
+            val snapshotChanged = withContext(Dispatchers.IO) { onSnapshotChanged() }
+            if (snapshotChanged) {
+                taskCoordinator.fail(
+                    area = TaskArea.Trash,
+                    title = "Bulk delete skipped",
+                    detail = "The results snapshot changed. Build the preview again.",
+                    processed = 0,
+                    total = total,
+                    indeterminate = total <= 0
+                )?.let(notificationController::showTerminal)
+                terminalShown = true
+                onSnapshotStale()
+                return@launch
+            }
+
+            val outcome = executeDelete { progress ->
+                taskCoordinator.update(TaskArea.Trash) { task ->
+                    task.withLinearProgress(
+                        title = bulkDeleteTaskTitle(),
+                        detail = bulkDeleteTaskDetail(
+                            processed = progress.processed,
+                            total = progress.total,
+                            failed = progress.failed
+                        ),
+                        currentPath = progress.currentPath,
+                        processed = progress.processed,
+                        total = progress.total
+                    )
+                }?.let(notificationController::showActive)
+            }
+            withContext(Dispatchers.IO) { onRefreshGroups(outcome.touchedGroups) }
+            taskCoordinator.complete(
+                area = TaskArea.Trash,
+                title = "Bulk delete complete",
+                detail = bulkDeleteCompletedDetail(
+                    successCount = outcome.successCount,
+                    failedCount = outcome.failedPaths.size
+                ),
+                processed = total,
+                total = total,
+                indeterminate = total <= 0
+            )?.let(notificationController::showTerminal)
+            terminalShown = true
+            onSuccess(outcome)
+        } catch (_: Exception) {
+            if (!terminalShown) {
+                val task = taskCoordinator.activeTask(TaskArea.Trash)
+                taskCoordinator.fail(
+                    area = TaskArea.Trash,
+                    title = "Bulk delete failed",
+                    detail = "Unable to delete the selected files.",
+                    currentPath = task?.currentPath,
+                    processed = task?.processed,
+                    total = task?.total,
+                    indeterminate = task?.indeterminate ?: true
+                )?.let(notificationController::showTerminal)
+            }
+            onFailure()
+        } finally {
+            onFinished()
+        }
+    }
 }
 
 @Composable
@@ -447,6 +765,9 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -472,8 +793,17 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
         message.value = null
     }
 
+    fun refreshTouchedGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>) {
+        touchedGroups.forEach { group ->
+            resultsRepo.refreshSingleGroup(
+                sizeBytes = group.sizeBytes,
+                hashHex = group.hashHex
+            )
+        }
+    }
+
     val currentPreview = preview.value
-    val previewDeleteCount = currentPreview?.candidates?.sumOf { it.deleteTargets.size } ?: 0
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         config.value.phrase.trim().isNotEmpty() &&
@@ -483,7 +813,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
         !isExecuting.value &&
         onDeleteFile != null &&
         currentPreview != null &&
-        currentPreview.candidates.isNotEmpty()
+        currentPreview.candidateFileCount > 0
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -546,7 +876,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text("Target")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsBulkDeleteTextTarget.entries,
                                 selected = config.value.target,
                                 label = { it.label },
@@ -555,7 +885,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 }
                             )
                             Text("Operator")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsFilterTextOperator.entries,
                                 selected = config.value.operator,
                                 label = { it.label },
@@ -611,11 +941,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                             }
                                         )
                                         preview.value = builtPreview
-                                        message.value = if (builtPreview.candidates.isEmpty()) {
-                                            "No groups matched this command."
-                                        } else {
-                                            "${builtPreview.candidates.size} groups and ${builtPreview.candidates.sumOf { it.deleteTargets.size }} files are ready."
-                                        }
+                                        message.value = builtPreview.readyMessage()
                                     } catch (_: Exception) {
                                         message.value = "Failed to build the bulk delete preview."
                                     } finally {
@@ -642,18 +968,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Scanning", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${progress.value.scannedGroupCount}/${progress.value.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.candidateGroupCount} candidate groups · ${progress.value.candidateFileCount} files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -668,18 +988,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Preview summary", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${builtPreview.totalGroupCount}/${builtPreview.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.candidates.size} candidate groups · $previewDeleteCount files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -715,7 +1029,14 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 onClick = { confirmExecute.value = true },
                                 enabled = canExecute
                             ) {
-                                Text(if (isExecuting.value) "Deleting..." else "Delete listed files")
+                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
+                            }
+                            if (builtPreview.hasCappedCandidates()) {
+                                Text(
+                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -750,7 +1071,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidates.size} groups and $previewDeleteCount files from the preview will be deleted."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
                 )
             },
             confirmButton = {
@@ -759,47 +1080,56 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                         val handler = onDeleteFile ?: return@OutlinedButton
                         isExecuting.value = true
                         message.value = null
-                        scope.launch {
-                            try {
-                                val snapshotChanged = withContext(Dispatchers.IO) {
-                                    resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = taskScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            executeDelete = { executionProgress ->
+                                executeBulkDeleteCommand(
+                                    resultsRepo = resultsRepo,
+                                    sortKey = sortKey,
+                                    snapshotUpdatedAtMillis = currentPreview.snapshotUpdatedAtMillis,
+                                    totalGroupCount = totalGroupCount,
+                                    filterDefinition = appliedFilter,
+                                    sourcePageSize = 100,
+                                    totalDeleteTargetCount = currentPreview.candidateFileCount,
+                                    onDeleteFile = handler,
+                                    onProgress = executionProgress
+                                ) { group, members ->
+                                    buildKeepOneNonMatchBulkDeleteCandidate(
+                                        group = group,
+                                        members = members,
+                                        config = config.value
+                                    )
                                 }
-                                if (snapshotChanged) {
-                                    preview.value = null
-                                    message.value = "The results snapshot changed. Build the preview again."
-                                    return@launch
-                                }
-
-                                val outcome = executeBulkDeletePreview(
-                                    preview = currentPreview,
-                                    onDeleteFile = handler
-                                )
-                                withContext(Dispatchers.IO) {
-                                    currentPreview.candidates.forEach { candidate ->
-                                        resultsRepo.refreshSingleGroup(
-                                            sizeBytes = candidate.group.sizeBytes,
-                                            hashHex = candidate.group.hashHex
-                                        )
-                                    }
-                                }
+                            },
+                            onSnapshotChanged = {
+                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                            },
+                            onRefreshGroups = { touchedGroups ->
+                                refreshTouchedGroups(touchedGroups)
+                            },
+                            onSuccess = { outcome ->
                                 preview.value = null
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
-                                message.value = when {
-                                    outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files were deleted."
-                                    outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
-                                    outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
-                                    else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
-                                }
+                                message.value = outcome.message()
                                 onResultsChanged()
-                            } catch (_: Exception) {
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
                                 message.value = "Bulk delete failed."
-                            } finally {
+                            },
+                            onFinished = {
                                 isExecuting.value = false
                                 confirmExecute.value = false
                             }
-                        }
+                        )
                     },
                     enabled = !isExecuting.value
                 ) {
@@ -831,6 +1161,9 @@ internal fun KeepByModifiedBulkDeleteScreen(
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
     onResultsChanged: () -> Unit
@@ -856,8 +1189,17 @@ internal fun KeepByModifiedBulkDeleteScreen(
         message.value = null
     }
 
+    fun refreshTouchedGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>) {
+        touchedGroups.forEach { group ->
+            resultsRepo.refreshSingleGroup(
+                sizeBytes = group.sizeBytes,
+                hashHex = group.hashHex
+            )
+        }
+    }
+
     val currentPreview = preview.value
-    val previewDeleteCount = currentPreview?.candidates?.sumOf { it.deleteTargets.size } ?: 0
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         snapshotUpdatedAtMillis != null &&
@@ -866,7 +1208,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
         !isExecuting.value &&
         onDeleteFile != null &&
         currentPreview != null &&
-        currentPreview.candidates.isNotEmpty()
+        currentPreview.candidateFileCount > 0
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -924,7 +1266,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         ) {
                             Text("Command rule", style = MaterialTheme.typography.titleMedium)
                             Text("Keep mode")
-                            BulkDeleteOptionButtons(
+                            OptionButtonGrid(
                                 options = ResultsBulkDeleteModifiedKeepMode.entries,
                                 selected = keepMode.value,
                                 label = { it.label },
@@ -977,11 +1319,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                             }
                                         )
                                         preview.value = builtPreview
-                                        message.value = if (builtPreview.candidates.isEmpty()) {
-                                            "No groups matched this command."
-                                        } else {
-                                            "${builtPreview.candidates.size} groups and ${builtPreview.candidates.sumOf { it.deleteTargets.size }} files are ready."
-                                        }
+                                        message.value = builtPreview.readyMessage()
                                     } catch (_: Exception) {
                                         message.value = "Failed to build the bulk delete preview."
                                     } finally {
@@ -1008,18 +1346,12 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Scanning", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${progress.value.scannedGroupCount}/${progress.value.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${progress.value.candidateGroupCount} candidate groups · ${progress.value.candidateFileCount} files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -1034,18 +1366,12 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text("Preview summary", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = "${builtPreview.totalGroupCount}/${builtPreview.totalGroupCount} groups loaded before filtering",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.filterMatchedGroupCount} groups passed the current filter",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "${builtPreview.candidates.size} candidate groups · $previewDeleteCount files to delete",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -1081,7 +1407,14 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 onClick = { confirmExecute.value = true },
                                 enabled = canExecute
                             ) {
-                                Text(if (isExecuting.value) "Deleting..." else "Delete listed files")
+                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
+                            }
+                            if (builtPreview.hasCappedCandidates()) {
+                                Text(
+                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -1116,7 +1449,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidates.size} groups and $previewDeleteCount files from the preview will be deleted."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
                 )
             },
             confirmButton = {
@@ -1125,47 +1458,56 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         val handler = onDeleteFile ?: return@OutlinedButton
                         isExecuting.value = true
                         message.value = null
-                        scope.launch {
-                            try {
-                                val snapshotChanged = withContext(Dispatchers.IO) {
-                                    resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = taskScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            executeDelete = { executionProgress ->
+                                executeBulkDeleteCommand(
+                                    resultsRepo = resultsRepo,
+                                    sortKey = sortKey,
+                                    snapshotUpdatedAtMillis = currentPreview.snapshotUpdatedAtMillis,
+                                    totalGroupCount = totalGroupCount,
+                                    filterDefinition = appliedFilter,
+                                    sourcePageSize = 100,
+                                    totalDeleteTargetCount = currentPreview.candidateFileCount,
+                                    onDeleteFile = handler,
+                                    onProgress = executionProgress
+                                ) { group, members ->
+                                    buildKeepModifiedBulkDeleteCandidate(
+                                        group = group,
+                                        members = members,
+                                        keepNewest = keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest
+                                    )
                                 }
-                                if (snapshotChanged) {
-                                    preview.value = null
-                                    message.value = "The results snapshot changed. Build the preview again."
-                                    return@launch
-                                }
-
-                                val outcome = executeBulkDeletePreview(
-                                    preview = currentPreview,
-                                    onDeleteFile = handler
-                                )
-                                withContext(Dispatchers.IO) {
-                                    currentPreview.candidates.forEach { candidate ->
-                                        resultsRepo.refreshSingleGroup(
-                                            sizeBytes = candidate.group.sizeBytes,
-                                            hashHex = candidate.group.hashHex
-                                        )
-                                    }
-                                }
+                            },
+                            onSnapshotChanged = {
+                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                            },
+                            onRefreshGroups = { touchedGroups ->
+                                refreshTouchedGroups(touchedGroups)
+                            },
+                            onSuccess = { outcome ->
                                 preview.value = null
                                 progress.value = ResultsBulkDeletePreviewProgress(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
-                                message.value = when {
-                                    outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files were deleted."
-                                    outcome.failedPaths.isEmpty() -> "${outcome.successCount} files deleted."
-                                    outcome.successCount == 0 -> "Delete failed for ${outcome.failedPaths.size} files."
-                                    else -> "${outcome.successCount} files deleted, ${outcome.failedPaths.size} failed."
-                                }
+                                message.value = outcome.message()
                                 onResultsChanged()
-                            } catch (_: Exception) {
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
                                 message.value = "Bulk delete failed."
-                            } finally {
+                            },
+                            onFinished = {
                                 isExecuting.value = false
                                 confirmExecute.value = false
                             }
-                        }
+                        )
                     },
                     enabled = !isExecuting.value
                 ) {
@@ -1250,33 +1592,6 @@ private fun ResultsBulkDeleteCandidateCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> BulkDeleteOptionButtons(
-    options: Iterable<T>,
-    selected: T,
-    label: (T) -> String,
-    onSelect: (T) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(2).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { option ->
-                    val isSelected = option == selected
-                    if (isSelected) {
-                        Button(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    } else {
-                        OutlinedButton(onClick = { onSelect(option) }) {
-                            Text(label(option))
-                        }
-                    }
                 }
             }
         }

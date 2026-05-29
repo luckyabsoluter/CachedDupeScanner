@@ -1,23 +1,15 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -48,14 +40,16 @@ import opensource.cached_dupe_scanner.tasks.clearCacheTaskTitle
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceCompletedDetail
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceTaskDetail
 import opensource.cached_dupe_scanner.tasks.dbMaintenanceTaskTitle
+import opensource.cached_dupe_scanner.tasks.rebuildGroupsCancelledDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsCompletedDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskDetail
 import opensource.cached_dupe_scanner.tasks.rebuildGroupsTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
+import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.components.Spacing
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.TaskProgressContent
 
 @Composable
 fun DbManagementScreen(
@@ -70,7 +64,6 @@ fun DbManagementScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
@@ -94,17 +87,15 @@ fun DbManagementScreen(
     val isBusy = activeTask != null || uiState.isRunning || uiState.isRebuilding || uiState.isClearing
     val canRun = (deleteMissing.value || rehashStale.value || rehashMissing.value) && !isBusy
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + Spacing.itemGap)
-                .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
-        ) {
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(Spacing.sectionGap)
+    ) {
+        item {
             AppTopBar(title = "DB management", onBack = onBack)
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -131,7 +122,9 @@ fun DbManagementScreen(
                     )
                 }
             }
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -170,9 +163,20 @@ fun DbManagementScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                    activeTask?.takeIf { it.kind == TaskKind.RebuildGroups }?.let { task ->
+                        TaskProgressContent(
+                            task = task,
+                            onCancel = { taskCoordinator.requestCancel(TaskArea.Db) },
+                            cancelText = "Cancel running task",
+                            currentPathText = { path -> "Current: $path" },
+                            showTitle = false
+                        )
+                    }
                 }
             }
+        }
 
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(Spacing.cardPadding),
@@ -250,46 +254,28 @@ fun DbManagementScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
-                    activeTask?.let { task ->
-                        if (task.total != null && task.total > 0 && !task.indeterminate) {
-                            LinearProgressIndicator(
-                                progress = {
-                                    ((task.processed ?: 0).toFloat() / task.total.toFloat())
-                                        .coerceIn(0f, 1f)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-                        Spacer(modifier = Modifier.height(Spacing.compactGap))
-                        Text(
-                            text = task.detail,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    activeTask?.takeIf { it.kind != TaskKind.RebuildGroups }?.let { task ->
+                        TaskProgressContent(
+                            task = task,
+                            onCancel = { taskCoordinator.requestCancel(TaskArea.Db) },
+                            cancelText = "Cancel running task",
+                            currentPathText = { path -> "Current: $path" },
+                            showTitle = false
                         )
-                        task.currentPath?.let { path ->
-                            Text(
-                                text = "Current: $path",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = { taskCoordinator.requestCancel(TaskArea.Db) },
-                            enabled = task.isCancellable,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancel running task")
-                        }
                     } ?: Text(
-                        text = "Idle",
+                        text = if (activeTask?.kind == TaskKind.RebuildGroups) {
+                            "Rebuild progress is shown above."
+                        } else {
+                            "Idle"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+        }
 
+        item {
             OutlinedButton(
                 onClick = { clearDialogOpen.value = true },
                 enabled = !isBusy,
@@ -298,44 +284,26 @@ fun DbManagementScreen(
                 Text("Clear all cached results")
             }
         }
-
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = Spacing.xs)
-        )
     }
 
     if (clearDialogOpen.value) {
-        AlertDialog(
-            onDismissRequest = { clearDialogOpen.value = false },
-            title = { Text("Clear all cached results?") },
-            text = { Text("This removes all cached files and results from the database.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        clearDialogOpen.value = false
-                        startClearCacheTask(
-                            historyRepo = historyRepo,
-                            uiState = uiState,
-                            appScope = appScope,
-                            taskCoordinator = taskCoordinator,
-                            notificationController = notificationController,
-                            onCacheCleared = onCacheCleared,
-                            refreshOverview = refreshOverview
-                        )
-                    }
-                ) {
-                    Text("Clear")
-                }
+        ConfirmationDialog(
+            title = "Clear all cached results?",
+            text = "This removes all cached files and results from the database.",
+            confirmText = "Clear",
+            onConfirm = {
+                clearDialogOpen.value = false
+                startClearCacheTask(
+                    historyRepo = historyRepo,
+                    uiState = uiState,
+                    appScope = appScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onCacheCleared = onCacheCleared,
+                    refreshOverview = refreshOverview
+                )
             },
-            dismissButton = {
-                OutlinedButton(onClick = { clearDialogOpen.value = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { clearDialogOpen.value = false }
         )
     }
 }
@@ -402,6 +370,7 @@ internal fun startRebuildGroupsTask(
                             task.withLinearProgress(
                                 title = rebuildGroupsTaskTitle(),
                                 detail = rebuildGroupsTaskDetail(progress),
+                                currentPath = progress.currentPath,
                                 processed = progress.processed,
                                 total = progress.total
                             )
@@ -415,7 +384,7 @@ internal fun startRebuildGroupsTask(
                 taskCoordinator.cancel(
                     area = TaskArea.Db,
                     title = "Duplicate groups rebuild cancelled",
-                    detail = "Cancelled after ${summary.processed}/${summary.total} duplicate groups.",
+                    detail = rebuildGroupsCancelledDetail(summary),
                     processed = summary.processed,
                     total = summary.total,
                     indeterminate = summary.total <= 0

@@ -43,6 +43,7 @@ import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -63,14 +64,18 @@ import opensource.cached_dupe_scanner.tasks.trashTaskDetail
 import opensource.cached_dupe_scanner.tasks.trashTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
+import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
 @Composable
 fun TrashScreen(
     trashRepo: TrashRepository,
     trashController: TrashController,
+    appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onBack: () -> Unit,
@@ -203,29 +208,11 @@ fun TrashScreen(
 
             activeTask?.let { task ->
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(Spacing.cardPadding),
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Spacing.itemGap)
-                        ) {
-                            Text(task.title, style = MaterialTheme.typography.titleSmall)
-                            Text(task.detail)
-                            task.currentPath?.let { current ->
-                                Text(
-                                    text = current,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { taskCoordinator.requestCancel(TaskArea.Trash) },
-                                enabled = task.isCancellable,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Cancel")
-                            }
-                        }
-                    }
+                    TaskProgressCard(
+                        task = task,
+                        onCancel = { taskCoordinator.requestCancel(TaskArea.Trash) },
+                        cancelText = "Cancel"
+                    )
                     Spacer(modifier = Modifier.height(Spacing.itemGap))
                 }
             }
@@ -279,33 +266,24 @@ fun TrashScreen(
     }
 
     if (confirmEmpty.value) {
-        AlertDialog(
-            onDismissRequest = { confirmEmpty.value = false },
-            title = { Text("Empty trash?") },
-            text = { Text("This will permanently delete all items in trash.") },
-            confirmButton = {
-                OutlinedButton(
-                    enabled = !isBusy,
-                    onClick = {
-                        confirmEmpty.value = false
-                        startEmptyTrashTask(
-                            trashController = trashController,
-                            scope = scope,
-                            taskCoordinator = taskCoordinator,
-                            notificationController = notificationController,
-                            onJobChanged = { job -> currentJob.value = job },
-                            resetAndLoad = ::resetAndLoad
-                        )
-                    }
-                ) {
-                    Text("Delete all")
-                }
+        ConfirmationDialog(
+            title = "Empty trash?",
+            text = "This will permanently delete all items in trash.",
+            confirmText = "Delete all",
+            onConfirm = {
+                confirmEmpty.value = false
+                startEmptyTrashTask(
+                    trashController = trashController,
+                    scope = appScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onJobChanged = { job -> currentJob.value = job },
+                    resetAndLoad = ::resetAndLoad
+                )
             },
-            dismissButton = {
-                OutlinedButton(onClick = { confirmEmpty.value = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { confirmEmpty.value = false },
+            confirmEnabled = !isBusy,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
 
@@ -369,31 +347,22 @@ fun TrashScreen(
     }
 
     confirmDeleteEntry.value?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { confirmDeleteEntry.value = null },
-            title = { Text("Delete permanently?") },
-            text = { Text(entry.originalPath) },
-            confirmButton = {
-                OutlinedButton(
-                    enabled = !isBusy,
-                    onClick = {
-                        confirmDeleteEntry.value = null
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                trashController.deletePermanently(entry)
-                            }
-                            resetAndLoad()
-                        }
+        ConfirmationDialog(
+            title = "Delete permanently?",
+            text = entry.originalPath,
+            confirmText = "Delete",
+            onConfirm = {
+                confirmDeleteEntry.value = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        trashController.deletePermanently(entry)
                     }
-                ) {
-                    Text("Delete")
+                    resetAndLoad()
                 }
             },
-            dismissButton = {
-                OutlinedButton(onClick = { confirmDeleteEntry.value = null }) {
-                    Text("Cancel")
-                }
-            }
+            onDismissRequest = { confirmDeleteEntry.value = null },
+            confirmEnabled = !isBusy,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
 }

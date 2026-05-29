@@ -15,8 +15,29 @@ interface ScanReportDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(report: ScanReportEntity)
 
-    @Query("SELECT * FROM scan_reports ORDER BY startedAtMillis DESC")
+    @Query("SELECT * FROM scan_reports ORDER BY startedAtMillis DESC, id DESC")
     suspend fun getAll(): List<ScanReportEntity>
+
+    @Query("SELECT COUNT(*) FROM scan_reports")
+    suspend fun countAll(): Int
+
+    @Query("SELECT * FROM scan_reports ORDER BY startedAtMillis DESC, id DESC LIMIT :limit")
+    suspend fun getFirstPage(limit: Int): List<ScanReportEntity>
+
+    @Query(
+        """
+        SELECT * FROM scan_reports
+        WHERE (startedAtMillis < :beforeMillis)
+           OR (startedAtMillis = :beforeMillis AND id < :beforeId)
+        ORDER BY startedAtMillis DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getPageBefore(
+        beforeMillis: Long,
+        beforeId: String,
+        limit: Int
+    ): List<ScanReportEntity>
 
     @Query("SELECT * FROM scan_reports WHERE id = :reportId LIMIT 1")
     suspend fun getById(reportId: String): ScanReportEntity?

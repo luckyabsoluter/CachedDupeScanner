@@ -2,7 +2,6 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -20,10 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -37,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +54,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,15 +65,17 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.TopRightLoadIndicator
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 private class MembersCacheEntry {
@@ -102,11 +103,6 @@ internal data class FilteredGroupsPage(
     val exhausted: Boolean
 )
 
-internal enum class ResultGroupMemberSortKey(val label: String) {
-    Path("Path"),
-    Modified("Modified")
-}
-
 @Composable
 fun ResultsScreenDb(
     resultsRepo: ResultsDbRepository,
@@ -116,6 +112,10 @@ fun ResultsScreenDb(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onBulkDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     onBack: () -> Unit,
     onOpenGroup: ((Int) -> Unit)?,
     refreshVersion: Int = 0,
@@ -646,7 +646,6 @@ fun ResultsScreenDb(
                                     onClick = {
                                         showFullPaths.value = !showFullPaths.value
                                         settingsStore.setShowFullPaths(showFullPaths.value)
-                                        menuExpanded.value = false
                                     }
                                 )
                             }
@@ -797,7 +796,7 @@ fun ResultsScreenDb(
         val entry = remember(cacheKey) {
             if (cacheKey == null) null else membersCache.getOrPut(cacheKey) { MembersCacheEntry() }
         }
-        val detailScrollState = rememberScrollState()
+        val detailListState = rememberLazyListState()
         val detailLoadIndicatorText = run {
             if (group == null || entry == null) {
                 null
@@ -805,8 +804,8 @@ fun ResultsScreenDb(
                 val total = group.fileCount
                 val loaded = entry.members.size.coerceAtMost(total)
                 val current = estimateCurrentFromScroll(
-                    scrollValue = detailScrollState.value,
-                    maxScrollValue = detailScrollState.maxValue,
+                    scrollValue = detailListState.firstVisibleItemScrollOffset,
+                    maxScrollValue = detailLazyMaxScrollValue(detailListState),
                     loadedCount = loaded
                 )
                 formatLoadProgressText(
@@ -821,42 +820,45 @@ fun ResultsScreenDb(
             color = MaterialTheme.colorScheme.background
         ) {
             Box {
-                Column(
+                LazyColumn(
+                    state = detailListState,
                     modifier = Modifier
-                        .padding(Spacing.screenPadding)
-                        .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                        .verticalScroll(detailScrollState)
+                        .fillMaxSize()
+                        .padding(Spacing.screenPadding),
+                    contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
                 ) {
-                    AppTopBar(title = "Group detail", onBack = onBack)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (group == null) {
-                        Text("Group not found.")
-                    } else {
-                        GroupDetailDb(
-                            resultsRepo = resultsRepo,
-                            group = group,
-                            deletedPaths = deletedPaths,
-                            onDeleteFile = onDeleteFile,
-                            onGroupEdited = { _ -> },
-                            imageLoader = imageLoader,
-                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                            groupPreviewHeightDp = groupDetailPreviewHeightDp,
-                            rememberedPreviewCache = rememberedPreviewCache,
-                            cacheEntry = entry,
-                            detailScrollState = detailScrollState,
-                            sortKey = groupMemberSortKey.value,
-                            sortDirection = groupMemberSortDirection.value,
-                            onApplySort = { key, direction ->
-                                groupMemberSortKey.value = key
-                                groupMemberSortDirection.value = direction
-                                settingsStore.setResultGroupSortKey(key.name)
-                                settingsStore.setResultGroupSortDirection(direction.name)
-                            }
-                        )
+                    item {
+                        AppTopBar(title = "Group detail", onBack = onBack)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (group == null) {
+                            Text("Group not found.")
+                        } else {
+                            GroupDetailDb(
+                                resultsRepo = resultsRepo,
+                                group = group,
+                                deletedPaths = deletedPaths,
+                                onDeleteFile = onDeleteFile,
+                                onGroupEdited = { _ -> },
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                groupPreviewHeightDp = groupDetailPreviewHeightDp,
+                                rememberedPreviewCache = rememberedPreviewCache,
+                                cacheEntry = entry,
+                                detailListState = detailListState,
+                                sortKey = groupMemberSortKey.value,
+                                sortDirection = groupMemberSortDirection.value,
+                                onApplySort = { key, direction ->
+                                    groupMemberSortKey.value = key
+                                    groupMemberSortDirection.value = direction
+                                    settingsStore.setResultGroupSortKey(key.name)
+                                    settingsStore.setResultGroupSortDirection(direction.name)
+                                }
+                            )
+                        }
                     }
                 }
-                VerticalScrollbar(
-                    scrollState = detailScrollState,
+                VerticalLazyScrollbar(
+                    listState = detailListState,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
@@ -875,27 +877,24 @@ fun ResultsScreenDb(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Count,
-                            onClick = { pendingSortKey.value = ResultSortKey.Count }
-                        )
-                        Text(ResultSortKey.Count.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.TotalSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
-                        )
-                        Text(ResultSortKey.TotalSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.PerFileSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
-                        )
-                        Text(ResultSortKey.PerFileSize.label)
-                    }
+                    RadioOptionRow(
+                        option = ResultSortKey.Count,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Count.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.TotalSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.PerFileSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.PerFileSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
                     // Name sort is not supported in DB mode yet.
                     Text(
                         text = "Name sort is not supported in DB mode.",
@@ -905,20 +904,18 @@ fun ResultsScreenDb(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = SortDirection.Desc }
-                        )
-                        Text(SortDirection.Desc.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = SortDirection.Asc }
-                        )
-                        Text(SortDirection.Asc.label)
-                    }
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = SortDirection.Desc.label,
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = SortDirection.Asc.label,
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {
@@ -988,7 +985,10 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
-                    onDeleteFile = onDeleteFile,
+                    taskScope = taskScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
@@ -1009,7 +1009,10 @@ fun ResultsScreenDb(
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                     thumbnailSizeScale = thumbnailSizeScale,
                     rememberedPreviewCache = rememberedPreviewCache,
-                    onDeleteFile = onDeleteFile,
+                    taskScope = taskScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
@@ -1155,7 +1158,7 @@ private fun GroupDetailDb(
     groupPreviewHeightDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     cacheEntry: MembersCacheEntry?,
-    detailScrollState: ScrollState,
+    detailListState: LazyListState,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
@@ -1164,20 +1167,15 @@ private fun GroupDetailDb(
     val scope = rememberCoroutineScope()
     val previewMemoryKey = remember(group.sizeBytes, group.hashHex) { "${group.sizeBytes}:${group.hashHex}" }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
-    val isSelectAllMode = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
-    val selectedPaths = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
-    val deselectedPathsInSelectAll = remember(group.sizeBytes, group.hashHex) { mutableStateOf<Set<String>>(emptySet()) }
+    val lazySelection = rememberLazyDetailSelectionState(previewMemoryKey)
     val confirmBulkDelete = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
-    val groupSortDialogOpen = remember { mutableStateOf(false) }
-    val pendingGroupSortKey = remember { mutableStateOf(sortKey) }
-    val pendingGroupSortDirection = remember { mutableStateOf(sortDirection) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
     val pageSize = 200
     val cursor = entry.cursor
-    val selectionMode = isSelectAllMode.value || selectedPaths.value.isNotEmpty()
-    val allSelectedAcrossGroup = isSelectAllMode.value && deselectedPathsInSelectAll.value.isEmpty()
+    val selectionMode = lazySelection.isSelectionMode
+    val allSelectedAcrossGroup = lazySelection.allSelectedAcrossGroup
 
     fun loadMore(reset: Boolean) {
         if (entry.isLoading.value) return
@@ -1189,9 +1187,7 @@ private fun GroupDetailDb(
                     cursor.value = null
                     entry.members.clear()
                     entry.isComplete.value = false
-                    isSelectAllMode.value = false
-                    selectedPaths.value = emptySet()
-                    deselectedPathsInSelectAll.value = emptySet()
+                    lazySelection.clear()
                 }
                 val next = withContext(Dispatchers.IO) {
                     resultsRepo.listGroupMembers(
@@ -1237,21 +1233,17 @@ private fun GroupDetailDb(
         }
     }
     LaunchedEffect(entry.members.size) {
-        if (isSelectAllMode.value) return@LaunchedEffect
-        val filtered = filterSelectionToLoadedMembers(
-            selectedPaths = selectedPaths.value,
-            members = entry.members
+        lazySelection.filterPartialSelectionToLoadedMembers(
+            members = entry.members,
+            deletedPaths = deletedPaths
         )
-        if (filtered != selectedPaths.value) {
-            selectedPaths.value = filtered
-        }
     }
-    LaunchedEffect(group.sizeBytes, group.hashHex, detailScrollState) {
+    LaunchedEffect(group.sizeBytes, group.hashHex, detailListState) {
         val thresholdPx = 240
         snapshotFlow {
             shouldTriggerDetailAutoLoad(
-                scrollValue = detailScrollState.value,
-                maxScrollValue = detailScrollState.maxValue,
+                scrollValue = detailListState.firstVisibleItemScrollOffset,
+                maxScrollValue = detailLazyMaxScrollValue(detailListState),
                 thresholdPx = thresholdPx,
                 isLoading = entry.isLoading.value,
                 isComplete = entry.isComplete.value
@@ -1292,26 +1284,17 @@ private fun GroupDetailDb(
             Text("${group.fileCount} files · Total ${formatBytes(group.totalBytes)}")
             Text("Per-file ${formatBytesWithExact(group.sizeBytes)}")
         }
-        OutlinedButton(
-            onClick = {
-                pendingGroupSortKey.value = sortKey
-                pendingGroupSortDirection.value = sortDirection
-                groupSortDialogOpen.value = true
-            }
-        ) {
-            Text("Sort")
-        }
+        GroupMemberSortButton(
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            onApplySort = onApplySort
+        )
     }
     Spacer(modifier = Modifier.height(8.dp))
 
     if (selectionMode) {
         Text(
-            text = selectionStatusText(
-                totalCount = group.fileCount,
-                selectAllMode = isSelectAllMode.value,
-                selectedPaths = selectedPaths.value,
-                deselectedPaths = deselectedPathsInSelectAll.value
-            ),
+            text = lazySelection.statusText(totalCount = group.fileCount),
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -1323,15 +1306,7 @@ private fun GroupDetailDb(
         ) {
             OutlinedButton(
                 onClick = {
-                    if (allSelectedAcrossGroup) {
-                        isSelectAllMode.value = false
-                        selectedPaths.value = emptySet()
-                        deselectedPathsInSelectAll.value = emptySet()
-                    } else {
-                        isSelectAllMode.value = true
-                        selectedPaths.value = emptySet()
-                        deselectedPathsInSelectAll.value = emptySet()
-                    }
+                    lazySelection.toggleSelectAll()
                     bulkDeleteMessage.value = null
                 },
                 enabled = !isBulkDeleting.value
@@ -1345,7 +1320,7 @@ private fun GroupDetailDb(
                 Text(if (isBulkDeleting.value) "Deleting..." else "Delete selected")
             }
         }
-        if (isSelectAllMode.value && !entry.isComplete.value) {
+        if (lazySelection.isSelectAllMode && !entry.isComplete.value) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Select all includes not-loaded files in delete queries.",
@@ -1374,46 +1349,27 @@ private fun GroupDetailDb(
     sortedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
-        val isSelected = isPathSelectedForMode(
-            path = file.normalizedPath,
-            selectAllMode = isSelectAllMode.value,
-            selectedPaths = selectedPaths.value,
-            deselectedPaths = deselectedPathsInSelectAll.value
-        )
+        val isSelected = lazySelection.isPathSelected(file.normalizedPath)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = {
                         if (selectionMode) {
-                            if (isSelectAllMode.value) {
-                                deselectedPathsInSelectAll.value = togglePathSelection(
-                                    selectedPaths = deselectedPathsInSelectAll.value,
-                                    path = file.normalizedPath
-                                )
-                            } else {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
-                            }
+                            lazySelection.togglePath(
+                                path = file.normalizedPath,
+                                isDeleted = isDeleted
+                            )
                             bulkDeleteMessage.value = null
                         } else {
                             selectedFile.value = file
                         }
                     },
                     onLongClick = {
-                        if (isSelectAllMode.value) {
-                            deselectedPathsInSelectAll.value = togglePathSelection(
-                                selectedPaths = deselectedPathsInSelectAll.value,
-                                path = file.normalizedPath
-                            )
-                        } else {
-                            selectedPaths.value = togglePathSelection(
-                                selectedPaths = selectedPaths.value,
-                                path = file.normalizedPath
-                            )
-                        }
+                        lazySelection.togglePath(
+                            path = file.normalizedPath,
+                            isDeleted = isDeleted
+                        )
                         bulkDeleteMessage.value = null
                     }
                 ),
@@ -1435,17 +1391,10 @@ private fun GroupDetailDb(
                     Checkbox(
                         checked = isSelected,
                         onCheckedChange = {
-                            if (isSelectAllMode.value) {
-                                deselectedPathsInSelectAll.value = togglePathSelection(
-                                    selectedPaths = deselectedPathsInSelectAll.value,
-                                    path = file.normalizedPath
-                                )
-                            } else {
-                                selectedPaths.value = togglePathSelection(
-                                    selectedPaths = selectedPaths.value,
-                                    path = file.normalizedPath
-                                )
-                            }
+                            lazySelection.togglePath(
+                                path = file.normalizedPath,
+                                isDeleted = isDeleted
+                            )
                             bulkDeleteMessage.value = null
                         }
                     )
@@ -1522,22 +1471,12 @@ private fun GroupDetailDb(
     }
 
     if (confirmBulkDelete.value) {
-        val immediateTargets = if (isSelectAllMode.value) {
-            emptyList()
-        } else {
-            selectedFilesForDelete(
-                members = entry.members,
-                selectedPaths = selectedPaths.value,
-                deletedPaths = deletedPaths
-            )
-        }
-        val selectedCountLabel = if (isSelectAllMode.value) {
-            countSelectedForDisplay(
-                totalCount = group.fileCount,
-                selectAllMode = true,
-                selectedPaths = emptySet(),
-                deselectedPaths = deselectedPathsInSelectAll.value
-            )
+        val immediateTargets = lazySelection.selectedLoadedFilesForDelete(
+            members = entry.members,
+            deletedPaths = deletedPaths
+        )
+        val selectedCountLabel = if (lazySelection.isSelectAllMode) {
+            lazySelection.selectedCount(totalCount = group.fileCount)
         } else {
             immediateTargets.size
         }
@@ -1551,11 +1490,11 @@ private fun GroupDetailDb(
             text = {
                 if (selectedCountLabel <= 0) {
                     Text("No deletable files are selected.")
-                } else if (isSelectAllMode.value) {
-                    if (deselectedPathsInSelectAll.value.isEmpty()) {
+                } else if (lazySelection.isSelectAllMode) {
+                    if (lazySelection.deselectedPathsInSelectAll.isEmpty()) {
                         Text("Select all is active. $selectedCountLabel files will be deleted, including not-loaded files.")
                     } else {
-                        Text("Select all is active with ${deselectedPathsInSelectAll.value.size} exclusions. $selectedCountLabel files will be deleted.")
+                        Text("Select all is active with ${lazySelection.deselectedPathsInSelectAll.size} exclusions. $selectedCountLabel files will be deleted.")
                     }
                 } else {
                     Text("$selectedCountLabel selected files will be deleted (moved to app trash).")
@@ -1565,9 +1504,9 @@ private fun GroupDetailDb(
                 OutlinedButton(
                     onClick = {
                         val handler = onDeleteFile ?: return@OutlinedButton
-                        val selectAllSnapshot = isSelectAllMode.value
-                        val selectedPathsSnapshot = selectedPaths.value
-                        val excludedFromAllSnapshot = deselectedPathsInSelectAll.value
+                        val selectAllSnapshot = lazySelection.isSelectAllMode
+                        val selectedPathsSnapshot = lazySelection.selectedPaths
+                        val excludedFromAllSnapshot = lazySelection.deselectedPathsInSelectAll
                         val deletedPathsSnapshot = deletedPaths
 
                         isBulkDeleting.value = true
@@ -1630,9 +1569,7 @@ private fun GroupDetailDb(
                                 )
                             }
 
-                            isSelectAllMode.value = false
-                            deselectedPathsInSelectAll.value = emptySet()
-                            selectedPaths.value = outcome.failedPaths
+                            lazySelection.markFailedPaths(outcome.failedPaths)
 
                             bulkDeleteMessage.value = when {
                                 outcome.successCount == 0 && outcome.failedPaths.isEmpty() -> "No files deleted."
@@ -1664,87 +1601,6 @@ private fun GroupDetailDb(
         )
     }
 
-    if (groupSortDialogOpen.value) {
-        AlertDialog(
-            onDismissRequest = { groupSortDialogOpen.value = false },
-            title = { Text("Group sort options") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Path,
-                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Path }
-                        )
-                        Text(ResultGroupMemberSortKey.Path.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortKey.value == ResultGroupMemberSortKey.Modified,
-                            onClick = { pendingGroupSortKey.value = ResultGroupMemberSortKey.Modified }
-                        )
-                        Text(ResultGroupMemberSortKey.Modified.label)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Direction")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingGroupSortDirection.value = SortDirection.Asc }
-                        )
-                        Text(SortDirection.Asc.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingGroupSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingGroupSortDirection.value = SortDirection.Desc }
-                        )
-                        Text(SortDirection.Desc.label)
-                    }
-                }
-            },
-            confirmButton = {
-                OutlinedButton(
-                    onClick = {
-                        onApplySort(
-                            pendingGroupSortKey.value,
-                            pendingGroupSortDirection.value
-                        )
-                        groupSortDialogOpen.value = false
-                    }
-                ) {
-                    Text("Apply")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { groupSortDialogOpen.value = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-internal fun sortGroupMembers(
-    members: List<FileMetadata>,
-    sortKey: ResultGroupMemberSortKey,
-    direction: SortDirection
-): List<FileMetadata> {
-    val comparator = when (sortKey) {
-        ResultGroupMemberSortKey.Path -> {
-            compareBy<FileMetadata> { it.normalizedPath }
-        }
-        ResultGroupMemberSortKey.Modified -> {
-            compareBy<FileMetadata> { it.lastModifiedMillis }
-                .thenBy { it.normalizedPath }
-        }
-    }
-    return if (direction == SortDirection.Asc) {
-        members.sortedWith(comparator)
-    } else {
-        members.sortedWith(comparator.reversed())
-    }
 }
 
 internal fun togglePathSelection(selectedPaths: Set<String>, path: String): Set<String> {
@@ -1811,6 +1667,14 @@ internal fun estimateCurrentFromScroll(
     if (maxScrollValue <= 0) return 1
     val ratio = scrollValue.toDouble() / maxScrollValue.toDouble()
     return (1 + (ratio * (safeLoaded - 1)).toInt()).coerceIn(1, safeLoaded)
+}
+
+private fun detailLazyMaxScrollValue(listState: LazyListState): Int {
+    val layoutInfo = listState.layoutInfo
+    val visibleItem = layoutInfo.visibleItemsInfo.firstOrNull() ?: return 0
+    val viewportHeight = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
+        .coerceAtLeast(0)
+    return (visibleItem.size - viewportHeight).coerceAtLeast(0)
 }
 
 internal fun shouldTriggerDetailAutoLoad(
@@ -1910,49 +1774,53 @@ internal fun loadFilteredGroupsPage(
         )
     }
 
-    val matchedGroups = mutableListOf<DuplicateGroupEntity>()
     val previewMembersByGroupKey = linkedMapOf<String, List<FileMetadata>>()
     val needsMembers = definition.requiresGroupMembers()
-    var sourceOffset = startOffset
-    var exhausted = false
-
-    while (matchedGroups.size < minMatches && !exhausted) {
-        val page = resultsRepo.loadPageAtSnapshot(
-            sortKey = sortKey,
-            snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
-            offset = sourceOffset,
-            limit = sourcePageSize
-        )
-        if (page.isEmpty()) {
-            exhausted = true
-            break
-        }
-        sourceOffset += page.size
-        page.forEach { group ->
-            val members = if (needsMembers) {
-                resultsRepo.listAllGroupMembers(
-                    sizeBytes = group.sizeBytes,
-                    hashHex = group.hashHex
+    val page = loadFilteredSourcePage(
+        startCursor = startOffset,
+        minMatches = minMatches,
+        loadPage = { sourceOffset ->
+            val sourcePage = resultsRepo.loadPageAtSnapshot(
+                sortKey = sortKey,
+                snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+                offset = sourceOffset,
+                limit = sourcePageSize
+            )
+            SourcePage(
+                items = sourcePage,
+                nextCursor = sourceOffset + sourcePage.size,
+                exhausted = sourcePage.isEmpty() || sourcePage.size < sourcePageSize
+            )
+        },
+        transformMatch = { group ->
+            if (needsMembers) {
+                val matched = matchesResultsFilterPagedMembers(
+                    definition = definition,
+                    group = group,
+                    memberPages = {
+                        resultsRepo.groupMemberPages(
+                            sizeBytes = group.sizeBytes,
+                            hashHex = group.hashHex
+                        )
+                    },
+                    onPreviewMembers = { previewMembers ->
+                        previewMembersByGroupKey[groupStableKey(group)] = previewMembers
+                    }
                 )
+                if (matched) group else null
+            } else if (matchesResultsFilter(definition, group, emptyList())) {
+                group
             } else {
-                emptyList()
+                null
             }
-            if (matchesResultsFilter(definition, group, members)) {
-                matchedGroups.add(group)
-                if (members.isNotEmpty()) {
-                    previewMembersByGroupKey[groupStableKey(group)] = members.take(10)
-                }
-            }
-        }
-        if (page.size < sourcePageSize) {
-            exhausted = true
-        }
-    }
+        },
+        trimToMinMatches = false
+    )
 
     return FilteredGroupsPage(
-        matchedGroups = matchedGroups,
+        matchedGroups = page.items,
         previewMembersByGroupKey = previewMembersByGroupKey,
-        nextSourceOffset = sourceOffset,
-        exhausted = exhausted
+        nextSourceOffset = page.nextCursor ?: startOffset,
+        exhausted = page.exhausted
     )
 }

@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import android.graphics.drawable.Drawable
+import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -35,7 +36,11 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.videoFramePercent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import java.io.File
 import kotlin.math.min
 
@@ -129,6 +134,127 @@ internal fun buildVideoTimelineFrames(frameCount: Int = DEFAULT_VIDEO_TIMELINE_F
     }
 }
 
+internal fun videoDurationLabel(durationMillis: Long): String {
+    val safeDuration = durationMillis.coerceAtLeast(0L)
+    val totalSeconds = safeDuration / 1_000L
+    val millis = safeDuration % 1_000L
+    val seconds = totalSeconds % 60L
+    val minutes = (totalSeconds / 60L) % 60L
+    val hours = totalSeconds / 3_600L
+    val secondsText = seconds.toString().padStart(2, '0') + if (millis == 0L) {
+        ""
+    } else {
+        ".${millis.toString().padStart(3, '0')}"
+    }
+
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:$secondsText"
+    } else {
+        "$minutes:$secondsText"
+    }
+}
+
+internal fun videoDurationPreviewText(durationMillis: Long?): String {
+    return durationMillis?.let { duration -> "Duration ${videoDurationLabel(duration)}" }
+        ?: "Duration unavailable"
+}
+
+internal data class VideoResolution(
+    val width: Int,
+    val height: Int
+)
+
+internal fun normalizedVideoResolution(
+    width: Int,
+    height: Int,
+    rotationDegrees: Int
+): VideoResolution? {
+    if (width <= 0 || height <= 0) return null
+
+    val normalizedRotation = ((rotationDegrees % 360) + 360) % 360
+    return if (normalizedRotation == 90 || normalizedRotation == 270) {
+        VideoResolution(width = height, height = width)
+    } else {
+        VideoResolution(width = width, height = height)
+    }
+}
+
+internal fun videoResolutionPreviewText(videoResolution: VideoResolution?): String {
+    return videoResolution?.let { resolution -> "Resolution ${resolution.width}x${resolution.height}" }
+        ?: "Resolution unavailable"
+}
+
+@Composable
+internal fun VideoMetadataLabelText(
+    filePath: String,
+    showDuration: Boolean,
+    showResolution: Boolean,
+    modifier: Modifier = Modifier,
+    suffixText: String? = null
+) {
+    if (!showDuration && !showResolution && suffixText == null) return
+
+    var durationMillis by remember(filePath) { mutableStateOf<Long?>(null) }
+    var durationLoaded by remember(filePath) { mutableStateOf(false) }
+    var videoResolution by remember(filePath) { mutableStateOf<VideoResolution?>(null) }
+    var resolutionLoaded by remember(filePath) { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(filePath, showDuration) {
+        if (!showDuration) {
+            durationMillis = null
+            durationLoaded = false
+            return@LaunchedEffect
+        }
+
+        durationLoaded = false
+        durationMillis = withContext(Dispatchers.IO) {
+            AndroidVideoDurationExtractor().durationMillis(
+                file = File(filePath),
+                shouldContinue = { isActive }
+            )
+        }
+        durationLoaded = true
+    }
+
+    androidx.compose.runtime.LaunchedEffect(filePath, showResolution) {
+        if (!showResolution) {
+            videoResolution = null
+            resolutionLoaded = false
+            return@LaunchedEffect
+        }
+
+        resolutionLoaded = false
+        videoResolution = withContext(Dispatchers.IO) {
+            readVideoResolution(
+                file = File(filePath),
+                shouldContinue = { isActive }
+            )
+        }
+        resolutionLoaded = true
+    }
+
+    val loadedDurationText = videoDurationPreviewText(durationMillis)
+    val durationText = if (durationLoaded) loadedDurationText else "Duration loading..."
+    val loadedResolutionText = videoResolutionPreviewText(videoResolution)
+    val resolutionText = if (resolutionLoaded) loadedResolutionText else "Resolution loading..."
+    val metadataText = listOfNotNull(
+        if (showDuration) durationText else null,
+        if (showResolution) resolutionText else null
+    ).joinToString(" · ")
+    val labelText = listOfNotNull(
+        metadataText.takeIf { it.isNotEmpty() },
+        suffixText
+    ).joinToString(" · ")
+    if (labelText.isEmpty()) return
+
+    Text(
+        text = labelText,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
+}
+
 @Composable
 internal fun VideoTimelinePreviewStrip(
     filePath: String,
@@ -138,6 +264,8 @@ internal fun VideoTimelinePreviewStrip(
     snapToFillWidth: Boolean = false,
     lineCount: Int = 1,
     frameHeight: Dp = 44.dp,
+    showDuration: Boolean = false,
+    showResolution: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val safeLineCount = lineCount.coerceAtLeast(1)
@@ -146,10 +274,12 @@ internal fun VideoTimelinePreviewStrip(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(
-            text = "Start - ... - Middle - ... - End",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        val guideText = "Start - ... - Middle - ... - End"
+        VideoMetadataLabelText(
+            filePath = filePath,
+            showDuration = showDuration,
+            showResolution = showResolution,
+            suffixText = guideText
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val framesPerRow = remember(maxWidth, frameHeight) {
@@ -210,6 +340,43 @@ internal fun VideoTimelinePreviewStrip(
             }
         }
     }
+}
+
+private fun readVideoResolution(
+    file: File,
+    shouldContinue: () -> Boolean
+): VideoResolution? {
+    if (!shouldContinue()) return null
+
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(file.absolutePath)
+        if (!shouldContinue()) return null
+
+        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            .positiveIntOrNull()
+            ?: return null
+        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            .positiveIntOrNull()
+            ?: return null
+        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            ?.toIntOrNull()
+            ?: 0
+
+        normalizedVideoResolution(
+            width = width,
+            height = height,
+            rotationDegrees = rotation
+        )
+    } catch (_: RuntimeException) {
+        null
+    } finally {
+        runCatching { retriever.release() }
+    }
+}
+
+private fun String?.positiveIntOrNull(): Int? {
+    return this?.toIntOrNull()?.takeIf { value -> value > 0 }
 }
 
 @Composable

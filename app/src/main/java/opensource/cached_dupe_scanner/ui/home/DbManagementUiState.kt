@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import opensource.cached_dupe_scanner.storage.DbMaintenanceProgress
 import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.ClearCacheSummary
+import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 
 class DbManagementUiState {
@@ -62,8 +63,13 @@ class DbManagementUiState {
 
     fun cancelRebuild(summary: RebuildGroupsSummary) {
         isRebuilding = false
-        groupStatusMessage =
-            "Duplicate group rebuild cancelled after ${summary.processed}/${summary.total} groups."
+        val totalText = if (summary.total > 0) summary.total.toString() else "?"
+        groupStatusMessage = when (summary.phase) {
+            RebuildGroupsPhase.RepairingMissingHashes ->
+                "Duplicate group rebuild cancelled after repairing ${summary.processed}/$totalText missing hashes."
+            RebuildGroupsPhase.RebuildingGroups ->
+                "Duplicate group rebuild cancelled after ${summary.processed}/$totalText groups."
+        }
     }
 
     fun startMaintenance() {

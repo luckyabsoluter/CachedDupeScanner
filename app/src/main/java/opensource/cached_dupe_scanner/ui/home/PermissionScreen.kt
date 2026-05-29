@@ -1,54 +1,53 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import android.content.Intent
-import android.net.Uri
-import android.os.Environment
-import android.os.Build
-import android.provider.Settings
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
-import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
-import opensource.cached_dupe_scanner.ui.components.Spacing
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
+import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 
 @Composable
 fun PermissionScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
     val context = LocalContext.current
     val allFilesAccessGranted = hasAllFilesAccess()
+    val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .padding(Spacing.screenPadding)
-                .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                .verticalScroll(scrollState)
-        ) {
+    ScreenScrollColumn(modifier = modifier) {
+        item {
             AppTopBar(title = "Permission", onBack = onBack)
+        }
+
+        item {
             Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        item {
             Text(
                 text = allFilesAccessStatusText(
                     sdkInt = Build.VERSION.SDK_INT,
@@ -56,12 +55,18 @@ fun PermissionScreen(
                 ),
                 style = MaterialTheme.typography.bodySmall
             )
+        }
+
+        item {
             Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        item {
             Button(
                 onClick = {
                     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         val uri = Uri.parse("package:${context.packageName}")
-                        Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
                     } else {
                         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                             data = Uri.parse("package:${context.packageName}")
@@ -73,20 +78,24 @@ fun PermissionScreen(
             ) {
                 Text("Grant all-files access")
             }
+        }
+
+        item {
             Spacer(modifier = Modifier.height(12.dp))
-            val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            } else {
-                NotificationManagerCompat.from(context).areNotificationsEnabled()
-            }
+        }
+
+        item {
             Text(
                 text = "Notifications: ${if (notificationsGranted) "enabled" else "disabled"}",
                 style = MaterialTheme.typography.bodySmall
             )
+        }
+
+        item {
             Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        item {
             Button(
                 onClick = {
                     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,22 +113,19 @@ fun PermissionScreen(
             ) {
                 Text("Enable notifications")
             }
-            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        VerticalScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 4.dp)
-        )
+        item {
+            Spacer(modifier = Modifier.height(12.dp))
+        }
     }
 }
 
 internal fun hasAllFilesAccess(
     sdkInt: Int = Build.VERSION.SDK_INT,
-    isExternalStorageManager: () -> Boolean = { Environment.isExternalStorageManager() }
+    isExternalStorageManager: () -> Boolean = {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+    }
 ): Boolean {
     return if (sdkInt >= Build.VERSION_CODES.R) {
         isExternalStorageManager()

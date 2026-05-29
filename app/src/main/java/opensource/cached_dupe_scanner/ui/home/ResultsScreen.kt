@@ -13,11 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -57,13 +55,12 @@ import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
-import opensource.cached_dupe_scanner.ui.components.VerticalScrollbar
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import java.util.Locale
-import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -106,6 +103,16 @@ fun ResultsScreen(
         val dir = runCatching { SortDirection.valueOf(settingsSnapshot.resultSortDirection) }
             .getOrDefault(SortDirection.Desc)
         mutableStateOf(dir)
+    }
+    val groupMemberSortKey = remember {
+        val parsed = runCatching { ResultGroupMemberSortKey.valueOf(settingsSnapshot.resultGroupSortKey) }
+            .getOrDefault(ResultGroupMemberSortKey.Path)
+        mutableStateOf(parsed)
+    }
+    val groupMemberSortDirection = remember {
+        val parsed = runCatching { SortDirection.valueOf(settingsSnapshot.resultGroupSortDirection) }
+            .getOrDefault(SortDirection.Asc)
+        mutableStateOf(parsed)
     }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val pendingSortKey = remember { mutableStateOf(ResultSortKey.Count) }
@@ -229,7 +236,6 @@ fun ResultsScreen(
                                     onClick = {
                                         showFullPaths.value = !showFullPaths.value
                                         settingsStore.setShowFullPaths(showFullPaths.value)
-                                        menuExpanded.value = false
                                     }
                                 )
                             }
@@ -364,44 +370,55 @@ fun ResultsScreen(
 
         if (selectedGroupIndex != null && result != null) {
             val group = result.duplicateGroups.getOrNull(selectedGroupIndex)
-            val detailScrollState = rememberScrollState()
+            val detailListState = rememberLazyListState()
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 Box {
-                    Column(
+                    LazyColumn(
+                        state = detailListState,
                         modifier = Modifier
-                            .padding(Spacing.screenPadding)
-                            .padding(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-                            .verticalScroll(detailScrollState)
+                            .fillMaxSize()
+                            .padding(Spacing.screenPadding),
+                        contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
                     ) {
-                        AppTopBar(
-                            title = "Group detail",
-                            onBack = {
-                                onBackToDashboard()
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (group != null) {
-                            GroupDetailContent(
-                                group = group,
-                                deletedPaths = deletedPaths,
-                                imageLoader = imageLoader,
-                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                                rememberedPreviewCache = rememberedPreviewCache,
-                                onDeleteFile = { file ->
-                                    val handler = onDeleteFile ?: return@GroupDetailContent false
-                                    handler(file)
+                        item {
+                            AppTopBar(
+                                title = "Group detail",
+                                onBack = {
+                                    onBackToDashboard()
                                 }
                             )
-                        } else {
-                            Text("Group not found.")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (group != null) {
+                                GroupDetailContent(
+                                    group = group,
+                                    deletedPaths = deletedPaths,
+                                    imageLoader = imageLoader,
+                                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                    rememberedPreviewCache = rememberedPreviewCache,
+                                    sortKey = groupMemberSortKey.value,
+                                    sortDirection = groupMemberSortDirection.value,
+                                    onApplySort = { key, direction ->
+                                        groupMemberSortKey.value = key
+                                        groupMemberSortDirection.value = direction
+                                        settingsStore.setResultGroupSortKey(key.name)
+                                        settingsStore.setResultGroupSortDirection(direction.name)
+                                    },
+                                    onDeleteFile = { file ->
+                                        val handler = onDeleteFile ?: return@GroupDetailContent false
+                                        handler(file)
+                                    }
+                                )
+                            } else {
+                                Text("Group not found.")
+                            }
                         }
                     }
 
-                    VerticalScrollbar(
-                        scrollState = detailScrollState,
+                    VerticalLazyScrollbar(
+                        listState = detailListState,
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .fillMaxHeight()
@@ -445,51 +462,45 @@ fun ResultsScreen(
             text = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                     Text("Sort by")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Count,
-                            onClick = { pendingSortKey.value = ResultSortKey.Count }
-                        )
-                        Text(ResultSortKey.Count.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.TotalSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.TotalSize }
-                        )
-                        Text(ResultSortKey.TotalSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.PerFileSize,
-                            onClick = { pendingSortKey.value = ResultSortKey.PerFileSize }
-                        )
-                        Text(ResultSortKey.PerFileSize.label)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortKey.value == ResultSortKey.Name,
-                            onClick = { pendingSortKey.value = ResultSortKey.Name }
-                        )
-                        Text(ResultSortKey.Name.label)
-                    }
+                    RadioOptionRow(
+                        option = ResultSortKey.Count,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Count.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.TotalSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.PerFileSize,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.PerFileSize.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
+                    RadioOptionRow(
+                        option = ResultSortKey.Name,
+                        selected = pendingSortKey.value,
+                        label = ResultSortKey.Name.label,
+                        onSelect = { pendingSortKey.value = it }
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Order")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Asc,
-                            onClick = { pendingSortDirection.value = SortDirection.Asc }
-                        )
-                        Text("Ascending")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = pendingSortDirection.value == SortDirection.Desc,
-                            onClick = { pendingSortDirection.value = SortDirection.Desc }
-                        )
-                        Text("Descending")
-                    }
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection.value,
+                        label = "Ascending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection.value,
+                        label = "Descending",
+                        onSelect = { pendingSortDirection.value = it }
+                    )
                 }
             },
             confirmButton = {
@@ -520,109 +531,33 @@ private fun GroupDetailContent(
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit,
     onDeleteFile: suspend (FileMetadata) -> Boolean
 ) {
-    val context = LocalContext.current
-    val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val groupCount = group.files.size
     val groupSize = group.files.sumOf { it.sizeBytes }
     val fileSize = formatBytesWithExact(group.files.firstOrNull()?.sizeBytes ?: 0)
-    val hasPreviewMedia = group.files.any { isMediaFile(it.normalizedPath) }
-    val previewCandidates = mediaPreviewCandidates(
-        files = group.files,
-        deletedPaths = deletedPaths
-    )
     val previewMemoryKey = remember(group.hashHex, group.files.firstOrNull()?.sizeBytes) {
         "${group.files.firstOrNull()?.sizeBytes ?: 0L}:${group.hashHex}"
     }
 
-    Text("Group detail")
-    Spacer(modifier = Modifier.height(8.dp))
-    if (hasPreviewMedia) {
-        GroupPreviewThumbnail(
-            candidatePaths = previewCandidates,
-            previewMemoryKey = previewMemoryKey,
-            rememberedPreviewCache = rememberedPreviewCache,
-            imageLoader = imageLoader,
-            keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-            contentDescription = "Thumbnail",
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-    Text("${groupCount} files · Total ${formatBytes(groupSize)}")
-    Text("Per-file ${fileSize}")
-    Spacer(modifier = Modifier.height(8.dp))
-
-    group.files.sortedBy { it.normalizedPath }.forEach { file ->
-        val date = formatDate(file.lastModifiedMillis)
-        val isDeleted = deletedPaths.contains(file.normalizedPath)
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { selectedFile.value = file }
-            ,
-            colors = if (isDeleted) {
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            } else {
-                CardDefaults.cardColors()
-            }
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(10.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = file.normalizedPath,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-
-    selectedFile.value?.let { file ->
-        FileDetailsDialogWithDeleteConfirm(
-            file = file,
-            showName = false,
-            onOpen = {
-                openFile(context, file.normalizedPath)
-                selectedFile.value = null
-            },
-            onDelete = {
-                onDeleteFile(file)
-            },
-            onDeleteResult = { deleted ->
-                if (deleted) {
-                    selectedFile.value = null
-                }
-            },
-            onDismiss = { selectedFile.value = null }
-        )
-    }
+    EagerDuplicateGroupDetailContent(
+        title = "Group detail",
+        memberCount = groupCount,
+        totalBytes = groupSize,
+        summaryLines = listOf("Per-file $fileSize"),
+        members = group.files,
+        deletedPaths = deletedPaths,
+        imageLoader = imageLoader,
+        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+        rememberedPreviewCache = rememberedPreviewCache,
+        previewMemoryKey = previewMemoryKey,
+        previewHeight = 180.dp,
+        sortKey = sortKey,
+        sortDirection = sortDirection,
+        onApplySort = onApplySort,
+        onDeleteFile = onDeleteFile
+    )
 }

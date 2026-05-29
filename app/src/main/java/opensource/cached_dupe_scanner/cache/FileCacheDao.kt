@@ -26,8 +26,146 @@ interface FileCacheDao {
     @Query("SELECT COUNT(*) FROM cached_files")
     fun countAll(): Int
 
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.3gp'
+              OR lower(normalizedPath) LIKE '%.avi'
+              OR lower(normalizedPath) LIKE '%.flv'
+              OR lower(normalizedPath) LIKE '%.m2ts'
+              OR lower(normalizedPath) LIKE '%.m4v'
+              OR lower(normalizedPath) LIKE '%.mkv'
+              OR lower(normalizedPath) LIKE '%.mov'
+              OR lower(normalizedPath) LIKE '%.mp4'
+              OR lower(normalizedPath) LIKE '%.mpeg'
+              OR lower(normalizedPath) LIKE '%.mpg'
+              OR lower(normalizedPath) LIKE '%.mts'
+              OR lower(normalizedPath) LIKE '%.ts'
+              OR lower(normalizedPath) LIKE '%.webm'
+              OR lower(normalizedPath) LIKE '%.wmv'
+          )
+        """
+    )
+    fun countVideoCandidates(minSizeBytes: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.bmp'
+              OR lower(normalizedPath) LIKE '%.gif'
+              OR lower(normalizedPath) LIKE '%.heic'
+              OR lower(normalizedPath) LIKE '%.heif'
+              OR lower(normalizedPath) LIKE '%.jpeg'
+              OR lower(normalizedPath) LIKE '%.jpg'
+              OR lower(normalizedPath) LIKE '%.png'
+              OR lower(normalizedPath) LIKE '%.webp'
+          )
+        """
+    )
+    fun countImageCandidates(minSizeBytes: Long): Int
+
+    @Query(
+        """
+        SELECT *
+        FROM cached_files
+        WHERE normalizedPath > :afterPath
+          AND sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.3gp'
+              OR lower(normalizedPath) LIKE '%.avi'
+              OR lower(normalizedPath) LIKE '%.flv'
+              OR lower(normalizedPath) LIKE '%.m2ts'
+              OR lower(normalizedPath) LIKE '%.m4v'
+              OR lower(normalizedPath) LIKE '%.mkv'
+              OR lower(normalizedPath) LIKE '%.mov'
+              OR lower(normalizedPath) LIKE '%.mp4'
+              OR lower(normalizedPath) LIKE '%.mpeg'
+              OR lower(normalizedPath) LIKE '%.mpg'
+              OR lower(normalizedPath) LIKE '%.mts'
+              OR lower(normalizedPath) LIKE '%.ts'
+              OR lower(normalizedPath) LIKE '%.webm'
+              OR lower(normalizedPath) LIKE '%.wmv'
+          )
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listVideoCandidatesAfter(
+        minSizeBytes: Long,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM cached_files
+        WHERE normalizedPath > :afterPath
+          AND sizeBytes >= :minSizeBytes
+          AND (
+              lower(normalizedPath) LIKE '%.bmp'
+              OR lower(normalizedPath) LIKE '%.gif'
+              OR lower(normalizedPath) LIKE '%.heic'
+              OR lower(normalizedPath) LIKE '%.heif'
+              OR lower(normalizedPath) LIKE '%.jpeg'
+              OR lower(normalizedPath) LIKE '%.jpg'
+              OR lower(normalizedPath) LIKE '%.png'
+              OR lower(normalizedPath) LIKE '%.webp'
+          )
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listImageCandidatesAfter(
+        minSizeBytes: Long,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
     @Query("SELECT * FROM cached_files WHERE normalizedPath > :afterPath ORDER BY normalizedPath LIMIT :limit")
     fun getPageAfter(afterPath: String, limit: Int): List<CachedFileEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM cached_files AS candidate
+        WHERE candidate.normalizedPath > :afterPath
+          AND (candidate.hashHex IS NULL OR candidate.hashHex = '')
+          AND EXISTS (
+              SELECT 1
+              FROM cached_files AS peer
+              WHERE peer.sizeBytes = candidate.sizeBytes
+                AND peer.normalizedPath != candidate.normalizedPath
+          )
+        ORDER BY candidate.normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listMissingHashSizeCollisionCandidatesAfter(
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files AS candidate
+        WHERE (candidate.hashHex IS NULL OR candidate.hashHex = '')
+          AND EXISTS (
+              SELECT 1
+              FROM cached_files AS peer
+              WHERE peer.sizeBytes = candidate.sizeBytes
+                AND peer.normalizedPath != candidate.normalizedPath
+          )
+        """
+    )
+    fun countMissingHashSizeCollisionCandidates(): Int
 
     @Query("SELECT * FROM cached_files ORDER BY normalizedPath DESC LIMIT :limit")
     fun getFirstPageByNameDesc(limit: Int): List<CachedFileEntity>
@@ -127,6 +265,58 @@ interface FileCacheDao {
 
     @Query(
         """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listDuplicateGroupKeysFromCachePage(limit: Int): List<DuplicateGroupKeyRow>
+
+    @Query(
+        """
+        SELECT
+            sizeBytes as sizeBytes,
+            hashHex as hashHex
+        FROM cached_files
+        WHERE hashHex IS NOT NULL
+        GROUP BY sizeBytes, hashHex
+        HAVING COUNT(*) > 1
+           AND (
+               sizeBytes > :afterSizeBytes
+               OR (sizeBytes = :afterSizeBytes AND hashHex > :afterHashHex)
+           )
+        ORDER BY sizeBytes ASC, hashHex ASC
+        LIMIT :limit
+        """
+    )
+    fun listDuplicateGroupKeysFromCachePageAfter(
+        afterSizeBytes: Long,
+        afterHashHex: String,
+        limit: Int
+    ): List<DuplicateGroupKeyRow>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(groupCount), 0)
+        FROM (
+            SELECT COUNT(*) as groupCount
+            FROM cached_files
+            WHERE hashHex IS NOT NULL
+            GROUP BY sizeBytes, hashHex
+            HAVING COUNT(*) > 1
+        )
+        """
+    )
+    fun countDuplicateMembersFromCache(): Int
+
+    @Query(
+        """
         SELECT COUNT(*)
         FROM cached_files
         WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
@@ -152,8 +342,28 @@ interface FileCacheDao {
     @Query("SELECT sizeBytes as sizeBytes, COUNT(*) as count FROM cached_files WHERE sizeBytes IN (:sizes) GROUP BY sizeBytes")
     fun countBySizes(sizes: List<Long>): List<SizeCount>
 
+    @Query(
+        """
+        SELECT *
+        FROM cached_files
+        WHERE normalizedPath > :afterPath
+          AND sizeBytes IN (:sizes)
+          AND (hashHex IS NULL OR hashHex = '')
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listMissingHashCandidatesBySizesAfter(
+        sizes: List<Long>,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
     @Query("SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes FROM cached_files WHERE normalizedPath IN (:paths)")
     fun findSizesByPaths(paths: List<String>): List<PathSize>
+
+    @Query("SELECT * FROM cached_files WHERE normalizedPath IN (:paths) OR path IN (:paths)")
+    fun findByNormalizedOrDisplayPaths(paths: List<String>): List<CachedFileEntity>
 
     @Query(
         """

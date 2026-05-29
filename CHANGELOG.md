@@ -6,6 +6,47 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
+- Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
+- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
+- Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
+- Video timeline preview menus now provide optional duration and resolution labels in Files and similarity cluster details without forcing timeline frames on.
+- Duplicate group detail views now support long-press member selection and selected-file deletion.
+
+### Changed
+
+- Bulk delete execution now shows shared task progress and notifications while deleting files.
+- Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
+- Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact clusters.
+- File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.
+
+### Fixed
+
+- Top-right checkbox menu items now stay open after toggling preview and path display options.
+- Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
+- Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.
+- Lazy result and similarity detail selection now share one selection state contract, while eager-only detail content is explicitly separated from paged detail screens.
+- Simple and result-detail screens now use result-style lazy side scrollbars instead of standalone scroll-state scrollbars.
+- Background DB, trash, bulk-delete, and similarity work now use the app-owned task runtime and foreground service, so UI lifecycle changes no longer cancel tracked tasks or reset active task monitoring.
+- Bulk-delete execution now keeps paging stable while successful deletes refresh duplicate groups, preventing later groups from being skipped.
+- Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.
+- Bulk-delete execution now rescans the current snapshot, filter, and command so capped preview samples do not limit eligible deletions.
+- Results DB filters now evaluate member-dependent filters page-by-page instead of materializing every member at once.
+- Duration-neighbor similarity result lists now lazy-load larger member pages and prefetch earlier near the end of the visible list.
+- App screens now handle screen size, orientation, layout, and keyboard-hidden configuration changes without recreating and crashing active screens.
+- Scan work now runs on an app-owned scope with a foreground service so active scans continue when the UI lifecycle changes or the app stays in the background.
+- Background scans no longer stop immediately when scan work starts before the UI job state is assigned.
+- Scans and duplicate-group rebuilds now repair same-size cache entries with missing hashes, so interrupted deferred hashing no longer leaves duplicate groups incomplete.
+- Duplicate-group rebuild progress now reports the missing-hash repair stage instead of staying on the preparing state.
+
+### Performance
+
+- Similarity cluster detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
+- Similarity cluster detail screens now load members page-by-page instead of materializing entire large clusters at once.
+- Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
+
 ## [1.4.0] - 2026-04-30
 
 ### Added

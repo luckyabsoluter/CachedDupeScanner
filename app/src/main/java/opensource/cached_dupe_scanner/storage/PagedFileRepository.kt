@@ -1,7 +1,7 @@
 package opensource.cached_dupe_scanner.storage
 
-import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
 
 class PagedFileRepository(
@@ -92,7 +92,7 @@ class PagedFileRepository(
             }
         }
 
-        val items = entities.map { it.toMetadata() }
+        val items = entities.map { it.toFileMetadata() }
         val last = entities.lastOrNull()
         val nextCursor = when {
             last == null -> null
@@ -102,14 +102,4 @@ class PagedFileRepository(
         }
         return Page(items = items, nextCursor = nextCursor)
     }
-}
-
-private fun CachedFileEntity.toMetadata(): FileMetadata {
-    return FileMetadata(
-        path = path,
-        normalizedPath = normalizedPath,
-        sizeBytes = sizeBytes,
-        lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
-    )
 }

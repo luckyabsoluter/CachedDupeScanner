@@ -23,10 +23,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -53,7 +49,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -231,76 +226,30 @@ fun TaskBannerStack(
                 verticalArrangement = Arrangement.spacedBy(Spacing.itemGap)
             ) {
                 tasks.forEachIndexed { index, task ->
-                    Card(
+                    TaskProgressCard(
+                        task = task,
+                        onCancel = { onCancelTask(task) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenTask(task) }
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(Spacing.cardPadding),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.compactGap)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (index == 0) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            collapsedAreas = tasks.map { it.area.name }
-                                            collapsed = true
-                                        }
-                                    ) {
-                                        Text("<")
+                            .clickable { onOpenTask(task) },
+                        cancelText = "Cancel",
+                        cancelButton = TaskProgressCancelButton.FilledError,
+                        showCancelWhenDisabled = false,
+                        currentPathText = { path -> File(path).name.ifBlank { path } },
+                        maxCurrentPathLines = 1,
+                        leadingContent = {
+                            if (index == 0) {
+                                OutlinedButton(
+                                    onClick = {
+                                        collapsedAreas = tasks.map { it.area.name }
+                                        collapsed = true
                                     }
+                                ) {
+                                    Text("<")
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = task.title,
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        text = task.detail,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (task.isCancellable) {
-                                    Button(
-                                        onClick = { onCancelTask(task) },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    ) {
-                                        Text("Cancel")
-                                    }
-                                }
-                            }
-                            task.currentPath?.let { path ->
-                                Text(
-                                    text = File(path).name.ifBlank { path },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            if (task.indeterminate) {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            } else {
-                                val progress = if ((task.total ?: 0) > 0) {
-                                    (task.processed ?: 0).toFloat() / task.total!!.toFloat()
-                                } else {
-                                    0f
-                                }
-                                LinearProgressIndicator(
-                                    progress = { progress.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
-                    }
+                    )
                 }
             }
         }

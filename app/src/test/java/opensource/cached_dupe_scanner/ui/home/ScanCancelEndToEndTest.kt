@@ -25,7 +25,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
-import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.engine.FileHasher
 import opensource.cached_dupe_scanner.engine.FileWalker
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
