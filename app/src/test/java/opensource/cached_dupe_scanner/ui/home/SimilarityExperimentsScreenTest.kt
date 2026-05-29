@@ -482,44 +482,25 @@ class SimilarityExperimentsScreenTest {
     }
 
     @Test
-    fun similarityClusterDetailLinesExplainExactHashGroupingOnlyWhenAvailable() {
-        val exactSignature = buildThumbnailSignature(
-            mediaScope = SimilarityMediaScope.Image,
-            step = ExactThumbnailHashStep(
-                frameSeconds = listOf(0),
-                resizeWidthPx = 2,
-                resizeHeightPx = 2,
-                quantizationLevels = null,
-                grayscale = false
-            ),
-            frameSignatures = listOf("ff00aa")
+    fun similarityClusterDetailBuildsSummaryLinesWithoutHelper() {
+        val content = sourceText("SimilarityExperimentsScreen.kt")
+        val detailScreen = sourceSection(
+            content = content,
+            start = "private fun SimilarityClusterDetailScreen(",
+            end = "private fun LazyListScope.SimilarityClusterDetailContent("
         )
-        val exactCluster = cluster(signature = exactSignature)
-        val exactLines = similarityClusterDetailLines(
-            cluster = exactCluster,
-            exactHashExplanation = exactThumbnailClusterExplanation(exactSignature)
-        )
+        val removedHelperName = "similarityCluster" + "DetailLines"
 
-        assertTrue(exactLines.any { it == "Group rule: exact thumbnail hash equality" })
-        assertTrue(exactLines.any { it == "Why included: every member produced the same exact thumbnail signature." })
-        assertTrue(exactLines.any { it == "Samples: image pixels" })
-        assertTrue(exactLines.any { it == "Quantization: raw pixels" })
-
-        val genericLines = similarityClusterDetailLines(
-            cluster = cluster(signature = "duration-v1:1000"),
-            exactHashExplanation = null
-        )
-        assertFalse(genericLines.any { it.startsWith("Group rule:") })
-
-        val durationNeighborLines = similarityClusterDetailLines(
-            cluster = cluster(signature = "duration-neighbor-list-v1:1000:0000000010000-0000000010750"),
-            exactHashExplanation = null,
-            durationNeighborExplanation = durationNeighborClusterExplanation(
-                "duration-neighbor-list-v1:1000:0000000010000-0000000010750"
-            )
-        )
-        assertTrue(durationNeighborLines.any { it == "List rule: duration-sorted neighbor filter" })
-        assertTrue(durationNeighborLines.any { it == "Order: sorted by extracted video duration" })
+        assertFalse(content.contains("internal fun $removedHelperName("))
+        assertFalse(content.contains("$removedHelperName("))
+        assertTrue(detailScreen.contains("summaryLines = when {"))
+        assertTrue(detailScreen.contains("durationNeighborExplanation != null -> listOf("))
+        assertTrue(detailScreen.contains("exactHashExplanation != null -> listOf("))
+        assertTrue(detailScreen.contains("\"List rule: duration-sorted neighbor filter\""))
+        assertTrue(detailScreen.contains("\"Order: sorted by extracted video duration\""))
+        assertTrue(detailScreen.contains("\"Group rule: exact thumbnail hash equality\""))
+        assertTrue(detailScreen.contains("\"Why included: every member produced the same exact thumbnail signature.\""))
+        assertTrue(detailScreen.contains("\"Similarity signature ${'$'}{cluster.signature}\""))
     }
 
     @Test

@@ -2377,11 +2377,31 @@ private fun SimilarityClusterDetailScreen(
                     SimilarityClusterDetailContent(
                         cluster = cluster,
                         title = if (durationNeighborExplanation != null) "List detail" else "Group detail",
-                        summaryLines = similarityClusterDetailLines(
-                            cluster = cluster,
-                            exactHashExplanation = exactHashExplanation,
-                            durationNeighborExplanation = durationNeighborExplanation
-                        ),
+                        summaryLines = when {
+                            durationNeighborExplanation != null -> listOf(
+                                "List rule: duration-sorted neighbor filter",
+                                "Why included: the full candidate set is sorted by extracted duration, then only videos with a previous or next item inside the tolerance are shown.",
+                                "Visible duration span: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
+                                "Tolerance: ${durationMillisLabel(durationNeighborExplanation.toleranceMillis)}",
+                                "Order: sorted by extracted video duration",
+                                "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+                            )
+                            exactHashExplanation != null -> listOf(
+                                "Group rule: exact thumbnail hash equality",
+                                "Why included: every member produced the same exact thumbnail signature.",
+                                "Media: ${mediaScopeLabel(exactHashExplanation.mediaScope)}",
+                                "Samples: ${framesLabel(exactHashExplanation)}",
+                                "Resize: ${exactHashExplanation.resize}",
+                                "Color mode: ${colorModeLabel(exactHashExplanation.colorMode)}",
+                                "Quantization: ${quantizationLabel(exactHashExplanation.quantization)}",
+                                "Sample signature values: ${sampleSignaturesLabel(exactHashExplanation.sampleSignatures)}",
+                                "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+                            )
+                            else -> listOf(
+                                "Similarity signature ${cluster.signature}",
+                                "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+                            )
+                        },
                         members = members,
                         displayedMembers = displayedMembers,
                         deletedPaths = deletedPaths,
@@ -3216,43 +3236,6 @@ internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanati
 internal fun durationNeighborClusterSummary(explanation: DurationNeighborClusterExplanation): String {
     return "Duration neighbor list: ${durationMillisLabel(explanation.minDurationMillis)} - " +
         "${durationMillisLabel(explanation.maxDurationMillis)}, tolerance ${durationMillisLabel(explanation.toleranceMillis)}"
-}
-
-internal fun similarityClusterDetailLines(
-    cluster: SimilarityClusterEntity,
-    exactHashExplanation: ExactThumbnailClusterExplanation?,
-    durationNeighborExplanation: DurationNeighborClusterExplanation? = null
-): List<String> {
-    if (exactHashExplanation == null && durationNeighborExplanation == null) {
-        return listOf(
-            "Similarity signature ${cluster.signature}",
-            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
-        )
-    }
-
-    if (durationNeighborExplanation != null) {
-        return listOf(
-            "List rule: duration-sorted neighbor filter",
-            "Why included: the full candidate set is sorted by extracted duration, then only videos with a previous or next item inside the tolerance are shown.",
-            "Visible duration span: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
-            "Tolerance: ${durationMillisLabel(durationNeighborExplanation.toleranceMillis)}",
-            "Order: sorted by extracted video duration",
-            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
-        )
-    }
-
-    requireNotNull(exactHashExplanation)
-    return listOf(
-        "Group rule: exact thumbnail hash equality",
-        "Why included: every member produced the same exact thumbnail signature.",
-        "Media: ${mediaScopeLabel(exactHashExplanation.mediaScope)}",
-        "Samples: ${framesLabel(exactHashExplanation)}",
-        "Resize: ${exactHashExplanation.resize}",
-        "Color mode: ${colorModeLabel(exactHashExplanation.colorMode)}",
-        "Quantization: ${quantizationLabel(exactHashExplanation.quantization)}",
-        "Sample signature values: ${sampleSignaturesLabel(exactHashExplanation.sampleSignatures)}",
-        "Snapshot ${formatDate(cluster.updatedAtMillis)}"
-    )
 }
 
 internal fun similarityClusterPreviewLineTexts(
