@@ -17,6 +17,5 @@ data class SimilarityClusterEntity(
     val signature: String,
     val fileCount: Int,
     val totalBytes: Long,
-    val memberNormalizedPathsText: String,
     val updatedAtMillis: Long
 )

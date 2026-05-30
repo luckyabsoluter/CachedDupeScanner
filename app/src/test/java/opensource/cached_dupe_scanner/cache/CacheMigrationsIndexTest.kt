@@ -385,6 +385,83 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration16to17MovesSimilarityMembersToSidecarTable() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-16-17-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(16) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion16SimilarityTables(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_16_17.migrate(db)
+
+            assertTrue(hasTable(db, "similarity_clusters"))
+            assertTrue(hasTable(db, "similarity_cluster_members"))
+            assertFalse(hasColumn(db, "similarity_clusters", "memberNormalizedPathsText"))
+            assertTrue(hasColumn(db, "similarity_cluster_members", "normalizedPath"))
+            assertTrue(hasColumn(db, "similarity_cluster_members", "position"))
+            assertTrue(hasColumn(db, "similarity_cluster_members", "durationMillis"))
+            assertTrue(
+                hasIndex(
+                    db = db,
+                    table = "similarity_cluster_members",
+                    indexName = "index_similarity_cluster_members_cluster_position"
+                )
+            )
+            assertTrue(
+                hasIndex(
+                    db = db,
+                    table = "similarity_cluster_members",
+                    indexName = "index_similarity_cluster_members_normalizedPath"
+                )
+            )
+            assertEquals(
+                "/storage/video/a.mp4",
+                firstString(
+                    db,
+                    """
+                    SELECT normalizedPath
+                    FROM similarity_cluster_members
+                    WHERE experimentId = 'duration' AND signature = 'duration-v1:1000:range'
+                    ORDER BY position ASC
+                    LIMIT 1
+                    """.trimIndent()
+                )
+            )
+            assertEquals(
+                "1000",
+                firstString(
+                    db,
+                    """
+                    SELECT CAST(durationMillis AS TEXT)
+                    FROM similarity_cluster_members
+                    WHERE normalizedPath = '/storage/video/a.mp4'
+                    """.trimIndent()
+                )
+            )
+            assertEquals(
+                "2",
+                firstString(db, "SELECT CAST(COUNT(*) AS TEXT) FROM similarity_cluster_members")
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -471,6 +548,72 @@ class CacheMigrationsIndexTest {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_experimentId ON similarity_clusters(experimentId)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)")
+    }
+
+    private fun createVersion16SimilarityTables(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS similarity_experiment_runs (
+                experimentId TEXT NOT NULL PRIMARY KEY,
+                experimentName TEXT NOT NULL,
+                startedAtMillis INTEGER NOT NULL,
+                finishedAtMillis INTEGER NOT NULL,
+                candidateCount INTEGER NOT NULL,
+                processedCount INTEGER NOT NULL,
+                skippedCount INTEGER NOT NULL,
+                clusterCount INTEGER NOT NULL,
+                duplicateFileCount INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS similarity_clusters (
+                experimentId TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                fileCount INTEGER NOT NULL,
+                totalBytes INTEGER NOT NULL,
+                memberNormalizedPathsText TEXT NOT NULL,
+                updatedAtMillis INTEGER NOT NULL,
+                PRIMARY KEY(experimentId, signature)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_experimentId ON similarity_clusters(experimentId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)")
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS similarity_duration_candidates (
+                experimentId TEXT NOT NULL,
+                normalizedPath TEXT NOT NULL,
+                durationMillis INTEGER NOT NULL,
+                sizeBytes INTEGER NOT NULL,
+                updatedAtMillis INTEGER NOT NULL,
+                PRIMARY KEY(experimentId, normalizedPath)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_clusters (
+                experimentId,
+                signature,
+                fileCount,
+                totalBytes,
+                memberNormalizedPathsText,
+                updatedAtMillis
+            ) VALUES (
+                'duration',
+                'duration-v1:1000:range',
+                2,
+                200,
+                '1000	/storage/video/a.mp4
+/storage/video/b.mp4',
+                1
+            )
+            """.trimIndent()
+        )
     }
 
     private fun hasIndex(db: SupportSQLiteDatabase, table: String, indexName: String): Boolean {

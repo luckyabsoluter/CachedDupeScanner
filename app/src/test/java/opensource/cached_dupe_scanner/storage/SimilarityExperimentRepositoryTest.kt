@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
@@ -97,10 +98,6 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(2, clusters.single().fileCount)
         assertEquals(
             listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
-            clusters.single().memberNormalizedPathsText.lineSequence().toList()
-        )
-        assertEquals(
-            listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
             repository.listClusterMembers(clusters.single()).map { it.normalizedPath }
         )
     }
@@ -150,6 +147,63 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(2, summary.candidateCount)
         assertEquals(1, summary.clusterCount)
         assertEquals(2, summary.duplicateFileCount)
+    }
+
+    @Test
+    fun cachedFileDeletionHidesSimilarityMemberWithoutDroppingSidecarLink() {
+        val first = videoFile("active-a.mp4")
+        val second = videoFile("active-b.mp4")
+        val minSizeBytes = 10L
+        val firstEntity = entity(first, sizeBytes = minSizeBytes)
+        val secondEntity = entity(second, sizeBytes = minSizeBytes + 1L)
+        database.fileCacheDao().upsert(firstEntity)
+        database.fileCacheDao().upsert(secondEntity)
+
+        val repository = SimilarityExperimentRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            experimentDao = database.similarityExperimentDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(
+                mapOf(
+                    first.absolutePath to "same",
+                    second.absolutePath to "same"
+                )
+            )
+        )
+        val experiment = SimilarityExperimentSpec(
+            id = "sidecar-active",
+            name = "Sidecar active",
+            description = "Sidecar active test",
+            defaultMinSizeBytes = minSizeBytes,
+            mediaScope = SimilarityMediaScope.Video,
+            steps = listOf(exactStep())
+        )
+
+        repository.runExactThumbnailHashExperiment(
+            request = SimilarityExperimentRunRequest(
+                experiment = experiment,
+                mediaScope = SimilarityMediaScope.Video,
+                minSizeBytes = minSizeBytes,
+                exactThumbnailStep = exactStep()
+            ),
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(1, repository.listClusters(experiment.id).size)
+
+        database.fileCacheDao().deleteByNormalizedPath(secondEntity.normalizedPath)
+
+        assertTrue(repository.listClusters(experiment.id).isEmpty())
+        assertEquals(0, repository.listRuns().single { it.experimentId == experiment.id }.clusterCount)
+
+        database.fileCacheDao().upsert(secondEntity)
+
+        val restoredCluster = repository.listClusters(experiment.id).single()
+        assertEquals(
+            listOf(firstEntity.normalizedPath, secondEntity.normalizedPath),
+            repository.listClusterMembers(restoredCluster).map { it.normalizedPath }
+        )
     }
 
     @Test
@@ -207,12 +261,7 @@ class SimilarityExperimentRepositoryTest {
         assertTrue(clusters.single().signature.startsWith("duration-v1:1000:"))
         assertEquals(
             listOf(first, second).map { it.absolutePath.replace('\\', '/').lowercase() },
-            parseSimilarityClusterMemberPaths(clusters.single().memberNormalizedPathsText)
-        )
-        assertEquals(
-            listOf(10_000L, 10_750L),
-            parseSimilarityClusterMemberEntries(clusters.single().memberNormalizedPathsText)
-                .map { entry -> entry.durationMillis }
+            repository.listClusterMembers(clusters.single()).map { it.normalizedPath }
         )
         assertEquals(
             listOf(10_000L, 10_750L),
@@ -277,7 +326,7 @@ class SimilarityExperimentRepositoryTest {
         assertEquals(1, clusters.size)
         assertEquals(
             listOf(first, second, third, fourth, fifth).map { it.absolutePath.replace('\\', '/').lowercase() },
-            parseSimilarityClusterMemberPaths(clusters.single().memberNormalizedPathsText)
+            repository.listClusterMembers(clusters.single()).map { it.normalizedPath }
         )
         assertEquals(
             listOf(10_000L, 10_750L, 12_100L, 12_800L, 13_500L),
@@ -366,8 +415,25 @@ class SimilarityExperimentRepositoryTest {
                     signature = "duration-neighbor-v1:1000:0000000010000-0000000010750",
                     fileCount = 2,
                     totalBytes = minSizeBytes + minSizeBytes + 1L,
-                    memberNormalizedPathsText = "$firstPath\n$secondPath",
                     updatedAtMillis = 1L
+                )
+            )
+        )
+        database.similarityExperimentDao().insertClusterMembers(
+            listOf(
+                SimilarityClusterMemberEntity(
+                    experimentId = "video-duration-neighbor-legacy",
+                    signature = "duration-neighbor-v1:1000:0000000010000-0000000010750",
+                    normalizedPath = firstPath,
+                    position = 0,
+                    durationMillis = null
+                ),
+                SimilarityClusterMemberEntity(
+                    experimentId = "video-duration-neighbor-legacy",
+                    signature = "duration-neighbor-v1:1000:0000000010000-0000000010750",
+                    normalizedPath = secondPath,
+                    position = 1,
+                    durationMillis = null
                 )
             )
         )
@@ -403,20 +469,11 @@ class SimilarityExperimentRepositoryTest {
         files.forEachIndexed { index, file ->
             database.fileCacheDao().upsert(entity(file, sizeBytes = 10L + index))
         }
-        val memberText = files.joinToString("\n") { file ->
-            file.absolutePath.replace('\\', '/').lowercase()
-        }
-        database.similarityExperimentDao().insertClusters(
-            listOf(
-                SimilarityClusterEntity(
-                    experimentId = "paged-members",
-                    signature = "duration-neighbor-v1:1000:0000000010000-0000000013000",
-                    fileCount = files.size,
-                    totalBytes = files.indices.sumOf { index -> 10L + index },
-                    memberNormalizedPathsText = memberText,
-                    updatedAtMillis = 1L
-                )
-            )
+        insertSimilarityCluster(
+            experimentId = "paged-members",
+            signature = "duration-neighbor-v1:1000:0000000010000-0000000013000",
+            paths = files.map { file -> file.absolutePath.replace('\\', '/').lowercase() },
+            sizes = files.indices.map { index -> 10L + index }
         )
         val repository = SimilarityExperimentRepository(
             database = database,
@@ -458,20 +515,11 @@ class SimilarityExperimentRepositoryTest {
             entity(file, sizeBytes = 10L + index)
         }
         database.fileCacheDao().upsertAll(entities)
-        val memberText = files.joinToString("\n") { file ->
-            file.absolutePath.replace('\\', '/').lowercase()
-        }
-        database.similarityExperimentDao().insertClusters(
-            listOf(
-                SimilarityClusterEntity(
-                    experimentId = "large-paged-members",
-                    signature = "large",
-                    fileCount = files.size,
-                    totalBytes = entities.sumOf { entity -> entity.sizeBytes },
-                    memberNormalizedPathsText = memberText,
-                    updatedAtMillis = 1L
-                )
-            )
+        insertSimilarityCluster(
+            experimentId = "large-paged-members",
+            signature = "large",
+            paths = files.map { file -> file.absolutePath.replace('\\', '/').lowercase() },
+            sizes = entities.map { entity -> entity.sizeBytes }
         )
         val repository = SimilarityExperimentRepository(
             database = database,
@@ -491,14 +539,10 @@ class SimilarityExperimentRepositoryTest {
     @Test
     fun clusterPagesLoadIncrementallyBySortOrder() {
         val experimentId = "paged-clusters"
-        database.similarityExperimentDao().insertClusters(
-            listOf(
-                SimilarityClusterEntity(experimentId, "c", 2, 20L, "c", 1L),
-                SimilarityClusterEntity(experimentId, "a", 5, 10L, "a", 1L),
-                SimilarityClusterEntity(experimentId, "b", 5, 5L, "b", 1L),
-                SimilarityClusterEntity(experimentId, "d", 1, 40L, "d", 1L)
-            )
-        )
+        insertSyntheticCluster(experimentId, "c", listOf(10L, 10L))
+        insertSyntheticCluster(experimentId, "a", listOf(2L, 2L, 2L, 2L, 2L))
+        insertSyntheticCluster(experimentId, "b", listOf(1L, 1L, 1L, 1L, 1L))
+        insertSyntheticCluster(experimentId, "d", listOf(2L, 3L))
         val repository = SimilarityExperimentRepository(
             database = database,
             fileDao = database.fileCacheDao(),
@@ -523,14 +567,10 @@ class SimilarityExperimentRepositoryTest {
     @Test
     fun clusterPagesCanSortByTotalSizeAsc() {
         val experimentId = "paged-clusters-total-size"
-        database.similarityExperimentDao().insertClusters(
-            listOf(
-                SimilarityClusterEntity(experimentId, "large", 2, 200L, "large", 1L),
-                SimilarityClusterEntity(experimentId, "small", 5, 10L, "small", 1L),
-                SimilarityClusterEntity(experimentId, "medium", 3, 100L, "medium", 1L),
-                SimilarityClusterEntity(experimentId, "tie", 1, 100L, "tie", 1L)
-            )
-        )
+        insertSyntheticCluster(experimentId, "large", listOf(100L, 100L))
+        insertSyntheticCluster(experimentId, "small", listOf(2L, 2L, 2L, 2L, 2L))
+        insertSyntheticCluster(experimentId, "medium", listOf(50L, 50L))
+        insertSyntheticCluster(experimentId, "tie", listOf(30L, 30L))
         val repository = SimilarityExperimentRepository(
             database = database,
             fileDao = database.fileCacheDao(),
@@ -562,12 +602,8 @@ class SimilarityExperimentRepositoryTest {
     @Test
     fun clusterPageReportsExhaustedWhenFinalPageIsShort() {
         val experimentId = "paged-clusters-short"
-        database.similarityExperimentDao().insertClusters(
-            listOf(
-                SimilarityClusterEntity(experimentId, "a", 2, 20L, "a", 1L),
-                SimilarityClusterEntity(experimentId, "b", 1, 10L, "b", 1L)
-            )
-        )
+        insertSyntheticCluster(experimentId, "a", listOf(10L, 10L))
+        insertSyntheticCluster(experimentId, "b", listOf(5L, 5L))
         val repository = SimilarityExperimentRepository(
             database = database,
             fileDao = database.fileCacheDao(),
@@ -585,6 +621,62 @@ class SimilarityExperimentRepositoryTest {
         val file = File(tempDir, name)
         file.writeText("video")
         return file
+    }
+
+    private fun insertSyntheticCluster(
+        experimentId: String,
+        signature: String,
+        sizes: List<Long>
+    ) {
+        val paths = sizes.indices.map { index -> "$experimentId/$signature/$index" }
+        paths.zip(sizes).forEach { (path, size) ->
+            database.fileCacheDao().upsert(
+                CachedFileEntity(
+                    normalizedPath = path,
+                    path = path,
+                    sizeBytes = size,
+                    lastModifiedMillis = 1L,
+                    hashHex = null
+                )
+            )
+        }
+        insertSimilarityCluster(
+            experimentId = experimentId,
+            signature = signature,
+            paths = paths,
+            sizes = sizes
+        )
+    }
+
+    private fun insertSimilarityCluster(
+        experimentId: String,
+        signature: String,
+        paths: List<String>,
+        sizes: List<Long>,
+        durationMillis: List<Long?> = List(paths.size) { null }
+    ) {
+        database.similarityExperimentDao().insertClusters(
+            listOf(
+                SimilarityClusterEntity(
+                    experimentId = experimentId,
+                    signature = signature,
+                    fileCount = paths.size,
+                    totalBytes = sizes.sum(),
+                    updatedAtMillis = 1L
+                )
+            )
+        )
+        database.similarityExperimentDao().insertClusterMembers(
+            paths.mapIndexed { index, path ->
+                SimilarityClusterMemberEntity(
+                    experimentId = experimentId,
+                    signature = signature,
+                    normalizedPath = path,
+                    position = index,
+                    durationMillis = durationMillis.getOrNull(index)
+                )
+            }
+        )
     }
 
     private fun entity(file: File, sizeBytes: Long): CachedFileEntity {

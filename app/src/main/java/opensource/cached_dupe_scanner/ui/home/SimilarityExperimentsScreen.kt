@@ -198,6 +198,7 @@ fun SimilarityExperimentsScreen(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     deletedPaths: Set<String>,
+    refreshVersion: Int,
     showFullPaths: Boolean,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
@@ -443,6 +444,8 @@ fun SimilarityExperimentsScreen(
             selectedRunExperimentId = nextSelectedRun?.experimentId
             clusters.clear()
             clusters.addAll(nextClusters)
+            loadedClusterMembers.clear()
+            clusterMemberLoadErrors.clear()
             clusterNextCursor = nextClusterPage?.nextCursor
             clustersExhausted = nextClusterPage?.exhausted ?: true
             durationNeighborMembers.clear()
@@ -646,8 +649,8 @@ fun SimilarityExperimentsScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        refreshStoredResults(null)
+    LaunchedEffect(refreshVersion) {
+        refreshStoredResults(selectedRunExperimentId)
     }
 
     LaunchedEffect(Unit) {

@@ -78,7 +78,7 @@ Room database (scan-cache.db) core tables:
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
 - **dupe_groups**: materialized snapshot of duplicate groups for fast paginated browsing
-- **similarity_experiment_runs / similarity_clusters / similarity_duration_candidates**: independent experiment snapshots, member path lists, and reusable duration candidates for similarity-based duplicate candidates
+- **similarity_experiment_runs / similarity_clusters / similarity_cluster_members / similarity_duration_candidates**: independent experiment snapshots, sidecar member links, and reusable duration candidates for similarity-based duplicate candidates
 
 
 ## Module map

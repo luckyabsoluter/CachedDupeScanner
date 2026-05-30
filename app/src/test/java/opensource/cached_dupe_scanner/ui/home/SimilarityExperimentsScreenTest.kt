@@ -1051,7 +1051,6 @@ class SimilarityExperimentsScreenTest {
             signature = signature,
             fileCount = 2,
             totalBytes = 10L,
-            memberNormalizedPathsText = "/a\n/b",
             updatedAtMillis = 1L
         )
     }

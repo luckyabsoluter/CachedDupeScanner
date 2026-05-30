@@ -11,6 +11,7 @@ import androidx.room.RoomDatabase
  * - `dupe_groups`: derived duplicate-group snapshot for fast Results paging.
  * - `scan_reports`: historical scan execution summaries.
  * - `trash_entries`: application trash ledger for restore/delete operations.
+ * - `similarity_cluster_members`: sidecar links between saved similarity clusters and cached files.
  */
 @Database(
     entities = [
@@ -20,9 +21,10 @@ import androidx.room.RoomDatabase
         DuplicateGroupEntity::class,
         SimilarityExperimentRunEntity::class,
         SimilarityClusterEntity::class,
+        SimilarityClusterMemberEntity::class,
         SimilarityDurationCandidateEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class CacheDatabase : RoomDatabase() {

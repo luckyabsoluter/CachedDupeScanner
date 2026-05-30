@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
+- Similarity cluster membership now uses sidecar member links joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear without rerunning the experiment.
 - Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
 - Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact clusters.
 - File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.

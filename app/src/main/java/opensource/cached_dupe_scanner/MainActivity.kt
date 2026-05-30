@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
                 val targetsVersion = remember { mutableStateOf(0) }
                 val reportsRefreshVersion = remember { mutableStateOf(0) }
                 val resultsRefreshVersion = remember { mutableStateOf(0) }
+                val similarityRefreshVersion = remember { mutableStateOf(0) }
                 val settingsVersion = remember { mutableStateOf(0) }
                 val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
                 val context = LocalContext.current
@@ -140,7 +141,8 @@ class MainActivity : ComponentActivity() {
                             CacheMigrations.MIGRATION_12_13,
                             CacheMigrations.MIGRATION_13_14,
                             CacheMigrations.MIGRATION_14_15,
-                            CacheMigrations.MIGRATION_15_16
+                            CacheMigrations.MIGRATION_15_16,
+                            CacheMigrations.MIGRATION_16_17
                         )
                         .build()
                 }
@@ -197,6 +199,7 @@ class MainActivity : ComponentActivity() {
                             Log.e("MainActivity", "Failed to persist scan results", error)
                         }
                         resultsRefreshVersion.value += 1
+                        similarityRefreshVersion.value += 1
                     }
                 }
 
@@ -302,6 +305,10 @@ class MainActivity : ComponentActivity() {
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
+                                onFilesChanged = {
+                                    resultsRefreshVersion.value += 1
+                                    similarityRefreshVersion.value += 1
+                                },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -316,6 +323,7 @@ class MainActivity : ComponentActivity() {
                                 onMaintenanceApplied = {
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
+                                    similarityRefreshVersion.value += 1
                                 },
                                 onCacheCleared = {
                                     state.value = ScanUiState.Idle
@@ -324,6 +332,7 @@ class MainActivity : ComponentActivity() {
                                     filesClearVersion.value += 1
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
+                                    similarityRefreshVersion.value += 1
                                     selectedResultsGroupIndex.value = null
                                 },
                                 onBack = { pop(backStack) },
@@ -361,6 +370,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                        similarityRefreshVersion.value += 1
                                     }
                                     ok
                                 },
@@ -370,6 +380,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                        similarityRefreshVersion.value += 1
                                     }
                                     ok
                                 },
@@ -412,6 +423,7 @@ class MainActivity : ComponentActivity() {
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 deletedPaths = deletedPaths.value,
+                                refreshVersion = similarityRefreshVersion.value,
                                 showFullPaths = settingsSnapshot.showFullPaths,
                                 onDeleteFile = { file ->
                                     if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
@@ -422,6 +434,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                        similarityRefreshVersion.value += 1
                                     }
                                     ok
                                 },
@@ -459,6 +472,11 @@ class MainActivity : ComponentActivity() {
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                onTrashChanged = {
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
+                                    similarityRefreshVersion.value += 1
+                                },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
