@@ -12,7 +12,6 @@ class GroupMemberSortSourceTest {
         val detailContent = sourceText("DuplicateGroupDetailContent.kt")
         val resultsContent = sourceText("ResultsScreen.kt")
         val dbResultsContent = sourceText("ResultsScreenDb.kt")
-        val similarityContent = sourceText("SimilarityExperimentsScreen.kt")
 
         assertTrue(sharedSortContent.contains("internal enum class ResultGroupMemberSortKey"))
         assertTrue(sharedSortContent.contains("internal fun sortGroupMembers("))
@@ -35,12 +34,6 @@ class GroupMemberSortSourceTest {
         assertFalse(dbResultsContent.contains("internal enum class ResultGroupMemberSortKey"))
         assertFalse(dbResultsContent.contains("internal fun sortGroupMembers("))
         assertFalse(dbResultsContent.contains("title = { Text(\"Group sort options\") }"))
-
-        assertTrue(similarityContent.contains("var similarityGroupMemberSortKey by rememberSaveable { mutableStateOf(ResultGroupMemberSortKey.Path) }"))
-        assertTrue(similarityContent.contains("sortKey = similarityGroupMemberSortKey"))
-        assertTrue(similarityContent.contains("onApplySort = { key, direction ->"))
-        assertTrue(similarityContent.contains("sortingEnabled = durationNeighborExplanation == null"))
-        assertFalse(similarityContent.contains("sortMembersByPath"))
     }
 
     private fun sourceText(fileName: String): String {

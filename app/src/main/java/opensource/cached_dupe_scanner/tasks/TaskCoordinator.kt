@@ -21,7 +21,7 @@ enum class TaskKind {
     ClearCache,
     EmptyTrash,
     BulkDelete,
-    SimilarityExperiment
+    SimilarityMaintenance
 }
 
 enum class TaskStatus {

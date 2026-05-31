@@ -462,6 +462,61 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration17to18ReplacesSimilarityExperimentsWithSettingsSchema() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-17-18-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(17) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion17SimilarityTables(db)
+                        db.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS cached_files (
+                                normalizedPath TEXT NOT NULL PRIMARY KEY,
+                                path TEXT NOT NULL,
+                                sizeBytes INTEGER NOT NULL,
+                                lastModifiedMillis INTEGER NOT NULL,
+                                hashHex TEXT
+                            )
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_17_18.migrate(db)
+
+            assertFalse(hasTable(db, "similarity_experiment_runs"))
+            assertFalse(hasTable(db, "similarity_duration_candidates"))
+            assertTrue(hasTable(db, "similarity_settings"))
+            assertTrue(hasTable(db, "similarity_setting_files"))
+            assertTrue(hasTable(db, "similarity_exact_thumbnail_features"))
+            assertTrue(hasTable(db, "similarity_duration_features"))
+            assertTrue(hasTable(db, "similarity_clusters"))
+            assertTrue(hasTable(db, "similarity_cluster_members"))
+            assertTrue(hasTable(db, "similarity_maintenance_runs"))
+            assertTrue(hasColumn(db, "similarity_settings", "settingId"))
+            assertTrue(hasColumn(db, "similarity_clusters", "clusterId"))
+            assertTrue(hasColumn(db, "similarity_clusters", "clusterKey"))
+            assertTrue(hasIndex(db, "similarity_settings", "index_similarity_settings_identity"))
+            assertTrue(hasIndex(db, "similarity_clusters", "index_similarity_clusters_settingId_clusterKey"))
+            assertTrue(hasTable(db, "cached_files"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -614,6 +669,11 @@ class CacheMigrationsIndexTest {
             )
             """.trimIndent()
         )
+    }
+
+    private fun createVersion17SimilarityTables(db: SupportSQLiteDatabase) {
+        createVersion16SimilarityTables(db)
+        CacheMigrations.MIGRATION_16_17.migrate(db)
     }
 
     private fun hasIndex(db: SupportSQLiteDatabase, table: String, indexName: String): Boolean {

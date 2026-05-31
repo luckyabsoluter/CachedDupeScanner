@@ -1,77 +1,71 @@
 package opensource.cached_dupe_scanner.ui.home.similarity
 
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
+import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
-import opensource.cached_dupe_scanner.tasks.similarityExperimentCancelledDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentCompletedDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskDetail
-import opensource.cached_dupe_scanner.tasks.similarityExperimentTaskTitle
+import opensource.cached_dupe_scanner.tasks.similarityMaintenanceCancelledDetail
+import opensource.cached_dupe_scanner.tasks.similarityMaintenanceCompletedDetail
+import opensource.cached_dupe_scanner.tasks.similarityMaintenanceTaskDetail
+import opensource.cached_dupe_scanner.tasks.similarityMaintenanceTaskTitle
 import opensource.cached_dupe_scanner.tasks.withLinearProgress
-import java.util.concurrent.atomic.AtomicBoolean
 
-internal fun startSimilarityExperimentTask(
-    repository: SimilarityExperimentRepository,
-    request: SimilarityExperimentRunRequest,
+internal fun startSimilarityMaintenanceTask(
+    repository: SimilaritySettingsRepository,
+    settingId: Long?,
+    rebuild: Boolean,
     scope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onStatusText: (String) -> Unit,
-    onRunFinished: (SimilarityExperimentSummary) -> Unit
+    onFinished: (SimilarityMaintenanceSummary) -> Unit
 ): Boolean {
-    return startSimilarityExperimentTask(
-        request = request,
+    return startSimilarityMaintenanceTask(
         scope = scope,
         taskCoordinator = taskCoordinator,
         notificationController = notificationController,
         onStatusText = onStatusText,
-        onRunFinished = onRunFinished
+        onFinished = onFinished
     ) { shouldContinue, onProgress ->
-        when {
-            request.exactThumbnailStep != null -> repository.runExactThumbnailHashExperiment(
-                request = request,
+        if (settingId == null) {
+            repository.runEnabledMaintenance(
+                rebuild = rebuild,
                 shouldContinue = shouldContinue,
                 onProgress = onProgress
             )
-            request.durationToleranceStep != null -> repository.runDurationToleranceExperiment(
-                request = request,
+        } else {
+            repository.runSettingMaintenance(
+                settingId = settingId,
+                rebuild = rebuild,
                 shouldContinue = shouldContinue,
                 onProgress = onProgress
             )
-            request.durationNeighborListStep != null -> repository.runDurationNeighborListExperiment(
-                request = request,
-                shouldContinue = shouldContinue,
-                onProgress = onProgress
-            )
-            else -> error("Similarity experiment request has no executable step.")
         }
     }
 }
 
-internal fun startSimilarityExperimentTask(
-    request: SimilarityExperimentRunRequest,
+internal fun startSimilarityMaintenanceTask(
     scope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
     onStatusText: (String) -> Unit,
-    onRunFinished: (SimilarityExperimentSummary) -> Unit,
-    runExperiment: ((() -> Boolean), (SimilarityExperimentProgress) -> Unit) -> SimilarityExperimentSummary
+    onFinished: (SimilarityMaintenanceSummary) -> Unit,
+    runMaintenance: ((() -> Boolean), (SimilarityMaintenanceProgress) -> Unit) -> SimilarityMaintenanceSummary
 ): Boolean {
     val cancelRequested = AtomicBoolean(false)
     val started = taskCoordinator.tryStart(
         area = TaskArea.Similarity,
-        kind = TaskKind.SimilarityExperiment,
-        title = similarityExperimentTaskTitle(),
-        detail = "Starting ${request.experiment.name}.",
+        kind = TaskKind.SimilarityMaintenance,
+        title = similarityMaintenanceTaskTitle(),
+        detail = "Preparing similarity maintenance.",
         processed = 0,
         total = null,
         indeterminate = true,
@@ -90,13 +84,13 @@ internal fun startSimilarityExperimentTask(
     scope.launch {
         runCatching {
             withContext(Dispatchers.IO) {
-                runExperiment(
+                runMaintenance(
                     { !cancelRequested.get() },
                     { progress ->
-                        val detail = similarityExperimentTaskDetail(progress)
+                        val detail = similarityMaintenanceTaskDetail(progress)
                         taskCoordinator.update(TaskArea.Similarity) { task ->
                             task.withLinearProgress(
-                                title = similarityExperimentTaskTitle(),
+                                title = similarityMaintenanceTaskTitle(),
                                 detail = detail,
                                 currentPath = progress.currentPath,
                                 processed = progress.processed,
@@ -110,10 +104,10 @@ internal fun startSimilarityExperimentTask(
         }.onSuccess { summary ->
             val currentPath = taskCoordinator.activeTask(TaskArea.Similarity)?.currentPath
             if (summary.cancelled) {
-                val detail = similarityExperimentCancelledDetail(summary)
+                val detail = similarityMaintenanceCancelledDetail(summary)
                 taskCoordinator.cancel(
                     area = TaskArea.Similarity,
-                    title = "Similarity experiment cancelled",
+                    title = "Similarity maintenance cancelled",
                     detail = detail,
                     currentPath = currentPath,
                     processed = summary.processedCount,
@@ -122,10 +116,10 @@ internal fun startSimilarityExperimentTask(
                 )?.let(notificationController::showTerminal)
                 onStatusText(detail)
             } else {
-                val detail = similarityExperimentCompletedDetail(summary)
+                val detail = similarityMaintenanceCompletedDetail(summary)
                 taskCoordinator.complete(
                     area = TaskArea.Similarity,
-                    title = "Similarity experiment complete",
+                    title = "Similarity maintenance complete",
                     detail = detail,
                     currentPath = currentPath,
                     processed = summary.processedCount,
@@ -134,14 +128,14 @@ internal fun startSimilarityExperimentTask(
                 )?.let(notificationController::showTerminal)
                 onStatusText("Finished: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files.")
             }
-            onRunFinished(summary)
+            onFinished(summary)
         }.onFailure {
             taskCoordinator.fail(
                 area = TaskArea.Similarity,
-                title = "Similarity experiment failed",
-                detail = "The similarity experiment did not finish."
+                title = "Similarity maintenance failed",
+                detail = "The similarity maintenance run did not finish."
             )?.let(notificationController::showTerminal)
-            onStatusText("Similarity experiment failed.")
+            onStatusText("Similarity maintenance failed.")
         }
     }
     return true
@@ -154,11 +148,12 @@ private fun requestImmediateSimilarityCancel(
     val snapshot = taskCoordinator.activeTask(TaskArea.Similarity)
     taskCoordinator.cancel(
         area = TaskArea.Similarity,
-        title = "Similarity experiment cancelled",
-        detail = "Cancelling similarity experiment.",
+        title = "Similarity maintenance cancelled",
+        detail = "Cancelling similarity maintenance.",
         currentPath = snapshot?.currentPath,
         processed = snapshot?.processed,
         total = snapshot?.total,
         indeterminate = snapshot?.indeterminate ?: true
     )?.let(notificationController::showTerminal)
 }
+

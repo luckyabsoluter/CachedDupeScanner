@@ -31,7 +31,7 @@ class MainActivityBackgroundTaskSourceTest {
             content.contains("appScope = AppWorkScopes.taskScope")
         )
         assertTrue(
-            "Similarity experiments should receive the app-owned task scope",
+            "Similarity settings should receive the app-owned task scope",
             content.contains("appScope = AppWorkScopes.taskScope")
         )
         assertFalse(
@@ -62,7 +62,7 @@ class MainActivityBackgroundTaskSourceTest {
     fun longRunningScreensUseInjectedAppScopeForTrackedTasks() {
         val trashContent = source("app/src/main/java/opensource/cached_dupe_scanner/ui/home/TrashScreen.kt")
         val similarityContent = source(
-            "app/src/main/java/opensource/cached_dupe_scanner/ui/home/SimilarityExperimentsScreen.kt"
+            "app/src/main/java/opensource/cached_dupe_scanner/ui/home/SimilaritySettingsScreen.kt"
         )
         val bulkDeleteContent = source(
             "app/src/main/java/opensource/cached_dupe_scanner/ui/home/ResultsScreenDbBulkDelete.kt"
@@ -77,11 +77,11 @@ class MainActivityBackgroundTaskSourceTest {
             trashContent.contains("scope = appScope")
         )
         assertTrue(
-            "SimilarityExperimentsScreen should accept an app scope for experiment execution",
+            "SimilaritySettingsScreen should accept an app scope for maintenance execution",
             similarityContent.contains("appScope: CoroutineScope")
         )
         assertTrue(
-            "Similarity experiment runs should launch on the app scope instead of the Compose scope",
+            "Similarity maintenance should launch on the app scope instead of the Compose scope",
             similarityContent.contains("scope = appScope")
         )
         assertTrue(

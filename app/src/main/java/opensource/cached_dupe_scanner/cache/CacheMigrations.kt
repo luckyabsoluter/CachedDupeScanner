@@ -414,6 +414,175 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS similarity_experiment_runs")
+            db.execSQL("DROP TABLE IF EXISTS similarity_duration_candidates")
+            db.execSQL("DROP TABLE IF EXISTS similarity_cluster_members")
+            db.execSQL("DROP TABLE IF EXISTS similarity_clusters")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_settings (
+                    settingId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    methodId TEXT NOT NULL,
+                    mediaScope TEXT NOT NULL,
+                    minSizeBytes INTEGER NOT NULL,
+                    paramsJson TEXT NOT NULL,
+                    paramsHash TEXT NOT NULL,
+                    displayName TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    createdAtMillis INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS index_similarity_settings_identity
+                ON similarity_settings(methodId, mediaScope, minSizeBytes, paramsHash)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_settings_enabled ON similarity_settings(enabled)"
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_setting_files (
+                    settingId INTEGER NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    sizeBytes INTEGER NOT NULL,
+                    lastModifiedMillis INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(settingId, normalizedPath)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_setting_files_normalizedPath
+                ON similarity_setting_files(normalizedPath)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_setting_files_settingId_status
+                ON similarity_setting_files(settingId, status)
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_exact_thumbnail_features (
+                    settingId INTEGER NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    thumbnailSignature TEXT NOT NULL,
+                    PRIMARY KEY(settingId, normalizedPath)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_exact_thumbnail_features_signature
+                ON similarity_exact_thumbnail_features(settingId, thumbnailSignature, normalizedPath)
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_duration_features (
+                    settingId INTEGER NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    durationMillis INTEGER NOT NULL,
+                    PRIMARY KEY(settingId, normalizedPath)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_duration_features_duration
+                ON similarity_duration_features(settingId, durationMillis, normalizedPath)
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_clusters (
+                    clusterId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    settingId INTEGER NOT NULL,
+                    clusterKey TEXT NOT NULL,
+                    fileCount INTEGER NOT NULL,
+                    totalBytes INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS index_similarity_clusters_settingId_clusterKey
+                ON similarity_clusters(settingId, clusterKey)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_settingId ON similarity_clusters(settingId)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_fileCount ON similarity_clusters(fileCount)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_similarity_clusters_totalBytes ON similarity_clusters(totalBytes)"
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_cluster_members (
+                    clusterId INTEGER NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY(clusterId, normalizedPath)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_cluster_members_clusterId_position
+                ON similarity_cluster_members(clusterId, position)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_cluster_members_normalizedPath
+                ON similarity_cluster_members(normalizedPath)
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS similarity_maintenance_runs (
+                    runId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    settingId INTEGER NOT NULL,
+                    startedAtMillis INTEGER NOT NULL,
+                    finishedAtMillis INTEGER NOT NULL,
+                    candidateCount INTEGER NOT NULL,
+                    processedCount INTEGER NOT NULL,
+                    skippedCount INTEGER NOT NULL,
+                    clusterCount INTEGER NOT NULL,
+                    duplicateFileCount INTEGER NOT NULL,
+                    cancelled INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_maintenance_runs_setting_started
+                ON similarity_maintenance_runs(settingId, startedAtMillis)
+                """.trimIndent()
+            )
+        }
+    }
+
 }
 
 private data class MigrationSimilarityClusterMember(

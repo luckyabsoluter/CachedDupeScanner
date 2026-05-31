@@ -8,8 +8,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
-- Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
+- Similarity settings management for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and per-setting run/rebuild/clear controls.
+- Similarity settings identity now treats different method parameters as separate settings, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
 - Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
 - Video timeline preview menus now provide optional duration and resolution labels in Files and similarity cluster details without forcing timeline frames on.
@@ -18,7 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
-- Similarity cluster membership now uses sidecar member links joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear without rerunning the experiment.
+- Similarity data now uses settings-based sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
 - Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
 - Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact clusters.
 - File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.

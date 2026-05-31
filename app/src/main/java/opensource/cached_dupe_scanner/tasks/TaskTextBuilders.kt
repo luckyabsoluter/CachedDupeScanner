@@ -10,8 +10,8 @@ import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRunSummary
 
@@ -118,18 +118,19 @@ fun bulkDeleteCompletedDetail(successCount: Int, failedCount: Int): String {
     return "Deleted $successCount • Failed $failedCount"
 }
 
-fun similarityExperimentTaskTitle(): String = "Running similarity experiment"
+fun similarityMaintenanceTaskTitle(): String = "Running similarity maintenance"
 
-fun similarityExperimentTaskDetail(progress: SimilarityExperimentProgress): String {
+fun similarityMaintenanceTaskDetail(progress: SimilarityMaintenanceProgress): String {
     val totalText = if (progress.total > 0) progress.total.toString() else "?"
-    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}"
+    val setting = progress.settingName?.let { " • $it" } ?: ""
+    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}$setting"
 }
 
-fun similarityExperimentCompletedDetail(summary: SimilarityExperimentSummary): String {
+fun similarityMaintenanceCompletedDetail(summary: SimilarityMaintenanceSummary): String {
     return "Clusters ${summary.clusterCount} • Files ${summary.duplicateFileCount} • Skipped ${summary.skippedCount}"
 }
 
-fun similarityExperimentCancelledDetail(summary: SimilarityExperimentSummary): String {
+fun similarityMaintenanceCancelledDetail(summary: SimilarityMaintenanceSummary): String {
     val totalText = if (summary.candidateCount > 0) summary.candidateCount.toString() else "?"
     return "Cancelled after ${summary.processedCount}/$totalText candidates."
 }

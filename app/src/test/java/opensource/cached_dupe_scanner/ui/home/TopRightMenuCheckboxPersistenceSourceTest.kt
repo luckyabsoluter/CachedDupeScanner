@@ -44,28 +44,6 @@ class TopRightMenuCheckboxPersistenceSourceTest {
         )
     }
 
-    @Test
-    fun similarityDetailMenuCheckboxTogglesKeepMenuOpen() {
-        assertToggleDoesNotDismissMenu(
-            fileName = "SimilarityExperimentsScreen.kt",
-            label = "Video preview",
-            toggleLine = "showVideoPreviews.value = !showVideoPreviews.value",
-            dismissLine = "videoPreviewMenuExpanded.value = false"
-        )
-        assertToggleDoesNotDismissMenu(
-            fileName = "SimilarityExperimentsScreen.kt",
-            label = "Video duration",
-            toggleLine = "showVideoPreviewDurations.value = !showVideoPreviewDurations.value",
-            dismissLine = "videoPreviewMenuExpanded.value = false"
-        )
-        assertToggleDoesNotDismissMenu(
-            fileName = "SimilarityExperimentsScreen.kt",
-            label = "Video resolution",
-            toggleLine = "showVideoPreviewResolutions.value = !showVideoPreviewResolutions.value",
-            dismissLine = "videoPreviewMenuExpanded.value = false"
-        )
-    }
-
     private fun assertToggleDoesNotDismissMenu(
         fileName: String,
         label: String,

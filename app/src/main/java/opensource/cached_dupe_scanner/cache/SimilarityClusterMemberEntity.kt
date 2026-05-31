@@ -5,11 +5,11 @@ import androidx.room.Index
 
 @Entity(
     tableName = "similarity_cluster_members",
-    primaryKeys = ["experimentId", "signature", "normalizedPath"],
+    primaryKeys = ["clusterId", "normalizedPath"],
     indices = [
         Index(
-            value = ["experimentId", "signature", "position"],
-            name = "index_similarity_cluster_members_cluster_position"
+            value = ["clusterId", "position"],
+            name = "index_similarity_cluster_members_clusterId_position"
         ),
         Index(
             value = ["normalizedPath"],
@@ -18,11 +18,9 @@ import androidx.room.Index
     ]
 )
 data class SimilarityClusterMemberEntity(
-    val experimentId: String,
-    val signature: String,
+    val clusterId: Long,
     val normalizedPath: String,
-    val position: Int,
-    val durationMillis: Long?
+    val position: Int
 )
 
 data class SimilarityClusterMemberFileRow(
@@ -30,6 +28,5 @@ data class SimilarityClusterMemberFileRow(
     val path: String,
     val sizeBytes: Long,
     val lastModifiedMillis: Long,
-    val hashHex: String?,
-    val durationMillis: Long?
+    val hashHex: String?
 )

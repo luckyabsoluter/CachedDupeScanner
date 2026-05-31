@@ -18,6 +18,7 @@ class ScanHistoryRepository(
     private val settingsStore: AppSettingsStore,
     private val groupDao: DuplicateGroupDao? = null,
     private val database: CacheDatabase? = null,
+    private val cacheMutationObserver: CacheMutationObserver? = null,
     private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
         Hashing.sha256Hex(file, shouldContinue = shouldContinue)
     }
@@ -30,6 +31,9 @@ class ScanHistoryRepository(
 
         files.chunked(RECORD_SCAN_CHUNK_SIZE).forEach { chunk ->
             runInConsistencyTransaction {
+                val existingByPath = chunk.associate { entity ->
+                    entity.normalizedPath to dao.getByNormalizedPath(entity.normalizedPath)
+                }
                 val existingKeysByPath = loadExistingGroupKeysByPath(
                     paths = chunk.map { it.normalizedPath }
                 )
@@ -40,6 +44,11 @@ class ScanHistoryRepository(
                     entity.toGroupKey()?.let(touched::add)
                 }
                 refreshGroupsLocked(touched)
+                cacheMutationObserver?.onCachedFilesChanged(
+                    chunk
+                        .filter { entity -> entity.affectsSimilarity(existingByPath[entity.normalizedPath]) }
+                        .map { entity -> entity.normalizedPath }
+                )
             }
         }
     }
@@ -373,6 +382,7 @@ class ScanHistoryRepository(
             val paths = batch.map { it.normalizedPath }
             runInConsistencyTransaction {
                 dao.deleteByNormalizedPaths(paths)
+                cacheMutationObserver?.onCachedFilesChanged(paths)
             }
             clearedFiles += batch.size
             processed += batch.size
@@ -397,6 +407,9 @@ class ScanHistoryRepository(
                     batch.forEach { group ->
                         groups.delete(group.sizeBytes, group.hashHex)
                     }
+                    if (dao.countAll() == 0) {
+                        cacheMutationObserver?.onCacheCleared()
+                    }
                 }
                 clearedGroups += batch.size
                 processed += batch.size
@@ -408,6 +421,12 @@ class ScanHistoryRepository(
                         clearedGroups = clearedGroups
                     )
                 )
+            }
+        }
+
+        if (dao.countAll() == 0) {
+            runInConsistencyTransaction {
+                cacheMutationObserver?.onCacheCleared()
             }
         }
 
@@ -425,6 +444,9 @@ class ScanHistoryRepository(
             val before = dao.getByNormalizedPath(normalizedPath)
             dao.deleteByNormalizedPath(normalizedPath)
             refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
+            if (before != null) {
+                cacheMutationObserver?.onCachedFilesChanged(listOf(normalizedPath))
+            }
         }
     }
 
@@ -433,6 +455,9 @@ class ScanHistoryRepository(
             val before = dao.getByNormalizedPath(entity.normalizedPath)
             dao.upsert(entity)
             refreshGroupsLocked(touchedGroupKeys(before = before, after = entity))
+            if (entity.affectsSimilarity(before)) {
+                cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
+            }
         }
     }
 
@@ -440,6 +465,7 @@ class ScanHistoryRepository(
         runInConsistencyTransaction {
             dao.deleteByNormalizedPath(entity.normalizedPath)
             refreshGroupsLocked(touchedGroupKeys(before = entity, after = null))
+            cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
         }
     }
 
@@ -447,6 +473,9 @@ class ScanHistoryRepository(
         runInConsistencyTransaction {
             dao.upsert(after)
             refreshGroupsLocked(touchedGroupKeys(before = before, after = after))
+            if (after.affectsSimilarity(before)) {
+                cacheMutationObserver?.onCachedFilesChanged(listOf(after.normalizedPath))
+            }
         }
     }
 
@@ -521,6 +550,13 @@ private fun PathGroupKey.toGroupKey(): GroupKey? {
         sizeBytes = sizeBytes,
         hashHex = hash
     )
+}
+
+private fun CachedFileEntity.affectsSimilarity(before: CachedFileEntity?): Boolean {
+    return before == null ||
+        before.path != path ||
+        before.sizeBytes != sizeBytes ||
+        before.lastModifiedMillis != lastModifiedMillis
 }
 
 private const val RECORD_SCAN_CHUNK_SIZE = 500

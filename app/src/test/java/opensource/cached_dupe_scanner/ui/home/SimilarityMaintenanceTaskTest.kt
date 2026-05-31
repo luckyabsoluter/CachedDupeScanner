@@ -7,18 +7,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
-import opensource.cached_dupe_scanner.core.SimilarityExperimentSpec
-import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentRunRequest
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.TaskStatus
-import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityExperimentTask
+import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,7 +28,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class SimilarityExperimentTaskTest {
+class SimilarityMaintenanceTaskTest {
     private lateinit var appScope: CoroutineScope
 
     @Before
@@ -46,7 +42,7 @@ class SimilarityExperimentTaskTest {
     }
 
     @Test
-    fun startSimilarityExperimentTaskPublishesSharedProgress() {
+    fun startSimilarityMaintenanceTaskPublishesSharedProgress() {
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
         val statuses = Collections.synchronizedList(mutableListOf<String>())
@@ -54,27 +50,27 @@ class SimilarityExperimentTaskTest {
         val releaseRun = CountDownLatch(1)
         val finished = CountDownLatch(1)
 
-        val started = startSimilarityExperimentTask(
-            request = request(),
+        val started = startSimilarityMaintenanceTask(
             scope = appScope,
             taskCoordinator = taskCoordinator,
             notificationController = notificationController,
             onStatusText = { status -> statuses.add(status) },
-            onRunFinished = { finished.countDown() },
-            runExperiment = { _, onProgress ->
+            onFinished = { finished.countDown() },
+            runMaintenance = { _, onProgress ->
                 onProgress(
-                    SimilarityExperimentProgress(
+                    SimilarityMaintenanceProgress(
                         total = 10,
                         processed = 4,
                         skipped = 1,
                         clusterCandidates = 2,
-                        currentPath = "/storage/emulated/0/DCIM/sample.mp4"
+                        currentPath = "/storage/emulated/0/DCIM/sample.mp4",
+                        settingName = "Exact 2x2"
                     )
                 )
                 progressPublished.countDown()
                 assertTrue(releaseRun.await(5, TimeUnit.SECONDS))
-                SimilarityExperimentSummary(
-                    experimentId = "similarity-task-test",
+                SimilarityMaintenanceSummary(
+                    settingCount = 1,
                     candidateCount = 10,
                     processedCount = 10,
                     skippedCount = 1,
@@ -89,10 +85,10 @@ class SimilarityExperimentTaskTest {
         assertTrue(progressPublished.await(5, TimeUnit.SECONDS))
         waitUntil {
             taskCoordinator.activeTask(TaskArea.Similarity)?.detail ==
-                "Processed 4/10 • Cluster candidates 2 • Skipped 1"
+                "Processed 4/10 • Cluster candidates 2 • Skipped 1 • Exact 2x2"
         }
         val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
-        assertEquals(TaskKind.SimilarityExperiment, activeTask?.kind)
+        assertEquals(TaskKind.SimilarityMaintenance, activeTask?.kind)
         assertEquals("/storage/emulated/0/DCIM/sample.mp4", activeTask?.currentPath)
 
         releaseRun.countDown()
@@ -101,31 +97,30 @@ class SimilarityExperimentTaskTest {
 
         val terminal = taskCoordinator.terminalSummary(TaskArea.Similarity)
         assertEquals(TaskStatus.Completed, terminal?.status)
-        assertEquals("Similarity experiment complete", terminal?.title)
+        assertEquals("Similarity maintenance complete", terminal?.title)
         assertTrue(statuses.any { status -> status.contains("Finished: 2 clusters, 5 files.") })
     }
 
     @Test
-    fun cancellingSimilarityExperimentClearsSharedTask() {
+    fun cancellingSimilarityMaintenanceClearsSharedTask() {
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
         val enteredRun = CountDownLatch(1)
         val finished = CountDownLatch(1)
 
-        startSimilarityExperimentTask(
-            request = request(),
+        startSimilarityMaintenanceTask(
             scope = appScope,
             taskCoordinator = taskCoordinator,
             notificationController = notificationController,
             onStatusText = {},
-            onRunFinished = { finished.countDown() },
-            runExperiment = { shouldContinue, _ ->
+            onFinished = { finished.countDown() },
+            runMaintenance = { shouldContinue, _ ->
                 enteredRun.countDown()
                 while (shouldContinue()) {
                     Thread.sleep(10)
                 }
-                SimilarityExperimentSummary(
-                    experimentId = "similarity-task-test",
+                SimilarityMaintenanceSummary(
+                    settingCount = 1,
                     candidateCount = 8,
                     processedCount = 3,
                     skippedCount = 1,
@@ -143,42 +138,16 @@ class SimilarityExperimentTaskTest {
 
         val terminal = taskCoordinator.terminalSummary(TaskArea.Similarity)
         assertEquals(TaskStatus.Cancelled, terminal?.status)
-        assertEquals("Similarity experiment cancelled", terminal?.title)
+        assertEquals("Similarity maintenance cancelled", terminal?.title)
         assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
     }
+}
 
-    private fun request(): SimilarityExperimentRunRequest {
-        val step = ExactThumbnailHashStep(
-            frameSeconds = listOf(0),
-            resizeWidthPx = 1,
-            resizeHeightPx = 1,
-            quantizationLevels = null,
-            grayscale = false
-        )
-        return SimilarityExperimentRunRequest(
-            experiment = SimilarityExperimentSpec(
-                id = "similarity-task-test",
-                name = "Similarity task test",
-                description = "Test experiment",
-                defaultMinSizeBytes = 0L,
-                mediaScope = SimilarityMediaScope.Video,
-                steps = listOf(step)
-            ),
-            mediaScope = SimilarityMediaScope.Video,
-            minSizeBytes = 0L,
-            exactThumbnailStep = step
-        )
+private fun waitUntil(condition: () -> Boolean) {
+    val deadline = System.currentTimeMillis() + 5_000L
+    while (System.currentTimeMillis() < deadline) {
+        if (condition()) return
+        Thread.sleep(10)
     }
-
-    private fun waitUntil(
-        timeoutMillis: Long = 5_000,
-        condition: () -> Boolean
-    ) {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (System.currentTimeMillis() < deadline) {
-            if (condition()) return
-            Thread.sleep(10)
-        }
-        assertTrue("Condition was not met before timeout", condition())
-    }
+    assertTrue("Condition was not met before timeout", condition())
 }
