@@ -12,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,18 +31,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
-import opensource.cached_dupe_scanner.core.DEFAULT_SIMILARITY_MIN_SIZE_BYTES
-import opensource.cached_dupe_scanner.core.DurationNeighborListStep
-import opensource.cached_dupe_scanner.core.DurationToleranceStep
-import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
+import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationNeighborListStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationToleranceStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedExactThumbnailStep
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedFrameSeconds
+import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
+import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
+import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
 
 @Composable
@@ -58,9 +66,41 @@ fun SimilaritySettingsScreen(
     val scope = rememberCoroutineScope()
     val settings = remember { mutableStateListOf<SimilaritySettingEntity>() }
     val clustersBySetting = remember { mutableStateMapOf<Long, List<SimilarityClusterEntity>>() }
+    val selectedClusterMembers = remember { mutableStateListOf<SimilarityClusterMember>() }
     val statusText = remember { mutableStateOf("No similarity maintenance running.") }
+    val selectedCluster = remember { mutableStateOf<SimilarityClusterEntity?>(null) }
+    val selectedClusterSetting = remember { mutableStateOf<SimilaritySettingEntity?>(null) }
+    val memberLoading = remember { mutableStateOf(false) }
+    val minSizeInput = remember { mutableStateOf("100") }
+    val minSizeUnit = remember { mutableStateOf(SimilaritySizeUnit.MB) }
+    val mediaScope = remember { mutableStateOf(SimilarityMediaScope.Video) }
+    val frameSecondsInput = remember { mutableStateOf("0,1,10") }
+    val resizeWidthInput = remember { mutableStateOf("1") }
+    val resizeHeightInput = remember { mutableStateOf("1") }
+    val quantizationEnabled = remember { mutableStateOf(true) }
+    val quantizationInput = remember { mutableStateOf("16") }
+    val grayscale = remember { mutableStateOf(false) }
+    val durationToleranceInput = remember { mutableStateOf("1") }
+    val durationToleranceUnit = remember { mutableStateOf(SimilarityTimeUnit.S) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
     val displayedStatus = activeTask?.detail ?: statusText.value
+    val minSizeBytes = parsedMinSizeBytes(minSizeInput.value, minSizeUnit.value)
+    val exactStep = parsedExactThumbnailStep(
+        frameSecondsInput = frameSecondsInput.value,
+        resizeWidthInput = resizeWidthInput.value,
+        resizeHeightInput = resizeHeightInput.value,
+        quantizationEnabled = quantizationEnabled.value,
+        quantizationInput = quantizationInput.value,
+        grayscale = grayscale.value
+    )
+    val durationToleranceStep = parsedDurationToleranceStep(
+        input = durationToleranceInput.value,
+        unit = durationToleranceUnit.value
+    )
+    val durationNeighborStep = parsedDurationNeighborListStep(
+        input = durationToleranceInput.value,
+        unit = durationToleranceUnit.value
+    )
 
     fun refresh() {
         scope.launch {
@@ -97,22 +137,62 @@ fun SimilaritySettingsScreen(
         }
     }
 
-    fun createExact(width: Int, height: Int) {
+    fun createExact() {
+        if (exactStep.frameSeconds.isEmpty()) {
+            statusText.value = "Add at least one frame timestamp."
+            return
+        }
         scope.launch {
             withContext(Dispatchers.IO) {
                 repository.createExactThumbnailSetting(
-                    mediaScope = SimilarityMediaScope.Video,
-                    minSizeBytes = DEFAULT_SIMILARITY_MIN_SIZE_BYTES,
-                    step = ExactThumbnailHashStep(
-                        frameSeconds = listOf(0, 1, 10),
-                        resizeWidthPx = width,
-                        resizeHeightPx = height,
-                        quantizationLevels = 16,
-                        grayscale = false
-                    )
+                    mediaScope = mediaScope.value,
+                    minSizeBytes = minSizeBytes,
+                    step = exactStep
                 )
             }
+            onChanged()
             refresh()
+        }
+    }
+
+    fun createDurationTolerance() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                repository.createDurationToleranceSetting(
+                    minSizeBytes = minSizeBytes,
+                    step = durationToleranceStep
+                )
+            }
+            onChanged()
+            refresh()
+        }
+    }
+
+    fun createDurationNeighbor() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                repository.createDurationNeighborListSetting(
+                    minSizeBytes = minSizeBytes,
+                    step = durationNeighborStep
+                )
+            }
+            onChanged()
+            refresh()
+        }
+    }
+
+    fun openCluster(setting: SimilaritySettingEntity, cluster: SimilarityClusterEntity) {
+        selectedCluster.value = cluster
+        selectedClusterSetting.value = setting
+        selectedClusterMembers.clear()
+        memberLoading.value = true
+        scope.launch {
+            val members = withContext(Dispatchers.IO) {
+                repository.listClusterMembers(cluster.clusterId)
+            }
+            selectedClusterMembers.clear()
+            selectedClusterMembers.addAll(members)
+            memberLoading.value = false
         }
     }
 
@@ -138,47 +218,111 @@ fun SimilaritySettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(text = "Create setting", style = MaterialTheme.typography.titleMedium)
+                    Text(text = "Size floor", style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { createExact(width = 1, height = 1) }) {
-                            Text("Exact 1x1")
+                        OutlinedTextField(
+                            value = minSizeInput.value,
+                            onValueChange = { minSizeInput.value = sanitizeNumberDraftInput(it) },
+                            label = { Text("Min size") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SimilaritySizeUnit.entries.forEach { unit ->
+                            UnitButton(
+                                label = unit.label,
+                                selected = minSizeUnit.value == unit,
+                                onClick = { minSizeUnit.value = unit }
+                            )
                         }
-                        OutlinedButton(onClick = { createExact(width = 2, height = 2) }) {
-                            Text("Exact 2x2")
-                        }
-                        OutlinedButton(onClick = { createExact(width = 3, height = 3) }) {
-                            Text("Exact 3x3")
+                    }
+                    Text(text = "Exact thumbnail", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        UnitButton(
+                            label = "Video",
+                            selected = mediaScope.value == SimilarityMediaScope.Video,
+                            onClick = { mediaScope.value = SimilarityMediaScope.Video }
+                        )
+                        UnitButton(
+                            label = "Image",
+                            selected = mediaScope.value == SimilarityMediaScope.Image,
+                            onClick = { mediaScope.value = SimilarityMediaScope.Image }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = frameSecondsInput.value,
+                        onValueChange = { frameSecondsInput.value = sanitizeFrameSecondsInput(it) },
+                        label = { Text("Frame seconds") },
+                        supportingText = { Text("Parsed: ${parsedFrameSeconds(frameSecondsInput.value).joinToString(", ")}") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = resizeWidthInput.value,
+                            onValueChange = { resizeWidthInput.value = sanitizeNumberDraftInput(it) },
+                            label = { Text("Width") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = resizeHeightInput.value,
+                            onValueChange = { resizeHeightInput.value = sanitizeNumberDraftInput(it) },
+                            label = { Text("Height") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Quantization", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = quantizationEnabled.value,
+                            onCheckedChange = { quantizationEnabled.value = it }
+                        )
+                    }
+                    if (quantizationEnabled.value) {
+                        OutlinedTextField(
+                            value = quantizationInput.value,
+                            onValueChange = { quantizationInput.value = sanitizeNumberDraftInput(it) },
+                            label = { Text("Quantization levels") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Grayscale", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = grayscale.value,
+                            onCheckedChange = { grayscale.value = it }
+                        )
+                    }
+                    Button(onClick = ::createExact, modifier = Modifier.fillMaxWidth()) {
+                        Text("Create exact thumbnail setting")
+                    }
+                    Text(text = "Duration", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = durationToleranceInput.value,
+                            onValueChange = { durationToleranceInput.value = sanitizeNumberDraftInput(it) },
+                            label = { Text("Tolerance") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        SimilarityTimeUnit.entries.forEach { unit ->
+                            UnitButton(
+                                label = unit.label,
+                                selected = durationToleranceUnit.value == unit,
+                                onClick = { durationToleranceUnit.value = unit }
+                            )
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        repository.createDurationToleranceSetting(
-                                            minSizeBytes = DEFAULT_SIMILARITY_MIN_SIZE_BYTES,
-                                            step = DurationToleranceStep(toleranceSeconds = 1)
-                                        )
-                                    }
-                                    refresh()
-                                }
-                            }
-                        ) {
-                            Text("Duration 1s")
+                        Button(onClick = ::createDurationTolerance) {
+                            Text("Create duration tolerance")
                         }
                         OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        repository.createDurationNeighborListSetting(
-                                            minSizeBytes = DEFAULT_SIMILARITY_MIN_SIZE_BYTES,
-                                            step = DurationNeighborListStep(toleranceSeconds = 1)
-                                        )
-                                    }
-                                    refresh()
-                                }
-                            }
+                            onClick = ::createDurationNeighbor
                         ) {
-                            Text("Neighbor 1s")
+                            Text("Create neighbor list")
                         }
                     }
                 }
@@ -241,6 +385,23 @@ fun SimilaritySettingsScreen(
                             onChanged()
                             refresh()
                         }
+                    },
+                    onOpenCluster = { cluster -> openCluster(setting, cluster) }
+                )
+            }
+        }
+
+        selectedCluster.value?.let { cluster ->
+            item(key = "selected-cluster-${cluster.clusterId}") {
+                SimilarityClusterDetailCard(
+                    setting = selectedClusterSetting.value,
+                    cluster = cluster,
+                    members = selectedClusterMembers,
+                    loading = memberLoading.value,
+                    onClose = {
+                        selectedCluster.value = null
+                        selectedClusterSetting.value = null
+                        selectedClusterMembers.clear()
                     }
                 )
             }
@@ -255,7 +416,8 @@ private fun SimilaritySettingCard(
     onToggle: (Boolean) -> Unit,
     onRun: () -> Unit,
     onRebuild: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onOpenCluster: (SimilarityClusterEntity) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -280,11 +442,26 @@ private fun SimilaritySettingCard(
                 text = "Clusters ${clusters.size} • Files ${clusters.sumOf { it.fileCount }}",
                 style = MaterialTheme.typography.bodySmall
             )
-            clusters.take(3).forEach { cluster ->
+            if (clusters.isEmpty()) {
                 Text(
-                    text = "${cluster.clusterKey} • ${cluster.fileCount} files • ${cluster.totalBytes} bytes",
+                    text = "No similarity groups.",
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+            clusters.forEach { cluster ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${cluster.clusterKey} • ${cluster.fileCount} files • ${formatBytes(cluster.totalBytes)}",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = { onOpenCluster(cluster) }) {
+                        Text("Open")
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(2.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -302,3 +479,79 @@ private fun SimilaritySettingCard(
     }
 }
 
+@Composable
+private fun SimilarityClusterDetailCard(
+    setting: SimilaritySettingEntity?,
+    cluster: SimilarityClusterEntity,
+    members: List<SimilarityClusterMember>,
+    loading: Boolean,
+    onClose: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "Similarity group", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = listOfNotNull(
+                            setting?.displayName,
+                            "${cluster.fileCount} files",
+                            formatBytes(cluster.totalBytes)
+                        ).joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                OutlinedButton(onClick = onClose) {
+                    Text("Close")
+                }
+            }
+            Text(text = cluster.clusterKey, style = MaterialTheme.typography.bodySmall)
+            if (loading) {
+                Text(text = "Loading members...", style = MaterialTheme.typography.bodySmall)
+            } else if (members.isEmpty()) {
+                Text(text = "No active members.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                members.forEachIndexed { index, member ->
+                    SimilarityMemberRow(index = index + 1, metadata = member.metadata)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimilarityMemberRow(index: Int, metadata: FileMetadata) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$index. ${metadata.path.ifBlank { metadata.normalizedPath }}",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = "${formatBytes(metadata.sizeBytes)} • mtime ${metadata.lastModifiedMillis}",
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+@Composable
+private fun UnitButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(onClick = onClick) {
+            Text(label)
+        }
+    } else {
+        OutlinedButton(onClick = onClick) {
+            Text(label)
+        }
+    }
+}

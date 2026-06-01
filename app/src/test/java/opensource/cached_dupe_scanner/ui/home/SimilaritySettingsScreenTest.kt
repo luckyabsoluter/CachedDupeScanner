@@ -15,9 +15,24 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("repository.setEnabled("))
         assertTrue(content.contains("repository.clearSettingResults("))
         assertTrue(content.contains("repository.clearAllResults()"))
-        assertTrue(content.contains("createExact(width = 2, height = 2)"))
-        assertTrue(content.contains("createExact(width = 3, height = 3)"))
+        assertTrue(content.contains("parsedExactThumbnailStep("))
+        assertTrue(content.contains("parsedDurationToleranceStep("))
+        assertTrue(content.contains("parsedDurationNeighborListStep("))
+        assertTrue(content.contains("repository.createExactThumbnailSetting("))
+        assertTrue(content.contains("repository.createDurationToleranceSetting("))
+        assertTrue(content.contains("repository.createDurationNeighborListSetting("))
         assertFalse(content.contains("Experiment"))
+    }
+
+    @Test
+    fun similaritySettingsScreenShowsClusterMembers() {
+        val content = sourceText("SimilaritySettingsScreen.kt")
+
+        assertTrue(content.contains("repository.listClusterMembers(cluster.clusterId)"))
+        assertTrue(content.contains("SimilarityClusterDetailCard("))
+        assertTrue(content.contains("SimilarityMemberRow("))
+        assertTrue(content.contains("onOpenCluster"))
+        assertFalse(content.contains("clusters.take("))
     }
 
     @Test
@@ -40,4 +55,3 @@ class SimilaritySettingsScreenTest {
         return sourceFile!!.readText()
     }
 }
-
