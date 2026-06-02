@@ -11,6 +11,10 @@ class SimilaritySettingsScreenTest {
         val content = sourceText("SimilaritySettingsScreen.kt")
 
         assertTrue(content.contains("fun SimilaritySettingsScreen("))
+        assertTrue(content.contains("private enum class SimilaritySettingsPane"))
+        assertTrue(content.contains("SimilaritySettingsPane.Create"))
+        assertTrue(content.contains("SimilaritySettingsPane.SettingDetail"))
+        assertTrue(content.contains("SimilaritySettingsPane.ClusterDetail"))
         assertTrue(content.contains("startSimilarityMaintenanceTask("))
         assertTrue(content.contains("repository.setEnabled("))
         assertTrue(content.contains("repository.clearSettingResults("))
@@ -22,6 +26,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("repository.createDurationToleranceSetting("))
         assertTrue(content.contains("repository.createDurationNeighborListSetting("))
         assertFalse(content.contains("Experiment"))
+        assertFalse(content.contains("Template"))
     }
 
     @Test

@@ -9,7 +9,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Added
 
 - Similarity settings management for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and per-setting run/rebuild/clear controls.
-- Similarity settings now provide custom creation controls for size floors, media scope, thumbnail frames, resize dimensions, quantization, grayscale, duration units, and similarity group member browsing.
+- Similarity settings now provide separate flows for setting type selection, custom creation controls, setting management, and similarity group member browsing.
 - Similarity settings identity now treats different method parameters as separate settings, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
 - Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
