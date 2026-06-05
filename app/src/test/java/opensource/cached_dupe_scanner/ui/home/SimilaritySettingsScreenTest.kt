@@ -42,6 +42,10 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("SimilarityMemberCard("))
         assertTrue(content.contains("GroupPreviewThumbnail("))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
+        assertTrue(content.contains("GroupMemberSortButton("))
+        assertTrue(content.contains("sortGroupMembers("))
+        assertTrue(content.contains("shouldTriggerSimilarityMemberAutoLoad("))
+        assertTrue(content.contains("listState = memberListState"))
         assertTrue(content.contains("onOpenCluster"))
         assertFalse(content.contains("clusters.take("))
         assertFalse(content.contains("repository.listClusterMembers(clusterId)"))
@@ -56,6 +60,46 @@ class SimilaritySettingsScreenTest {
         assertFalse(content.contains("Key \${cluster.clusterKey}"))
         assertFalse(content.contains("durationMillis"))
         assertFalse(content.contains("thumbnailSignature"))
+    }
+
+    @Test
+    fun similarityMemberAutoLoadTriggersNearBottomOnlyWhenReady() {
+        assertTrue(
+            shouldTriggerSimilarityMemberAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityMemberAutoLoad(
+                lastVisibleItemIndex = 4,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityMemberAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = true,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityMemberAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = true
+            )
+        )
     }
 
     private fun sourceText(fileName: String): String {

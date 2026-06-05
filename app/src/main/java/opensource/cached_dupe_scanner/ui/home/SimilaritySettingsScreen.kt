@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -42,6 +44,8 @@ import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
@@ -51,6 +55,7 @@ import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_NEIGHBOR_L
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_TOLERANCE
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_EXACT_THUMBNAIL
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
 import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
@@ -77,6 +82,7 @@ import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintena
 
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 4
 private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
+private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
 
 @Composable
 fun SimilaritySettingsScreen(
@@ -583,6 +589,7 @@ fun SimilarityClusterDetailScreen(
     val scope = rememberCoroutineScope()
     val imageLoader = rememberSimilarityImageLoader(context)
     val memberThumbnailSize = 64.dp * thumbnailSizeScale.coerceAtLeast(0f)
+    val memberListState = rememberLazyListState()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
     val members = remember { mutableStateListOf<SimilarityClusterMember>() }
@@ -590,6 +597,8 @@ fun SimilarityClusterDetailScreen(
     var memberOffset by remember { mutableStateOf(0) }
     var membersExhausted by remember { mutableStateOf(false) }
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
+    var memberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
+    var memberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
 
     fun loadMoreMembers() {
         if (memberLoading || membersExhausted) return
@@ -612,6 +621,11 @@ fun SimilarityClusterDetailScreen(
 
     LaunchedEffect(settingId, clusterId) {
         memberLoading = true
+        setting = null
+        cluster = null
+        members.clear()
+        memberOffset = 0
+        membersExhausted = false
         val loadedSetting = withContext(Dispatchers.IO) {
             repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
         }
@@ -635,8 +649,37 @@ fun SimilarityClusterDetailScreen(
         memberLoading = false
     }
 
+    LaunchedEffect(clusterId, memberListState) {
+        snapshotFlow {
+            val layoutInfo = memberListState.layoutInfo
+            if (cluster == null) {
+                false
+            } else {
+                shouldTriggerSimilarityMemberAutoLoad(
+                    lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1,
+                    totalItemsCount = layoutInfo.totalItemsCount,
+                    thresholdItems = SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS,
+                    isLoading = memberLoading,
+                    isComplete = membersExhausted
+                )
+            }
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                loadMoreMembers()
+            }
+    }
+
+    val displayedMembers = sortGroupMembers(
+        members = members.map { member -> member.metadata },
+        sortKey = memberSortKey,
+        direction = memberSortDirection
+    )
+
     ScreenScrollColumn(
         modifier = modifier,
+        listState = memberListState,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "top_bar") {
@@ -665,21 +708,27 @@ fun SimilarityClusterDetailScreen(
                 SimilarityMembersHeader(
                     loadedCount = members.size,
                     totalCount = selectedCluster.fileCount,
-                    loading = memberLoading
+                    loading = memberLoading,
+                    sortKey = memberSortKey,
+                    sortDirection = memberSortDirection,
+                    onApplySort = { key, direction ->
+                        memberSortKey = key
+                        memberSortDirection = direction
+                    }
                 )
             }
-            members.forEachIndexed { index, member ->
-                item(key = "member:${member.metadata.normalizedPath}") {
+            displayedMembers.forEachIndexed { index, metadata ->
+                item(key = "member:${metadata.normalizedPath}") {
                     SimilarityMemberCard(
                         index = index + 1,
-                        metadata = member.metadata,
-                        deleted = deletedPaths.contains(member.metadata.normalizedPath),
+                        metadata = metadata,
+                        deleted = deletedPaths.contains(metadata.normalizedPath),
                         imageLoader = imageLoader,
                         rememberedPreviewCache = rememberedPreviewCache,
                         keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                         thumbnailSize = memberThumbnailSize,
                         showFullPath = showFullPaths,
-                        onOpen = { selectedFile = member.metadata }
+                        onOpen = { selectedFile = metadata }
                     )
                 }
             }
@@ -1237,20 +1286,34 @@ private fun SimilarityClusterSummaryCard(
 private fun SimilarityMembersHeader(
     loadedCount: Int,
     totalCount: Int,
-    loading: Boolean
+    loading: Boolean,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "Members", style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = if (loading && loadedCount == 0) {
-                "Loading 0/$totalCount files"
-            } else {
-                "Loaded ${loadedCount.coerceAtMost(totalCount)}/$totalCount files"
-            },
-            style = MaterialTheme.typography.bodySmall
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = "Members", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = if (loading && loadedCount == 0) {
+                    "Loading 0/$totalCount files"
+                } else {
+                    "Loaded ${loadedCount.coerceAtMost(totalCount)}/$totalCount files"
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        GroupMemberSortButton(
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            onApplySort = onApplySort
         )
     }
 }
@@ -1382,6 +1445,19 @@ private fun settingParametersSummary(setting: SimilaritySettingEntity): String {
         }
         else -> "Custom parameters"
     }
+}
+
+internal fun shouldTriggerSimilarityMemberAutoLoad(
+    lastVisibleItemIndex: Int,
+    totalItemsCount: Int,
+    thresholdItems: Int,
+    isLoading: Boolean,
+    isComplete: Boolean
+): Boolean {
+    if (isLoading || isComplete) return false
+    if (lastVisibleItemIndex < 0 || totalItemsCount <= 0) return false
+    val remainingItems = (totalItemsCount - 1 - lastVisibleItemIndex).coerceAtLeast(0)
+    return remainingItems <= thresholdItems.coerceAtLeast(0)
 }
 
 private fun resultSummary(clusterCount: Int, fileCount: Int): String {
