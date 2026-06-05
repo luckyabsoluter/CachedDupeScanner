@@ -35,15 +35,25 @@ class MainActivityNavigationStateTest {
     }
 
     @Test
-    fun restoreScreenStackKeepsSimilaritySettingsScreen() {
+    fun restoreScreenStackKeepsSimilarityRouteParameters() {
         val restored = restoreScreenStack(
             listOf(
                 Screen.Dashboard.toSaveToken(),
-                Screen.SimilaritySettings.toSaveToken()
+                Screen.SimilaritySettings.toSaveToken(),
+                Screen.SimilaritySettingDetail(42L).toSaveToken(),
+                Screen.SimilarityClusterDetail(settingId = 42L, clusterId = 7L).toSaveToken()
             )
         )
 
-        assertEquals(listOf(Screen.Dashboard, Screen.SimilaritySettings), restored)
+        assertEquals(
+            listOf(
+                Screen.Dashboard,
+                Screen.SimilaritySettings,
+                Screen.SimilaritySettingDetail(42L),
+                Screen.SimilarityClusterDetail(settingId = 42L, clusterId = 7L)
+            ),
+            restored
+        )
     }
 
     @Test

@@ -34,6 +34,10 @@ class MainActivityBackgroundTaskSourceTest {
             "Similarity settings should receive the app-owned task scope",
             content.contains("appScope = AppWorkScopes.taskScope")
         )
+        assertTrue(
+            "Similarity task banners should open the maintenance route that shows active task status",
+            content.contains("TaskArea.Similarity -> Screen.SimilarityMaintenance")
+        )
         assertFalse(
             "DB management should not receive the Compose coroutine scope for long tasks",
             content.contains("appScope = scope,")
@@ -77,8 +81,9 @@ class MainActivityBackgroundTaskSourceTest {
             trashContent.contains("scope = appScope")
         )
         assertTrue(
-            "SimilaritySettingsScreen should accept an app scope for maintenance execution",
-            similarityContent.contains("appScope: CoroutineScope")
+            "SimilarityMaintenanceScreen should accept an app scope for maintenance execution",
+            similarityContent.contains("fun SimilarityMaintenanceScreen(") &&
+                similarityContent.contains("appScope: CoroutineScope")
         )
         assertTrue(
             "Similarity maintenance should launch on the app scope instead of the Compose scope",

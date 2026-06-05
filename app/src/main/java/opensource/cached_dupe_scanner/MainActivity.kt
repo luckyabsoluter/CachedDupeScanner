@@ -70,6 +70,12 @@ import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityClusterDetailScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityDurationSettingScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityMaintenanceScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
@@ -433,11 +439,102 @@ class MainActivity : ComponentActivity() {
 
                             Screen.SimilaritySettings -> SimilaritySettingsScreen(
                                 repository = similarityRepo,
+                                refreshVersion = similarityRefreshVersion.value,
+                                onBack = { pop(backStack) },
+                                onCreateSetting = {
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingCreate)
+                                },
+                                onOpenMaintenance = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityMaintenance)
+                                },
+                                onOpenSetting = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityMaintenance -> SimilarityMaintenanceScreen(
+                                repository = similarityRepo,
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilaritySettingCreate -> SimilaritySettingCreateScreen(
+                                onBack = { pop(backStack) },
+                                onOpenExactThumbnail = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityExactThumbnailSetting)
+                                },
+                                onOpenDurationTolerance = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityDurationToleranceSetting)
+                                },
+                                onOpenDurationNeighbor = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityDurationNeighborSetting)
+                                },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityExactThumbnailSetting -> SimilarityExactThumbnailSettingScreen(
+                                repository = similarityRepo,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityDurationToleranceSetting -> SimilarityDurationSettingScreen(
+                                repository = similarityRepo,
+                                neighborList = false,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityDurationNeighborSetting -> SimilarityDurationSettingScreen(
+                                repository = similarityRepo,
+                                neighborList = true,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilaritySettingDetail -> SimilaritySettingDetailScreen(
+                                repository = similarityRepo,
+                                appScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
+                                settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onChanged = { similarityRefreshVersion.value += 1 },
+                                onBack = { pop(backStack) },
+                                onOpenCluster = { settingId, clusterId ->
+                                    navigateTo(
+                                        backStack,
+                                        screenCache,
+                                        Screen.SimilarityClusterDetail(
+                                            settingId = settingId,
+                                            clusterId = clusterId
+                                        )
+                                    )
+                                },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilarityClusterDetail -> SimilarityClusterDetailScreen(
+                                repository = similarityRepo,
+                                settingId = screen.settingId,
+                                clusterId = screen.clusterId,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -572,7 +669,7 @@ private fun screenForTaskArea(area: TaskArea): Screen {
         TaskArea.Scan -> Screen.ScanCommand
         TaskArea.Db -> Screen.DbManagement
         TaskArea.Trash -> Screen.Trash
-        TaskArea.Similarity -> Screen.SimilaritySettings
+        TaskArea.Similarity -> Screen.SimilarityMaintenance
     }
 }
 
@@ -607,6 +704,13 @@ internal sealed class Screen {
     data object Results : Screen()
     data object Settings : Screen()
     data object SimilaritySettings : Screen()
+    data object SimilarityMaintenance : Screen()
+    data object SimilaritySettingCreate : Screen()
+    data object SimilarityExactThumbnailSetting : Screen()
+    data object SimilarityDurationToleranceSetting : Screen()
+    data object SimilarityDurationNeighborSetting : Screen()
+    data class SimilaritySettingDetail(val settingId: Long) : Screen()
+    data class SimilarityClusterDetail(val settingId: Long, val clusterId: Long) : Screen()
     data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
@@ -623,6 +727,13 @@ internal sealed class Screen {
             Results -> "results"
             Settings -> "settings"
             SimilaritySettings -> "similarity-settings"
+            SimilarityMaintenance -> "similarity-maintenance"
+            SimilaritySettingCreate -> "similarity-setting-create"
+            SimilarityExactThumbnailSetting -> "similarity-setting-exact-thumbnail"
+            SimilarityDurationToleranceSetting -> "similarity-setting-duration-tolerance"
+            SimilarityDurationNeighborSetting -> "similarity-setting-duration-neighbor"
+            is SimilaritySettingDetail -> "similarity-setting-detail:$settingId"
+            is SimilarityClusterDetail -> "similarity-cluster-detail:$settingId:$clusterId"
             About -> "about"
             Reports -> "reports"
             is ReportDetail -> "report-detail:$id"
@@ -642,6 +753,26 @@ internal sealed class Screen {
                 token == "results" -> Results
                 token == "settings" -> Settings
                 token == "similarity-settings" -> SimilaritySettings
+                token == "similarity-maintenance" -> SimilarityMaintenance
+                token == "similarity-setting-create" -> SimilaritySettingCreate
+                token == "similarity-setting-exact-thumbnail" -> SimilarityExactThumbnailSetting
+                token == "similarity-setting-duration-tolerance" -> SimilarityDurationToleranceSetting
+                token == "similarity-setting-duration-neighbor" -> SimilarityDurationNeighborSetting
+                token.startsWith("similarity-setting-detail:") -> {
+                    token.substringAfter("similarity-setting-detail:")
+                        .toLongOrNull()
+                        ?.let { settingId -> SimilaritySettingDetail(settingId) }
+                }
+                token.startsWith("similarity-cluster-detail:") -> {
+                    val ids = token.substringAfter("similarity-cluster-detail:").split(':')
+                    val settingId = ids.getOrNull(0)?.toLongOrNull()
+                    val clusterId = ids.getOrNull(1)?.toLongOrNull()
+                    if (settingId != null && clusterId != null) {
+                        SimilarityClusterDetail(settingId = settingId, clusterId = clusterId)
+                    } else {
+                        null
+                    }
+                }
                 token == "about" -> About
                 token == "reports" -> Reports
                 token.startsWith("report-detail:") -> ReportDetail(token.removePrefix("report-detail:"))

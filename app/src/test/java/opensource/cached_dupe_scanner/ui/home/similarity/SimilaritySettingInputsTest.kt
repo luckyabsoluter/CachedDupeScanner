@@ -49,4 +49,27 @@ class SimilaritySettingInputsTest {
         assertEquals(512L, parsedMinSizeBytes("512", SimilaritySizeUnit.B))
         assertEquals(3L * 1024L * 1024L, parsedMinSizeBytes("3", SimilaritySizeUnit.MB))
     }
+
+    @Test
+    fun exactThumbnailInputNormalizesInvalidValues() {
+        val step = parsedExactThumbnailStep(
+            frameSecondsInput = "",
+            resizeWidthInput = "0",
+            resizeHeightInput = "-2",
+            quantizationEnabled = true,
+            quantizationInput = "1",
+            grayscale = false
+        )
+
+        assertEquals(listOf(0), step.frameSeconds)
+        assertEquals(1, step.resizeWidthPx)
+        assertEquals(1, step.resizeHeightPx)
+        assertEquals(2, step.quantizationLevels)
+    }
+
+    @Test
+    fun durationInputNormalizesNegativeValues() {
+        assertEquals(0L, parsedDurationToleranceStep("-1", SimilarityTimeUnit.MS).toleranceMillis)
+        assertEquals(0L, parsedDurationNeighborListStep("-1", SimilarityTimeUnit.S).toleranceMillis)
+    }
 }

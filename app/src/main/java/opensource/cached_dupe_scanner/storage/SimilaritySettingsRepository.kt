@@ -571,30 +571,23 @@ class SimilaritySettingsRepository(
     ): List<ClusterDraft> {
         val tolerance = durationNeighborToleranceMillis(step)
         val sorted = rows.sortedWith(compareBy({ it.durationMillis }, { it.normalizedPath }))
-        return sorted.mapIndexedNotNull { index, row ->
-            val previous = sorted.getOrNull(index - 1)
-            val next = sorted.getOrNull(index + 1)
-            val nearestDistance = listOfNotNull(
-                previous?.let { abs(row.durationMillis - it.durationMillis) },
-                next?.let { abs(row.durationMillis - it.durationMillis) }
-            ).minOrNull()
-            if (nearestDistance == null || nearestDistance > tolerance) return@mapIndexedNotNull null
-            val min = listOfNotNull(previous, row, next).minOf { it.durationMillis }
-            val max = listOfNotNull(previous, row, next).maxOf { it.durationMillis }
-            ClusterDraft(
-                clusterKey = buildDurationNeighborListSignature(min, max, step),
-                members = listOf(row).map {
-                    ClusterMemberDraft(
-                        normalizedPath = it.normalizedPath,
-                        sizeBytes = it.sizeBytes
-                    )
-                }
-            )
-        }.groupBy { draft -> draft.clusterKey }
-            .mapNotNull { (key, drafts) ->
-                val members = drafts.flatMap { it.members }.distinctBy { it.normalizedPath }
-                if (members.size > 1) ClusterDraft(key, members) else null
+        val clusters = mutableListOf<ClusterDraft>()
+        var current = mutableListOf<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>()
+        for (row in sorted) {
+            if (current.isEmpty()) {
+                current.add(row)
+                continue
             }
+            val previous = current.last()
+            if (abs(row.durationMillis - previous.durationMillis) <= tolerance) {
+                current.add(row)
+            } else {
+                if (current.size > 1) clusters.add(durationNeighborCluster(current, step))
+                current = mutableListOf(row)
+            }
+        }
+        if (current.size > 1) clusters.add(durationNeighborCluster(current, step))
+        return clusters
     }
 
     private fun durationCluster(
@@ -604,6 +597,24 @@ class SimilaritySettingsRepository(
         val min = rows.minOf { it.durationMillis }
         val max = rows.maxOf { it.durationMillis }
         val key = buildDurationToleranceSignature(min, max, step)
+        return ClusterDraft(
+            clusterKey = key,
+            members = rows.map { row ->
+                ClusterMemberDraft(
+                    normalizedPath = row.normalizedPath,
+                    sizeBytes = row.sizeBytes
+                )
+            }
+        )
+    }
+
+    private fun durationNeighborCluster(
+        rows: List<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>,
+        step: DurationNeighborListStep
+    ): ClusterDraft {
+        val min = rows.minOf { it.durationMillis }
+        val max = rows.maxOf { it.durationMillis }
+        val key = buildDurationNeighborListSignature(min, max, step)
         return ClusterDraft(
             clusterKey = key,
             members = rows.map { row ->

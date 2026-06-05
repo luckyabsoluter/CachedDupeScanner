@@ -7,6 +7,7 @@ import java.io.File
 import java.util.UUID
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
@@ -161,6 +162,57 @@ class SimilaritySettingsRepositoryTest {
 
         assertEquals(1, summary.clusterCount)
         assertTrue(repository.listClusters(setting.settingId).single().clusterKey.startsWith("duration-v1:1000:"))
+    }
+
+    @Test
+    fun durationNeighborMaintenanceClustersConnectedNeighbors() {
+        val first = videoFile("neighbor-a.mp4")
+        val second = videoFile("neighbor-b.mp4")
+        val third = videoFile("neighbor-c.mp4")
+        val unique = videoFile("neighbor-d.mp4")
+        listOf(first, second, third, unique).forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val repository = repository(
+            durations = mapOf(
+                first.absolutePath to 10_000L,
+                second.absolutePath to 10_500L,
+                third.absolutePath to 11_400L,
+                unique.absolutePath to 20_000L
+            )
+        )
+        val setting = repository.createDurationNeighborListSetting(
+            minSizeBytes = 1L,
+            step = DurationNeighborListStep(toleranceSeconds = 1),
+            enabled = true
+        )
+
+        val summary = repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+        val cluster = repository.listClusters(setting.settingId).single()
+        val members = repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata.normalizedPath }
+
+        assertEquals(1, summary.clusterCount)
+        assertEquals("duration-neighbor-list-v1:1000:0000000010000-0000000011400", cluster.clusterKey)
+        assertEquals(
+            listOf(first, second, third).map { file -> file.normalizedPath() },
+            members
+        )
+    }
+
+    @Test
+    fun createSettingNormalizesSimilarityIdentity() {
+        val repository = repository()
+
+        val first = repository.createDurationNeighborListSetting(
+            minSizeBytes = 0L,
+            step = DurationNeighborListStep(toleranceMillis = 0L)
+        )
+        val second = repository.createDurationNeighborListSetting(
+            minSizeBytes = -1L,
+            step = DurationNeighborListStep(toleranceMillis = -1L)
+        )
+
+        assertEquals(first.settingId, second.settingId)
+        assertEquals(0L, second.minSizeBytes)
+        assertEquals(first.paramsHash, second.paramsHash)
     }
 
     @Test

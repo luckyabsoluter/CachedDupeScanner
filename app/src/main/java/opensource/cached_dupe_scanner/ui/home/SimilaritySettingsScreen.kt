@@ -1,9 +1,10 @@
 package opensource.cached_dupe_scanner.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,7 +39,13 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
+import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_TOLERANCE
+import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_EXACT_THUMBNAIL
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
+import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
+import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
@@ -46,6 +53,8 @@ import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
+import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
@@ -58,78 +67,23 @@ import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInp
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
 
-private enum class SimilaritySettingsPane {
-    List,
-    Create,
-    ExactThumbnail,
-    DurationTolerance,
-    DurationNeighbor,
-    SettingDetail,
-    ClusterDetail
-}
-
 @Composable
 fun SimilaritySettingsScreen(
     repository: SimilaritySettingsRepository,
-    appScope: CoroutineScope,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
     refreshVersion: Int,
-    onChanged: () -> Unit,
     onBack: () -> Unit,
+    onCreateSetting: () -> Unit,
+    onOpenMaintenance: () -> Unit,
+    onOpenSetting: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
     val settings = remember { mutableStateListOf<SimilaritySettingEntity>() }
     val clustersBySetting = remember { mutableStateMapOf<Long, List<SimilarityClusterEntity>>() }
-    val selectedClusterMembers = remember { mutableStateListOf<SimilarityClusterMember>() }
-    var pane by remember { mutableStateOf(SimilaritySettingsPane.List) }
-    var selectedSettingId by remember { mutableStateOf<Long?>(null) }
-    var selectedCluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
-    var memberLoading by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("No similarity maintenance running.") }
-    var minSizeInput by remember { mutableStateOf("100") }
-    var minSizeUnit by remember { mutableStateOf(SimilaritySizeUnit.MB) }
-    var mediaScope by remember { mutableStateOf(SimilarityMediaScope.Video) }
-    var frameSecondsInput by remember { mutableStateOf("0,1,10") }
-    var resizeWidthInput by remember { mutableStateOf("1") }
-    var resizeHeightInput by remember { mutableStateOf("1") }
-    var quantizationEnabled by remember { mutableStateOf(true) }
-    var quantizationInput by remember { mutableStateOf("16") }
-    var grayscale by remember { mutableStateOf(false) }
-    var durationToleranceInput by remember { mutableStateOf("1") }
-    var durationToleranceUnit by remember { mutableStateOf(SimilarityTimeUnit.S) }
-    val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
-    val displayedStatus = activeTask?.detail ?: statusText
-    val selectedSetting = selectedSettingId?.let { id ->
-        settings.firstOrNull { setting -> setting.settingId == id }
-    }
-    val selectedSettingClusters = selectedSettingId
-        ?.let { id -> clustersBySetting[id].orEmpty() }
-        .orEmpty()
-    val minSizeBytes = parsedMinSizeBytes(minSizeInput, minSizeUnit)
-    val exactStep = parsedExactThumbnailStep(
-        frameSecondsInput = frameSecondsInput,
-        resizeWidthInput = resizeWidthInput,
-        resizeHeightInput = resizeHeightInput,
-        quantizationEnabled = quantizationEnabled,
-        quantizationInput = quantizationInput,
-        grayscale = grayscale
-    )
-    val durationToleranceStep = parsedDurationToleranceStep(
-        input = durationToleranceInput,
-        unit = durationToleranceUnit
-    )
-    val durationNeighborStep = parsedDurationNeighborListStep(
-        input = durationToleranceInput,
-        unit = durationToleranceUnit
-    )
 
-    fun refresh(preferredSettingId: Long? = selectedSettingId) {
+    fun refresh() {
         scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                repository.listSettings()
-            }
+            val loaded = withContext(Dispatchers.IO) { repository.listSettings() }
             val clusterRows = withContext(Dispatchers.IO) {
                 loaded.associate { setting ->
                     setting.settingId to repository.listClusters(setting.settingId)
@@ -139,139 +93,7 @@ fun SimilaritySettingsScreen(
             settings.addAll(loaded)
             clustersBySetting.clear()
             clustersBySetting.putAll(clusterRows)
-            if (preferredSettingId != null && loaded.none { setting -> setting.settingId == preferredSettingId }) {
-                selectedSettingId = null
-                selectedCluster = null
-                selectedClusterMembers.clear()
-                pane = SimilaritySettingsPane.List
-            }
         }
-    }
-
-    fun openListPane() {
-        pane = SimilaritySettingsPane.List
-        selectedSettingId = null
-        selectedCluster = null
-        selectedClusterMembers.clear()
-    }
-
-    fun openCreatePane() {
-        pane = SimilaritySettingsPane.Create
-        selectedSettingId = null
-        selectedCluster = null
-        selectedClusterMembers.clear()
-    }
-
-    fun openSetting(setting: SimilaritySettingEntity) {
-        selectedSettingId = setting.settingId
-        selectedCluster = null
-        selectedClusterMembers.clear()
-        pane = SimilaritySettingsPane.SettingDetail
-    }
-
-    fun openCluster(setting: SimilaritySettingEntity, cluster: SimilarityClusterEntity) {
-        selectedSettingId = setting.settingId
-        selectedCluster = cluster
-        selectedClusterMembers.clear()
-        memberLoading = true
-        pane = SimilaritySettingsPane.ClusterDetail
-        scope.launch {
-            val members = withContext(Dispatchers.IO) {
-                repository.listClusterMembers(cluster.clusterId)
-            }
-            selectedClusterMembers.clear()
-            selectedClusterMembers.addAll(members)
-            memberLoading = false
-        }
-    }
-
-    fun runMaintenance(settingId: Long?, rebuild: Boolean) {
-        val started = startSimilarityMaintenanceTask(
-            repository = repository,
-            settingId = settingId,
-            rebuild = rebuild,
-            scope = appScope,
-            taskCoordinator = taskCoordinator,
-            notificationController = notificationController,
-            onStatusText = { status -> statusText = status },
-            onFinished = {
-                onChanged()
-                refresh(settingId)
-            }
-        )
-        if (!started) {
-            statusText = "Similarity maintenance is already running."
-        }
-    }
-
-    fun createExact() {
-        if (exactStep.frameSeconds.isEmpty()) {
-            statusText = "Add at least one frame timestamp."
-            return
-        }
-        scope.launch {
-            val created = withContext(Dispatchers.IO) {
-                repository.createExactThumbnailSetting(
-                    mediaScope = mediaScope,
-                    minSizeBytes = minSizeBytes,
-                    step = exactStep
-                )
-            }
-            onChanged()
-            selectedSettingId = created.settingId
-            pane = SimilaritySettingsPane.SettingDetail
-            refresh(created.settingId)
-        }
-    }
-
-    fun createDurationTolerance() {
-        scope.launch {
-            val created = withContext(Dispatchers.IO) {
-                repository.createDurationToleranceSetting(
-                    minSizeBytes = minSizeBytes,
-                    step = durationToleranceStep
-                )
-            }
-            onChanged()
-            selectedSettingId = created.settingId
-            pane = SimilaritySettingsPane.SettingDetail
-            refresh(created.settingId)
-        }
-    }
-
-    fun createDurationNeighbor() {
-        scope.launch {
-            val created = withContext(Dispatchers.IO) {
-                repository.createDurationNeighborListSetting(
-                    minSizeBytes = minSizeBytes,
-                    step = durationNeighborStep
-                )
-            }
-            onChanged()
-            selectedSettingId = created.settingId
-            pane = SimilaritySettingsPane.SettingDetail
-            refresh(created.settingId)
-        }
-    }
-
-    fun detailBack() {
-        when (pane) {
-            SimilaritySettingsPane.List -> onBack()
-            SimilaritySettingsPane.Create -> openListPane()
-            SimilaritySettingsPane.ExactThumbnail,
-            SimilaritySettingsPane.DurationTolerance,
-            SimilaritySettingsPane.DurationNeighbor -> pane = SimilaritySettingsPane.Create
-            SimilaritySettingsPane.SettingDetail -> openListPane()
-            SimilaritySettingsPane.ClusterDetail -> {
-                selectedCluster = null
-                selectedClusterMembers.clear()
-                pane = SimilaritySettingsPane.SettingDetail
-            }
-        }
-    }
-
-    BackHandler(enabled = pane != SimilaritySettingsPane.List) {
-        detailBack()
     }
 
     LaunchedEffect(refreshVersion) {
@@ -282,266 +104,523 @@ fun SimilaritySettingsScreen(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        when (pane) {
-            SimilaritySettingsPane.List -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "Similarity settings",
-                        onBack = onBack
+        item(key = "top_bar") {
+            AppTopBar(
+                title = "Similarity settings",
+                onBack = onBack
+            )
+        }
+        item(key = "create_setting") {
+            Button(
+                onClick = onCreateSetting,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("New setting")
+            }
+        }
+        item(key = "maintenance") {
+            OutlinedButton(
+                onClick = onOpenMaintenance,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Maintenance")
+            }
+        }
+        item(key = "settings_header") {
+            SimilaritySettingsHeader(hasSettings = settings.isNotEmpty())
+        }
+        settings.forEach { setting ->
+            item(key = "setting:${setting.settingId}") {
+                SimilaritySettingListCard(
+                    setting = setting,
+                    clusterCount = clustersBySetting[setting.settingId].orEmpty().size,
+                    fileCount = clustersBySetting[setting.settingId].orEmpty().sumOf { cluster -> cluster.fileCount },
+                    onOpen = { onOpenSetting(setting.settingId) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SimilarityMaintenanceScreen(
+    repository: SimilaritySettingsRepository,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onChanged: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var statusText by remember { mutableStateOf("No similarity maintenance running.") }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
+    val displayedStatus = activeTask?.detail ?: statusText
+    fun runMaintenance(rebuild: Boolean) {
+        val started = startSimilarityMaintenanceTask(
+            repository = repository,
+            settingId = null,
+            rebuild = rebuild,
+            scope = appScope,
+            taskCoordinator = taskCoordinator,
+            notificationController = notificationController,
+            onStatusText = { status -> statusText = status },
+            onFinished = { onChanged() }
+        )
+        if (!started) {
+            statusText = "Similarity maintenance is already running."
+        }
+    }
+    fun clearAllResults() {
+        confirmClearAll = false
+        appScope.launch {
+            withContext(Dispatchers.IO) { repository.clearAllResults() }
+            statusText = "All generated similarity data was cleared."
+            onChanged()
+        }
+    }
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = "Similarity maintenance",
+                onBack = onBack
+            )
+        }
+        item(key = "maintenance") {
+            SimilarityMaintenanceCard(
+                statusText = displayedStatus,
+                running = activeTask != null,
+                onRunEnabled = { runMaintenance(rebuild = false) },
+                onRebuildEnabled = { runMaintenance(rebuild = true) },
+                onClearAll = { confirmClearAll = true }
+            )
+        }
+    }
+    if (confirmClearAll) {
+        ConfirmationDialog(
+            title = "Clear all similarity data?",
+            text = "Generated similarity groups, member links, and method features will be removed. Configured settings stay available.",
+            confirmText = "Clear",
+            onConfirm = ::clearAllResults,
+            onDismissRequest = { confirmClearAll = false },
+            confirmEnabled = activeTask == null,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
+        )
+    }
+}
+
+@Composable
+fun SimilaritySettingCreateScreen(
+    onBack: () -> Unit,
+    onOpenExactThumbnail: () -> Unit,
+    onOpenDurationTolerance: () -> Unit,
+    onOpenDurationNeighbor: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = "New similarity setting",
+                onBack = onBack
+            )
+        }
+        item(key = "create_header") {
+            Text(
+                text = "Choose setting type",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        item(key = "method_exact") {
+            SimilarityMethodCard(
+                title = "Exact thumbnail",
+                description = "Groups video or image candidates by the same configured reduced thumbnail signature.",
+                onOpen = onOpenExactThumbnail
+            )
+        }
+        item(key = "method_duration") {
+            SimilarityMethodCard(
+                title = "Duration tolerance",
+                description = "Groups video candidates whose durations fit within one tolerance window.",
+                onOpen = onOpenDurationTolerance
+            )
+        }
+        item(key = "method_neighbor") {
+            SimilarityMethodCard(
+                title = "Duration neighbor list",
+                description = "Builds a duration-sorted video list and keeps neighbors inside the configured tolerance.",
+                onOpen = onOpenDurationNeighbor
+            )
+        }
+    }
+}
+
+@Composable
+fun SimilarityExactThumbnailSettingScreen(
+    repository: SimilaritySettingsRepository,
+    onChanged: () -> Unit,
+    onCreated: (Long) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var statusText by remember { mutableStateOf("Ready to create setting.") }
+    val draft = rememberSimilaritySettingDraftState()
+    val exactStep = parsedExactThumbnailStep(
+        frameSecondsInput = draft.frameSecondsInput,
+        resizeWidthInput = draft.resizeWidthInput,
+        resizeHeightInput = draft.resizeHeightInput,
+        quantizationEnabled = draft.quantizationEnabled,
+        quantizationInput = draft.quantizationInput,
+        grayscale = draft.grayscale
+    )
+    fun createExact() {
+        scope.launch {
+            val created = withContext(Dispatchers.IO) {
+                repository.createExactThumbnailSetting(
+                    mediaScope = draft.mediaScope,
+                    minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+                    step = exactStep
+                )
+            }
+            onChanged()
+            onCreated(created.settingId)
+        }
+    }
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = "Exact thumbnail setting",
+                onBack = onBack
+            )
+        }
+        item(key = "exact_form") {
+            ExactThumbnailSettingForm(
+                minSizeInput = draft.minSizeInput,
+                onMinSizeInputChange = { draft.minSizeInput = sanitizeNumberDraftInput(it) },
+                minSizeUnit = draft.minSizeUnit,
+                onMinSizeUnitChange = { draft.minSizeUnit = it },
+                mediaScope = draft.mediaScope,
+                onMediaScopeChange = { draft.mediaScope = it },
+                frameSecondsInput = draft.frameSecondsInput,
+                onFrameSecondsInputChange = { draft.frameSecondsInput = sanitizeFrameSecondsInput(it) },
+                resizeWidthInput = draft.resizeWidthInput,
+                onResizeWidthInputChange = { draft.resizeWidthInput = sanitizeNumberDraftInput(it) },
+                resizeHeightInput = draft.resizeHeightInput,
+                onResizeHeightInputChange = { draft.resizeHeightInput = sanitizeNumberDraftInput(it) },
+                quantizationEnabled = draft.quantizationEnabled,
+                onQuantizationEnabledChange = { draft.quantizationEnabled = it },
+                quantizationInput = draft.quantizationInput,
+                onQuantizationInputChange = { draft.quantizationInput = sanitizeNumberDraftInput(it) },
+                grayscale = draft.grayscale,
+                onGrayscaleChange = { draft.grayscale = it },
+                statusText = statusText,
+                onCreate = ::createExact
+            )
+        }
+    }
+}
+
+@Composable
+fun SimilarityDurationSettingScreen(
+    repository: SimilaritySettingsRepository,
+    neighborList: Boolean,
+    onChanged: () -> Unit,
+    onCreated: (Long) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var statusText by remember { mutableStateOf("Ready to create setting.") }
+    val draft = rememberSimilaritySettingDraftState()
+    fun createDuration() {
+        scope.launch {
+            val created = withContext(Dispatchers.IO) {
+                if (neighborList) {
+                    repository.createDurationNeighborListSetting(
+                        minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+                        step = parsedDurationNeighborListStep(draft.durationToleranceInput, draft.durationToleranceUnit)
                     )
-                }
-                item(key = "new_setting") {
-                    Button(
-                        onClick = ::openCreatePane,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("New setting")
-                    }
-                }
-                item(key = "maintenance") {
-                    SimilarityMaintenanceCard(
-                        statusText = displayedStatus,
-                        running = activeTask != null,
-                        onRunEnabled = { runMaintenance(settingId = null, rebuild = false) },
-                        onRebuildEnabled = { runMaintenance(settingId = null, rebuild = true) },
-                        onClearAll = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) { repository.clearAllResults() }
-                                onChanged()
-                                refresh()
-                            }
-                        }
+                } else {
+                    repository.createDurationToleranceSetting(
+                        minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+                        step = parsedDurationToleranceStep(draft.durationToleranceInput, draft.durationToleranceUnit)
                     )
-                }
-                item(key = "settings_header") {
-                    SimilaritySettingsHeader(hasSettings = settings.isNotEmpty())
-                }
-                settings.forEach { setting ->
-                    item(key = "setting:${setting.settingId}") {
-                        SimilaritySettingListCard(
-                            setting = setting,
-                            clusterCount = clustersBySetting[setting.settingId].orEmpty().size,
-                            fileCount = clustersBySetting[setting.settingId].orEmpty().sumOf { cluster -> cluster.fileCount },
-                            onOpen = { openSetting(setting) }
-                        )
-                    }
                 }
             }
-            SimilaritySettingsPane.Create -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "New similarity setting",
-                        onBack = ::openListPane
-                    )
-                }
-                item(key = "create_header") {
+            onChanged()
+            onCreated(created.settingId)
+        }
+    }
+    val title = if (neighborList) "Duration neighbor setting" else "Duration tolerance setting"
+    val description = if (neighborList) {
+        "Tolerance is the maximum duration gap between adjacent sorted videos. Isolated videos are omitted."
+    } else {
+        "Tolerance is the maximum duration gap inside one group. Use 0 for exact millisecond duration matches."
+    }
+    val buttonText = if (neighborList) "Create duration neighbor setting" else "Create duration tolerance setting"
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = title,
+                onBack = onBack
+            )
+        }
+        item(key = "duration_form") {
+            DurationSettingForm(
+                description = description,
+                buttonText = buttonText,
+                minSizeInput = draft.minSizeInput,
+                onMinSizeInputChange = { draft.minSizeInput = sanitizeNumberDraftInput(it) },
+                minSizeUnit = draft.minSizeUnit,
+                onMinSizeUnitChange = { draft.minSizeUnit = it },
+                toleranceInput = draft.durationToleranceInput,
+                onToleranceInputChange = { draft.durationToleranceInput = sanitizeNumberDraftInput(it) },
+                toleranceUnit = draft.durationToleranceUnit,
+                onToleranceUnitChange = { draft.durationToleranceUnit = it },
+                statusText = statusText,
+                onCreate = ::createDuration
+            )
+        }
+    }
+}
+
+@Composable
+fun SimilaritySettingDetailScreen(
+    repository: SimilaritySettingsRepository,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    settingId: Long,
+    refreshVersion: Int,
+    onChanged: () -> Unit,
+    onBack: () -> Unit,
+    onOpenCluster: (Long, Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
+    val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    var statusText by remember { mutableStateOf("No similarity maintenance running.") }
+    var confirmClearSetting by remember { mutableStateOf(false) }
+    val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
+    val displayedStatus = activeTask?.detail ?: statusText
+    fun refresh() {
+        scope.launch {
+            val loadedSetting = withContext(Dispatchers.IO) {
+                repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+            }
+            val loadedClusters = withContext(Dispatchers.IO) { repository.listClusters(settingId) }
+            setting = loadedSetting
+            clusters.clear()
+            clusters.addAll(loadedClusters)
+        }
+    }
+    fun runMaintenance(rebuild: Boolean) {
+        val started = startSimilarityMaintenanceTask(
+            repository = repository,
+            settingId = settingId,
+            rebuild = rebuild,
+            scope = appScope,
+            taskCoordinator = taskCoordinator,
+            notificationController = notificationController,
+            onStatusText = { status -> statusText = status },
+            onFinished = {
+                onChanged()
+                refresh()
+            }
+        )
+        if (!started) {
+            statusText = "Similarity maintenance is already running."
+        }
+    }
+    fun clearSettingResults() {
+        confirmClearSetting = false
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                repository.clearSettingResults(settingId)
+            }
+            statusText = "Generated similarity data was cleared for this setting."
+            onChanged()
+            refresh()
+        }
+    }
+
+    LaunchedEffect(settingId, refreshVersion) {
+        refresh()
+    }
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = setting?.displayName ?: "Similarity setting",
+                onBack = onBack
+            )
+        }
+        val selectedSetting = setting
+        if (selectedSetting == null) {
+            item(key = "missing_setting") {
+                MissingSelectionCard(
+                    message = "This similarity setting is no longer available.",
+                    onBack = onBack
+                )
+            }
+        } else {
+            item(key = "setting_detail") {
+                SimilaritySettingDetailCard(
+                    setting = selectedSetting,
+                    clusterCount = clusters.size,
+                    fileCount = clusters.sumOf { cluster -> cluster.fileCount },
+                    statusText = displayedStatus,
+                    running = activeTask != null,
+                    onToggle = { enabled ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                repository.setEnabled(settingId, enabled)
+                            }
+                            onChanged()
+                            refresh()
+                        }
+                    },
+                    onRun = { runMaintenance(rebuild = false) },
+                    onRebuild = { runMaintenance(rebuild = true) },
+                    onClear = { confirmClearSetting = true }
+                )
+            }
+            item(key = "cluster_header") {
+                SimilarityGroupsHeader(
+                    clusterCount = clusters.size,
+                    fileCount = clusters.sumOf { cluster -> cluster.fileCount }
+                )
+            }
+            if (clusters.isEmpty()) {
+                item(key = "clusters_empty") {
                     Text(
-                        text = "Choose setting type",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                item(key = "method_exact") {
-                    SimilarityMethodCard(
-                        title = "Exact thumbnail",
-                        description = "Groups video or image candidates by the same configured reduced thumbnail signature.",
-                        onOpen = { pane = SimilaritySettingsPane.ExactThumbnail }
-                    )
-                }
-                item(key = "method_duration") {
-                    SimilarityMethodCard(
-                        title = "Duration tolerance",
-                        description = "Groups video candidates whose durations fit within one tolerance window.",
-                        onOpen = { pane = SimilaritySettingsPane.DurationTolerance }
-                    )
-                }
-                item(key = "method_neighbor") {
-                    SimilarityMethodCard(
-                        title = "Duration neighbor list",
-                        description = "Builds a duration-sorted video list and keeps neighbors inside the configured tolerance.",
-                        onOpen = { pane = SimilaritySettingsPane.DurationNeighbor }
+                        text = "No similarity groups found for this setting.",
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
-            SimilaritySettingsPane.ExactThumbnail -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "Exact thumbnail setting",
-                        onBack = { pane = SimilaritySettingsPane.Create }
+            clusters.forEach { cluster ->
+                item(key = "cluster:${cluster.clusterId}") {
+                    SimilarityClusterListCard(
+                        cluster = cluster,
+                        onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
                     )
-                }
-                item(key = "exact_form") {
-                    ExactThumbnailSettingForm(
-                        minSizeInput = minSizeInput,
-                        onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                        minSizeUnit = minSizeUnit,
-                        onMinSizeUnitChange = { minSizeUnit = it },
-                        mediaScope = mediaScope,
-                        onMediaScopeChange = { mediaScope = it },
-                        frameSecondsInput = frameSecondsInput,
-                        onFrameSecondsInputChange = { frameSecondsInput = sanitizeFrameSecondsInput(it) },
-                        resizeWidthInput = resizeWidthInput,
-                        onResizeWidthInputChange = { resizeWidthInput = sanitizeNumberDraftInput(it) },
-                        resizeHeightInput = resizeHeightInput,
-                        onResizeHeightInputChange = { resizeHeightInput = sanitizeNumberDraftInput(it) },
-                        quantizationEnabled = quantizationEnabled,
-                        onQuantizationEnabledChange = { quantizationEnabled = it },
-                        quantizationInput = quantizationInput,
-                        onQuantizationInputChange = { quantizationInput = sanitizeNumberDraftInput(it) },
-                        grayscale = grayscale,
-                        onGrayscaleChange = { grayscale = it },
-                        statusText = displayedStatus,
-                        onCreate = ::createExact
-                    )
-                }
-            }
-            SimilaritySettingsPane.DurationTolerance -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "Duration tolerance setting",
-                        onBack = { pane = SimilaritySettingsPane.Create }
-                    )
-                }
-                item(key = "duration_form") {
-                    DurationSettingForm(
-                        description = "Tolerance is the maximum duration gap inside one group. Use 0 for exact millisecond duration matches.",
-                        buttonText = "Create duration tolerance setting",
-                        minSizeInput = minSizeInput,
-                        onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                        minSizeUnit = minSizeUnit,
-                        onMinSizeUnitChange = { minSizeUnit = it },
-                        toleranceInput = durationToleranceInput,
-                        onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
-                        toleranceUnit = durationToleranceUnit,
-                        onToleranceUnitChange = { durationToleranceUnit = it },
-                        statusText = displayedStatus,
-                        onCreate = ::createDurationTolerance
-                    )
-                }
-            }
-            SimilaritySettingsPane.DurationNeighbor -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "Duration neighbor setting",
-                        onBack = { pane = SimilaritySettingsPane.Create }
-                    )
-                }
-                item(key = "neighbor_form") {
-                    DurationSettingForm(
-                        description = "Tolerance is the maximum duration gap between adjacent sorted videos. Isolated videos are omitted.",
-                        buttonText = "Create duration neighbor setting",
-                        minSizeInput = minSizeInput,
-                        onMinSizeInputChange = { minSizeInput = sanitizeNumberDraftInput(it) },
-                        minSizeUnit = minSizeUnit,
-                        onMinSizeUnitChange = { minSizeUnit = it },
-                        toleranceInput = durationToleranceInput,
-                        onToleranceInputChange = { durationToleranceInput = sanitizeNumberDraftInput(it) },
-                        toleranceUnit = durationToleranceUnit,
-                        onToleranceUnitChange = { durationToleranceUnit = it },
-                        statusText = displayedStatus,
-                        onCreate = ::createDurationNeighbor
-                    )
-                }
-            }
-            SimilaritySettingsPane.SettingDetail -> {
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = selectedSetting?.displayName ?: "Similarity setting",
-                        onBack = ::openListPane
-                    )
-                }
-                if (selectedSetting == null) {
-                    item(key = "missing_setting") {
-                        MissingSelectionCard(
-                            message = "This similarity setting is no longer available.",
-                            onBack = ::openListPane
-                        )
-                    }
-                } else {
-                    item(key = "setting_detail") {
-                        SimilaritySettingDetailCard(
-                            setting = selectedSetting,
-                            clusterCount = selectedSettingClusters.size,
-                            fileCount = selectedSettingClusters.sumOf { cluster -> cluster.fileCount },
-                            statusText = displayedStatus,
-                            running = activeTask != null,
-                            onToggle = { enabled ->
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        repository.setEnabled(selectedSetting.settingId, enabled)
-                                    }
-                                    onChanged()
-                                    refresh(selectedSetting.settingId)
-                                }
-                            },
-                            onRun = { runMaintenance(selectedSetting.settingId, rebuild = false) },
-                            onRebuild = { runMaintenance(selectedSetting.settingId, rebuild = true) },
-                            onClear = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        repository.clearSettingResults(selectedSetting.settingId)
-                                    }
-                                    onChanged()
-                                    refresh(selectedSetting.settingId)
-                                }
-                            }
-                        )
-                    }
-                    item(key = "cluster_header") {
-                        SimilarityGroupsHeader(
-                            clusterCount = selectedSettingClusters.size,
-                            fileCount = selectedSettingClusters.sumOf { cluster -> cluster.fileCount }
-                        )
-                    }
-                    if (selectedSettingClusters.isEmpty()) {
-                        item(key = "clusters_empty") {
-                            Text(
-                                text = "No similarity groups found for this setting.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                    selectedSettingClusters.forEach { cluster ->
-                        item(key = "cluster:${cluster.clusterId}") {
-                            SimilarityClusterListCard(
-                                cluster = cluster,
-                                onOpenCluster = { openCluster(selectedSetting, cluster) }
-                            )
-                        }
-                    }
-                }
-            }
-            SimilaritySettingsPane.ClusterDetail -> {
-                val cluster = selectedCluster
-                item(key = "top_bar") {
-                    AppTopBar(
-                        title = "Similarity group",
-                        onBack = {
-                            selectedCluster = null
-                            selectedClusterMembers.clear()
-                            pane = SimilaritySettingsPane.SettingDetail
-                        }
-                    )
-                }
-                if (selectedSetting == null || cluster == null) {
-                    item(key = "missing_cluster") {
-                        MissingSelectionCard(
-                            message = "This similarity group is no longer available.",
-                            onBack = ::openListPane
-                        )
-                    }
-                } else {
-                    item(key = "cluster_detail") {
-                        SimilarityClusterDetailCard(
-                            setting = selectedSetting,
-                            cluster = cluster,
-                            members = selectedClusterMembers,
-                            loading = memberLoading
-                        )
-                    }
                 }
             }
         }
     }
+    if (confirmClearSetting) {
+        ConfirmationDialog(
+            title = "Clear this setting's results?",
+            text = "Generated groups and member links for this setting will be removed. The setting itself remains.",
+            confirmText = "Clear",
+            onConfirm = ::clearSettingResults,
+            onDismissRequest = { confirmClearSetting = false },
+            confirmEnabled = activeTask == null,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
+        )
+    }
+}
+
+@Composable
+fun SimilarityClusterDetailScreen(
+    repository: SimilaritySettingsRepository,
+    settingId: Long,
+    clusterId: Long,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
+    var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
+    val members = remember { mutableStateListOf<SimilarityClusterMember>() }
+    var memberLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(settingId, clusterId) {
+        memberLoading = true
+        val loadedSetting = withContext(Dispatchers.IO) {
+            repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+        }
+        val loadedCluster = withContext(Dispatchers.IO) {
+            repository.listClusters(settingId).firstOrNull { candidate -> candidate.clusterId == clusterId }
+        }
+        val loadedMembers = withContext(Dispatchers.IO) {
+            repository.listClusterMembers(clusterId)
+        }
+        setting = loadedSetting
+        cluster = loadedCluster
+        members.clear()
+        members.addAll(loadedMembers)
+        memberLoading = false
+    }
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = "Similarity group",
+                onBack = onBack
+            )
+        }
+        val selectedSetting = setting
+        val selectedCluster = cluster
+        if (selectedSetting == null || selectedCluster == null) {
+            item(key = "missing_cluster") {
+                MissingSelectionCard(
+                    message = "This similarity group is no longer available.",
+                    onBack = onBack
+                )
+            }
+        } else {
+            item(key = "cluster_detail") {
+                SimilarityClusterDetailCard(
+                    setting = selectedSetting,
+                    cluster = selectedCluster,
+                    members = members,
+                    loading = memberLoading
+                )
+            }
+        }
+    }
+}
+
+private class SimilaritySettingDraftState {
+    var minSizeInput by mutableStateOf("100")
+    var minSizeUnit by mutableStateOf(SimilaritySizeUnit.MB)
+    var mediaScope by mutableStateOf(SimilarityMediaScope.Video)
+    var frameSecondsInput by mutableStateOf("0,1,10")
+    var resizeWidthInput by mutableStateOf("1")
+    var resizeHeightInput by mutableStateOf("1")
+    var quantizationEnabled by mutableStateOf(true)
+    var quantizationInput by mutableStateOf("16")
+    var grayscale by mutableStateOf(false)
+    var durationToleranceInput by mutableStateOf("1")
+    var durationToleranceUnit by mutableStateOf(SimilarityTimeUnit.S)
+}
+
+@Composable
+private fun rememberSimilaritySettingDraftState(): SimilaritySettingDraftState {
+    return remember { SimilaritySettingDraftState() }
 }
 
 @Composable
@@ -658,6 +737,7 @@ private fun SimilarityMethodCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExactThumbnailSettingForm(
     minSizeInput: String,
@@ -694,7 +774,10 @@ private fun ExactThumbnailSettingForm(
                 onMinSizeUnitChange = onMinSizeUnitChange
             )
             Text(text = "Media scope", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 ChoiceButton(
                     label = "Video",
                     selected = mediaScope == SimilarityMediaScope.Video,
@@ -710,7 +793,7 @@ private fun ExactThumbnailSettingForm(
                 value = frameSecondsInput,
                 onValueChange = onFrameSecondsInputChange,
                 label = { Text("Frame seconds") },
-                supportingText = { Text("Parsed: ${parsedFrameSeconds(frameSecondsInput).joinToString(", ")}") },
+                supportingText = { Text("Effective: ${effectiveFrameSecondsText(frameSecondsInput)}") },
                 modifier = Modifier.fillMaxWidth()
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -753,6 +836,7 @@ private fun ExactThumbnailSettingForm(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DurationSettingForm(
     description: String,
@@ -782,13 +866,16 @@ private fun DurationSettingForm(
                 onMinSizeUnitChange = onMinSizeUnitChange
             )
             Text(text = "Tolerance", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = toleranceInput,
-                    onValueChange = onToleranceInputChange,
-                    label = { Text("Tolerance") },
-                    modifier = Modifier.weight(1f)
-                )
+            OutlinedTextField(
+                value = toleranceInput,
+                onValueChange = onToleranceInputChange,
+                label = { Text("Tolerance") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 SimilarityTimeUnit.entries.forEach { unit ->
                     ChoiceButton(
                         label = unit.label,
@@ -797,6 +884,10 @@ private fun DurationSettingForm(
                     )
                 }
             }
+            Text(
+                text = "Effective tolerance: ${formatMillis(parsedDurationToleranceStep(toleranceInput, toleranceUnit).toleranceMillis)}",
+                style = MaterialTheme.typography.bodySmall
+            )
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
                 Text(buttonText)
@@ -805,6 +896,7 @@ private fun DurationSettingForm(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SizeFloorControls(
     minSizeInput: String,
@@ -813,13 +905,16 @@ private fun SizeFloorControls(
     onMinSizeUnitChange: (SimilaritySizeUnit) -> Unit
 ) {
     Text(text = "Size floor", style = MaterialTheme.typography.labelMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = minSizeInput,
-            onValueChange = onMinSizeInputChange,
-            label = { Text("Min size") },
-            modifier = Modifier.weight(1f)
-        )
+    OutlinedTextField(
+        value = minSizeInput,
+        onValueChange = onMinSizeInputChange,
+        label = { Text("Min size") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         SimilaritySizeUnit.entries.forEach { unit ->
             ChoiceButton(
                 label = unit.label,
@@ -828,6 +923,10 @@ private fun SizeFloorControls(
             )
         }
     }
+    Text(
+        text = "Effective minimum: ${formatBytes(parsedMinSizeBytes(minSizeInput, minSizeUnit))}",
+        style = MaterialTheme.typography.bodySmall
+    )
 }
 
 @Composable
@@ -858,8 +957,8 @@ private fun SimilaritySettingDetailCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Switch(checked = setting.enabled, onCheckedChange = onToggle)
             }
-            Text(text = "Parameters: ${setting.paramsJson}", style = MaterialTheme.typography.bodySmall)
-            Text(text = "$clusterCount groups, $fileCount files", style = MaterialTheme.typography.bodySmall)
+            Text(text = settingParametersSummary(setting), style = MaterialTheme.typography.bodySmall)
+            Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onRun, enabled = !running) {
@@ -902,15 +1001,13 @@ private fun SimilarityClusterListCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = "${cluster.fileCount} files, total ${formatBytes(cluster.totalBytes)}",
+                text = "Similarity group with ${pluralize(cluster.fileCount, "file")}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = "Key ${cluster.clusterKey}",
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                text = "Total ${formatBytes(cluster.totalBytes)}",
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -928,13 +1025,13 @@ private fun SimilarityClusterDetailCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = setting.displayName, style = MaterialTheme.typography.titleMedium)
+            Text(text = "Similarity group", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = "${cluster.fileCount} files, total ${formatBytes(cluster.totalBytes)}",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
-                text = "Key ${cluster.clusterKey}",
+                text = settingParametersSummary(setting),
                 style = MaterialTheme.typography.bodySmall
             )
             if (loading) {
@@ -1015,4 +1112,44 @@ private fun ChoiceButton(
 
 private fun settingSummary(setting: SimilaritySettingEntity): String {
     return "${similarityMethodLabel(setting.methodId)} | ${setting.mediaScope} | Min ${formatBytes(setting.minSizeBytes)}"
+}
+
+private fun settingParametersSummary(setting: SimilaritySettingEntity): String {
+    return when (setting.methodId) {
+        SIMILARITY_METHOD_EXACT_THUMBNAIL -> {
+            val step = exactThumbnailStepFromParams(setting.paramsJson)
+            val frames = step.frameSeconds.joinToString(", ") { second -> "${second}s" }
+            val quantization = step.quantizationLevels?.let { levels -> "$levels levels" } ?: "off"
+            "Frames $frames | Size ${step.resizeWidthPx}x${step.resizeHeightPx} | Quantization $quantization | ${if (step.grayscale) "Grayscale" else "Color"}"
+        }
+        SIMILARITY_METHOD_DURATION_TOLERANCE -> {
+            val step = durationToleranceStepFromParams(setting.paramsJson)
+            "Duration window ${formatMillis(step.toleranceMillis)}"
+        }
+        SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST -> {
+            val step = durationNeighborListStepFromParams(setting.paramsJson)
+            "Neighbor gap ${formatMillis(step.toleranceMillis)}"
+        }
+        else -> "Custom parameters"
+    }
+}
+
+private fun resultSummary(clusterCount: Int, fileCount: Int): String {
+    return "${pluralize(clusterCount, "group")}, ${pluralize(fileCount, "file")}"
+}
+
+private fun effectiveFrameSecondsText(input: String): String {
+    return parsedFrameSeconds(input).ifEmpty { listOf(0) }.joinToString(", ")
+}
+
+private fun pluralize(count: Int, singular: String): String {
+    return "$count $singular${if (count == 1) "" else "s"}"
+}
+
+private fun formatMillis(millis: Long): String {
+    return when {
+        millis % 60_000L == 0L -> "${millis / 60_000L} min"
+        millis % 1_000L == 0L -> "${millis / 1_000L} s"
+        else -> "$millis ms"
+    }
 }

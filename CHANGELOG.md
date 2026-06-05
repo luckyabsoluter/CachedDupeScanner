@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Similarity settings management now separates setting creation, maintenance, per-setting management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
 - Similarity data now uses settings-based sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
 - Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
@@ -27,6 +28,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Fixed
 
 - Top-right checkbox menu items now stay open after toggling preview and path display options.
+- Similarity setting parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same setting rows.
+- Duration-neighbor similarity maintenance now builds connected neighbor clusters with stable normalized range keys.
 - Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
 - Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.
 - Lazy result and similarity detail selection now share one selection state contract, while eager-only detail content is explicitly separated from paged detail screens.

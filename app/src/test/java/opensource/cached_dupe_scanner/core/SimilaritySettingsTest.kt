@@ -5,7 +5,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class SimilaritySettingsTest {
     @Test
     fun exactThumbnailSettingIdentityChangesWithResize() {
@@ -78,6 +81,85 @@ class SimilaritySettingsTest {
             ),
             defaultSimilaritySettingDrafts().map { it.methodId }
         )
+    }
+
+    @Test
+    fun exactThumbnailSettingIdentityNormalizesEquivalentInputs() {
+        val normalized = exactThumbnailSettingDraft(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 0L,
+            step = ExactThumbnailHashStep(
+                frameSeconds = listOf(0, 2),
+                resizeWidthPx = 1,
+                resizeHeightPx = 1,
+                quantizationLevels = 2,
+                grayscale = false
+            )
+        )
+        val unnormalized = exactThumbnailSettingDraft(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = -10L,
+            step = ExactThumbnailHashStep(
+                frameSeconds = listOf(-3, 0, 2, 2),
+                resizeWidthPx = 0,
+                resizeHeightPx = -4,
+                quantizationLevels = 1,
+                grayscale = false
+            )
+        )
+
+        assertEquals(normalized.minSizeBytes, unnormalized.minSizeBytes)
+        assertEquals(normalized.paramsJson, unnormalized.paramsJson)
+        assertEquals(normalized.paramsHash, unnormalized.paramsHash)
+    }
+
+    @Test
+    fun durationSettingIdentityNormalizesNegativeValues() {
+        val normalizedTolerance = durationToleranceSettingDraft(
+            minSizeBytes = 0L,
+            step = DurationToleranceStep(toleranceMillis = 0L)
+        )
+        val unnormalizedTolerance = durationToleranceSettingDraft(
+            minSizeBytes = -1L,
+            step = DurationToleranceStep(toleranceMillis = -1L)
+        )
+        val normalizedNeighbor = durationNeighborListSettingDraft(
+            minSizeBytes = 0L,
+            step = DurationNeighborListStep(toleranceMillis = 0L)
+        )
+        val unnormalizedNeighbor = durationNeighborListSettingDraft(
+            minSizeBytes = -1L,
+            step = DurationNeighborListStep(toleranceMillis = -1L)
+        )
+
+        assertEquals(normalizedTolerance.minSizeBytes, unnormalizedTolerance.minSizeBytes)
+        assertEquals(normalizedTolerance.paramsJson, unnormalizedTolerance.paramsJson)
+        assertEquals(normalizedTolerance.paramsHash, unnormalizedTolerance.paramsHash)
+        assertEquals(normalizedNeighbor.minSizeBytes, unnormalizedNeighbor.minSizeBytes)
+        assertEquals(normalizedNeighbor.paramsJson, unnormalizedNeighbor.paramsJson)
+        assertEquals(normalizedNeighbor.paramsHash, unnormalizedNeighbor.paramsHash)
+    }
+
+    @Test
+    fun paramsParsingNormalizesStoredValues() {
+        val exact = exactThumbnailStepFromParams(
+            "{" +
+                "\"frameSeconds\":[-1,0,0]," +
+                "\"resizeWidthPx\":0," +
+                "\"resizeHeightPx\":-3," +
+                "\"quantizationLevels\":1," +
+                "\"grayscale\":true" +
+                "}"
+        )
+        val tolerance = durationToleranceStepFromParams("{\"toleranceMillis\":-1}")
+        val neighbor = durationNeighborListStepFromParams("{\"toleranceMillis\":-1}")
+
+        assertEquals(listOf(0), exact.frameSeconds)
+        assertEquals(1, exact.resizeWidthPx)
+        assertEquals(1, exact.resizeHeightPx)
+        assertEquals(2, exact.quantizationLevels)
+        assertEquals(0L, tolerance.toleranceMillis)
+        assertEquals(0L, neighbor.toleranceMillis)
     }
 
     @Test

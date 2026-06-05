@@ -3,6 +3,9 @@ package opensource.cached_dupe_scanner.ui.home.similarity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
+import opensource.cached_dupe_scanner.core.normalizedDurationNeighborListStep
+import opensource.cached_dupe_scanner.core.normalizedDurationToleranceStep
+import opensource.cached_dupe_scanner.core.normalizedExactThumbnailHashStep
 
 internal enum class SimilaritySizeUnit(
     val label: String,
@@ -54,16 +57,14 @@ internal fun parsedExactThumbnailStep(
     quantizationInput: String,
     grayscale: Boolean
 ): ExactThumbnailHashStep {
-    return ExactThumbnailHashStep(
-        frameSeconds = parsedFrameSeconds(frameSecondsInput),
-        resizeWidthPx = (resizeWidthInput.toIntOrNull() ?: 1).coerceAtLeast(1),
-        resizeHeightPx = (resizeHeightInput.toIntOrNull() ?: 1).coerceAtLeast(1),
-        quantizationLevels = if (quantizationEnabled) {
-            (quantizationInput.toIntOrNull() ?: 16).coerceAtLeast(2)
-        } else {
-            null
-        },
-        grayscale = grayscale
+    return normalizedExactThumbnailHashStep(
+        ExactThumbnailHashStep(
+            frameSeconds = parsedFrameSeconds(frameSecondsInput),
+            resizeWidthPx = resizeWidthInput.toIntOrNull() ?: 1,
+            resizeHeightPx = resizeHeightInput.toIntOrNull() ?: 1,
+            quantizationLevels = if (quantizationEnabled) quantizationInput.toIntOrNull() ?: 16 else null,
+            grayscale = grayscale
+        )
     )
 }
 
@@ -71,10 +72,12 @@ internal fun parsedDurationToleranceStep(
     input: String,
     unit: SimilarityTimeUnit = SimilarityTimeUnit.S
 ): DurationToleranceStep {
-    return DurationToleranceStep(
-        toleranceMillis = parsedDurationMillis(
-            input = input,
-            unit = unit
+    return normalizedDurationToleranceStep(
+        DurationToleranceStep(
+            toleranceMillis = parsedDurationMillis(
+                input = input,
+                unit = unit
+            )
         )
     )
 }
@@ -83,10 +86,12 @@ internal fun parsedDurationNeighborListStep(
     input: String,
     unit: SimilarityTimeUnit = SimilarityTimeUnit.S
 ): DurationNeighborListStep {
-    return DurationNeighborListStep(
-        toleranceMillis = parsedDurationMillis(
-            input = input,
-            unit = unit
+    return normalizedDurationNeighborListStep(
+        DurationNeighborListStep(
+            toleranceMillis = parsedDurationMillis(
+                input = input,
+                unit = unit
+            )
         )
     )
 }

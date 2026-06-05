@@ -16,6 +16,10 @@ data class SimilaritySettingDraft(
     val displayName: String
 )
 
+fun normalizedSimilarityMinSizeBytes(minSizeBytes: Long): Long {
+    return minSizeBytes.coerceAtLeast(0L)
+}
+
 enum class SimilarityMediaScope {
     Video,
     Image;
@@ -103,11 +107,13 @@ fun exactThumbnailSettingDraft(
     step: ExactThumbnailHashStep,
     displayName: String = "${mediaScope.name} exact thumbnail ${step.resizeWidthPx}x${step.resizeHeightPx}"
 ): SimilaritySettingDraft {
-    val paramsJson = exactThumbnailParamsJson(step)
+    val normalizedMinSizeBytes = normalizedSimilarityMinSizeBytes(minSizeBytes)
+    val normalizedStep = normalizedExactThumbnailHashStep(step)
+    val paramsJson = exactThumbnailParamsJson(normalizedStep)
     return SimilaritySettingDraft(
         methodId = SIMILARITY_METHOD_EXACT_THUMBNAIL,
         mediaScope = mediaScope,
-        minSizeBytes = minSizeBytes,
+        minSizeBytes = normalizedMinSizeBytes,
         paramsJson = paramsJson,
         paramsHash = similarityParamsHash(paramsJson),
         displayName = displayName
@@ -119,11 +125,13 @@ fun durationToleranceSettingDraft(
     step: DurationToleranceStep,
     displayName: String = "Video duration tolerance ${durationStepLabel(step.toleranceMillis)}"
 ): SimilaritySettingDraft {
-    val paramsJson = durationParamsJson(step.toleranceMillis)
+    val normalizedMinSizeBytes = normalizedSimilarityMinSizeBytes(minSizeBytes)
+    val normalizedStep = normalizedDurationToleranceStep(step)
+    val paramsJson = durationParamsJson(normalizedStep.toleranceMillis)
     return SimilaritySettingDraft(
         methodId = SIMILARITY_METHOD_DURATION_TOLERANCE,
         mediaScope = SimilarityMediaScope.Video,
-        minSizeBytes = minSizeBytes,
+        minSizeBytes = normalizedMinSizeBytes,
         paramsJson = paramsJson,
         paramsHash = similarityParamsHash(paramsJson),
         displayName = displayName
@@ -135,11 +143,13 @@ fun durationNeighborListSettingDraft(
     step: DurationNeighborListStep,
     displayName: String = "Video duration neighbor list ${durationStepLabel(step.toleranceMillis)}"
 ): SimilaritySettingDraft {
-    val paramsJson = durationParamsJson(step.toleranceMillis)
+    val normalizedMinSizeBytes = normalizedSimilarityMinSizeBytes(minSizeBytes)
+    val normalizedStep = normalizedDurationNeighborListStep(step)
+    val paramsJson = durationParamsJson(normalizedStep.toleranceMillis)
     return SimilaritySettingDraft(
         methodId = SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST,
         mediaScope = SimilarityMediaScope.Video,
-        minSizeBytes = minSizeBytes,
+        minSizeBytes = normalizedMinSizeBytes,
         paramsJson = paramsJson,
         paramsHash = similarityParamsHash(paramsJson),
         displayName = displayName
@@ -155,21 +165,23 @@ fun exactThumbnailStepFromParams(paramsJson: String): ExactThumbnailHashStep {
     } else {
         obj.getInt("quantizationLevels")
     }
-    return ExactThumbnailHashStep(
-        frameSeconds = frameSeconds,
-        resizeWidthPx = obj.getInt("resizeWidthPx"),
-        resizeHeightPx = obj.getInt("resizeHeightPx"),
-        quantizationLevels = quantization,
-        grayscale = obj.getBoolean("grayscale")
+    return normalizedExactThumbnailHashStep(
+        ExactThumbnailHashStep(
+            frameSeconds = frameSeconds,
+            resizeWidthPx = obj.getInt("resizeWidthPx"),
+            resizeHeightPx = obj.getInt("resizeHeightPx"),
+            quantizationLevels = quantization,
+            grayscale = obj.getBoolean("grayscale")
+        )
     )
 }
 
 fun durationToleranceStepFromParams(paramsJson: String): DurationToleranceStep {
-    return DurationToleranceStep(JSONObject(paramsJson).getLong("toleranceMillis"))
+    return normalizedDurationToleranceStep(DurationToleranceStep(JSONObject(paramsJson).getLong("toleranceMillis")))
 }
 
 fun durationNeighborListStepFromParams(paramsJson: String): DurationNeighborListStep {
-    return DurationNeighborListStep(JSONObject(paramsJson).getLong("toleranceMillis"))
+    return normalizedDurationNeighborListStep(DurationNeighborListStep(JSONObject(paramsJson).getLong("toleranceMillis")))
 }
 
 fun buildDurationToleranceSignature(
@@ -195,11 +207,32 @@ fun buildDurationNeighborListSignature(
 }
 
 fun durationToleranceMillis(step: DurationToleranceStep): Long {
-    return step.toleranceMillis.coerceAtLeast(0L)
+    return normalizedDurationToleranceStep(step).toleranceMillis
 }
 
 fun durationNeighborToleranceMillis(step: DurationNeighborListStep): Long {
-    return step.toleranceMillis.coerceAtLeast(0L)
+    return normalizedDurationNeighborListStep(step).toleranceMillis
+}
+
+fun normalizedExactThumbnailHashStep(step: ExactThumbnailHashStep): ExactThumbnailHashStep {
+    return ExactThumbnailHashStep(
+        frameSeconds = step.frameSeconds
+            .map { second -> second.coerceAtLeast(0) }
+            .distinct()
+            .ifEmpty { listOf(0) },
+        resizeWidthPx = step.resizeWidthPx.coerceAtLeast(1),
+        resizeHeightPx = step.resizeHeightPx.coerceAtLeast(1),
+        quantizationLevels = step.quantizationLevels?.coerceAtLeast(2),
+        grayscale = step.grayscale
+    )
+}
+
+fun normalizedDurationToleranceStep(step: DurationToleranceStep): DurationToleranceStep {
+    return DurationToleranceStep(step.toleranceMillis.coerceAtLeast(0L))
+}
+
+fun normalizedDurationNeighborListStep(step: DurationNeighborListStep): DurationNeighborListStep {
+    return DurationNeighborListStep(step.toleranceMillis.coerceAtLeast(0L))
 }
 
 fun similarityMethodLabel(methodId: String): String {
