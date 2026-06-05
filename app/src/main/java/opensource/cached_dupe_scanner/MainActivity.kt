@@ -514,6 +514,10 @@ class MainActivity : ComponentActivity() {
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                rememberedPreviewCache = rememberedThumbnailCache,
+                                showFullPaths = settingsSnapshot.showFullPaths,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onChanged = { similarityRefreshVersion.value += 1 },
@@ -533,6 +537,24 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.SimilarityClusterDetail -> SimilarityClusterDetailScreen(
                                 repository = similarityRepo,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                rememberedPreviewCache = rememberedThumbnailCache,
+                                showFullPaths = settingsSnapshot.showFullPaths,
+                                deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
+                                        return@SimilarityClusterDetailScreen false
+                                    }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                        refreshSimilarityFromCache()
+                                    }
+                                    ok
+                                },
                                 settingId = screen.settingId,
                                 clusterId = screen.clusterId,
                                 onBack = { pop(backStack) },

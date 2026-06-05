@@ -19,6 +19,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Similarity settings management now separates setting creation, maintenance, per-setting management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
+- Similarity settings group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
 - Similarity data now uses settings-based sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
 - Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.

@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,9 +11,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -29,9 +32,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.ImageLoader
+import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,6 +74,9 @@ import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
+
+private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 4
+private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
 
 @Composable
 fun SimilaritySettingsScreen(
@@ -405,6 +416,10 @@ fun SimilaritySettingDetailScreen(
     appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    showFullPaths: Boolean,
     settingId: Long,
     refreshVersion: Int,
     onChanged: () -> Unit,
@@ -413,6 +428,9 @@ fun SimilaritySettingDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val imageLoader = rememberSimilarityImageLoader(context)
+    val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     var statusText by remember { mutableStateOf("No similarity maintenance running.") }
@@ -521,7 +539,13 @@ fun SimilaritySettingDetailScreen(
             clusters.forEach { cluster ->
                 item(key = "cluster:${cluster.clusterId}") {
                     SimilarityClusterListCard(
+                        repository = repository,
                         cluster = cluster,
+                        imageLoader = imageLoader,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        previewThumbnailSize = previewThumbnailSize,
+                        showFullPaths = showFullPaths,
                         onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
                     )
                 }
@@ -544,15 +568,47 @@ fun SimilaritySettingDetailScreen(
 @Composable
 fun SimilarityClusterDetailScreen(
     repository: SimilaritySettingsRepository,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    showFullPaths: Boolean,
+    deletedPaths: Set<String>,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     settingId: Long,
     clusterId: Long,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val imageLoader = rememberSimilarityImageLoader(context)
+    val memberThumbnailSize = 64.dp * thumbnailSizeScale.coerceAtLeast(0f)
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
     val members = remember { mutableStateListOf<SimilarityClusterMember>() }
     var memberLoading by remember { mutableStateOf(false) }
+    var memberOffset by remember { mutableStateOf(0) }
+    var membersExhausted by remember { mutableStateOf(false) }
+    var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
+
+    fun loadMoreMembers() {
+        if (memberLoading || membersExhausted) return
+        memberLoading = true
+        scope.launch {
+            val nextMembers = withContext(Dispatchers.IO) {
+                repository.listClusterMembersPage(
+                    clusterId = clusterId,
+                    offset = memberOffset,
+                    limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                )
+            }
+            members.addAll(nextMembers)
+            memberOffset += nextMembers.size
+            membersExhausted = nextMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
+                memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
+            memberLoading = false
+        }
+    }
 
     LaunchedEffect(settingId, clusterId) {
         memberLoading = true
@@ -562,13 +618,20 @@ fun SimilarityClusterDetailScreen(
         val loadedCluster = withContext(Dispatchers.IO) {
             repository.listClusters(settingId).firstOrNull { candidate -> candidate.clusterId == clusterId }
         }
-        val loadedMembers = withContext(Dispatchers.IO) {
-            repository.listClusterMembers(clusterId)
+        val firstMembers = withContext(Dispatchers.IO) {
+            repository.listClusterMembersPage(
+                clusterId = clusterId,
+                offset = 0,
+                limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+            )
         }
         setting = loadedSetting
         cluster = loadedCluster
         members.clear()
-        members.addAll(loadedMembers)
+        members.addAll(firstMembers)
+        memberOffset = firstMembers.size
+        membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
+            firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
         memberLoading = false
     }
 
@@ -592,15 +655,70 @@ fun SimilarityClusterDetailScreen(
                 )
             }
         } else {
-            item(key = "cluster_detail") {
-                SimilarityClusterDetailCard(
+            item(key = "cluster_summary") {
+                SimilarityClusterSummaryCard(
                     setting = selectedSetting,
-                    cluster = selectedCluster,
-                    members = members,
+                    cluster = selectedCluster
+                )
+            }
+            item(key = "members_header") {
+                SimilarityMembersHeader(
+                    loadedCount = members.size,
+                    totalCount = selectedCluster.fileCount,
                     loading = memberLoading
                 )
             }
+            members.forEachIndexed { index, member ->
+                item(key = "member:${member.metadata.normalizedPath}") {
+                    SimilarityMemberCard(
+                        index = index + 1,
+                        metadata = member.metadata,
+                        deleted = deletedPaths.contains(member.metadata.normalizedPath),
+                        imageLoader = imageLoader,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        thumbnailSize = memberThumbnailSize,
+                        showFullPath = showFullPaths,
+                        onOpen = { selectedFile = member.metadata }
+                    )
+                }
+            }
+            if (memberLoading) {
+                item(key = "members_loading") {
+                    Text(text = "Loading members...", style = MaterialTheme.typography.bodySmall)
+                }
+            } else if (!membersExhausted) {
+                item(key = "members_more") {
+                    OutlinedButton(
+                        onClick = ::loadMoreMembers,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Load more members")
+                    }
+                }
+            } else if (members.isEmpty()) {
+                item(key = "members_empty") {
+                    Text(text = "No active members.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
+    }
+    selectedFile?.let { file ->
+        FileDetailsDialogWithDeleteConfirm(
+            file = file,
+            showName = true,
+            onOpen = { openFile(context, file.normalizedPath) },
+            onDelete = {
+                val handler = onDeleteFile ?: return@FileDetailsDialogWithDeleteConfirm false
+                handler(file)
+            },
+            onDeleteResult = { deleted ->
+                if (deleted) {
+                    selectedFile = null
+                }
+            },
+            onDismiss = { selectedFile = null }
+        )
     }
 }
 
@@ -621,6 +739,15 @@ private class SimilaritySettingDraftState {
 @Composable
 private fun rememberSimilaritySettingDraftState(): SimilaritySettingDraftState {
     return remember { SimilaritySettingDraftState() }
+}
+
+@Composable
+private fun rememberSimilarityImageLoader(context: Context): ImageLoader {
+    return remember(context) {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
 }
 
 @Composable
@@ -987,38 +1114,106 @@ private fun SimilarityGroupsHeader(clusterCount: Int, fileCount: Int) {
 }
 
 @Composable
+private fun SimilarityClusterMemberPreviewLines(
+    members: List<FileMetadata>,
+    showFullPaths: Boolean
+) {
+    members
+        .take(SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT)
+        .chunked(2)
+        .forEach { row ->
+            Text(
+                text = row.joinToString("  •  ") { file ->
+                    formatPath(file.normalizedPath, showFullPaths)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+}
+
+@Composable
 private fun SimilarityClusterListCard(
+    repository: SimilaritySettingsRepository,
     cluster: SimilarityClusterEntity,
+    imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    keepLoadedThumbnailsInMemory: Boolean,
+    previewThumbnailSize: Dp,
+    showFullPaths: Boolean,
     onOpenCluster: () -> Unit
 ) {
+    val previewMembers = remember(cluster.clusterId) { mutableStateListOf<SimilarityClusterMember>() }
+    var previewLoading by remember(cluster.clusterId) { mutableStateOf(false) }
+
+    LaunchedEffect(cluster.clusterId) {
+        previewLoading = true
+        val loadedMembers = withContext(Dispatchers.IO) {
+            repository.listClusterMembersPage(
+                clusterId = cluster.clusterId,
+                offset = 0,
+                limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT
+            )
+        }
+        previewMembers.clear()
+        previewMembers.addAll(loadedMembers)
+        previewLoading = false
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpenCluster)
     ) {
-        Column(
+        Row(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = "Similarity group with ${pluralize(cluster.fileCount, "file")}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
+            GroupPreviewThumbnail(
+                candidatePaths = previewMembers.map { member -> member.metadata.normalizedPath },
+                previewMemoryKey = "similarity-cluster-preview:${cluster.clusterId}",
+                rememberedPreviewCache = rememberedPreviewCache,
+                imageLoader = imageLoader,
+                keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                modifier = Modifier.size(previewThumbnailSize),
+                contentDescription = "Similarity group preview"
             )
-            Text(
-                text = "Total ${formatBytes(cluster.totalBytes)}",
-                style = MaterialTheme.typography.bodySmall
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Similarity group with ${pluralize(cluster.fileCount, "file")}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Total ${formatBytes(cluster.totalBytes)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (previewLoading && previewMembers.isEmpty()) {
+                    Text(text = "Loading preview members...", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    SimilarityClusterMemberPreviewLines(
+                        members = previewMembers.map { member -> member.metadata },
+                        showFullPaths = showFullPaths
+                    )
+                    val remaining = (cluster.fileCount - previewMembers.size).coerceAtLeast(0)
+                    if (remaining > 0) {
+                        Text(text = "+${remaining} more", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SimilarityClusterDetailCard(
+private fun SimilarityClusterSummaryCard(
     setting: SimilaritySettingEntity,
-    cluster: SimilarityClusterEntity,
-    members: List<SimilarityClusterMember>,
-    loading: Boolean
+    cluster: SimilarityClusterEntity
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1034,32 +1229,87 @@ private fun SimilarityClusterDetailCard(
                 text = settingParametersSummary(setting),
                 style = MaterialTheme.typography.bodySmall
             )
-            if (loading) {
-                Text(text = "Loading members...", style = MaterialTheme.typography.bodySmall)
-            } else if (members.isEmpty()) {
-                Text(text = "No active members.", style = MaterialTheme.typography.bodySmall)
-            } else {
-                members.forEachIndexed { index, member ->
-                    SimilarityMemberRow(index = index + 1, metadata = member.metadata)
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun SimilarityMemberRow(index: Int, metadata: FileMetadata) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+private fun SimilarityMembersHeader(
+    loadedCount: Int,
+    totalCount: Int,
+    loading: Boolean
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = "Members", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = "$index. ${metadata.path.ifBlank { metadata.normalizedPath }}",
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            text = if (loading && loadedCount == 0) {
+                "Loading 0/$totalCount files"
+            } else {
+                "Loaded ${loadedCount.coerceAtMost(totalCount)}/$totalCount files"
+            },
+            style = MaterialTheme.typography.bodySmall
         )
-        Text(
-            text = "${formatBytes(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
-            style = MaterialTheme.typography.labelSmall
-        )
+    }
+}
+
+@Composable
+private fun SimilarityMemberCard(
+    index: Int,
+    metadata: FileMetadata,
+    deleted: Boolean,
+    imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSize: Dp,
+    showFullPath: Boolean,
+    onOpen: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+        colors = if (deleted) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GroupPreviewThumbnail(
+                candidatePaths = listOf(metadata.normalizedPath),
+                previewMemoryKey = "similarity-member:${metadata.normalizedPath}",
+                rememberedPreviewCache = rememberedPreviewCache,
+                imageLoader = imageLoader,
+                keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                modifier = Modifier.size(thumbnailSize),
+                contentDescription = "Member thumbnail"
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "$index. ${formatPath(metadata.normalizedPath, showFullPath)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${formatBytes(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (deleted) {
+                    Text(text = "Deleted in this session", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
 

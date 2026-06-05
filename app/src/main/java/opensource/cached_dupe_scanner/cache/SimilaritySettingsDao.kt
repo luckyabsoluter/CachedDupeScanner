@@ -200,6 +200,28 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            file.sizeBytes AS sizeBytes,
+            file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashHex AS hashHex
+        FROM similarity_cluster_members AS member
+        INNER JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+        ORDER BY member.position ASC, file.normalizedPath ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listActiveClusterMembersPage(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
             feature.normalizedPath AS normalizedPath,
             feature.thumbnailSignature AS thumbnailSignature,
             file.sizeBytes AS sizeBytes

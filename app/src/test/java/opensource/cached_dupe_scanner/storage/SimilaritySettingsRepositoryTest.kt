@@ -241,6 +241,41 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(setting.settingId, repository.listSettings().first { it.settingId == setting.settingId }.settingId)
     }
 
+    @Test
+    fun clusterMembersCanBeLoadedByPage() {
+        val first = videoFile("page-a.mp4")
+        val second = videoFile("page-b.mp4")
+        val third = videoFile("page-c.mp4")
+        listOf(first, second, third).forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same",
+                third.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+        val cluster = repository.listClusters(setting.settingId).single()
+
+        val firstPage = repository.listClusterMembersPage(cluster.clusterId, offset = 0, limit = 2)
+        val secondPage = repository.listClusterMembersPage(cluster.clusterId, offset = 2, limit = 2)
+
+        assertEquals(
+            listOf(first, second).map { file -> file.normalizedPath() },
+            firstPage.map { member -> member.metadata.normalizedPath }
+        )
+        assertEquals(
+            listOf(third).map { file -> file.normalizedPath() },
+            secondPage.map { member -> member.metadata.normalizedPath }
+        )
+    }
+
     private fun repository(
         signatures: Map<String, String> = emptyMap(),
         durations: Map<String, Long> = emptyMap()

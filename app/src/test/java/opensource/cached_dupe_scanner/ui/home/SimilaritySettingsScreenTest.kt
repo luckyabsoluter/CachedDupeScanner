@@ -37,11 +37,14 @@ class SimilaritySettingsScreenTest {
     fun similaritySettingsScreenShowsClusterMembers() {
         val content = sourceText("SimilaritySettingsScreen.kt")
 
-        assertTrue(content.contains("repository.listClusterMembers(clusterId)"))
-        assertTrue(content.contains("SimilarityClusterDetailCard("))
-        assertTrue(content.contains("SimilarityMemberRow("))
+        assertTrue(content.contains("repository.listClusterMembersPage("))
+        assertTrue(content.contains("SimilarityClusterSummaryCard("))
+        assertTrue(content.contains("SimilarityMemberCard("))
+        assertTrue(content.contains("GroupPreviewThumbnail("))
+        assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
         assertTrue(content.contains("onOpenCluster"))
         assertFalse(content.contains("clusters.take("))
+        assertFalse(content.contains("repository.listClusterMembers(clusterId)"))
     }
 
     @Test

@@ -193,6 +193,20 @@ class SimilaritySettingsRepository(
         }
     }
 
+    fun listClusterMembersPage(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMember> {
+        return similarityDao.listActiveClusterMembersPage(
+            clusterId = clusterId,
+            offset = offset.coerceAtLeast(0),
+            limit = limit.coerceAtLeast(0)
+        ).map { row ->
+            SimilarityClusterMember(metadata = row.toFileMetadata())
+        }
+    }
+
     fun runEnabledMaintenance(
         rebuild: Boolean,
         shouldContinue: () -> Boolean,
