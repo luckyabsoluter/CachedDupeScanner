@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,6 +69,7 @@ import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
+import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
@@ -83,6 +85,11 @@ import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintena
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 4
 private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
 private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
+
+internal enum class SimilarityClusterSortKey(val label: String) {
+    FileCount("File count"),
+    TotalSize("Total size")
+}
 
 @Composable
 fun SimilaritySettingsScreen(
@@ -439,10 +446,17 @@ fun SimilaritySettingDetailScreen(
     val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    var clusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
+    var clusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
     var statusText by remember { mutableStateOf("No similarity maintenance running.") }
     var confirmClearSetting by remember { mutableStateOf(false) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
     val displayedStatus = activeTask?.detail ?: statusText
+    val displayedClusters = sortSimilarityClusters(
+        clusters = clusters,
+        sortKey = clusterSortKey,
+        direction = clusterSortDirection
+    )
     fun refresh() {
         scope.launch {
             val loadedSetting = withContext(Dispatchers.IO) {
@@ -531,7 +545,14 @@ fun SimilaritySettingDetailScreen(
             item(key = "cluster_header") {
                 SimilarityGroupsHeader(
                     clusterCount = clusters.size,
-                    fileCount = clusters.sumOf { cluster -> cluster.fileCount }
+                    fileCount = clusters.sumOf { cluster -> cluster.fileCount },
+                    sortKey = clusterSortKey,
+                    sortDirection = clusterSortDirection,
+                    sortEnabled = clusters.isNotEmpty(),
+                    onApplySort = { key, direction ->
+                        clusterSortKey = key
+                        clusterSortDirection = direction
+                    }
                 )
             }
             if (clusters.isEmpty()) {
@@ -542,7 +563,7 @@ fun SimilaritySettingDetailScreen(
                     )
                 }
             }
-            clusters.forEach { cluster ->
+            displayedClusters.forEach { cluster ->
                 item(key = "cluster:${cluster.clusterId}") {
                     SimilarityClusterListCard(
                         repository = repository,
@@ -1152,13 +1173,109 @@ private fun SimilaritySettingDetailCard(
 }
 
 @Composable
-private fun SimilarityGroupsHeader(clusterCount: Int, fileCount: Int) {
-    Column(
+private fun SimilarityGroupsHeader(
+    clusterCount: Int,
+    fileCount: Int,
+    sortKey: SimilarityClusterSortKey,
+    sortDirection: SortDirection,
+    sortEnabled: Boolean,
+    onApplySort: (SimilarityClusterSortKey, SortDirection) -> Unit
+) {
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
-        Text(text = "$clusterCount groups, $fileCount files", style = MaterialTheme.typography.bodySmall)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
+            Text(text = "$clusterCount groups, $fileCount files", style = MaterialTheme.typography.bodySmall)
+        }
+        SimilarityClusterSortButton(
+            sortKey = sortKey,
+            sortDirection = sortDirection,
+            enabled = sortEnabled,
+            onApplySort = onApplySort
+        )
+    }
+}
+
+@Composable
+private fun SimilarityClusterSortButton(
+    sortKey: SimilarityClusterSortKey,
+    sortDirection: SortDirection,
+    enabled: Boolean,
+    onApplySort: (SimilarityClusterSortKey, SortDirection) -> Unit
+) {
+    var dialogOpen by remember { mutableStateOf(false) }
+    var pendingSortKey by remember { mutableStateOf(sortKey) }
+    var pendingSortDirection by remember { mutableStateOf(sortDirection) }
+
+    OutlinedButton(
+        enabled = enabled,
+        onClick = {
+            pendingSortKey = sortKey
+            pendingSortDirection = sortDirection
+            dialogOpen = true
+        }
+    ) {
+        Text("Sort")
+    }
+
+    if (dialogOpen) {
+        AlertDialog(
+            onDismissRequest = { dialogOpen = false },
+            title = { Text("Cluster sort options") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Sort by")
+                    RadioOptionRow(
+                        option = SimilarityClusterSortKey.FileCount,
+                        selected = pendingSortKey,
+                        label = SimilarityClusterSortKey.FileCount.label,
+                        onSelect = { pendingSortKey = it }
+                    )
+                    RadioOptionRow(
+                        option = SimilarityClusterSortKey.TotalSize,
+                        selected = pendingSortKey,
+                        label = SimilarityClusterSortKey.TotalSize.label,
+                        onSelect = { pendingSortKey = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Direction")
+                    RadioOptionRow(
+                        option = SortDirection.Desc,
+                        selected = pendingSortDirection,
+                        label = SortDirection.Desc.label,
+                        onSelect = { pendingSortDirection = it }
+                    )
+                    RadioOptionRow(
+                        option = SortDirection.Asc,
+                        selected = pendingSortDirection,
+                        label = SortDirection.Asc.label,
+                        onSelect = { pendingSortDirection = it }
+                    )
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        onApplySort(pendingSortKey, pendingSortDirection)
+                        dialogOpen = false
+                    }
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { dialogOpen = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -1458,6 +1575,35 @@ internal fun shouldTriggerSimilarityMemberAutoLoad(
     if (lastVisibleItemIndex < 0 || totalItemsCount <= 0) return false
     val remainingItems = (totalItemsCount - 1 - lastVisibleItemIndex).coerceAtLeast(0)
     return remainingItems <= thresholdItems.coerceAtLeast(0)
+}
+
+internal fun sortSimilarityClusters(
+    clusters: List<SimilarityClusterEntity>,
+    sortKey: SimilarityClusterSortKey,
+    direction: SortDirection
+): List<SimilarityClusterEntity> {
+    return clusters.sortedWith { left, right ->
+        val primary = when (sortKey) {
+            SimilarityClusterSortKey.FileCount -> compareValues(left.fileCount, right.fileCount)
+            SimilarityClusterSortKey.TotalSize -> compareValues(left.totalBytes, right.totalBytes)
+        }
+        val secondary = when (sortKey) {
+            SimilarityClusterSortKey.FileCount -> compareValues(left.totalBytes, right.totalBytes)
+            SimilarityClusterSortKey.TotalSize -> compareValues(left.fileCount, right.fileCount)
+        }
+        val sortedComparison = if (primary != 0) primary else secondary
+        val directedComparison = if (direction == SortDirection.Asc) {
+            sortedComparison
+        } else {
+            -sortedComparison
+        }
+
+        if (directedComparison != 0) {
+            directedComparison
+        } else {
+            left.clusterKey.compareTo(right.clusterKey)
+        }
+    }
 }
 
 private fun resultSummary(clusterCount: Int, fileCount: Int): String {

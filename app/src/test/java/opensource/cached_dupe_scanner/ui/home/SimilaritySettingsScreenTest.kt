@@ -1,6 +1,9 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import java.io.File
+import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.core.SortDirection
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,6 +45,8 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("SimilarityMemberCard("))
         assertTrue(content.contains("GroupPreviewThumbnail("))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
+        assertTrue(content.contains("SimilarityClusterSortButton("))
+        assertTrue(content.contains("sortSimilarityClusters("))
         assertTrue(content.contains("GroupMemberSortButton("))
         assertTrue(content.contains("sortGroupMembers("))
         assertTrue(content.contains("shouldTriggerSimilarityMemberAutoLoad("))
@@ -60,6 +65,32 @@ class SimilaritySettingsScreenTest {
         assertFalse(content.contains("Key \${cluster.clusterKey}"))
         assertFalse(content.contains("durationMillis"))
         assertFalse(content.contains("thumbnailSignature"))
+    }
+
+    @Test
+    fun similarityClustersSortByFileCountAndTotalSize() {
+        val clusters = listOf(
+            cluster(key = "small", fileCount = 2, totalBytes = 500L),
+            cluster(key = "large", fileCount = 3, totalBytes = 300L),
+            cluster(key = "huge", fileCount = 2, totalBytes = 900L)
+        )
+
+        assertEquals(
+            listOf("large", "huge", "small"),
+            sortSimilarityClusters(
+                clusters = clusters,
+                sortKey = SimilarityClusterSortKey.FileCount,
+                direction = SortDirection.Desc
+            ).map { it.clusterKey }
+        )
+        assertEquals(
+            listOf("large", "small", "huge"),
+            sortSimilarityClusters(
+                clusters = clusters,
+                sortKey = SimilarityClusterSortKey.TotalSize,
+                direction = SortDirection.Asc
+            ).map { it.clusterKey }
+        )
     }
 
     @Test
@@ -99,6 +130,20 @@ class SimilaritySettingsScreenTest {
                 isLoading = false,
                 isComplete = true
             )
+        )
+    }
+
+    private fun cluster(
+        key: String,
+        fileCount: Int,
+        totalBytes: Long
+    ): SimilarityClusterEntity {
+        return SimilarityClusterEntity(
+            settingId = 1L,
+            clusterKey = key,
+            fileCount = fileCount,
+            totalBytes = totalBytes,
+            updatedAtMillis = 0L
         )
     }
 
