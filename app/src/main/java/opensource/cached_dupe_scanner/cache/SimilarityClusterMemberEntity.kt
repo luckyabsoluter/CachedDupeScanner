@@ -28,5 +28,6 @@ data class SimilarityClusterMemberFileRow(
     val path: String,
     val sizeBytes: Long,
     val lastModifiedMillis: Long,
-    val hashHex: String?
+    val hashHex: String?,
+    val durationMillis: Long?
 )

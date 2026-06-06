@@ -2,7 +2,9 @@ package opensource.cached_dupe_scanner.ui.home
 
 import java.io.File
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,6 +51,8 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("sortSimilarityClusters("))
         assertTrue(content.contains("GroupMemberSortButton("))
         assertTrue(content.contains("sortGroupMembers("))
+        assertTrue(content.contains("DurationNeighborSortDirectionCard("))
+        assertTrue(content.contains("sortSimilarityClusterMembers("))
         assertTrue(content.contains("shouldTriggerSimilarityMemberAutoLoad("))
         assertTrue(content.contains("listState = memberListState"))
         assertTrue(content.contains("rememberLazyDetailSelectionState("))
@@ -70,7 +74,6 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("settingParametersSummary(setting)"))
         assertFalse(content.contains("Parameters: \${setting.paramsJson}"))
         assertFalse(content.contains("Key \${cluster.clusterKey}"))
-        assertFalse(content.contains("durationMillis"))
         assertFalse(content.contains("thumbnailSignature"))
     }
 
@@ -97,6 +100,36 @@ class SimilaritySettingsScreenTest {
                 sortKey = SimilarityClusterSortKey.TotalSize,
                 direction = SortDirection.Asc
             ).map { it.clusterKey }
+        )
+    }
+
+    @Test
+    fun similarityClusterMembersSortByDurationForDurationNeighborMode() {
+        val members = listOf(
+            member(path = "b.mp4", durationMillis = 20_000L),
+            member(path = "a.mp4", durationMillis = 10_000L),
+            member(path = "c.mp4", durationMillis = 15_000L)
+        )
+
+        assertEquals(
+            listOf("a.mp4", "c.mp4", "b.mp4"),
+            sortSimilarityClusterMembers(
+                members = members,
+                durationNeighborMode = true,
+                durationDirection = SortDirection.Asc,
+                sortKey = ResultGroupMemberSortKey.Path,
+                sortDirection = SortDirection.Asc
+            ).map { member -> member.metadata.normalizedPath }
+        )
+        assertEquals(
+            listOf("b.mp4", "c.mp4", "a.mp4"),
+            sortSimilarityClusterMembers(
+                members = members,
+                durationNeighborMode = true,
+                durationDirection = SortDirection.Desc,
+                sortKey = ResultGroupMemberSortKey.Path,
+                sortDirection = SortDirection.Asc
+            ).map { member -> member.metadata.normalizedPath }
         )
     }
 
@@ -151,6 +184,18 @@ class SimilaritySettingsScreenTest {
             fileCount = fileCount,
             totalBytes = totalBytes,
             updatedAtMillis = 0L
+        )
+    }
+
+    private fun member(path: String, durationMillis: Long): SimilarityClusterMember {
+        return SimilarityClusterMember(
+            metadata = FileMetadata(
+                path = path,
+                normalizedPath = path,
+                sizeBytes = 1L,
+                lastModifiedMillis = 0L
+            ),
+            durationMillis = durationMillis
         )
     }
 

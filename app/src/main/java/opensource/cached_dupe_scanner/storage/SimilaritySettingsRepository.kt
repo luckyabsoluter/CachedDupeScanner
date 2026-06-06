@@ -23,6 +23,7 @@ import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_TOLERANCE
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_EXACT_THUMBNAIL
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SimilaritySettingDraft
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.buildDurationNeighborListSignature
@@ -59,7 +60,8 @@ data class SimilarityMaintenanceSummary(
 )
 
 data class SimilarityClusterMember(
-    val metadata: FileMetadata
+    val metadata: FileMetadata,
+    val durationMillis: Long? = null
 )
 
 class SimilaritySettingsRepository(
@@ -189,21 +191,33 @@ class SimilaritySettingsRepository(
 
     fun listClusterMembers(clusterId: Long): List<SimilarityClusterMember> {
         return similarityDao.listActiveClusterMembers(clusterId).map { row ->
-            SimilarityClusterMember(metadata = row.toFileMetadata())
+            row.toClusterMember()
         }
     }
 
     fun listClusterMembersPage(
         clusterId: Long,
         offset: Int,
-        limit: Int
+        limit: Int,
+        direction: SortDirection = SortDirection.Asc
     ): List<SimilarityClusterMember> {
-        return similarityDao.listActiveClusterMembersPage(
-            clusterId = clusterId,
-            offset = offset.coerceAtLeast(0),
-            limit = limit.coerceAtLeast(0)
-        ).map { row ->
-            SimilarityClusterMember(metadata = row.toFileMetadata())
+        val safeOffset = offset.coerceAtLeast(0)
+        val safeLimit = limit.coerceAtLeast(0)
+        val rows = if (direction == SortDirection.Desc) {
+            similarityDao.listActiveClusterMembersPageDescending(
+                clusterId = clusterId,
+                offset = safeOffset,
+                limit = safeLimit
+            )
+        } else {
+            similarityDao.listActiveClusterMembersPage(
+                clusterId = clusterId,
+                offset = safeOffset,
+                limit = safeLimit
+            )
+        }
+        return rows.map { row ->
+            row.toClusterMember()
         }
     }
 
@@ -772,6 +786,13 @@ private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {
         sizeBytes = sizeBytes,
         lastModifiedMillis = lastModifiedMillis,
         hashHex = hashHex
+    )
+}
+
+private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterMember {
+    return SimilarityClusterMember(
+        metadata = toFileMetadata(),
+        durationMillis = durationMillis
     )
 }
 

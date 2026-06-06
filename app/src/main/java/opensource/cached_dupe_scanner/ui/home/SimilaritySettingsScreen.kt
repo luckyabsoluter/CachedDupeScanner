@@ -637,6 +637,7 @@ fun SimilarityClusterDetailScreen(
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
     var memberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
     var memberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var durationMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var previewMenuExpanded by remember { mutableStateOf(false) }
     var showVideoPreviews by remember { mutableStateOf(false) }
     var showVideoPreviewDurations by remember { mutableStateOf(false) }
@@ -646,15 +647,25 @@ fun SimilarityClusterDetailScreen(
     var isDeletingSelected by remember(clusterId) { mutableStateOf(false) }
     var deleteSelectedMessage by remember(clusterId) { mutableStateOf<String?>(null) }
 
-    fun loadMoreMembers() {
+    fun isDurationNeighborSetting(): Boolean {
+        return setting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
+    }
+
+    fun loadMoreMembers(directionOverride: SortDirection? = null) {
         if (memberLoading || membersExhausted) return
         memberLoading = true
+        val pageDirection = if (isDurationNeighborSetting()) {
+            directionOverride ?: durationMemberSortDirection
+        } else {
+            SortDirection.Asc
+        }
         scope.launch {
             val nextMembers = withContext(Dispatchers.IO) {
                 repository.listClusterMembersPage(
                     clusterId = clusterId,
                     offset = memberOffset,
-                    limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                    limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
+                    direction = pageDirection
                 )
             }
             members.addAll(nextMembers)
@@ -663,6 +674,17 @@ fun SimilarityClusterDetailScreen(
                 memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
             memberLoading = false
         }
+    }
+
+    fun applyDurationMemberSortDirection(direction: SortDirection) {
+        if (durationMemberSortDirection == direction || memberLoading) return
+        durationMemberSortDirection = direction
+        members.clear()
+        memberOffset = 0
+        membersExhausted = false
+        selectedFile = null
+        selectionState.clear()
+        loadMoreMembers(directionOverride = direction)
     }
 
     LaunchedEffect(settingId, clusterId) {
@@ -683,7 +705,12 @@ fun SimilarityClusterDetailScreen(
             repository.listClusterMembersPage(
                 clusterId = clusterId,
                 offset = 0,
-                limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE
+                limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
+                direction = if (loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST) {
+                    durationMemberSortDirection
+                } else {
+                    SortDirection.Asc
+                }
             )
         }
         setting = loadedSetting
@@ -718,17 +745,21 @@ fun SimilarityClusterDetailScreen(
             }
     }
 
-    val displayedMembers = sortGroupMembers(
-        members = members.map { member -> member.metadata },
+    val durationNeighborMode = setting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
+    val displayedMembers = sortSimilarityClusterMembers(
+        members = members,
+        durationNeighborMode = durationNeighborMode,
+        durationDirection = durationMemberSortDirection,
         sortKey = memberSortKey,
-        direction = memberSortDirection
+        sortDirection = memberSortDirection
     )
+    val displayedFiles = displayedMembers.map { member -> member.metadata }
     val hasVideoMembers = members.any { member -> isVideoFile(member.metadata.normalizedPath) }
     val selectionMode = selectionState.isSelectionMode
 
     LaunchedEffect(displayedMembers, deletedPaths) {
         selectionState.filterPartialSelectionToLoadedMembers(
-            members = displayedMembers,
+            members = displayedFiles,
             deletedPaths = deletedPaths
         )
     }
@@ -813,6 +844,7 @@ fun SimilarityClusterDetailScreen(
                     loadedCount = members.size,
                     totalCount = selectedCluster.fileCount,
                     loading = memberLoading,
+                    sortEnabled = !durationNeighborMode,
                     sortKey = memberSortKey,
                     sortDirection = memberSortDirection,
                     onApplySort = { key, direction ->
@@ -820,6 +852,15 @@ fun SimilarityClusterDetailScreen(
                         memberSortDirection = direction
                     }
                 )
+            }
+            if (durationNeighborMode) {
+                item(key = "duration_member_sort") {
+                    DurationNeighborSortDirectionCard(
+                        direction = durationMemberSortDirection,
+                        enabled = !memberLoading,
+                        onDirectionChange = ::applyDurationMemberSortDirection
+                    )
+                }
             }
             if (selectionMode) {
                 item(key = "selection_controls") {
@@ -846,7 +887,8 @@ fun SimilarityClusterDetailScreen(
                     )
                 }
             }
-            displayedMembers.forEachIndexed { index, metadata ->
+            displayedMembers.forEachIndexed { index, member ->
+                val metadata = member.metadata
                 item(key = "member:${metadata.normalizedPath}") {
                     val isDeleted = deletedPaths.contains(metadata.normalizedPath)
                     SimilarityMemberCard(
@@ -867,6 +909,7 @@ fun SimilarityClusterDetailScreen(
                         showVideoPreviews = showVideoPreviews,
                         showVideoPreviewDurations = showVideoPreviewDurations,
                         showVideoPreviewResolutions = showVideoPreviewResolutions,
+                        durationMillis = member.durationMillis,
                         showFullPath = showFullPaths,
                         onOpen = { selectedFile = metadata },
                         onToggleSelection = {
@@ -918,7 +961,7 @@ fun SimilarityClusterDetailScreen(
     }
     if (confirmDeleteSelected) {
         val loadedTargets = selectionState.selectedLoadedFilesForDelete(
-            members = displayedMembers,
+            members = displayedFiles,
             deletedPaths = deletedPaths
         )
         val selectedCountLabel = if (selectionState.isSelectAllMode) {
@@ -987,7 +1030,7 @@ fun SimilarityClusterDetailScreen(
                                 collected
                             } else {
                                 selectedFilesForDelete(
-                                    members = displayedMembers,
+                                    members = displayedFiles,
                                     selectedPaths = selectedPathsSnapshot,
                                     deletedPaths = deletedPathsSnapshot
                                 )
@@ -1644,6 +1687,7 @@ private fun SimilarityMembersHeader(
     loadedCount: Int,
     totalCount: Int,
     loading: Boolean,
+    sortEnabled: Boolean,
     sortKey: ResultGroupMemberSortKey,
     sortDirection: SortDirection,
     onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
@@ -1667,11 +1711,52 @@ private fun SimilarityMembersHeader(
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        GroupMemberSortButton(
-            sortKey = sortKey,
-            sortDirection = sortDirection,
-            onApplySort = onApplySort
-        )
+        if (sortEnabled) {
+            GroupMemberSortButton(
+                sortKey = sortKey,
+                sortDirection = sortDirection,
+                onApplySort = onApplySort
+            )
+        }
+    }
+}
+
+@Composable
+private fun DurationNeighborSortDirectionCard(
+    direction: SortDirection,
+    enabled: Boolean,
+    onDirectionChange: (SortDirection) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = "Duration order", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Sort members by extracted video duration.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RadioOptionRow(
+                    option = SortDirection.Asc,
+                    selected = direction,
+                    label = "Ascending",
+                    onSelect = { selectedDirection ->
+                        if (enabled) onDirectionChange(selectedDirection)
+                    }
+                )
+                RadioOptionRow(
+                    option = SortDirection.Desc,
+                    selected = direction,
+                    label = "Descending",
+                    onSelect = { selectedDirection ->
+                        if (enabled) onDirectionChange(selectedDirection)
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -1739,6 +1824,7 @@ private fun SimilarityMemberCard(
     showVideoPreviews: Boolean,
     showVideoPreviewDurations: Boolean,
     showVideoPreviewResolutions: Boolean,
+    durationMillis: Long?,
     showFullPath: Boolean,
     onOpen: () -> Unit,
     onToggleSelection: () -> Unit
@@ -1798,6 +1884,13 @@ private fun SimilarityMemberCard(
                     text = "${formatBytes(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
                     style = MaterialTheme.typography.bodySmall
                 )
+                durationMillis?.let { value ->
+                    Text(
+                        text = "Duration ${formatMillis(value)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (
                     isVideo &&
                     !deleted &&
@@ -1942,6 +2035,33 @@ internal fun sortSimilarityClusters(
             left.clusterKey.compareTo(right.clusterKey)
         }
     }
+}
+
+internal fun sortSimilarityClusterMembers(
+    members: List<SimilarityClusterMember>,
+    durationNeighborMode: Boolean,
+    durationDirection: SortDirection,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection
+): List<SimilarityClusterMember> {
+    if (durationNeighborMode) {
+        val comparator = compareBy<SimilarityClusterMember>(
+            { member -> member.durationMillis ?: Long.MAX_VALUE },
+            { member -> member.metadata.normalizedPath }
+        )
+        return if (durationDirection == SortDirection.Asc) {
+            members.sortedWith(comparator)
+        } else {
+            members.sortedWith(comparator.reversed())
+        }
+    }
+
+    val memberByPath = members.associateBy { member -> member.metadata.normalizedPath }
+    return sortGroupMembers(
+        members = members.map { member -> member.metadata },
+        sortKey = sortKey,
+        direction = sortDirection
+    ).mapNotNull { metadata -> memberByPath[metadata.normalizedPath] }
 }
 
 private fun resultSummary(clusterCount: Int, fileCount: Int): String {

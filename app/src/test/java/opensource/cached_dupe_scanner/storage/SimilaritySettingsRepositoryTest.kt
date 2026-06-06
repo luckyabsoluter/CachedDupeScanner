@@ -11,6 +11,7 @@ import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
+import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import org.junit.After
@@ -187,13 +188,25 @@ class SimilaritySettingsRepositoryTest {
 
         val summary = repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
         val cluster = repository.listClusters(setting.settingId).single()
-        val members = repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata.normalizedPath }
+        val memberRows = repository.listClusterMembers(cluster.clusterId)
+        val members = memberRows.map { member -> member.metadata.normalizedPath }
+        val descendingPage = repository.listClusterMembersPage(
+            clusterId = cluster.clusterId,
+            offset = 0,
+            limit = 2,
+            direction = SortDirection.Desc
+        )
 
         assertEquals(1, summary.clusterCount)
         assertEquals("duration-neighbor-list-v1:1000:0000000010000-0000000011400", cluster.clusterKey)
         assertEquals(
             listOf(first, second, third).map { file -> file.normalizedPath() },
             members
+        )
+        assertEquals(listOf(10_000L, 10_500L, 11_400L), memberRows.map { member -> member.durationMillis })
+        assertEquals(
+            listOf(third, second).map { file -> file.normalizedPath() },
+            descendingPage.map { member -> member.metadata.normalizedPath }
         )
     }
 
