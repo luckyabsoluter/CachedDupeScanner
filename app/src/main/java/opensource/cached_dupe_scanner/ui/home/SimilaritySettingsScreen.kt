@@ -1,7 +1,11 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -14,10 +18,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -596,8 +607,13 @@ fun SimilaritySettingDetailScreen(
 fun SimilarityClusterDetailScreen(
     repository: SimilaritySettingsRepository,
     keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
     thumbnailSizeScale: Float,
+    videoPreviewSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     showFullPaths: Boolean,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
@@ -610,6 +626,7 @@ fun SimilarityClusterDetailScreen(
     val scope = rememberCoroutineScope()
     val imageLoader = rememberSimilarityImageLoader(context)
     val memberThumbnailSize = 64.dp * thumbnailSizeScale.coerceAtLeast(0f)
+    val videoPreviewFrameHeight = 44.dp * videoPreviewSizeScale.coerceAtLeast(0f)
     val memberListState = rememberLazyListState()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
@@ -620,6 +637,14 @@ fun SimilarityClusterDetailScreen(
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
     var memberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
     var memberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var previewMenuExpanded by remember { mutableStateOf(false) }
+    var showVideoPreviews by remember { mutableStateOf(false) }
+    var showVideoPreviewDurations by remember { mutableStateOf(false) }
+    var showVideoPreviewResolutions by remember { mutableStateOf(false) }
+    val selectionState = rememberLazyDetailSelectionState("similarity-cluster:$clusterId")
+    var confirmDeleteSelected by remember(clusterId) { mutableStateOf(false) }
+    var isDeletingSelected by remember(clusterId) { mutableStateOf(false) }
+    var deleteSelectedMessage by remember(clusterId) { mutableStateOf<String?>(null) }
 
     fun loadMoreMembers() {
         if (memberLoading || membersExhausted) return
@@ -647,6 +672,7 @@ fun SimilarityClusterDetailScreen(
         members.clear()
         memberOffset = 0
         membersExhausted = false
+        selectionState.clear()
         val loadedSetting = withContext(Dispatchers.IO) {
             repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
         }
@@ -697,6 +723,20 @@ fun SimilarityClusterDetailScreen(
         sortKey = memberSortKey,
         direction = memberSortDirection
     )
+    val hasVideoMembers = members.any { member -> isVideoFile(member.metadata.normalizedPath) }
+    val selectionMode = selectionState.isSelectionMode
+
+    LaunchedEffect(displayedMembers, deletedPaths) {
+        selectionState.filterPartialSelectionToLoadedMembers(
+            members = displayedMembers,
+            deletedPaths = deletedPaths
+        )
+    }
+    LaunchedEffect(selectionMode) {
+        if (selectionMode) {
+            selectedFile = null
+        }
+    }
 
     ScreenScrollColumn(
         modifier = modifier,
@@ -706,7 +746,50 @@ fun SimilarityClusterDetailScreen(
         item(key = "top_bar") {
             AppTopBar(
                 title = "Similarity group",
-                onBack = onBack
+                onBack = onBack,
+                actions = {
+                    IconButton(onClick = { previewMenuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(
+                        expanded = previewMenuExpanded,
+                        onDismissRequest = { previewMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Video preview") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = showVideoPreviews,
+                                    onCheckedChange = null
+                                )
+                            },
+                            enabled = hasVideoMembers,
+                            onClick = { showVideoPreviews = !showVideoPreviews }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Video duration") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = showVideoPreviewDurations,
+                                    onCheckedChange = null
+                                )
+                            },
+                            enabled = hasVideoMembers,
+                            onClick = { showVideoPreviewDurations = !showVideoPreviewDurations }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Video resolution") },
+                            leadingIcon = {
+                                Checkbox(
+                                    checked = showVideoPreviewResolutions,
+                                    onCheckedChange = null
+                                )
+                            },
+                            enabled = hasVideoMembers,
+                            onClick = { showVideoPreviewResolutions = !showVideoPreviewResolutions }
+                        )
+                    }
+                }
             )
         }
         val selectedSetting = setting
@@ -738,18 +821,61 @@ fun SimilarityClusterDetailScreen(
                     }
                 )
             }
+            if (selectionMode) {
+                item(key = "selection_controls") {
+                    SimilaritySelectionControls(
+                        statusText = selectionState.statusText(totalCount = selectedCluster.fileCount),
+                        allSelectedAcrossGroup = selectionState.allSelectedAcrossGroup,
+                        selectAllIncludesNotLoaded = selectionState.isSelectAllMode && !membersExhausted,
+                        deleting = isDeletingSelected,
+                        deleteEnabled = onDeleteFile != null,
+                        onToggleSelectAll = {
+                            selectionState.toggleSelectAll()
+                            deleteSelectedMessage = null
+                        },
+                        onDeleteSelected = { confirmDeleteSelected = true }
+                    )
+                }
+            }
+            deleteSelectedMessage?.let { message ->
+                item(key = "selection_message") {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             displayedMembers.forEachIndexed { index, metadata ->
                 item(key = "member:${metadata.normalizedPath}") {
+                    val isDeleted = deletedPaths.contains(metadata.normalizedPath)
                     SimilarityMemberCard(
                         index = index + 1,
                         metadata = metadata,
-                        deleted = deletedPaths.contains(metadata.normalizedPath),
+                        deleted = isDeleted,
+                        selected = selectionState.isPathSelected(metadata.normalizedPath),
+                        selectionMode = selectionMode,
                         imageLoader = imageLoader,
                         rememberedPreviewCache = rememberedPreviewCache,
+                        rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                         keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                        snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                        videoPreviewLineCount = videoPreviewLineCount,
+                        videoPreviewFrameHeight = videoPreviewFrameHeight,
                         thumbnailSize = memberThumbnailSize,
+                        showVideoPreviews = showVideoPreviews,
+                        showVideoPreviewDurations = showVideoPreviewDurations,
+                        showVideoPreviewResolutions = showVideoPreviewResolutions,
                         showFullPath = showFullPaths,
-                        onOpen = { selectedFile = metadata }
+                        onOpen = { selectedFile = metadata },
+                        onToggleSelection = {
+                            selectionState.togglePath(
+                                path = metadata.normalizedPath,
+                                isDeleted = isDeleted
+                            )
+                            deleteSelectedMessage = null
+                        }
                     )
                 }
             }
@@ -788,6 +914,120 @@ fun SimilarityClusterDetailScreen(
                 }
             },
             onDismiss = { selectedFile = null }
+        )
+    }
+    if (confirmDeleteSelected) {
+        val loadedTargets = selectionState.selectedLoadedFilesForDelete(
+            members = displayedMembers,
+            deletedPaths = deletedPaths
+        )
+        val selectedCountLabel = if (selectionState.isSelectAllMode) {
+            selectionState.selectedCount(totalCount = cluster?.fileCount ?: members.size)
+        } else {
+            loadedTargets.size
+        }
+        AlertDialog(
+            onDismissRequest = {
+                if (!isDeletingSelected) {
+                    confirmDeleteSelected = false
+                }
+            },
+            title = { Text("Delete selected files?") },
+            text = {
+                if (selectedCountLabel <= 0) {
+                    Text("No deletable files are selected.")
+                } else if (selectionState.isSelectAllMode) {
+                    if (selectionState.deselectedPathsInSelectAll.isEmpty()) {
+                        Text("Select all is active. $selectedCountLabel files will be deleted, including not-loaded files.")
+                    } else {
+                        Text("Select all is active with ${selectionState.deselectedPathsInSelectAll.size} exclusions. $selectedCountLabel files will be deleted.")
+                    }
+                } else {
+                    Text("$selectedCountLabel selected files will be deleted (moved to app trash).")
+                }
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        val handler = onDeleteFile ?: return@OutlinedButton
+                        val selectAllSnapshot = selectionState.isSelectAllMode
+                        val selectedPathsSnapshot = selectionState.selectedPaths
+                        val excludedFromAllSnapshot = selectionState.deselectedPathsInSelectAll
+                        val deletedPathsSnapshot = deletedPaths
+
+                        isDeletingSelected = true
+                        deleteSelectedMessage = null
+                        scope.launch {
+                            val targets = if (selectAllSnapshot) {
+                                val pageSizeForBulk = 500
+                                val collected = mutableListOf<FileMetadata>()
+                                var offset = 0
+                                while (true) {
+                                    val page = withContext(Dispatchers.IO) {
+                                        repository.listClusterMembersPage(
+                                            clusterId = clusterId,
+                                            offset = offset,
+                                            limit = pageSizeForBulk
+                                        )
+                                    }
+                                    if (page.isEmpty()) break
+                                    page.forEach { member ->
+                                        val file = member.metadata
+                                        val path = file.normalizedPath
+                                        if (
+                                            !excludedFromAllSnapshot.contains(path) &&
+                                            !deletedPathsSnapshot.contains(path)
+                                        ) {
+                                            collected.add(file)
+                                        }
+                                    }
+                                    offset += page.size
+                                    if (page.size < pageSizeForBulk) break
+                                }
+                                collected
+                            } else {
+                                selectedFilesForDelete(
+                                    members = displayedMembers,
+                                    selectedPaths = selectedPathsSnapshot,
+                                    deletedPaths = deletedPathsSnapshot
+                                )
+                            }
+
+                            var successCount = 0
+                            val failedPaths = linkedSetOf<String>()
+                            targets.forEach { file ->
+                                val deleted = runCatching { handler(file) }.getOrDefault(false)
+                                if (deleted) {
+                                    successCount += 1
+                                } else {
+                                    failedPaths.add(file.normalizedPath)
+                                }
+                            }
+
+                            selectionState.markFailedPaths(failedPaths)
+                            deleteSelectedMessage = when {
+                                successCount == 0 && failedPaths.isEmpty() -> "No files deleted."
+                                failedPaths.isEmpty() -> "$successCount files deleted."
+                                successCount == 0 -> "Delete failed for ${failedPaths.size} files."
+                                else -> "$successCount deleted, ${failedPaths.size} failed."
+                            }
+                            isDeletingSelected = false
+                            confirmDeleteSelected = false
+                        }
+                    },
+                    enabled = onDeleteFile != null && selectedCountLabel > 0 && !isDeletingSelected
+                ) {
+                    Text(if (isDeletingSelected) "Deleting..." else "Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { confirmDeleteSelected = false },
+                    enabled = !isDeletingSelected
+                ) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
@@ -1436,21 +1676,87 @@ private fun SimilarityMembersHeader(
 }
 
 @Composable
+private fun SimilaritySelectionControls(
+    statusText: String,
+    allSelectedAcrossGroup: Boolean,
+    selectAllIncludesNotLoaded: Boolean,
+    deleting: Boolean,
+    deleteEnabled: Boolean,
+    onToggleSelectAll: () -> Unit,
+    onDeleteSelected: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(text = statusText, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onToggleSelectAll,
+                enabled = !deleting
+            ) {
+                Text(if (allSelectedAcrossGroup) "Deselect all" else "Select all")
+            }
+            OutlinedButton(
+                onClick = onDeleteSelected,
+                enabled = deleteEnabled && !deleting
+            ) {
+                Text(if (deleting) "Deleting..." else "Delete selected")
+            }
+        }
+        if (selectAllIncludesNotLoaded) {
+            Text(
+                text = "Select all includes not-loaded files in delete queries.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun SimilarityMemberCard(
     index: Int,
     metadata: FileMetadata,
     deleted: Boolean,
+    selected: Boolean,
+    selectionMode: Boolean,
     imageLoader: ImageLoader,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    videoPreviewFrameHeight: Dp,
     thumbnailSize: Dp,
+    showVideoPreviews: Boolean,
+    showVideoPreviewDurations: Boolean,
+    showVideoPreviewResolutions: Boolean,
     showFullPath: Boolean,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onToggleSelection: () -> Unit
 ) {
+    val isVideo = isVideoFile(metadata.normalizedPath)
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpen),
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) {
+                        onToggleSelection()
+                    } else {
+                        onOpen()
+                    }
+                },
+                onLongClick = onToggleSelection
+            ),
         colors = if (deleted) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         } else {
@@ -1462,6 +1768,13 @@ private fun SimilarityMemberCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    enabled = !deleted || selected,
+                    onCheckedChange = { onToggleSelection() }
+                )
+            }
             GroupPreviewThumbnail(
                 candidatePaths = listOf(metadata.normalizedPath),
                 previewMemoryKey = "similarity-member:${metadata.normalizedPath}",
@@ -1485,6 +1798,31 @@ private fun SimilarityMemberCard(
                     text = "${formatBytes(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (
+                    isVideo &&
+                    !deleted &&
+                    !showVideoPreviews &&
+                    (showVideoPreviewDurations || showVideoPreviewResolutions)
+                ) {
+                    VideoMetadataLabelText(
+                        filePath = metadata.normalizedPath,
+                        showDuration = showVideoPreviewDurations,
+                        showResolution = showVideoPreviewResolutions
+                    )
+                }
+                if (isVideo && !deleted && showVideoPreviews) {
+                    VideoTimelinePreviewStrip(
+                        filePath = metadata.normalizedPath,
+                        rememberedPreviewCache = rememberedVideoPreviewCache,
+                        imageLoader = imageLoader,
+                        keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+                        snapToFillWidth = snapVideoPreviewFramesToWidth,
+                        lineCount = videoPreviewLineCount,
+                        frameHeight = videoPreviewFrameHeight,
+                        showDuration = showVideoPreviewDurations,
+                        showResolution = showVideoPreviewResolutions
+                    )
+                }
                 if (deleted) {
                     Text(text = "Deleted in this session", style = MaterialTheme.typography.bodySmall)
                 }
