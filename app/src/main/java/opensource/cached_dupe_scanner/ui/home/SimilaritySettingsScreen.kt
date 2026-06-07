@@ -966,12 +966,11 @@ fun SimilarityClusterDetailScreen(
                     )
                 }
             }
-            displayedMembers.forEachIndexed { index, member ->
+            displayedMembers.forEach { member ->
                 val metadata = member.metadata
                 item(key = "member:${metadata.normalizedPath}") {
                     val isDeleted = deletedPaths.contains(metadata.normalizedPath)
                     SimilarityMemberCard(
-                        index = index + 1,
                         metadata = metadata,
                         deleted = isDeleted,
                         selected = selectionState.isPathSelected(metadata.normalizedPath),
@@ -2044,7 +2043,6 @@ private fun SimilaritySelectionControls(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SimilarityMemberCard(
-    index: Int,
     metadata: FileMetadata,
     deleted: Boolean,
     selected: Boolean,
@@ -2067,6 +2065,7 @@ private fun SimilarityMemberCard(
     onToggleSelection: () -> Unit
 ) {
     val isVideo = isVideoFile(metadata.normalizedPath)
+    val showMemberThumbnail = isMediaFile(metadata.normalizedPath)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -2081,84 +2080,152 @@ private fun SimilarityMemberCard(
                 onLongClick = onToggleSelection
             ),
         colors = if (deleted) {
-            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         } else {
             CardDefaults.cardColors()
         }
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .padding(10.dp)
+                .fillMaxWidth()
         ) {
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    enabled = !deleted || selected,
-                    onCheckedChange = { onToggleSelection() }
-                )
-            }
-            GroupPreviewThumbnail(
-                candidatePaths = listOf(metadata.normalizedPath),
-                previewMemoryKey = "similarity-member:${metadata.normalizedPath}",
-                rememberedPreviewCache = rememberedPreviewCache,
-                imageLoader = imageLoader,
-                keepLoadedInMemory = keepLoadedThumbnailsInMemory,
-                modifier = Modifier.size(thumbnailSize),
-                contentDescription = "Member thumbnail"
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "$index. ${formatPath(metadata.normalizedPath, showFullPath)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${formatBytes(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                durationMillis?.let { value ->
-                    Text(
-                        text = "Duration ${formatMillis(value)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                if (selectionMode) {
+                    Checkbox(
+                        checked = selected,
+                        enabled = !deleted || selected,
+                        onCheckedChange = { onToggleSelection() }
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
-                if (
-                    isVideo &&
-                    !deleted &&
-                    !showVideoPreviews &&
-                    (showVideoPreviewDurations || showVideoPreviewResolutions)
-                ) {
-                    VideoMetadataLabelText(
-                        filePath = metadata.normalizedPath,
-                        showDuration = showVideoPreviewDurations,
-                        showResolution = showVideoPreviewResolutions
-                    )
-                }
-                if (isVideo && !deleted && showVideoPreviews) {
-                    VideoTimelinePreviewStrip(
-                        filePath = metadata.normalizedPath,
-                        rememberedPreviewCache = rememberedVideoPreviewCache,
+                if (showMemberThumbnail) {
+                    GroupPreviewThumbnail(
+                        candidatePaths = if (deleted) emptyList() else listOf(metadata.normalizedPath),
+                        previewMemoryKey = "similarity-member:${metadata.normalizedPath}",
+                        rememberedPreviewCache = rememberedPreviewCache,
                         imageLoader = imageLoader,
-                        keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
-                        snapToFillWidth = snapVideoPreviewFramesToWidth,
-                        lineCount = videoPreviewLineCount,
-                        frameHeight = videoPreviewFrameHeight,
-                        showDuration = showVideoPreviewDurations,
-                        showResolution = showVideoPreviewResolutions
+                        keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                        modifier = Modifier.size(thumbnailSize),
+                        contentDescription = "Member thumbnail"
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
-                if (deleted) {
-                    Text(text = "Deleted in this session", style = MaterialTheme.typography.bodySmall)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = formatPath(metadata.normalizedPath, showFullPath),
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (deleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatBytesWithExact(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (deleted) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    durationMillis?.let { value ->
+                        Text(
+                            text = "Duration ${durationMillisLabel(value)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (deleted) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
                 }
+            }
+            SimilarityClusterMemberVideoMetadata(
+                visible = !showVideoPreviews &&
+                    (showVideoPreviewDurations || showVideoPreviewResolutions) &&
+                    isVideo &&
+                    !deleted,
+                filePath = metadata.normalizedPath,
+                showDuration = showVideoPreviewDurations,
+                showResolution = showVideoPreviewResolutions
+            )
+            SimilarityClusterMemberVideoPreview(
+                visible = showVideoPreviews && showMemberThumbnail && isVideo && !deleted,
+                filePath = metadata.normalizedPath,
+                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                imageLoader = imageLoader,
+                keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                videoPreviewLineCount = videoPreviewLineCount,
+                videoPreviewFrameHeight = videoPreviewFrameHeight,
+                showDuration = showVideoPreviewDurations,
+                showResolution = showVideoPreviewResolutions
+            )
+            if (deleted) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Deleted in this session",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
         }
     }
+}
+
+@Composable
+private fun SimilarityClusterMemberVideoMetadata(
+    visible: Boolean,
+    filePath: String,
+    showDuration: Boolean,
+    showResolution: Boolean
+) {
+    if (!visible) return
+    Spacer(modifier = Modifier.height(8.dp))
+    VideoMetadataLabelText(
+        filePath = filePath,
+        showDuration = showDuration,
+        showResolution = showResolution,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun SimilarityClusterMemberVideoPreview(
+    visible: Boolean,
+    filePath: String,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
+    imageLoader: ImageLoader,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    videoPreviewFrameHeight: Dp,
+    showDuration: Boolean,
+    showResolution: Boolean
+) {
+    if (!visible) return
+    Spacer(modifier = Modifier.height(8.dp))
+    VideoTimelinePreviewStrip(
+        filePath = filePath,
+        rememberedPreviewCache = rememberedVideoPreviewCache,
+        imageLoader = imageLoader,
+        keepLoadedInMemory = keepLoadedVideoPreviewsInMemory,
+        snapToFillWidth = snapVideoPreviewFramesToWidth,
+        lineCount = videoPreviewLineCount,
+        frameHeight = videoPreviewFrameHeight,
+        showDuration = showDuration,
+        showResolution = showResolution,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

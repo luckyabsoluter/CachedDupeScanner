@@ -77,6 +77,10 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("selectedFilesForDelete("))
         assertTrue(content.contains("VideoTimelinePreviewStrip("))
         assertTrue(content.contains("VideoMetadataLabelText("))
+        assertTrue(content.contains("SimilarityClusterMemberVideoMetadata("))
+        assertTrue(content.contains("SimilarityClusterMemberVideoPreview("))
+        assertTrue(content.contains("formatBytesWithExact(metadata.sizeBytes)"))
+        assertTrue(content.contains("MaterialTheme.colorScheme.secondaryContainer"))
         assertTrue(content.contains("DropdownMenuItem("))
         assertTrue(content.contains("onOpenCluster"))
         assertTrue(content.contains("exactThumbnailClusterExplanation("))
@@ -86,6 +90,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("List rule: duration-sorted neighbor filter"))
         assertFalse(content.contains("clusters.take("))
         assertFalse(content.contains("repository.listClusterMembers(clusterId)"))
+        assertFalse(content.contains("\"${'$'}index. "))
     }
 
     @Test
