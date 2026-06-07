@@ -21,6 +21,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("fun SimilarityExactThumbnailSettingScreen("))
         assertTrue(content.contains("fun SimilarityDurationSettingScreen("))
         assertTrue(content.contains("fun SimilaritySettingDetailScreen("))
+        assertTrue(content.contains("fun SimilaritySettingGroupsScreen("))
         assertTrue(content.contains("fun SimilarityClusterDetailScreen("))
         assertFalse(content.contains("private enum class SimilaritySettingsPane"))
         assertTrue(content.contains("startSimilarityMaintenanceTask("))
@@ -41,8 +42,19 @@ class SimilaritySettingsScreenTest {
     @Test
     fun similaritySettingsScreenShowsClusterMembers() {
         val content = sourceText("SimilaritySettingsScreen.kt")
+        val settingDetailContent = content
+            .substringAfter("fun SimilaritySettingDetailScreen(")
+            .substringBefore("@Composable\nfun SimilaritySettingGroupsScreen(")
+        val settingGroupsContent = content
+            .substringAfter("fun SimilaritySettingGroupsScreen(")
+            .substringBefore("@Composable\nfun SimilarityClusterDetailScreen(")
 
         assertTrue(content.contains("repository.listClusterMembersPage("))
+        assertTrue(settingDetailContent.contains("SimilarityGroupsEntryCard("))
+        assertFalse(settingDetailContent.contains("SimilarityGroupsHeader("))
+        assertFalse(settingDetailContent.contains("SimilarityClusterListCard("))
+        assertTrue(settingGroupsContent.contains("SimilarityGroupsHeader("))
+        assertTrue(settingGroupsContent.contains("SimilarityClusterListCard("))
         assertTrue(content.contains("SimilarityClusterSummaryCard("))
         assertTrue(content.contains("SimilarityMemberCard("))
         assertTrue(content.contains("GroupPreviewThumbnail("))

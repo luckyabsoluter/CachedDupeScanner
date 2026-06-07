@@ -440,34 +440,20 @@ fun SimilaritySettingDetailScreen(
     appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
-    keepLoadedThumbnailsInMemory: Boolean,
-    thumbnailSizeScale: Float,
-    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
-    showFullPaths: Boolean,
     settingId: Long,
     refreshVersion: Int,
     onChanged: () -> Unit,
     onBack: () -> Unit,
-    onOpenCluster: (Long, Long) -> Unit,
+    onOpenGroups: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val imageLoader = rememberSimilarityImageLoader(context)
-    val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var clusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
-    var clusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
     var statusText by remember { mutableStateOf("No similarity maintenance running.") }
     var confirmClearSetting by remember { mutableStateOf(false) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
     val displayedStatus = activeTask?.detail ?: statusText
-    val displayedClusters = sortSimilarityClusters(
-        clusters = clusters,
-        sortKey = clusterSortKey,
-        direction = clusterSortDirection
-    )
     fun refresh() {
         scope.launch {
             val loadedSetting = withContext(Dispatchers.IO) {
@@ -553,6 +539,90 @@ fun SimilaritySettingDetailScreen(
                     onClear = { confirmClearSetting = true }
                 )
             }
+            item(key = "groups_entry") {
+                SimilarityGroupsEntryCard(
+                    clusterCount = clusters.size,
+                    fileCount = clusters.sumOf { cluster -> cluster.fileCount },
+                    onOpenGroups = { onOpenGroups(settingId) }
+                )
+            }
+        }
+    }
+    if (confirmClearSetting) {
+        ConfirmationDialog(
+            title = "Clear this setting's results?",
+            text = "Generated groups and member links for this setting will be removed. The setting itself remains.",
+            confirmText = "Clear",
+            onConfirm = ::clearSettingResults,
+            onDismissRequest = { confirmClearSetting = false },
+            confirmEnabled = activeTask == null,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
+        )
+    }
+}
+
+@Composable
+fun SimilaritySettingGroupsScreen(
+    repository: SimilaritySettingsRepository,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    showFullPaths: Boolean,
+    settingId: Long,
+    refreshVersion: Int,
+    onBack: () -> Unit,
+    onOpenCluster: (Long, Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val imageLoader = rememberSimilarityImageLoader(context)
+    val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
+    var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
+    val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    var clusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
+    var clusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
+    val displayedClusters = sortSimilarityClusters(
+        clusters = clusters,
+        sortKey = clusterSortKey,
+        direction = clusterSortDirection
+    )
+
+    fun refresh() {
+        scope.launch {
+            val loadedSetting = withContext(Dispatchers.IO) {
+                repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+            }
+            val loadedClusters = withContext(Dispatchers.IO) { repository.listClusters(settingId) }
+            setting = loadedSetting
+            clusters.clear()
+            clusters.addAll(loadedClusters)
+        }
+    }
+
+    LaunchedEffect(settingId, refreshVersion) {
+        refresh()
+    }
+
+    ScreenScrollColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item(key = "top_bar") {
+            AppTopBar(
+                title = setting?.displayName ?: "Similarity groups",
+                onBack = onBack
+            )
+        }
+        val selectedSetting = setting
+        if (selectedSetting == null) {
+            item(key = "missing_setting") {
+                MissingSelectionCard(
+                    message = "This similarity setting is no longer available.",
+                    onBack = onBack
+                )
+            }
+        } else {
             item(key = "cluster_header") {
                 SimilarityGroupsHeader(
                     clusterCount = clusters.size,
@@ -589,17 +659,6 @@ fun SimilaritySettingDetailScreen(
                 }
             }
         }
-    }
-    if (confirmClearSetting) {
-        ConfirmationDialog(
-            title = "Clear this setting's results?",
-            text = "Generated groups and member links for this setting will be removed. The setting itself remains.",
-            confirmText = "Clear",
-            onConfirm = ::clearSettingResults,
-            onDismissRequest = { confirmClearSetting = false },
-            confirmEnabled = activeTask == null,
-            confirmStyle = ConfirmationDialogButtonStyle.Outlined
-        )
     }
 }
 
@@ -1450,6 +1509,32 @@ private fun SimilaritySettingDetailCard(
                 OutlinedButton(onClick = onClear, enabled = !running) {
                     Text("Clear")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimilarityGroupsEntryCard(
+    clusterCount: Int,
+    fileCount: Int,
+    onOpenGroups: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "$clusterCount groups, $fileCount files",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = onOpenGroups,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Open groups")
             }
         }
     }

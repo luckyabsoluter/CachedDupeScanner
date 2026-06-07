@@ -76,6 +76,7 @@ import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScr
 import opensource.cached_dupe_scanner.ui.home.SimilarityMaintenanceScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
@@ -514,13 +515,28 @@ class MainActivity : ComponentActivity() {
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                settingId = screen.settingId,
+                                refreshVersion = similarityRefreshVersion.value,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onBack = { pop(backStack) },
+                                onOpenGroups = { settingId ->
+                                    navigateTo(
+                                        backStack,
+                                        screenCache,
+                                        Screen.SimilaritySettingGroups(settingId)
+                                    )
+                                },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilaritySettingGroups -> SimilaritySettingGroupsScreen(
+                                repository = similarityRepo,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 showFullPaths = settingsSnapshot.showFullPaths,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
-                                onChanged = { similarityRefreshVersion.value += 1 },
                                 onBack = { pop(backStack) },
                                 onOpenCluster = { settingId, clusterId ->
                                     navigateTo(
@@ -737,6 +753,7 @@ internal sealed class Screen {
     data object SimilarityDurationToleranceSetting : Screen()
     data object SimilarityDurationNeighborSetting : Screen()
     data class SimilaritySettingDetail(val settingId: Long) : Screen()
+    data class SimilaritySettingGroups(val settingId: Long) : Screen()
     data class SimilarityClusterDetail(val settingId: Long, val clusterId: Long) : Screen()
     data object About : Screen()
     data object Reports : Screen()
@@ -760,6 +777,7 @@ internal sealed class Screen {
             SimilarityDurationToleranceSetting -> "similarity-setting-duration-tolerance"
             SimilarityDurationNeighborSetting -> "similarity-setting-duration-neighbor"
             is SimilaritySettingDetail -> "similarity-setting-detail:$settingId"
+            is SimilaritySettingGroups -> "similarity-setting-groups:$settingId"
             is SimilarityClusterDetail -> "similarity-cluster-detail:$settingId:$clusterId"
             About -> "about"
             Reports -> "reports"
@@ -789,6 +807,11 @@ internal sealed class Screen {
                     token.substringAfter("similarity-setting-detail:")
                         .toLongOrNull()
                         ?.let { settingId -> SimilaritySettingDetail(settingId) }
+                }
+                token.startsWith("similarity-setting-groups:") -> {
+                    token.substringAfter("similarity-setting-groups:")
+                        .toLongOrNull()
+                        ?.let { settingId -> SimilaritySettingGroups(settingId) }
                 }
                 token.startsWith("similarity-cluster-detail:") -> {
                     val ids = token.substringAfter("similarity-cluster-detail:").split(':')

@@ -41,6 +41,7 @@ class MainActivityNavigationStateTest {
                 Screen.Dashboard.toSaveToken(),
                 Screen.SimilaritySettings.toSaveToken(),
                 Screen.SimilaritySettingDetail(42L).toSaveToken(),
+                Screen.SimilaritySettingGroups(42L).toSaveToken(),
                 Screen.SimilarityClusterDetail(settingId = 42L, clusterId = 7L).toSaveToken()
             )
         )
@@ -50,6 +51,7 @@ class MainActivityNavigationStateTest {
                 Screen.Dashboard,
                 Screen.SimilaritySettings,
                 Screen.SimilaritySettingDetail(42L),
+                Screen.SimilaritySettingGroups(42L),
                 Screen.SimilarityClusterDetail(settingId = 42L, clusterId = 7L)
             ),
             restored
