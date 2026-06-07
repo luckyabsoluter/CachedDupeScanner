@@ -19,6 +19,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Similarity settings management now separates setting creation, maintenance, per-setting management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
+- Similarity experiment screens now restore the previous experiment/template flow, detailed cluster and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping the settings-backed storage model.
 - Similarity settings group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
 - Similarity setting management pages now keep run/rebuild/clear controls separate from the group browsing screen.
 - Similarity cluster detail member browsing now shares the result member sort control and automatically loads additional members near the end of the list.

@@ -2,11 +2,13 @@ package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -46,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -93,9 +96,12 @@ import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInp
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
 
-private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT = 4
+private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT = 10
+private const val SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT = 4
+private const val SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE = 2
 private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
 private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
+private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32
 
 internal enum class SimilarityClusterSortKey(val label: String) {
     FileCount("File count"),
@@ -141,7 +147,7 @@ fun SimilaritySettingsScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Similarity settings",
+                title = "Similarity experiments",
                 onBack = onBack
             )
         }
@@ -150,7 +156,7 @@ fun SimilaritySettingsScreen(
                 onClick = onCreateSetting,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("New setting")
+                Text("New experiment")
             }
         }
         item(key = "maintenance") {
@@ -262,34 +268,34 @@ fun SimilaritySettingCreateScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "New similarity setting",
+                title = "New experiment",
                 onBack = onBack
             )
         }
         item(key = "create_header") {
             Text(
-                text = "Choose setting type",
+                text = "Experiment templates",
                 style = MaterialTheme.typography.titleMedium
             )
         }
         item(key = "method_exact") {
             SimilarityMethodCard(
-                title = "Exact thumbnail",
-                description = "Groups video or image candidates by the same configured reduced thumbnail signature.",
+                title = "Exact thumbnail hash",
+                description = "Runs a cached-media experiment with editable media type, size floor, frame timestamps, resize target, optional quantization, and color mode.",
                 onOpen = onOpenExactThumbnail
             )
         }
         item(key = "method_duration") {
             SimilarityMethodCard(
-                title = "Duration tolerance",
-                description = "Groups video candidates whose durations fit within one tolerance window.",
+                title = "Video duration tolerance",
+                description = "Runs a cached-video experiment that extracts each video's duration and clusters candidates inside the configured tolerance.",
                 onOpen = onOpenDurationTolerance
             )
         }
         item(key = "method_neighbor") {
             SimilarityMethodCard(
-                title = "Duration neighbor list",
-                description = "Builds a duration-sorted video list and keeps neighbors inside the configured tolerance.",
+                title = "Video duration neighbor list",
+                description = "Runs a cached-video experiment that builds one duration-sorted list and keeps only adjacent neighbors inside the tolerance.",
                 onOpen = onOpenDurationNeighbor
             )
         }
@@ -335,7 +341,7 @@ fun SimilarityExactThumbnailSettingScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Exact thumbnail setting",
+                title = "Exact thumbnail experiment",
                 onBack = onBack
             )
         }
@@ -397,13 +403,13 @@ fun SimilarityDurationSettingScreen(
             onCreated(created.settingId)
         }
     }
-    val title = if (neighborList) "Duration neighbor setting" else "Duration tolerance setting"
+    val title = if (neighborList) "Duration neighbor experiment" else "Duration tolerance experiment"
     val description = if (neighborList) {
         "Tolerance is the maximum duration gap between adjacent sorted videos. Isolated videos are omitted."
     } else {
         "Tolerance is the maximum duration gap inside one group. Use 0 for exact millisecond duration matches."
     }
-    val buttonText = if (neighborList) "Create duration neighbor setting" else "Create duration tolerance setting"
+    val buttonText = if (neighborList) "Create duration neighbor experiment" else "Create duration tolerance experiment"
 
     ScreenScrollColumn(
         modifier = modifier,
@@ -505,7 +511,7 @@ fun SimilaritySettingDetailScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = setting?.displayName ?: "Similarity setting",
+                title = setting?.displayName ?: "Experiment detail",
                 onBack = onBack
             )
         }
@@ -513,7 +519,7 @@ fun SimilaritySettingDetailScreen(
         if (selectedSetting == null) {
             item(key = "missing_setting") {
                 MissingSelectionCard(
-                    message = "This similarity setting is no longer available.",
+                    message = "This experiment is no longer available.",
                     onBack = onBack
                 )
             }
@@ -610,7 +616,7 @@ fun SimilaritySettingGroupsScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = setting?.displayName ?: "Similarity groups",
+                title = setting?.displayName ?: "Experiment results",
                 onBack = onBack
             )
         }
@@ -639,7 +645,7 @@ fun SimilaritySettingGroupsScreen(
             if (clusters.isEmpty()) {
                 item(key = "clusters_empty") {
                     Text(
-                        text = "No similarity groups found for this setting.",
+                        text = "No experiment clusters found for this run.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -685,6 +691,7 @@ fun SimilarityClusterDetailScreen(
     val scope = rememberCoroutineScope()
     val imageLoader = rememberSimilarityImageLoader(context)
     val memberThumbnailSize = 64.dp * thumbnailSizeScale.coerceAtLeast(0f)
+    val detailPreviewHeight = 180.dp * thumbnailSizeScale.coerceAtLeast(0f)
     val videoPreviewFrameHeight = 44.dp * videoPreviewSizeScale.coerceAtLeast(0f)
     val memberListState = rememberLazyListState()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
@@ -835,7 +842,11 @@ fun SimilarityClusterDetailScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Similarity group",
+                title = if (setting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST) {
+                    "Similarity list detail"
+                } else {
+                    "Similarity cluster detail"
+                },
                 onBack = onBack,
                 actions = {
                     IconButton(onClick = { previewMenuExpanded = true }) {
@@ -887,23 +898,32 @@ fun SimilarityClusterDetailScreen(
         if (selectedSetting == null || selectedCluster == null) {
             item(key = "missing_cluster") {
                 MissingSelectionCard(
-                    message = "This similarity group is no longer available.",
+                    message = "This similarity result is no longer available.",
                     onBack = onBack
                 )
             }
         } else {
-            item(key = "cluster_summary") {
-                SimilarityClusterSummaryCard(
-                    setting = selectedSetting,
-                    cluster = selectedCluster
-                )
+            val exactHashExplanation = exactThumbnailClusterExplanation(selectedCluster.clusterKey)
+            val durationNeighborExplanation = durationNeighborClusterExplanation(selectedCluster.clusterKey)
+            item(key = "exact_reduction") {
+                ExactHashReductionPreviewCard(exactHashExplanation = exactHashExplanation)
             }
-            item(key = "members_header") {
-                SimilarityMembersHeader(
+            item(key = "detail_overview") {
+                SimilarityClusterDetailOverviewCard(
+                    setting = selectedSetting,
+                    cluster = selectedCluster,
+                    members = members,
+                    imageLoader = imageLoader,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    previewHeight = detailPreviewHeight,
+                    previewMemoryKey = "similarity-cluster-detail:${selectedCluster.clusterId}",
                     loadedCount = members.size,
-                    totalCount = selectedCluster.fileCount,
-                    loading = memberLoading,
-                    sortEnabled = !durationNeighborMode,
+                    memberLoading = memberLoading,
+                    showFullPaths = showFullPaths,
+                    exactHashExplanation = exactHashExplanation,
+                    durationNeighborExplanation = durationNeighborExplanation,
+                    sortingEnabled = !durationNeighborMode,
                     sortKey = memberSortKey,
                     sortDirection = memberSortDirection,
                     onApplySort = { key, direction ->
@@ -1168,9 +1188,9 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(text = "Configured settings", style = MaterialTheme.typography.titleMedium)
+        Text(text = "Experiment list", style = MaterialTheme.typography.titleMedium)
         if (!hasSettings) {
-            Text(text = "No similarity settings yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = "No saved experiment runs yet.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1243,12 +1263,12 @@ private fun SimilaritySettingListCard(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (setting.enabled) "Enabled" else "Disabled",
+                    text = if (setting.enabled) "Enabled" else "Paused",
                     style = MaterialTheme.typography.labelMedium
                 )
             }
             Text(
-                text = "$clusterCount groups, $fileCount files",
+                text = "$clusterCount clusters, $fileCount files",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -1271,6 +1291,11 @@ private fun SimilarityMethodCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Executable experiment template",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(text = description, style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -1306,6 +1331,10 @@ private fun ExactThumbnailSettingForm(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(text = "Exact thumbnail parameters", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Runs a real cached-media experiment with editable inputs.",
+                style = MaterialTheme.typography.bodySmall
+            )
             SizeFloorControls(
                 minSizeInput = minSizeInput,
                 onMinSizeInputChange = onMinSizeInputChange,
@@ -1369,7 +1398,7 @@ private fun ExactThumbnailSettingForm(
             )
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-                Text("Create exact thumbnail setting")
+                Text("Create exact thumbnail experiment")
             }
         }
     }
@@ -1525,16 +1554,16 @@ private fun SimilarityGroupsEntryCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Stored experiment results", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "$clusterCount groups, $fileCount files",
+                text = "$clusterCount clusters, $fileCount files",
                 style = MaterialTheme.typography.bodySmall
             )
             Button(
                 onClick = onOpenGroups,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Open groups")
+                Text("Open results")
             }
         }
     }
@@ -1558,8 +1587,8 @@ private fun SimilarityGroupsHeader(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
-            Text(text = "$clusterCount groups, $fileCount files", style = MaterialTheme.typography.bodySmall)
+            Text(text = "Selected experiment clusters", style = MaterialTheme.typography.titleMedium)
+            Text(text = "$clusterCount clusters, $fileCount files", style = MaterialTheme.typography.bodySmall)
         }
         SimilarityClusterSortButton(
             sortKey = sortKey,
@@ -1650,21 +1679,24 @@ private fun SimilarityClusterSortButton(
 @Composable
 private fun SimilarityClusterMemberPreviewLines(
     members: List<FileMetadata>,
-    showFullPaths: Boolean
+    showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long> = emptyMap(),
+    preserveOrder: Boolean = false
 ) {
-    members
-        .take(SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT)
-        .chunked(2)
-        .forEach { row ->
-            Text(
-                text = row.joinToString("  •  ") { file ->
-                    formatPath(file.normalizedPath, showFullPaths)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+    similarityClusterPreviewLineTexts(
+        members = members,
+        showFullPaths = showFullPaths,
+        durationMillisByNormalizedPath = durationMillisByNormalizedPath,
+        preserveOrder = preserveOrder
+    ).forEach { line ->
+        Text(
+            text = line,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 @Composable
@@ -1680,6 +1712,10 @@ private fun SimilarityClusterListCard(
 ) {
     val previewMembers = remember(cluster.clusterId) { mutableStateListOf<SimilarityClusterMember>() }
     var previewLoading by remember(cluster.clusterId) { mutableStateOf(false) }
+    val exactHashExplanation = exactThumbnailClusterExplanation(cluster.clusterKey)
+    val durationExplanation = durationClusterExplanation(cluster.clusterKey)
+    val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.clusterKey)
+    val durationMillisByNormalizedPath = similarityMemberDurationMap(previewMembers)
 
     LaunchedEffect(cluster.clusterId) {
         previewLoading = true
@@ -1687,7 +1723,7 @@ private fun SimilarityClusterListCard(
             repository.listClusterMembersPage(
                 clusterId = cluster.clusterId,
                 offset = 0,
-                limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LIMIT
+                limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT
             )
         }
         previewMembers.clear()
@@ -1719,24 +1755,59 @@ private fun SimilarityClusterListCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "Similarity group with ${pluralize(cluster.fileCount, "file")}",
+                    text = if (durationNeighborExplanation != null) {
+                        "${cluster.fileCount} listed videos | Total ${formatBytes(cluster.totalBytes)}"
+                    } else {
+                        "${cluster.fileCount} files | Total ${formatBytes(cluster.totalBytes)}"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Total ${formatBytes(cluster.totalBytes)}",
-                    style = MaterialTheme.typography.bodySmall
+                    text = exactHashExplanation?.let(::exactHashClusterSummary)
+                        ?: durationExplanation?.let(::durationClusterSummary)
+                        ?: durationNeighborExplanation?.let(::durationNeighborClusterSummary)
+                        ?: "Signature ${cluster.clusterKey.take(16)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                if (exactHashExplanation != null) {
+                    Text(
+                        text = "Members matched the same exact thumbnail signature.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (durationNeighborExplanation != null) {
+                    Text(
+                        text = "One duration-sorted list; isolated videos are omitted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (previewLoading && previewMembers.isEmpty()) {
                     Text(text = "Loading preview members...", style = MaterialTheme.typography.bodySmall)
                 } else {
                     SimilarityClusterMemberPreviewLines(
                         members = previewMembers.map { member -> member.metadata },
-                        showFullPaths = showFullPaths
+                        showFullPaths = showFullPaths,
+                        durationMillisByNormalizedPath = durationMillisByNormalizedPath,
+                        preserveOrder = durationNeighborExplanation != null
                     )
-                    val remaining = (cluster.fileCount - previewMembers.size).coerceAtLeast(0)
+                    val remaining = (cluster.fileCount - similarityClusterPreviewDisplayCount(previewMembers.map { it.metadata }))
+                        .coerceAtLeast(0)
                     if (remaining > 0) {
-                        Text(text = "+${remaining} more", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "+${remaining} more...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -1745,24 +1816,105 @@ private fun SimilarityClusterListCard(
 }
 
 @Composable
-private fun SimilarityClusterSummaryCard(
+private fun SimilarityClusterDetailOverviewCard(
     setting: SimilaritySettingEntity,
-    cluster: SimilarityClusterEntity
+    cluster: SimilarityClusterEntity,
+    members: List<SimilarityClusterMember>,
+    imageLoader: ImageLoader,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    keepLoadedThumbnailsInMemory: Boolean,
+    previewHeight: Dp,
+    previewMemoryKey: String,
+    loadedCount: Int,
+    memberLoading: Boolean,
+    showFullPaths: Boolean,
+    exactHashExplanation: ExactThumbnailClusterExplanation?,
+    durationNeighborExplanation: DurationNeighborClusterExplanation?,
+    sortingEnabled: Boolean,
+    sortKey: ResultGroupMemberSortKey,
+    sortDirection: SortDirection,
+    onApplySort: (ResultGroupMemberSortKey, SortDirection) -> Unit
 ) {
+    val metadataMembers = members.map { member -> member.metadata }
+    val previewCandidates = metadataMembers
+        .map { file -> file.normalizedPath }
+        .filter(::isMediaFile)
+    val durationMillisByNormalizedPath = similarityMemberDurationMap(members)
+    val title = if (durationNeighborExplanation != null) "List detail" else "Group detail"
+    val summaryLines = similarityClusterDetailSummaryLines(
+        setting = setting,
+        cluster = cluster,
+        exactHashExplanation = exactHashExplanation,
+        durationNeighborExplanation = durationNeighborExplanation
+    )
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = "Similarity group", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "${cluster.fileCount} files, total ${formatBytes(cluster.totalBytes)}",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Text(
-                text = settingParametersSummary(setting),
-                style = MaterialTheme.typography.bodySmall
-            )
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            if (previewCandidates.isNotEmpty()) {
+                GroupPreviewThumbnail(
+                    candidatePaths = previewCandidates,
+                    previewMemoryKey = previewMemoryKey,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    imageLoader = imageLoader,
+                    keepLoadedInMemory = keepLoadedThumbnailsInMemory,
+                    contentDescription = "Similarity group preview",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(previewHeight)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "${cluster.fileCount} files | Total ${formatBytes(cluster.totalBytes)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (memberLoading && loadedCount == 0) {
+                            "Loading 0/${cluster.fileCount} files"
+                        } else {
+                            "Loaded ${loadedCount.coerceAtMost(cluster.fileCount)}/${cluster.fileCount} files"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    summaryLines.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (metadataMembers.isNotEmpty()) {
+                        SimilarityClusterMemberPreviewLines(
+                            members = metadataMembers,
+                            showFullPaths = showFullPaths,
+                            durationMillisByNormalizedPath = durationMillisByNormalizedPath,
+                            preserveOrder = durationNeighborExplanation != null
+                        )
+                    }
+                }
+                if (sortingEnabled) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    GroupMemberSortButton(
+                        sortKey = sortKey,
+                        sortDirection = sortDirection,
+                        onApplySort = onApplySort
+                    )
+                }
+            }
         }
     }
 }
@@ -2078,6 +2230,484 @@ private fun settingParametersSummary(setting: SimilaritySettingEntity): String {
         }
         else -> "Custom parameters"
     }
+}
+
+@Composable
+private fun ExactHashReductionPreviewCard(exactHashExplanation: ExactThumbnailClusterExplanation?) {
+    val samples = exactHashExplanation?.let(::exactHashReductionSamples).orEmpty()
+    if (samples.isEmpty()) return
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = "Reduction preview", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "These enlarged tiles show the exact reduced image values used for this experiment's equality check.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            samples.forEach { sample ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ExactHashReductionSampleGrid(sample = sample)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = sample.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = sample.signature,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExactHashReductionSampleGrid(sample: ExactHashReductionSample) {
+    val tileSize = when (maxOf(sample.width, sample.height)) {
+        1 -> 56.dp
+        2 -> 28.dp
+        else -> 18.dp
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        (0 until sample.height).forEach { y ->
+            Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                (0 until sample.width).forEach { x ->
+                    val color = sample.colors.getOrNull(y * sample.width + x)
+                        ?: ExactHashReductionColor(red = 0, green = 0, blue = 0)
+                    Box(
+                        modifier = Modifier
+                            .size(tileSize)
+                            .background(
+                                Color(
+                                    red = color.red,
+                                    green = color.green,
+                                    blue = color.blue
+                                )
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal data class ExactThumbnailClusterExplanation(
+    val mediaScope: String,
+    val colorMode: String,
+    val resize: String,
+    val quantization: String,
+    val frameSeconds: List<String>,
+    val sampleSignatures: List<String>
+)
+
+internal fun exactThumbnailClusterExplanation(signature: String): ExactThumbnailClusterExplanation? {
+    val parts = signature.split(":", limit = 7)
+    if (parts.size != 7 || parts[0] != "thumb-v1") return null
+    val mediaScope = parts[1].takeIf { it.isNotBlank() } ?: return null
+    val colorMode = parts[2].takeIf { it == "gray" || it == "color" } ?: return null
+    val resize = parts[3].takeIf { it.contains("x") } ?: return null
+    val quantization = parts[4].takeIf { it.isNotBlank() } ?: return null
+    val frameSeconds = parts[5]
+        .split(',')
+        .map { frame -> frame.trim() }
+        .filter { frame -> frame.isNotEmpty() }
+    val sampleSignatures = parts[6]
+        .split('|')
+        .map { sample -> sample.trim() }
+        .filter { sample -> sample.isNotEmpty() }
+
+    return ExactThumbnailClusterExplanation(
+        mediaScope = mediaScope,
+        colorMode = colorMode,
+        resize = resize,
+        quantization = quantization,
+        frameSeconds = frameSeconds,
+        sampleSignatures = sampleSignatures
+    )
+}
+
+internal data class DurationClusterExplanation(
+    val toleranceMillis: Long,
+    val minDurationMillis: Long,
+    val maxDurationMillis: Long
+)
+
+private fun durationClusterExplanation(signature: String): DurationClusterExplanation? {
+    val parts = signature.split(":", limit = 3)
+    if (parts.size != 3 || parts[0] != "duration-v1") return null
+    val toleranceMillis = parts[1].toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val minDurationMillis = parts[2].substringBefore('-').toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val maxDurationMillis = parts[2].substringAfter('-', missingDelimiterValue = "")
+        .toLongOrNull()
+        ?.coerceAtLeast(minDurationMillis)
+        ?: return null
+    return DurationClusterExplanation(
+        toleranceMillis = toleranceMillis,
+        minDurationMillis = minDurationMillis,
+        maxDurationMillis = maxDurationMillis
+    )
+}
+
+internal data class DurationNeighborClusterExplanation(
+    val toleranceMillis: Long,
+    val minDurationMillis: Long,
+    val maxDurationMillis: Long
+)
+
+internal fun durationNeighborClusterExplanation(signature: String): DurationNeighborClusterExplanation? {
+    val parts = signature.split(":", limit = 3)
+    if (parts.size != 3 || !isDurationNeighborListSignature(signature)) return null
+    val toleranceMillis = parts[1].toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val minDurationMillis = parts[2].substringBefore('-').toLongOrNull()?.coerceAtLeast(0L) ?: return null
+    val maxDurationMillis = parts[2].substringAfter('-', missingDelimiterValue = "")
+        .toLongOrNull()
+        ?.coerceAtLeast(minDurationMillis)
+        ?: return null
+    return DurationNeighborClusterExplanation(
+        toleranceMillis = toleranceMillis,
+        minDurationMillis = minDurationMillis,
+        maxDurationMillis = maxDurationMillis
+    )
+}
+
+private fun similarityClusterDetailSummaryLines(
+    setting: SimilaritySettingEntity,
+    cluster: SimilarityClusterEntity,
+    exactHashExplanation: ExactThumbnailClusterExplanation?,
+    durationNeighborExplanation: DurationNeighborClusterExplanation?
+): List<String> {
+    val durationExplanation = durationClusterExplanation(cluster.clusterKey)
+    return when {
+        durationNeighborExplanation != null -> listOf(
+            "List rule: duration-sorted neighbor filter",
+            "Why included: the full candidate set is sorted by extracted duration, then only videos with a previous or next item inside the tolerance are shown.",
+            "Visible duration span: ${durationMillisLabel(durationNeighborExplanation.minDurationMillis)} - ${durationMillisLabel(durationNeighborExplanation.maxDurationMillis)}",
+            "Tolerance: ${durationMillisLabel(durationNeighborExplanation.toleranceMillis)}",
+            "Order: sorted by extracted video duration",
+            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+        )
+        exactHashExplanation != null -> listOf(
+            "Group rule: exact thumbnail hash equality",
+            "Why included: every member produced the same exact thumbnail signature.",
+            "Media: ${mediaScopeLabel(exactHashExplanation.mediaScope)}",
+            "Samples: ${framesLabel(exactHashExplanation)}",
+            "Resize: ${exactHashExplanation.resize}",
+            "Color mode: ${colorModeLabel(exactHashExplanation.colorMode)}",
+            "Quantization: ${quantizationLabel(exactHashExplanation.quantization)}",
+            "Sample signature values: ${sampleSignaturesLabel(exactHashExplanation.sampleSignatures)}",
+            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+        )
+        durationExplanation != null -> listOf(
+            "Group rule: duration tolerance window",
+            "Why included: every member's extracted duration fits inside the configured tolerance window.",
+            "Visible duration span: ${durationMillisLabel(durationExplanation.minDurationMillis)} - ${durationMillisLabel(durationExplanation.maxDurationMillis)}",
+            "Tolerance: ${durationMillisLabel(durationExplanation.toleranceMillis)}",
+            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+        )
+        else -> listOf(
+            settingParametersSummary(setting),
+            "Similarity signature ${cluster.clusterKey}",
+            "Snapshot ${formatDate(cluster.updatedAtMillis)}"
+        )
+    }
+}
+
+internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanation): String {
+    return "Exact hash: ${mediaScopeLabel(explanation.mediaScope)}, ${framesLabel(explanation)}, ${explanation.resize}, " +
+        "${colorModeLabel(explanation.colorMode)}, ${quantizationLabel(explanation.quantization)}"
+}
+
+private fun durationClusterSummary(explanation: DurationClusterExplanation): String {
+    return "Duration window: ${durationMillisLabel(explanation.minDurationMillis)} - " +
+        "${durationMillisLabel(explanation.maxDurationMillis)}, tolerance ${durationMillisLabel(explanation.toleranceMillis)}"
+}
+
+internal fun durationNeighborClusterSummary(explanation: DurationNeighborClusterExplanation): String {
+    return "Duration neighbor list: ${durationMillisLabel(explanation.minDurationMillis)} - " +
+        "${durationMillisLabel(explanation.maxDurationMillis)}, tolerance ${durationMillisLabel(explanation.toleranceMillis)}"
+}
+
+internal fun similarityClusterPreviewLineTexts(
+    members: List<FileMetadata>,
+    showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long> = emptyMap(),
+    itemsPerLine: Int = SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE,
+    maxItems: Int = SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT,
+    preserveOrder: Boolean = false
+): List<String> {
+    val orderedMembers = if (preserveOrder) {
+        members
+    } else {
+        members.sortedBy { file -> file.normalizedPath }
+    }
+    return orderedMembers
+        .take(maxItems.coerceAtLeast(0))
+        .chunked(itemsPerLine.coerceAtLeast(1))
+        .map { row ->
+            row.joinToString("  |  ") { file ->
+                similarityClusterPreviewMemberText(
+                    file = file,
+                    showFullPaths = showFullPaths,
+                    durationMillisByNormalizedPath = durationMillisByNormalizedPath
+                )
+            }
+        }
+}
+
+private fun similarityMemberDurationMap(
+    members: List<SimilarityClusterMember>
+): Map<String, Long> {
+    return members.mapNotNull { member ->
+        member.durationMillis?.let { durationMillis ->
+            member.metadata.normalizedPath to durationMillis
+        }
+    }.toMap()
+}
+
+private fun similarityClusterPreviewMemberText(
+    file: FileMetadata,
+    showFullPaths: Boolean,
+    durationMillisByNormalizedPath: Map<String, Long>
+): String {
+    val path = formatPath(file.normalizedPath, showFullPaths)
+    val durationMillis = durationMillisByNormalizedPath[file.normalizedPath] ?: return path
+    return "${durationMillisLabel(durationMillis)} | $path"
+}
+
+internal fun similarityClusterPreviewDisplayCount(
+    members: List<FileMetadata>,
+    maxItems: Int = SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT
+): Int {
+    return members.size.coerceAtMost(maxItems.coerceAtLeast(0))
+}
+
+internal data class ExactHashReductionSample(
+    val label: String,
+    val signature: String,
+    val width: Int,
+    val height: Int,
+    val colors: List<ExactHashReductionColor>
+)
+
+internal data class ExactHashReductionColor(
+    val red: Int,
+    val green: Int,
+    val blue: Int
+)
+
+internal fun exactHashReductionSamples(
+    explanation: ExactThumbnailClusterExplanation
+): List<ExactHashReductionSample> {
+    val configuredGrid = exactHashReductionGridSize(explanation.resize)
+    return explanation.sampleSignatures.mapIndexedNotNull { index, signature ->
+        val colors = exactHashReductionColors(
+            colorMode = explanation.colorMode,
+            quantization = explanation.quantization,
+            signature = signature
+        )
+        if (colors.isEmpty()) return@mapIndexedNotNull null
+        val configuredPixelCount = configuredGrid.width * configuredGrid.height
+        val sampleWidth = if (configuredPixelCount == colors.size) configuredGrid.width else colors.size
+        val sampleHeight = if (configuredPixelCount == colors.size) configuredGrid.height else 1
+        ExactHashReductionSample(
+            label = exactHashReductionSampleLabel(
+                explanation = explanation,
+                index = index
+            ),
+            signature = signature,
+            width = sampleWidth.coerceAtLeast(1),
+            height = sampleHeight.coerceAtLeast(1),
+            colors = colors
+        )
+    }
+}
+
+internal data class ExactHashReductionGridSize(
+    val width: Int,
+    val height: Int
+)
+
+internal fun exactHashReductionGridSize(resize: String): ExactHashReductionGridSize {
+    val parts = resize.split('x', limit = 2)
+    val width = parts.getOrNull(0)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    val height = parts.getOrNull(1)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    return ExactHashReductionGridSize(width = width, height = height)
+}
+
+internal fun exactHashReductionColor(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): ExactHashReductionColor? {
+    return exactHashReductionColors(
+        colorMode = colorMode,
+        quantization = quantization,
+        signature = signature
+    ).firstOrNull()
+}
+
+internal fun exactHashReductionColors(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): List<ExactHashReductionColor> {
+    return splitPixelSignatures(signature).mapNotNull { pixelSignature ->
+        exactHashReductionPixelColor(
+            colorMode = colorMode,
+            quantization = quantization,
+            signature = pixelSignature
+        )
+    }
+}
+
+private fun exactHashReductionPixelColor(
+    colorMode: String,
+    quantization: String,
+    signature: String
+): ExactHashReductionColor? {
+    val trimmedSignature = signature.trim()
+    val quantizationLevels = quantization
+        .takeIf { value -> value.startsWith("q") }
+        ?.drop(1)
+        ?.toIntOrNull()
+        ?.coerceAtLeast(2)
+    return if (colorMode == "gray") {
+        val gray = if (quantizationLevels == null) {
+            parseHexChannel(trimmedSignature)
+        } else {
+            parseHexBucket(trimmedSignature)?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+        } ?: return null
+        ExactHashReductionColor(red = gray, green = gray, blue = gray)
+    } else if (colorMode == "color") {
+        if (quantizationLevels == null) {
+            if (trimmedSignature.length < 6) return null
+            val red = parseHexChannel(trimmedSignature.substring(0, 2)) ?: return null
+            val green = parseHexChannel(trimmedSignature.substring(2, 4)) ?: return null
+            val blue = parseHexChannel(trimmedSignature.substring(4, 6)) ?: return null
+            ExactHashReductionColor(red = red, green = green, blue = blue)
+        } else {
+            val channelWidth = quantizedChannelHexWidth(quantizationLevels)
+            if (trimmedSignature.length < channelWidth * 3) return null
+            val red = parseHexBucket(trimmedSignature.substring(0, channelWidth))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            val green = parseHexBucket(trimmedSignature.substring(channelWidth, channelWidth * 2))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            val blue = parseHexBucket(trimmedSignature.substring(channelWidth * 2, channelWidth * 3))
+                ?.let { bucket -> bucketToChannel(bucket, quantizationLevels) }
+                ?: return null
+            ExactHashReductionColor(red = red, green = green, blue = blue)
+        }
+    } else {
+        null
+    }
+}
+
+private fun splitPixelSignatures(signature: String): List<String> {
+    return if (signature.contains(',')) {
+        signature.split(',')
+            .map { part -> part.trim() }
+            .filter { part -> part.isNotEmpty() }
+    } else {
+        listOf(signature.trim()).filter { part -> part.isNotEmpty() }
+    }
+}
+
+private fun exactHashReductionSampleLabel(
+    explanation: ExactThumbnailClusterExplanation,
+    index: Int
+): String {
+    if (explanation.mediaScope == "image") return "Reduced image"
+    val frameSecond = explanation.frameSeconds.getOrNull(index)
+    return frameSecond?.let { second -> "Reduced frame ${second}s" } ?: "Reduced sample ${index + 1}"
+}
+
+private fun parseHexChannel(value: String): Int? {
+    return value.toIntOrNull(radix = 16)?.coerceIn(0, 255)
+}
+
+private fun parseHexBucket(value: String): Int? {
+    return value.toIntOrNull(radix = 16)?.coerceAtLeast(0)
+}
+
+private fun bucketToChannel(bucket: Int, levels: Int): Int {
+    val normalizedLevels = levels.coerceAtLeast(2)
+    return ((bucket.coerceIn(0, normalizedLevels - 1) * 255) / (normalizedLevels - 1))
+        .coerceIn(0, 255)
+}
+
+private fun quantizedChannelHexWidth(levels: Int): Int {
+    return (levels.coerceAtLeast(2) - 1).toString(16).length
+}
+
+private fun mediaScopeLabel(value: String): String {
+    return when (value) {
+        "video" -> "Video"
+        "image" -> "Image"
+        else -> value
+    }
+}
+
+private fun framesLabel(explanation: ExactThumbnailClusterExplanation): String {
+    if (explanation.mediaScope == "image") return "image pixels"
+    if (explanation.frameSeconds.isEmpty()) return "no configured frame seconds"
+    return explanation.frameSeconds.joinToString(", ") { second -> "${second}s" }
+}
+
+private fun colorModeLabel(value: String): String {
+    return when (value) {
+        "gray" -> "grayscale"
+        "color" -> "color"
+        else -> value
+    }
+}
+
+private fun durationMillisLabel(value: Long): String {
+    val safeValue = value.coerceAtLeast(0L)
+    val seconds = safeValue / 1_000L
+    val millis = safeValue % 1_000L
+    return if (millis == 0L) {
+        "${seconds}s"
+    } else {
+        "$seconds.${millis.toString().padStart(3, '0')}s"
+    }
+}
+
+private fun quantizationLabel(value: String): String {
+    return if (value == "raw") {
+        "raw pixels"
+    } else if (value.startsWith("q")) {
+        "${value.drop(1)} levels"
+    } else {
+        value
+    }
+}
+
+private fun sampleSignaturesLabel(values: List<String>): String {
+    if (values.isEmpty()) return "none"
+    return values.joinToString(" | ") { value ->
+        value.take(SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT)
+    }
+}
+
+private fun isDurationNeighborListSignature(signature: String): Boolean {
+    return signature.startsWith("duration-neighbor-list-v1:") ||
+        signature.startsWith("duration-neighbor-v1:")
 }
 
 internal fun shouldTriggerSimilarityMemberAutoLoad(

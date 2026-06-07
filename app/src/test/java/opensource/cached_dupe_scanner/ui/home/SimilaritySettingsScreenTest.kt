@@ -12,7 +12,7 @@ import org.junit.Test
 
 class SimilaritySettingsScreenTest {
     @Test
-    fun similarityScreensUseSeparateRouteLevelComposables() {
+    fun similarityScreensUseRouteLevelComposablesWithExperimentFlowText() {
         val content = sourceText("SimilaritySettingsScreen.kt")
 
         assertTrue(content.contains("fun SimilaritySettingsScreen("))
@@ -35,8 +35,11 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("repository.createExactThumbnailSetting("))
         assertTrue(content.contains("repository.createDurationToleranceSetting("))
         assertTrue(content.contains("repository.createDurationNeighborListSetting("))
-        assertFalse(content.contains("title = \"Experiment"))
-        assertFalse(content.contains("title = \"Template"))
+        assertTrue(content.contains("title = \"Similarity experiments\""))
+        assertTrue(content.contains("Text(\"New experiment\")"))
+        assertTrue(content.contains("text = \"Experiment list\""))
+        assertTrue(content.contains("text = \"Experiment templates\""))
+        assertTrue(content.contains("Executable experiment template"))
     }
 
     @Test
@@ -55,7 +58,8 @@ class SimilaritySettingsScreenTest {
         assertFalse(settingDetailContent.contains("SimilarityClusterListCard("))
         assertTrue(settingGroupsContent.contains("SimilarityGroupsHeader("))
         assertTrue(settingGroupsContent.contains("SimilarityClusterListCard("))
-        assertTrue(content.contains("SimilarityClusterSummaryCard("))
+        assertTrue(content.contains("SimilarityClusterDetailOverviewCard("))
+        assertTrue(content.contains("ExactHashReductionPreviewCard("))
         assertTrue(content.contains("SimilarityMemberCard("))
         assertTrue(content.contains("GroupPreviewThumbnail("))
         assertTrue(content.contains("FileDetailsDialogWithDeleteConfirm("))
@@ -75,6 +79,11 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("VideoMetadataLabelText("))
         assertTrue(content.contains("DropdownMenuItem("))
         assertTrue(content.contains("onOpenCluster"))
+        assertTrue(content.contains("exactThumbnailClusterExplanation("))
+        assertTrue(content.contains("durationNeighborClusterExplanation("))
+        assertTrue(content.contains("similarityClusterPreviewLineTexts("))
+        assertTrue(content.contains("Group rule: exact thumbnail hash equality"))
+        assertTrue(content.contains("List rule: duration-sorted neighbor filter"))
         assertFalse(content.contains("clusters.take("))
         assertFalse(content.contains("repository.listClusterMembers(clusterId)"))
     }
@@ -87,6 +96,57 @@ class SimilaritySettingsScreenTest {
         assertFalse(content.contains("Parameters: \${setting.paramsJson}"))
         assertFalse(content.contains("Key \${cluster.clusterKey}"))
         assertFalse(content.contains("thumbnailSignature"))
+    }
+
+    @Test
+    fun similarityClusterExplanationRestoresReadableExperimentSummaries() {
+        val exact = exactThumbnailClusterExplanation("thumb-v1:video:color:2x1:q16:0,1:0f0f0f,000000|ffffff,101010")
+        val neighbor = durationNeighborClusterExplanation("duration-neighbor-list-v1:500:1000-1500")
+
+        requireNotNull(exact)
+        requireNotNull(neighbor)
+        assertEquals(
+            "Exact hash: Video, 0s, 1s, 2x1, color, 16 levels",
+            exactHashClusterSummary(exact)
+        )
+        assertEquals(
+            "Duration neighbor list: 1s - 1.500s, tolerance 0.500s",
+            durationNeighborClusterSummary(neighbor)
+        )
+        assertEquals(
+            listOf("1s | a.mp4  |  2s | b.mp4"),
+            similarityClusterPreviewLineTexts(
+                members = listOf(
+                    file(path = "b.mp4"),
+                    file(path = "a.mp4")
+                ),
+                showFullPaths = false,
+                durationMillisByNormalizedPath = mapOf(
+                    "a.mp4" to 1_000L,
+                    "b.mp4" to 2_000L
+                )
+            )
+        )
+    }
+
+    @Test
+    fun exactHashReductionSamplesDecodeRawAndQuantizedColors() {
+        assertEquals(
+            ExactHashReductionColor(red = 255, green = 128, blue = 64),
+            exactHashReductionColor(
+                colorMode = "color",
+                quantization = "raw",
+                signature = "ff8040"
+            )
+        )
+        assertEquals(
+            ExactHashReductionColor(red = 255, green = 255, blue = 255),
+            exactHashReductionColor(
+                colorMode = "color",
+                quantization = "q16",
+                signature = "fff"
+            )
+        )
     }
 
     @Test
@@ -201,13 +261,17 @@ class SimilaritySettingsScreenTest {
 
     private fun member(path: String, durationMillis: Long): SimilarityClusterMember {
         return SimilarityClusterMember(
-            metadata = FileMetadata(
-                path = path,
-                normalizedPath = path,
-                sizeBytes = 1L,
-                lastModifiedMillis = 0L
-            ),
+            metadata = file(path = path),
             durationMillis = durationMillis
+        )
+    }
+
+    private fun file(path: String): FileMetadata {
+        return FileMetadata(
+            path = path,
+            normalizedPath = path,
+            sizeBytes = 1L,
+            lastModifiedMillis = 0L
         )
     }
 
