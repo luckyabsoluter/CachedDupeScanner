@@ -147,7 +147,7 @@ fun SimilaritySettingsScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Similarity experiments",
+                title = "Similarity settings",
                 onBack = onBack
             )
         }
@@ -156,7 +156,7 @@ fun SimilaritySettingsScreen(
                 onClick = onCreateSetting,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("New experiment")
+                Text("New setting")
             }
         }
         item(key = "maintenance") {
@@ -268,34 +268,34 @@ fun SimilaritySettingCreateScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "New experiment",
+                title = "New similarity setting",
                 onBack = onBack
             )
         }
         item(key = "create_header") {
             Text(
-                text = "Experiment templates",
+                text = "Similarity templates",
                 style = MaterialTheme.typography.titleMedium
             )
         }
         item(key = "method_exact") {
             SimilarityMethodCard(
                 title = "Exact thumbnail hash",
-                description = "Runs a cached-media experiment with editable media type, size floor, frame timestamps, resize target, optional quantization, and color mode.",
+                description = "Configures cached-media matching with editable media type, size floor, frame timestamps, resize target, optional quantization, and color mode.",
                 onOpen = onOpenExactThumbnail
             )
         }
         item(key = "method_duration") {
             SimilarityMethodCard(
                 title = "Video duration tolerance",
-                description = "Runs a cached-video experiment that extracts each video's duration and clusters candidates inside the configured tolerance.",
+                description = "Configures cached-video matching that extracts each video's duration and clusters candidates inside the configured tolerance.",
                 onOpen = onOpenDurationTolerance
             )
         }
         item(key = "method_neighbor") {
             SimilarityMethodCard(
                 title = "Video duration neighbor list",
-                description = "Runs a cached-video experiment that builds one duration-sorted list and keeps only adjacent neighbors inside the tolerance.",
+                description = "Configures cached-video matching that builds one duration-sorted list and keeps only adjacent neighbors inside the tolerance.",
                 onOpen = onOpenDurationNeighbor
             )
         }
@@ -341,7 +341,7 @@ fun SimilarityExactThumbnailSettingScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Exact thumbnail experiment",
+                title = "Exact thumbnail setting",
                 onBack = onBack
             )
         }
@@ -403,13 +403,13 @@ fun SimilarityDurationSettingScreen(
             onCreated(created.settingId)
         }
     }
-    val title = if (neighborList) "Duration neighbor experiment" else "Duration tolerance experiment"
+    val title = if (neighborList) "Duration neighbor setting" else "Duration tolerance setting"
     val description = if (neighborList) {
         "Tolerance is the maximum duration gap between adjacent sorted videos. Isolated videos are omitted."
     } else {
         "Tolerance is the maximum duration gap inside one group. Use 0 for exact millisecond duration matches."
     }
-    val buttonText = if (neighborList) "Create duration neighbor experiment" else "Create duration tolerance experiment"
+    val buttonText = if (neighborList) "Create duration neighbor setting" else "Create duration tolerance setting"
 
     ScreenScrollColumn(
         modifier = modifier,
@@ -511,7 +511,7 @@ fun SimilaritySettingDetailScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = setting?.displayName ?: "Experiment detail",
+                title = setting?.displayName ?: "Similarity setting",
                 onBack = onBack
             )
         }
@@ -519,7 +519,7 @@ fun SimilaritySettingDetailScreen(
         if (selectedSetting == null) {
             item(key = "missing_setting") {
                 MissingSelectionCard(
-                    message = "This experiment is no longer available.",
+                    message = "This similarity setting is no longer available.",
                     onBack = onBack
                 )
             }
@@ -616,7 +616,7 @@ fun SimilaritySettingGroupsScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = setting?.displayName ?: "Experiment results",
+                title = setting?.displayName ?: "Similarity results",
                 onBack = onBack
             )
         }
@@ -645,7 +645,7 @@ fun SimilaritySettingGroupsScreen(
             if (clusters.isEmpty()) {
                 item(key = "clusters_empty") {
                     Text(
-                        text = "No experiment clusters found for this run.",
+                        text = "No similarity clusters found for this setting.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1187,9 +1187,9 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(text = "Experiment list", style = MaterialTheme.typography.titleMedium)
+        Text(text = "Similarity settings", style = MaterialTheme.typography.titleMedium)
         if (!hasSettings) {
-            Text(text = "No saved experiment runs yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = "No similarity settings yet.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1291,7 +1291,7 @@ private fun SimilarityMethodCard(
         ) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Executable experiment template",
+                text = "Similarity method template",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1331,7 +1331,7 @@ private fun ExactThumbnailSettingForm(
         ) {
             Text(text = "Exact thumbnail parameters", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Runs a real cached-media experiment with editable inputs.",
+                text = "Configures cached-media matching with editable inputs.",
                 style = MaterialTheme.typography.bodySmall
             )
             SizeFloorControls(
@@ -1397,7 +1397,7 @@ private fun ExactThumbnailSettingForm(
             )
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-                Text("Create exact thumbnail experiment")
+                Text("Create exact thumbnail setting")
             }
         }
     }
@@ -1553,7 +1553,7 @@ private fun SimilarityGroupsEntryCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = "Stored experiment results", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Stored similarity results", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = "$clusterCount clusters, $fileCount files",
                 style = MaterialTheme.typography.bodySmall
@@ -1586,7 +1586,7 @@ private fun SimilarityGroupsHeader(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(text = "Selected experiment clusters", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Selected similarity clusters", style = MaterialTheme.typography.titleMedium)
             Text(text = "$clusterCount clusters, $fileCount files", style = MaterialTheme.typography.bodySmall)
         }
         SimilarityClusterSortButton(
@@ -2311,7 +2311,7 @@ private fun ExactHashReductionPreviewCard(exactHashExplanation: ExactThumbnailCl
         ) {
             Text(text = "Reduction preview", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "These enlarged tiles show the exact reduced image values used for this experiment's equality check.",
+                text = "These enlarged tiles show the exact reduced image values used for this similarity equality check.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

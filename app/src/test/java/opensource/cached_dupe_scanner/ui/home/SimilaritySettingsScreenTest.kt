@@ -12,7 +12,7 @@ import org.junit.Test
 
 class SimilaritySettingsScreenTest {
     @Test
-    fun similarityScreensUseRouteLevelComposablesWithExperimentFlowText() {
+    fun similarityScreensUseRouteLevelComposablesWithSettingsFlowText() {
         val content = sourceText("SimilaritySettingsScreen.kt")
 
         assertTrue(content.contains("fun SimilaritySettingsScreen("))
@@ -35,11 +35,16 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("repository.createExactThumbnailSetting("))
         assertTrue(content.contains("repository.createDurationToleranceSetting("))
         assertTrue(content.contains("repository.createDurationNeighborListSetting("))
-        assertTrue(content.contains("title = \"Similarity experiments\""))
-        assertTrue(content.contains("Text(\"New experiment\")"))
-        assertTrue(content.contains("text = \"Experiment list\""))
-        assertTrue(content.contains("text = \"Experiment templates\""))
-        assertTrue(content.contains("Executable experiment template"))
+        assertTrue(content.contains("title = \"Similarity settings\""))
+        assertTrue(content.contains("Text(\"New setting\")"))
+        assertTrue(content.contains("text = \"Similarity settings\""))
+        assertTrue(content.contains("text = \"Similarity templates\""))
+        assertTrue(content.contains("Similarity method template"))
+        val legacySingular = "experi" + "ment"
+        val legacyPlural = legacySingular + "s"
+        assertFalse(content.contains("title = \"Similarity $legacyPlural\""))
+        assertFalse(content.contains("Text(\"New $legacySingular\")"))
+        assertFalse(content.contains("Executable $legacySingular template"))
     }
 
     @Test
@@ -104,7 +109,7 @@ class SimilaritySettingsScreenTest {
     }
 
     @Test
-    fun similarityClusterExplanationRestoresReadableExperimentSummaries() {
+    fun similarityClusterExplanationRestoresReadableSettingSummaries() {
         val exact = exactThumbnailClusterExplanation("thumb-v1:video:color:2x1:q16:0,1:0f0f0f,000000|ffffff,101010")
         val neighbor = durationNeighborClusterExplanation("duration-neighbor-list-v1:500:1000-1500")
 
