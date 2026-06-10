@@ -31,12 +31,8 @@ class MainActivityBackgroundTaskSourceTest {
             content.contains("appScope = AppWorkScopes.taskScope")
         )
         assertTrue(
-            "Similarity settings should receive the app-owned task scope",
-            content.contains("appScope = AppWorkScopes.taskScope")
-        )
-        assertTrue(
-            "Similarity task banners should open the maintenance route that shows active task status",
-            content.contains("TaskArea.Similarity -> Screen.SimilarityMaintenance")
+            "Similarity task banners should open the settings route because similarity results are scan-generated",
+            content.contains("TaskArea.Similarity -> Screen.SimilaritySettings")
         )
         assertFalse(
             "DB management should not receive the Compose coroutine scope for long tasks",
@@ -81,13 +77,9 @@ class MainActivityBackgroundTaskSourceTest {
             trashContent.contains("scope = appScope")
         )
         assertTrue(
-            "SimilarityMaintenanceScreen should accept an app scope for maintenance execution",
-            similarityContent.contains("fun SimilarityMaintenanceScreen(") &&
-                similarityContent.contains("appScope: CoroutineScope")
-        )
-        assertTrue(
-            "Similarity maintenance should launch on the app scope instead of the Compose scope",
-            similarityContent.contains("scope = appScope")
+            "Similarity settings should not expose a manual maintenance task runner",
+            !similarityContent.contains("fun SimilarityMaintenanceScreen(") &&
+                !similarityContent.contains("startSimilarityMaintenanceTask(")
         )
         assertTrue(
             "Bulk delete command screens should accept a task scope for execution",

@@ -73,7 +73,6 @@ import opensource.cached_dupe_scanner.ui.home.SettingsScreen
 import opensource.cached_dupe_scanner.ui.home.SimilarityClusterDetailScreen
 import opensource.cached_dupe_scanner.ui.home.SimilarityDurationSettingScreen
 import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScreen
-import opensource.cached_dupe_scanner.ui.home.SimilarityMaintenanceScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
@@ -203,8 +202,7 @@ class MainActivity : ComponentActivity() {
                             withContext(Dispatchers.IO) {
                                 Log.d("MainActivity", "Persisting scan to DB")
                                 historyRepo.recordScan(scan)
-                                similarityRepo.runEnabledMaintenance(
-                                    rebuild = false,
+                                similarityRepo.generateEnabledResults(
                                     shouldContinue = { true },
                                     onProgress = {}
                                 )
@@ -220,8 +218,7 @@ class MainActivity : ComponentActivity() {
                 fun refreshSimilarityFromCache(onComplete: (() -> Unit)? = null) {
                     scope.launch {
                         withContext(Dispatchers.IO) {
-                            similarityRepo.runEnabledMaintenance(
-                                rebuild = false,
+                            similarityRepo.generateEnabledResults(
                                 shouldContinue = { true },
                                 onProgress = {}
                             )
@@ -445,22 +442,9 @@ class MainActivity : ComponentActivity() {
                                 onCreateSetting = {
                                     navigateTo(backStack, screenCache, Screen.SimilaritySettingCreate)
                                 },
-                                onOpenMaintenance = {
-                                    navigateTo(backStack, screenCache, Screen.SimilarityMaintenance)
-                                },
                                 onOpenSetting = { settingId ->
                                     navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
                                 },
-                                modifier = screenModifier
-                            )
-
-                            Screen.SimilarityMaintenance -> SimilarityMaintenanceScreen(
-                                repository = similarityRepo,
-                                appScope = AppWorkScopes.taskScope,
-                                taskCoordinator = taskCoordinator,
-                                notificationController = notificationController,
-                                onChanged = { similarityRefreshVersion.value += 1 },
-                                onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
 
@@ -512,9 +496,6 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.SimilaritySettingDetail -> SimilaritySettingDetailScreen(
                                 repository = similarityRepo,
-                                appScope = AppWorkScopes.taskScope,
-                                taskCoordinator = taskCoordinator,
-                                notificationController = notificationController,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onChanged = { similarityRefreshVersion.value += 1 },
@@ -712,7 +693,7 @@ private fun screenForTaskArea(area: TaskArea): Screen {
         TaskArea.Scan -> Screen.ScanCommand
         TaskArea.Db -> Screen.DbManagement
         TaskArea.Trash -> Screen.Trash
-        TaskArea.Similarity -> Screen.SimilarityMaintenance
+        TaskArea.Similarity -> Screen.SimilaritySettings
     }
 }
 
@@ -747,7 +728,6 @@ internal sealed class Screen {
     data object Results : Screen()
     data object Settings : Screen()
     data object SimilaritySettings : Screen()
-    data object SimilarityMaintenance : Screen()
     data object SimilaritySettingCreate : Screen()
     data object SimilarityExactThumbnailSetting : Screen()
     data object SimilarityDurationToleranceSetting : Screen()
@@ -771,7 +751,6 @@ internal sealed class Screen {
             Results -> "results"
             Settings -> "settings"
             SimilaritySettings -> "similarity-settings"
-            SimilarityMaintenance -> "similarity-maintenance"
             SimilaritySettingCreate -> "similarity-setting-create"
             SimilarityExactThumbnailSetting -> "similarity-setting-exact-thumbnail"
             SimilarityDurationToleranceSetting -> "similarity-setting-duration-tolerance"
@@ -798,7 +777,7 @@ internal sealed class Screen {
                 token == "results" -> Results
                 token == "settings" -> Settings
                 token == "similarity-settings" -> SimilaritySettings
-                token == "similarity-maintenance" -> SimilarityMaintenance
+                token == "similarity-maintenance" -> SimilaritySettings
                 token == "similarity-setting-create" -> SimilaritySettingCreate
                 token == "similarity-setting-exact-thumbnail" -> SimilarityExactThumbnailSetting
                 token == "similarity-setting-duration-tolerance" -> SimilarityDurationToleranceSetting

@@ -20,8 +20,7 @@ enum class TaskKind {
     RebuildGroups,
     ClearCache,
     EmptyTrash,
-    BulkDelete,
-    SimilarityMaintenance
+    BulkDelete
 }
 
 enum class TaskStatus {

@@ -221,15 +221,14 @@ class SimilaritySettingsRepository(
         }
     }
 
-    fun runEnabledMaintenance(
-        rebuild: Boolean,
+    fun generateEnabledResults(
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
     ): SimilarityMaintenanceSummary {
         val settings = similarityDao.listEnabledSettings()
         return runSettingsMaintenance(
             settings = settings,
-            rebuild = rebuild,
+            rebuild = false,
             shouldContinue = shouldContinue,
             onProgress = onProgress
         )

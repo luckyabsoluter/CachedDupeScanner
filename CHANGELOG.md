@@ -8,7 +8,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity settings management for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and per-setting run/rebuild/clear controls.
+- Similarity settings management for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and per-setting clear controls.
 - Similarity settings now provide separate flows for setting type selection, custom creation controls, setting management, and similarity group member browsing.
 - Similarity settings identity now treats different method parameters as separate settings, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
@@ -22,7 +22,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity settings screens now restore the previous template-style flow, detailed cluster and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping the maintained settings terminology.
 - Similarity cluster detail member cards now restore the previous full-width media card layout with exact byte counts, selection styling, and separated video metadata/timeline preview rows.
 - Similarity settings group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
-- Similarity setting management pages now keep run/rebuild/clear controls separate from the group browsing screen.
+- Similarity setting management pages now keep clear/delete controls separate from the group browsing screen while scan completion generates similarity results.
+- Similarity settings no longer expose manual run/rebuild controls; enabled settings are generated from scan-cache data after scans.
 - Similarity cluster detail member browsing now shares the result member sort control and automatically loads additional members near the end of the list.
 - Similarity setting group lists now restore cluster sort controls for file count and total size order.
 - Similarity cluster detail screens in maintained settings now restore long-press member selection, selected-file deletion, and video preview menu options.
@@ -38,7 +39,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity settings no longer auto-create default rows when opened, and individual settings can now be deleted with their generated data.
 - Top-right checkbox menu items now stay open after toggling preview and path display options.
 - Similarity setting parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same setting rows.
-- Duration-neighbor similarity maintenance now builds connected neighbor clusters with stable normalized range keys.
+- Duration-neighbor similarity generation now builds connected neighbor clusters with stable normalized range keys.
 - Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
 - Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.
 - Lazy result and similarity detail selection now share one selection state contract, while eager-only detail content is explicitly separated from paged detail screens.

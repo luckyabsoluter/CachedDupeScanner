@@ -57,7 +57,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -75,11 +74,8 @@ import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
 import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
-import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
-import opensource.cached_dupe_scanner.tasks.TaskArea
-import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
@@ -94,7 +90,6 @@ import opensource.cached_dupe_scanner.ui.home.similarity.parsedFrameSeconds
 import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
-import opensource.cached_dupe_scanner.ui.home.similarity.startSimilarityMaintenanceTask
 
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT = 10
 private const val SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT = 4
@@ -114,7 +109,6 @@ fun SimilaritySettingsScreen(
     refreshVersion: Int,
     onBack: () -> Unit,
     onCreateSetting: () -> Unit,
-    onOpenMaintenance: () -> Unit,
     onOpenSetting: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -159,14 +153,6 @@ fun SimilaritySettingsScreen(
                 Text("New setting")
             }
         }
-        item(key = "maintenance") {
-            OutlinedButton(
-                onClick = onOpenMaintenance,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Maintenance")
-            }
-        }
         item(key = "settings_header") {
             SimilaritySettingsHeader(hasSettings = settings.isNotEmpty())
         }
@@ -180,77 +166,6 @@ fun SimilaritySettingsScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-fun SimilarityMaintenanceScreen(
-    repository: SimilaritySettingsRepository,
-    appScope: CoroutineScope,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
-    onChanged: () -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var statusText by remember { mutableStateOf("No similarity maintenance running.") }
-    var confirmClearAll by remember { mutableStateOf(false) }
-    val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
-    val displayedStatus = activeTask?.detail ?: statusText
-    fun runMaintenance(rebuild: Boolean) {
-        val started = startSimilarityMaintenanceTask(
-            repository = repository,
-            settingId = null,
-            rebuild = rebuild,
-            scope = appScope,
-            taskCoordinator = taskCoordinator,
-            notificationController = notificationController,
-            onStatusText = { status -> statusText = status },
-            onFinished = { onChanged() }
-        )
-        if (!started) {
-            statusText = "Similarity maintenance is already running."
-        }
-    }
-    fun clearAllResults() {
-        confirmClearAll = false
-        appScope.launch {
-            withContext(Dispatchers.IO) { repository.clearAllResults() }
-            statusText = "All generated similarity data was cleared."
-            onChanged()
-        }
-    }
-
-    ScreenScrollColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "top_bar") {
-            AppTopBar(
-                title = "Similarity maintenance",
-                onBack = onBack
-            )
-        }
-        item(key = "maintenance") {
-            SimilarityMaintenanceCard(
-                statusText = displayedStatus,
-                running = activeTask != null,
-                onRunEnabled = { runMaintenance(rebuild = false) },
-                onRebuildEnabled = { runMaintenance(rebuild = true) },
-                onClearAll = { confirmClearAll = true }
-            )
-        }
-    }
-    if (confirmClearAll) {
-        ConfirmationDialog(
-            title = "Clear all similarity data?",
-            text = "Generated similarity groups, member links, and method features will be removed. Configured settings stay available.",
-            confirmText = "Clear",
-            onConfirm = ::clearAllResults,
-            onDismissRequest = { confirmClearAll = false },
-            confirmEnabled = activeTask == null,
-            confirmStyle = ConfirmationDialogButtonStyle.Outlined
-        )
     }
 }
 
@@ -443,9 +358,6 @@ fun SimilarityDurationSettingScreen(
 @Composable
 fun SimilaritySettingDetailScreen(
     repository: SimilaritySettingsRepository,
-    appScope: CoroutineScope,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
     settingId: Long,
     refreshVersion: Int,
     onChanged: () -> Unit,
@@ -456,11 +368,9 @@ fun SimilaritySettingDetailScreen(
     val scope = rememberCoroutineScope()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var statusText by remember { mutableStateOf("No similarity maintenance running.") }
+    var statusText by remember { mutableStateOf("Similarity results are generated after scans.") }
     var confirmClearSetting by remember { mutableStateOf(false) }
     var confirmDeleteSetting by remember { mutableStateOf(false) }
-    val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
-    val displayedStatus = activeTask?.detail ?: statusText
     fun refresh() {
         scope.launch {
             val loadedSetting = withContext(Dispatchers.IO) {
@@ -470,24 +380,6 @@ fun SimilaritySettingDetailScreen(
             setting = loadedSetting
             clusters.clear()
             clusters.addAll(loadedClusters)
-        }
-    }
-    fun runMaintenance(rebuild: Boolean) {
-        val started = startSimilarityMaintenanceTask(
-            repository = repository,
-            settingId = settingId,
-            rebuild = rebuild,
-            scope = appScope,
-            taskCoordinator = taskCoordinator,
-            notificationController = notificationController,
-            onStatusText = { status -> statusText = status },
-            onFinished = {
-                onChanged()
-                refresh()
-            }
-        )
-        if (!started) {
-            statusText = "Similarity maintenance is already running."
         }
     }
     fun clearSettingResults() {
@@ -540,8 +432,7 @@ fun SimilaritySettingDetailScreen(
                     setting = selectedSetting,
                     clusterCount = clusters.size,
                     fileCount = clusters.sumOf { cluster -> cluster.fileCount },
-                    statusText = displayedStatus,
-                    running = activeTask != null,
+                    statusText = statusText,
                     onToggle = { enabled ->
                         scope.launch {
                             withContext(Dispatchers.IO) {
@@ -551,8 +442,6 @@ fun SimilaritySettingDetailScreen(
                             refresh()
                         }
                     },
-                    onRun = { runMaintenance(rebuild = false) },
-                    onRebuild = { runMaintenance(rebuild = true) },
                     onClear = { confirmClearSetting = true },
                     onDelete = { confirmDeleteSetting = true }
                 )
@@ -573,7 +462,6 @@ fun SimilaritySettingDetailScreen(
             confirmText = "Clear",
             onConfirm = ::clearSettingResults,
             onDismissRequest = { confirmClearSetting = false },
-            confirmEnabled = activeTask == null,
             confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
@@ -584,7 +472,6 @@ fun SimilaritySettingDetailScreen(
             confirmText = "Delete",
             onConfirm = ::deleteSetting,
             onDismissRequest = { confirmDeleteSetting = false },
-            confirmEnabled = activeTask == null,
             confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
@@ -1218,40 +1105,6 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
 }
 
 @Composable
-private fun SimilarityMaintenanceCard(
-    statusText: String,
-    running: Boolean,
-    onRunEnabled: () -> Unit,
-    onRebuildEnabled: () -> Unit,
-    onClearAll: () -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(text = "Maintenance", style = MaterialTheme.typography.titleMedium)
-            Text(text = statusText, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onRunEnabled, enabled = !running) {
-                    Text("Run enabled")
-                }
-                OutlinedButton(onClick = onRebuildEnabled, enabled = !running) {
-                    Text("Rebuild enabled")
-                }
-            }
-            OutlinedButton(
-                onClick = onClearAll,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !running
-            ) {
-                Text("Clear all similarity data")
-            }
-        }
-    }
-}
-
-@Composable
 private fun SimilaritySettingListCard(
     setting: SimilaritySettingEntity,
     clusterCount: Int,
@@ -1526,10 +1379,7 @@ private fun SimilaritySettingDetailCard(
     clusterCount: Int,
     fileCount: Int,
     statusText: String,
-    running: Boolean,
     onToggle: (Boolean) -> Unit,
-    onRun: () -> Unit,
-    onRebuild: () -> Unit,
     onClear: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1556,16 +1406,10 @@ private fun SimilaritySettingDetailCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onRun, enabled = !running) {
-                    Text("Run")
-                }
-                OutlinedButton(onClick = onRebuild, enabled = !running) {
-                    Text("Rebuild")
-                }
-                OutlinedButton(onClick = onClear, enabled = !running) {
+                OutlinedButton(onClick = onClear) {
                     Text("Clear")
                 }
-                OutlinedButton(onClick = onDelete, enabled = !running) {
+                OutlinedButton(onClick = onDelete) {
                     Text("Delete setting")
                 }
             }
