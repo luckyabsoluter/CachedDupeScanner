@@ -28,7 +28,6 @@ import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.buildDurationNeighborListSignature
 import opensource.cached_dupe_scanner.core.buildDurationToleranceSignature
-import opensource.cached_dupe_scanner.core.defaultSimilaritySettingDrafts
 import opensource.cached_dupe_scanner.core.durationNeighborListSettingDraft
 import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
 import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
@@ -71,12 +70,6 @@ class SimilaritySettingsRepository(
     private val frameSignatureExtractor: VideoFrameSignatureExtractor = AndroidVideoFrameSignatureExtractor(),
     private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor()
 ) : CacheMutationObserver {
-    fun ensureDefaultSettings() {
-        defaultSimilaritySettingDrafts().forEach { draft ->
-            createOrGetSetting(draft = draft, enabled = false)
-        }
-    }
-
     fun createExactThumbnailSetting(
         mediaScope: SimilarityMediaScope,
         minSizeBytes: Long,
@@ -153,7 +146,6 @@ class SimilaritySettingsRepository(
     }
 
     fun listSettings(): List<SimilaritySettingEntity> {
-        ensureDefaultSettings()
         return similarityDao.listSettings()
     }
 
@@ -171,6 +163,14 @@ class SimilaritySettingsRepository(
         database.runInTransaction {
             clearSettingDataLocked(settingId)
             similarityDao.deleteMaintenanceRunsForSetting(settingId)
+        }
+    }
+
+    fun deleteSetting(settingId: Long) {
+        database.runInTransaction {
+            clearSettingDataLocked(settingId)
+            similarityDao.deleteMaintenanceRunsForSetting(settingId)
+            similarityDao.deleteSetting(settingId)
         }
     }
 

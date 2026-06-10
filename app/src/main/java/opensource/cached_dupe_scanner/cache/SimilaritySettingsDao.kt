@@ -56,6 +56,9 @@ interface SimilaritySettingsDao {
     @Query("UPDATE similarity_settings SET enabled = :enabled, updatedAtMillis = :updatedAtMillis WHERE settingId = :settingId")
     fun updateSettingEnabled(settingId: Long, enabled: Boolean, updatedAtMillis: Long)
 
+    @Query("DELETE FROM similarity_settings WHERE settingId = :settingId")
+    fun deleteSetting(settingId: Long)
+
     @Query("SELECT COUNT(*) FROM similarity_settings")
     fun countSettings(): Int
 

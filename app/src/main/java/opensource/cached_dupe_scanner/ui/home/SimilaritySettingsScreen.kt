@@ -458,6 +458,7 @@ fun SimilaritySettingDetailScreen(
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     var statusText by remember { mutableStateOf("No similarity maintenance running.") }
     var confirmClearSetting by remember { mutableStateOf(false) }
+    var confirmDeleteSetting by remember { mutableStateOf(false) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
     val displayedStatus = activeTask?.detail ?: statusText
     fun refresh() {
@@ -498,6 +499,16 @@ fun SimilaritySettingDetailScreen(
             statusText = "Generated similarity data was cleared for this setting."
             onChanged()
             refresh()
+        }
+    }
+    fun deleteSetting() {
+        confirmDeleteSetting = false
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                repository.deleteSetting(settingId)
+            }
+            onChanged()
+            onBack()
         }
     }
 
@@ -542,7 +553,8 @@ fun SimilaritySettingDetailScreen(
                     },
                     onRun = { runMaintenance(rebuild = false) },
                     onRebuild = { runMaintenance(rebuild = true) },
-                    onClear = { confirmClearSetting = true }
+                    onClear = { confirmClearSetting = true },
+                    onDelete = { confirmDeleteSetting = true }
                 )
             }
             item(key = "groups_entry") {
@@ -561,6 +573,17 @@ fun SimilaritySettingDetailScreen(
             confirmText = "Clear",
             onConfirm = ::clearSettingResults,
             onDismissRequest = { confirmClearSetting = false },
+            confirmEnabled = activeTask == null,
+            confirmStyle = ConfirmationDialogButtonStyle.Outlined
+        )
+    }
+    if (confirmDeleteSetting) {
+        ConfirmationDialog(
+            title = "Delete this similarity setting?",
+            text = "The setting, generated groups, member links, method features, and maintenance history will be removed.",
+            confirmText = "Delete",
+            onConfirm = ::deleteSetting,
+            onDismissRequest = { confirmDeleteSetting = false },
             confirmEnabled = activeTask == null,
             confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
@@ -1496,6 +1519,7 @@ private fun SizeFloorControls(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SimilaritySettingDetailCard(
     setting: SimilaritySettingEntity,
@@ -1506,7 +1530,8 @@ private fun SimilaritySettingDetailCard(
     onToggle: (Boolean) -> Unit,
     onRun: () -> Unit,
     onRebuild: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1527,7 +1552,10 @@ private fun SimilaritySettingDetailCard(
             Text(text = settingParametersSummary(setting), style = MaterialTheme.typography.bodySmall)
             Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(onClick = onRun, enabled = !running) {
                     Text("Run")
                 }
@@ -1536,6 +1564,9 @@ private fun SimilaritySettingDetailCard(
                 }
                 OutlinedButton(onClick = onClear, enabled = !running) {
                     Text("Clear")
+                }
+                OutlinedButton(onClick = onDelete, enabled = !running) {
+                    Text("Delete setting")
                 }
             }
         }

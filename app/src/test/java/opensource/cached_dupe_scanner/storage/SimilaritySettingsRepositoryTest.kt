@@ -107,6 +107,14 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun listSettingsDoesNotCreateDefaultRows() {
+        val repository = repository()
+
+        assertTrue(repository.listSettings().isEmpty())
+        assertEquals(0, database.similaritySettingsDao().countSettings())
+    }
+
+    @Test
     fun cacheMutationObserverRemovesStaleMembersInsideHistoryTransaction() {
         val first = videoFile("active-a.mp4")
         val second = videoFile("active-b.mp4")
@@ -252,6 +260,33 @@ class SimilaritySettingsRepositoryTest {
 
         assertTrue(repository.listClusters(setting.settingId).isEmpty())
         assertEquals(setting.settingId, repository.listSettings().first { it.settingId == setting.settingId }.settingId)
+    }
+
+    @Test
+    fun deleteSettingRemovesSettingRowAndGeneratedData() {
+        val first = videoFile("delete-a.mp4")
+        val second = videoFile("delete-b.mp4")
+        database.fileCacheDao().upsert(entity(first))
+        database.fileCacheDao().upsert(entity(second))
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+
+        repository.deleteSetting(setting.settingId)
+
+        assertTrue(repository.listSettings().none { it.settingId == setting.settingId })
+        assertTrue(repository.listClusters(setting.settingId).isEmpty())
+        assertEquals(0, database.similaritySettingsDao().countSettings())
     }
 
     @Test
