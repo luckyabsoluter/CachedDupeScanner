@@ -91,6 +91,32 @@ class MainActivityBackgroundTaskSourceTest {
         )
     }
 
+    @Test
+    fun mainActivityOwnsSimilarityDetailPreviewMenuSelections() {
+        val content = source("app/src/main/java/opensource/cached_dupe_scanner/MainActivity.kt")
+
+        assertTrue(
+            "Similarity detail video preview selection should survive screen recreation",
+            content.contains("val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }")
+        )
+        assertTrue(
+            "Similarity detail duration label selection should survive screen recreation",
+            content.contains("val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }")
+        )
+        assertTrue(
+            "Similarity detail resolution label selection should survive screen recreation",
+            content.contains("val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }")
+        )
+        assertTrue(
+            "Similarity detail screen should receive the hoisted video preview selection",
+            content.contains("showVideoPreviews = similarityShowVideoPreviews.value")
+        )
+        assertTrue(
+            "Similarity detail screen should update the hoisted video preview selection",
+            content.contains("onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it }")
+        )
+    }
+
     private fun source(relativePath: String): String {
         val projectDir = File(requireNotNull(System.getProperty("user.dir")))
         val sourceFile = sequenceOf(

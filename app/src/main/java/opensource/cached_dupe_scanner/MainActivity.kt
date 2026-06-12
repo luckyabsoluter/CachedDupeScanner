@@ -100,6 +100,9 @@ class MainActivity : ComponentActivity() {
                 val similarityRefreshVersion = remember { mutableStateOf(0) }
                 val settingsVersion = remember { mutableStateOf(0) }
                 val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
+                val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }
+                val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
+                val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
                 val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
@@ -543,6 +546,16 @@ class MainActivity : ComponentActivity() {
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 showFullPaths = settingsSnapshot.showFullPaths,
+                                showVideoPreviews = similarityShowVideoPreviews.value,
+                                showVideoPreviewDurations = similarityShowVideoPreviewDurations.value,
+                                showVideoPreviewResolutions = similarityShowVideoPreviewResolutions.value,
+                                onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it },
+                                onShowVideoPreviewDurationsChange = {
+                                    similarityShowVideoPreviewDurations.value = it
+                                },
+                                onShowVideoPreviewResolutionsChange = {
+                                    similarityShowVideoPreviewResolutions.value = it
+                                },
                                 deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
                                     if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {

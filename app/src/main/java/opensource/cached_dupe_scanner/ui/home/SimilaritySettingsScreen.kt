@@ -590,6 +590,12 @@ fun SimilarityClusterDetailScreen(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     showFullPaths: Boolean,
+    showVideoPreviews: Boolean,
+    showVideoPreviewDurations: Boolean,
+    showVideoPreviewResolutions: Boolean,
+    onShowVideoPreviewsChange: (Boolean) -> Unit,
+    onShowVideoPreviewDurationsChange: (Boolean) -> Unit,
+    onShowVideoPreviewResolutionsChange: (Boolean) -> Unit,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     settingId: Long,
@@ -615,9 +621,6 @@ fun SimilarityClusterDetailScreen(
     var memberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var durationMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
     var previewMenuExpanded by remember { mutableStateOf(false) }
-    var showVideoPreviews by remember { mutableStateOf(false) }
-    var showVideoPreviewDurations by remember { mutableStateOf(false) }
-    var showVideoPreviewResolutions by remember { mutableStateOf(false) }
     val selectionState = rememberLazyDetailSelectionState("similarity-cluster:$clusterId")
     var confirmDeleteSelected by remember(clusterId) { mutableStateOf(false) }
     var isDeletingSelected by remember(clusterId) { mutableStateOf(false) }
@@ -775,7 +778,7 @@ fun SimilarityClusterDetailScreen(
                                 )
                             },
                             enabled = hasVideoMembers,
-                            onClick = { showVideoPreviews = !showVideoPreviews }
+                            onClick = { onShowVideoPreviewsChange(!showVideoPreviews) }
                         )
                         DropdownMenuItem(
                             text = { Text("Video duration") },
@@ -786,7 +789,7 @@ fun SimilarityClusterDetailScreen(
                                 )
                             },
                             enabled = hasVideoMembers,
-                            onClick = { showVideoPreviewDurations = !showVideoPreviewDurations }
+                            onClick = { onShowVideoPreviewDurationsChange(!showVideoPreviewDurations) }
                         )
                         DropdownMenuItem(
                             text = { Text("Video resolution") },
@@ -797,7 +800,7 @@ fun SimilarityClusterDetailScreen(
                                 )
                             },
                             enabled = hasVideoMembers,
-                            onClick = { showVideoPreviewResolutions = !showVideoPreviewResolutions }
+                            onClick = { onShowVideoPreviewResolutionsChange(!showVideoPreviewResolutions) }
                         )
                     }
                 }

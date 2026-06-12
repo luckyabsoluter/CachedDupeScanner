@@ -36,6 +36,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster detail top-right video preview, duration, and resolution menu selections now stay enabled when returning to the screen.
 - Similarity settings no longer auto-create default rows when opened, and individual settings can now be deleted with their generated data.
 - Top-right checkbox menu items now stay open after toggling preview and path display options.
 - Similarity setting parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same setting rows.
