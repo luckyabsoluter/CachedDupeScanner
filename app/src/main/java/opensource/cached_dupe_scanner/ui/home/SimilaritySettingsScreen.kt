@@ -435,8 +435,18 @@ fun SimilaritySettingDetailScreen(
                     statusText = statusText,
                     onToggle = { enabled ->
                         scope.launch {
+                            statusText = if (enabled) {
+                                "Generating similarity results from scan cache..."
+                            } else {
+                                "Similarity setting paused."
+                            }
                             withContext(Dispatchers.IO) {
                                 repository.setEnabled(settingId, enabled)
+                            }
+                            statusText = if (enabled) {
+                                "Similarity results updated from scan cache."
+                            } else {
+                                "Similarity setting paused."
                             }
                             onChanged()
                             refresh()

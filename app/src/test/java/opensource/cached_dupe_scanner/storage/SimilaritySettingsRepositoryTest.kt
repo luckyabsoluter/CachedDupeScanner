@@ -115,6 +115,38 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun enablingSettingGeneratesResultsFromCurrentScanCache() {
+        val first = videoFile("enable-a.mp4")
+        val second = videoFile("enable-b.mp4")
+        database.fileCacheDao().upsert(entity(first))
+        database.fileCacheDao().upsert(entity(second))
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = false
+        )
+
+        repository.generateEnabledResults(shouldContinue = { true }, onProgress = {})
+        assertTrue(repository.listClusters(setting.settingId).isEmpty())
+
+        repository.setEnabled(setting.settingId, true)
+
+        val cluster = repository.listClusters(setting.settingId).single()
+        assertEquals("same", cluster.clusterKey)
+        assertEquals(
+            listOf(first, second).map { file -> file.normalizedPath() },
+            repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata.normalizedPath }
+        )
+    }
+
+    @Test
     fun cacheMutationObserverRemovesStaleMembersInsideHistoryTransaction() {
         val first = videoFile("active-a.mp4")
         val second = videoFile("active-b.mp4")
