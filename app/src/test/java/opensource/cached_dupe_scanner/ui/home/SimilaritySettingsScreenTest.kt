@@ -45,6 +45,9 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("title = \"Similarity settings\""))
         assertTrue(content.contains("Text(\"New setting\")"))
         assertTrue(content.contains("text = \"Similarity settings\""))
+        assertTrue(content.contains("Enabled settings update after scans from the scan cache."))
+        assertTrue(content.contains("switching on does not start a scan"))
+        assertTrue(content.contains("Paused: stored results remain available"))
         assertTrue(content.contains("text = \"Similarity templates\""))
         assertTrue(content.contains("Similarity method template"))
         val legacySingular = "experi" + "ment"

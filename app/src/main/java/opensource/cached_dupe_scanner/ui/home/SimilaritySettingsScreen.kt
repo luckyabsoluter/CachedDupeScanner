@@ -1111,6 +1111,10 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(text = "Similarity settings", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = "Enabled settings update after scans from the scan cache. Paused settings keep stored results, but new or changed files catch up only after enabling before a later scan.",
+            style = MaterialTheme.typography.bodySmall
+        )
         if (!hasSettings) {
             Text(text = "No similarity settings yet.", style = MaterialTheme.typography.bodySmall)
         }
@@ -1414,6 +1418,7 @@ private fun SimilaritySettingDetailCard(
             }
             Text(text = settingParametersSummary(setting), style = MaterialTheme.typography.bodySmall)
             Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)
+            Text(text = settingGenerationSummary(setting), style = MaterialTheme.typography.bodySmall)
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2165,6 +2170,14 @@ private fun ChoiceButton(
 
 private fun settingSummary(setting: SimilaritySettingEntity): String {
     return "${similarityMethodLabel(setting.methodId)} | ${setting.mediaScope} | Min ${formatBytes(setting.minSizeBytes)}"
+}
+
+private fun settingGenerationSummary(setting: SimilaritySettingEntity): String {
+    return if (setting.enabled) {
+        "Enabled: included in similarity generation after scans; switching on does not start a scan."
+    } else {
+        "Paused: stored results remain available; new or changed files are skipped until this is enabled before a later scan."
+    }
 }
 
 private fun settingParametersSummary(setting: SimilaritySettingEntity): String {
