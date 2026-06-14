@@ -36,7 +36,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
-- Enabling a paused similarity setting now generates its results from the current scan cache immediately.
+- Enabling a paused similarity setting now stays lightweight; paused settings catch up during the next scan-cache generation.
 - Similarity cluster detail top-right video preview, duration, and resolution menu selections now stay enabled when returning to the screen.
 - Similarity settings no longer auto-create default rows when opened, and individual settings can now be deleted with their generated data.
 - Top-right checkbox menu items now stay open after toggling preview and path display options.

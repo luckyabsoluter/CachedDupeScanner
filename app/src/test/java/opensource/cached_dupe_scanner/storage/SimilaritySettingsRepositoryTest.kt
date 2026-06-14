@@ -115,33 +115,41 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
-    fun enablingSettingGeneratesResultsFromCurrentScanCache() {
+    fun enabledSettingCatchesUpDuringNextScanCacheGeneration() {
         val first = videoFile("enable-a.mp4")
         val second = videoFile("enable-b.mp4")
+        val third = videoFile("enable-c.mp4")
         database.fileCacheDao().upsert(entity(first))
         database.fileCacheDao().upsert(entity(second))
         val repository = repository(
             signatures = mapOf(
                 first.absolutePath to "same",
-                second.absolutePath to "same"
+                second.absolutePath to "same",
+                third.absolutePath to "same"
             )
         )
         val setting = repository.createExactThumbnailSetting(
             mediaScope = SimilarityMediaScope.Video,
             minSizeBytes = 1L,
             step = exactStep(width = 1, height = 1),
-            enabled = false
+            enabled = true
         )
 
         repository.generateEnabledResults(shouldContinue = { true }, onProgress = {})
-        assertTrue(repository.listClusters(setting.settingId).isEmpty())
+        repository.setEnabled(setting.settingId, false)
+        database.fileCacheDao().upsert(entity(third))
 
         repository.setEnabled(setting.settingId, true)
+        val beforeNextGeneration = repository.listClusters(setting.settingId).single()
+        assertEquals(2, beforeNextGeneration.fileCount)
+
+        repository.generateEnabledResults(shouldContinue = { true }, onProgress = {})
 
         val cluster = repository.listClusters(setting.settingId).single()
         assertEquals("same", cluster.clusterKey)
+        assertEquals(3, cluster.fileCount)
         assertEquals(
-            listOf(first, second).map { file -> file.normalizedPath() },
+            listOf(first, second, third).map { file -> file.normalizedPath() },
             repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata.normalizedPath }
         )
     }

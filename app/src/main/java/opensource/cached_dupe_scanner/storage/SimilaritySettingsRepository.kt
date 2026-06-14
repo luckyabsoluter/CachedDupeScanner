@@ -157,14 +157,6 @@ class SimilaritySettingsRepository(
                 updatedAtMillis = System.currentTimeMillis()
             )
         }
-        if (enabled) {
-            runSettingMaintenance(
-                settingId = settingId,
-                rebuild = false,
-                shouldContinue = { true },
-                onProgress = {}
-            )
-        }
     }
 
     fun clearSettingResults(settingId: Long) {
