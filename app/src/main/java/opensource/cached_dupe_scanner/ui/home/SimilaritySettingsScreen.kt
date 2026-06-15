@@ -1112,7 +1112,7 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
     ) {
         Text(text = "Similarity settings", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = "Enabled settings update after scans from the scan cache. Paused settings keep stored results, but new or changed files catch up only after enabling before a later scan.",
+            text = "There is no separate Update or Rebuild action. Scan completion generates enabled settings from the scan cache; paused settings keep stored results and catch up only after enabling before a later scan.",
             style = MaterialTheme.typography.bodySmall
         )
         if (!hasSettings) {
@@ -2174,7 +2174,7 @@ private fun settingSummary(setting: SimilaritySettingEntity): String {
 
 private fun settingGenerationSummary(setting: SimilaritySettingEntity): String {
     return if (setting.enabled) {
-        "Enabled: included in similarity generation after scans; switching on does not start a scan."
+        "Enabled: included when scans generate similarity results. Switching on does not start Update or Rebuild work."
     } else {
         "Paused: stored results remain available; new or changed files are skipped until this is enabled before a later scan."
     }

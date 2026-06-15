@@ -18,7 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
-- Similarity setting screens now explain that enabled settings update after scans while paused settings catch up after being enabled before a later scan.
+- Similarity setting screens now explain that there is no separate Update/Rebuild action and that scan completion generates enabled settings from the scan cache.
 - Similarity settings management now separates setting creation, maintenance, per-setting management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
 - Similarity settings screens now restore the previous template-style flow, detailed cluster and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping the maintained settings terminology.
 - Similarity cluster detail member cards now restore the previous full-width media card layout with exact byte counts, selection styling, and separated video metadata/timeline preview rows.
