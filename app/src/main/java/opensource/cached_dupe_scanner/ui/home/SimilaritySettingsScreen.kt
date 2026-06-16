@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -368,7 +369,8 @@ fun SimilaritySettingDetailScreen(
     val scope = rememberCoroutineScope()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var statusText by remember { mutableStateOf("Similarity results are generated after scans.") }
+    var statusText by remember { mutableStateOf("Scans generate enabled settings; use Update or Rebuild to run this setting now.") }
+    var generationRunning by remember { mutableStateOf(false) }
     var confirmClearSetting by remember { mutableStateOf(false) }
     var confirmDeleteSetting by remember { mutableStateOf(false) }
     fun refresh() {
@@ -391,6 +393,44 @@ fun SimilaritySettingDetailScreen(
             statusText = "Generated similarity data was cleared for this setting."
             onChanged()
             refresh()
+        }
+    }
+    fun runSettingGeneration(rebuild: Boolean) {
+        if (generationRunning) return
+        scope.launch {
+            generationRunning = true
+            statusText = if (rebuild) {
+                "Rebuilding similarity results from the scan cache..."
+            } else {
+                "Updating similarity results from the scan cache..."
+            }
+            try {
+                val summary = withContext(Dispatchers.IO) {
+                    repository.runSettingMaintenance(
+                        settingId = settingId,
+                        rebuild = rebuild,
+                        shouldContinue = { true },
+                        onProgress = {}
+                    )
+                }
+                statusText = if (rebuild) {
+                    "Rebuild complete: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
+                } else {
+                    "Update complete: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
+                }
+                onChanged()
+                refresh()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                statusText = if (rebuild) {
+                    "Rebuild failed."
+                } else {
+                    "Update failed."
+                }
+            } finally {
+                generationRunning = false
+            }
         }
     }
     fun deleteSetting() {
@@ -433,25 +473,28 @@ fun SimilaritySettingDetailScreen(
                     clusterCount = clusters.size,
                     fileCount = clusters.sumOf { cluster -> cluster.fileCount },
                     statusText = statusText,
+                    generationRunning = generationRunning,
                     onToggle = { enabled ->
                         scope.launch {
                             statusText = if (enabled) {
-                                "Enabled. Results update after the next scan."
+                                "Enabled. Scans generate this setting; use Update to catch up now."
                             } else {
-                                "Similarity setting paused."
+                                "Similarity setting paused. Scans skip it until enabled."
                             }
                             withContext(Dispatchers.IO) {
                                 repository.setEnabled(settingId, enabled)
                             }
                             statusText = if (enabled) {
-                                "Enabled. Results update after the next scan."
+                                "Enabled. Scans generate this setting; use Update to catch up now."
                             } else {
-                                "Similarity setting paused."
+                                "Similarity setting paused. Scans skip it until enabled."
                             }
                             onChanged()
                             refresh()
                         }
                     },
+                    onUpdate = { runSettingGeneration(rebuild = false) },
+                    onRebuild = { runSettingGeneration(rebuild = true) },
                     onClear = { confirmClearSetting = true },
                     onDelete = { confirmDeleteSetting = true }
                 )
@@ -1112,7 +1155,7 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
     ) {
         Text(text = "Similarity settings", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = "There is no separate Update or Rebuild action. Scan completion generates enabled settings from the scan cache; paused settings keep stored results and catch up only after enabling before a later scan.",
+            text = "Scans generate enabled settings from the scan cache. Use Update to catch up from current cached files, or Rebuild to clear and recalculate a setting.",
             style = MaterialTheme.typography.bodySmall
         )
         if (!hasSettings) {
@@ -1396,7 +1439,10 @@ private fun SimilaritySettingDetailCard(
     clusterCount: Int,
     fileCount: Int,
     statusText: String,
+    generationRunning: Boolean,
     onToggle: (Boolean) -> Unit,
+    onUpdate: () -> Unit,
+    onRebuild: () -> Unit,
     onClear: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1414,7 +1460,11 @@ private fun SimilaritySettingDetailCard(
                     Text(text = settingSummary(setting), style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Switch(checked = setting.enabled, onCheckedChange = onToggle)
+                Switch(
+                    checked = setting.enabled,
+                    onCheckedChange = onToggle,
+                    enabled = !generationRunning
+                )
             }
             Text(text = settingParametersSummary(setting), style = MaterialTheme.typography.bodySmall)
             Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)
@@ -1424,10 +1474,28 @@ private fun SimilaritySettingDetailCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(onClick = onClear) {
+                Button(
+                    onClick = onUpdate,
+                    enabled = !generationRunning
+                ) {
+                    Text("Update")
+                }
+                OutlinedButton(
+                    onClick = onRebuild,
+                    enabled = !generationRunning
+                ) {
+                    Text("Rebuild")
+                }
+                OutlinedButton(
+                    onClick = onClear,
+                    enabled = !generationRunning
+                ) {
                     Text("Clear")
                 }
-                OutlinedButton(onClick = onDelete) {
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !generationRunning
+                ) {
                     Text("Delete setting")
                 }
             }
@@ -2174,9 +2242,9 @@ private fun settingSummary(setting: SimilaritySettingEntity): String {
 
 private fun settingGenerationSummary(setting: SimilaritySettingEntity): String {
     return if (setting.enabled) {
-        "Enabled: included when scans generate similarity results. Switching on does not start Update or Rebuild work."
+        "Enabled: scans generate this setting automatically. Update catches up from the current scan cache; Rebuild clears and recalculates it."
     } else {
-        "Paused: stored results remain available; new or changed files are skipped until this is enabled before a later scan."
+        "Paused: scans skip this setting. Stored results remain available, and Update/Rebuild can still run manually."
     }
 }
 
