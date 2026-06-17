@@ -107,6 +107,35 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun customSettingNamesPersistAndCanBeRenamed() {
+        val repository = repository()
+
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            displayName = "  Small videos  "
+        )
+
+        assertEquals("Small videos", setting.displayName)
+
+        repository.renameSetting(setting.settingId, "Renamed videos")
+
+        assertEquals("Renamed videos", repository.listSettings().single().displayName)
+
+        val sameIdentity = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            displayName = "Updated videos"
+        )
+
+        assertEquals(setting.settingId, sameIdentity.settingId)
+        assertEquals("Updated videos", sameIdentity.displayName)
+        assertEquals(1, repository.listSettings().size)
+    }
+
+    @Test
     fun listSettingsDoesNotCreateDefaultRows() {
         val repository = repository()
 

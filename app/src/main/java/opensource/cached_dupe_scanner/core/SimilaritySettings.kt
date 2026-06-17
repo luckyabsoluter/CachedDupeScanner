@@ -20,6 +20,11 @@ fun normalizedSimilarityMinSizeBytes(minSizeBytes: Long): Long {
     return minSizeBytes.coerceAtLeast(0L)
 }
 
+fun normalizedSimilaritySettingDisplayName(displayName: String?, fallbackDisplayName: String): String {
+    val fallback = fallbackDisplayName.trim().ifBlank { "Similarity setting" }
+    return displayName?.trim()?.ifBlank { fallback } ?: fallback
+}
+
 enum class SimilarityMediaScope {
     Video,
     Image;
@@ -314,4 +319,3 @@ private val imageExtensions = setOf(
     ".png",
     ".webp"
 )
-

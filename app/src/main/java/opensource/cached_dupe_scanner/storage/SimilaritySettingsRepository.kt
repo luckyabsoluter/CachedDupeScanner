@@ -36,6 +36,7 @@ import opensource.cached_dupe_scanner.core.durationToleranceSettingDraft
 import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
+import opensource.cached_dupe_scanner.core.normalizedSimilaritySettingDisplayName
 import java.io.File
 import kotlin.math.abs
 
@@ -74,41 +75,60 @@ class SimilaritySettingsRepository(
         mediaScope: SimilarityMediaScope,
         minSizeBytes: Long,
         step: ExactThumbnailHashStep,
-        enabled: Boolean = false
+        enabled: Boolean = false,
+        displayName: String? = null
     ): SimilaritySettingEntity {
+        val defaultDraft = exactThumbnailSettingDraft(
+            mediaScope = mediaScope,
+            minSizeBytes = minSizeBytes,
+            step = step
+        )
         return createOrGetSetting(
-            draft = exactThumbnailSettingDraft(
-                mediaScope = mediaScope,
-                minSizeBytes = minSizeBytes,
-                step = step
+            draft = defaultDraft.copy(
+                displayName = normalizedSimilaritySettingDisplayName(displayName, defaultDraft.displayName)
             ),
-            enabled = enabled
+            enabled = enabled,
+            updateExistingDisplayName = displayName?.isNotBlank() == true
         )
     }
 
     fun createDurationToleranceSetting(
         minSizeBytes: Long,
         step: DurationToleranceStep,
-        enabled: Boolean = false
+        enabled: Boolean = false,
+        displayName: String? = null
     ): SimilaritySettingEntity {
+        val defaultDraft = durationToleranceSettingDraft(minSizeBytes = minSizeBytes, step = step)
         return createOrGetSetting(
-            draft = durationToleranceSettingDraft(minSizeBytes = minSizeBytes, step = step),
-            enabled = enabled
+            draft = defaultDraft.copy(
+                displayName = normalizedSimilaritySettingDisplayName(displayName, defaultDraft.displayName)
+            ),
+            enabled = enabled,
+            updateExistingDisplayName = displayName?.isNotBlank() == true
         )
     }
 
     fun createDurationNeighborListSetting(
         minSizeBytes: Long,
         step: DurationNeighborListStep,
-        enabled: Boolean = false
+        enabled: Boolean = false,
+        displayName: String? = null
     ): SimilaritySettingEntity {
+        val defaultDraft = durationNeighborListSettingDraft(minSizeBytes = minSizeBytes, step = step)
         return createOrGetSetting(
-            draft = durationNeighborListSettingDraft(minSizeBytes = minSizeBytes, step = step),
-            enabled = enabled
+            draft = defaultDraft.copy(
+                displayName = normalizedSimilaritySettingDisplayName(displayName, defaultDraft.displayName)
+            ),
+            enabled = enabled,
+            updateExistingDisplayName = displayName?.isNotBlank() == true
         )
     }
 
-    fun createOrGetSetting(draft: SimilaritySettingDraft, enabled: Boolean): SimilaritySettingEntity {
+    fun createOrGetSetting(
+        draft: SimilaritySettingDraft,
+        enabled: Boolean,
+        updateExistingDisplayName: Boolean = false
+    ): SimilaritySettingEntity {
         val now = System.currentTimeMillis()
         database.runInTransaction {
             val insertedId = similarityDao.insertSetting(
@@ -134,6 +154,13 @@ class SimilaritySettingsRepository(
             if (existing.paramsJson != draft.paramsJson) {
                 error("Similarity setting parameter hash collision for ${draft.methodId}.")
             }
+            if (updateExistingDisplayName && existing.displayName != draft.displayName) {
+                similarityDao.updateSettingDisplayName(
+                    settingId = existing.settingId,
+                    displayName = draft.displayName,
+                    updatedAtMillis = now
+                )
+            }
         }
         return requireNotNull(
             similarityDao.getSettingByIdentity(
@@ -154,6 +181,19 @@ class SimilaritySettingsRepository(
             similarityDao.updateSettingEnabled(
                 settingId = settingId,
                 enabled = enabled,
+                updatedAtMillis = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun renameSetting(settingId: Long, displayName: String) {
+        database.runInTransaction {
+            val existing = similarityDao.getSetting(settingId) ?: return@runInTransaction
+            val normalizedName = normalizedSimilaritySettingDisplayName(displayName, existing.displayName)
+            if (normalizedName == existing.displayName) return@runInTransaction
+            similarityDao.updateSettingDisplayName(
+                settingId = settingId,
+                displayName = normalizedName,
                 updatedAtMillis = System.currentTimeMillis()
             )
         }

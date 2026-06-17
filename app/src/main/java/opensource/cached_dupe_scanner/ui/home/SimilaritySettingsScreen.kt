@@ -71,8 +71,11 @@ import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_TOLERANCE
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_EXACT_THUMBNAIL
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.core.durationNeighborListSettingDraft
 import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
+import opensource.cached_dupe_scanner.core.durationToleranceSettingDraft
 import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
+import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
@@ -237,13 +240,19 @@ fun SimilarityExactThumbnailSettingScreen(
         quantizationInput = draft.quantizationInput,
         grayscale = draft.grayscale
     )
+    val defaultDisplayName = exactThumbnailSettingDraft(
+        mediaScope = draft.mediaScope,
+        minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+        step = exactStep
+    ).displayName
     fun createExact() {
         scope.launch {
             val created = withContext(Dispatchers.IO) {
                 repository.createExactThumbnailSetting(
                     mediaScope = draft.mediaScope,
                     minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
-                    step = exactStep
+                    step = exactStep,
+                    displayName = draft.displayNameInput
                 )
             }
             onChanged()
@@ -263,6 +272,9 @@ fun SimilarityExactThumbnailSettingScreen(
         }
         item(key = "exact_form") {
             ExactThumbnailSettingForm(
+                displayNameInput = draft.displayNameInput,
+                onDisplayNameInputChange = { draft.displayNameInput = it },
+                defaultDisplayName = defaultDisplayName,
                 minSizeInput = draft.minSizeInput,
                 onMinSizeInputChange = { draft.minSizeInput = sanitizeNumberDraftInput(it) },
                 minSizeUnit = draft.minSizeUnit,
@@ -300,18 +312,33 @@ fun SimilarityDurationSettingScreen(
     val scope = rememberCoroutineScope()
     var statusText by remember { mutableStateOf("Ready to create setting.") }
     val draft = rememberSimilaritySettingDraftState()
+    val durationToleranceStep = parsedDurationToleranceStep(draft.durationToleranceInput, draft.durationToleranceUnit)
+    val durationNeighborStep = parsedDurationNeighborListStep(draft.durationToleranceInput, draft.durationToleranceUnit)
+    val defaultDisplayName = if (neighborList) {
+        durationNeighborListSettingDraft(
+            minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+            step = durationNeighborStep
+        ).displayName
+    } else {
+        durationToleranceSettingDraft(
+            minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
+            step = durationToleranceStep
+        ).displayName
+    }
     fun createDuration() {
         scope.launch {
             val created = withContext(Dispatchers.IO) {
                 if (neighborList) {
                     repository.createDurationNeighborListSetting(
                         minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
-                        step = parsedDurationNeighborListStep(draft.durationToleranceInput, draft.durationToleranceUnit)
+                        step = durationNeighborStep,
+                        displayName = draft.displayNameInput
                     )
                 } else {
                     repository.createDurationToleranceSetting(
                         minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
-                        step = parsedDurationToleranceStep(draft.durationToleranceInput, draft.durationToleranceUnit)
+                        step = durationToleranceStep,
+                        displayName = draft.displayNameInput
                     )
                 }
             }
@@ -341,6 +368,9 @@ fun SimilarityDurationSettingScreen(
             DurationSettingForm(
                 description = description,
                 buttonText = buttonText,
+                displayNameInput = draft.displayNameInput,
+                onDisplayNameInputChange = { draft.displayNameInput = it },
+                defaultDisplayName = defaultDisplayName,
                 minSizeInput = draft.minSizeInput,
                 onMinSizeInputChange = { draft.minSizeInput = sanitizeNumberDraftInput(it) },
                 minSizeUnit = draft.minSizeUnit,
@@ -371,6 +401,8 @@ fun SimilaritySettingDetailScreen(
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     var statusText by remember { mutableStateOf("Scans generate enabled settings; use Update or Rebuild to run this setting now.") }
     var generationRunning by remember { mutableStateOf(false) }
+    var displayNameInput by remember(settingId) { mutableStateOf("") }
+    var lastLoadedDisplayName by remember(settingId) { mutableStateOf<String?>(null) }
     var confirmClearSetting by remember { mutableStateOf(false) }
     var confirmDeleteSetting by remember { mutableStateOf(false) }
     fun refresh() {
@@ -380,8 +412,25 @@ fun SimilaritySettingDetailScreen(
             }
             val loadedClusters = withContext(Dispatchers.IO) { repository.listClusters(settingId) }
             setting = loadedSetting
+            if (loadedSetting != null) {
+                val previousLoadedDisplayName = lastLoadedDisplayName
+                if (displayNameInput.isBlank() || displayNameInput == previousLoadedDisplayName) {
+                    displayNameInput = loadedSetting.displayName
+                }
+                lastLoadedDisplayName = loadedSetting.displayName
+            }
             clusters.clear()
             clusters.addAll(loadedClusters)
+        }
+    }
+    fun saveSettingName() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                repository.renameSetting(settingId, displayNameInput)
+            }
+            statusText = "Setting name saved."
+            onChanged()
+            refresh()
         }
     }
     fun clearSettingResults() {
@@ -473,6 +522,11 @@ fun SimilaritySettingDetailScreen(
                     clusterCount = clusters.size,
                     fileCount = clusters.sumOf { cluster -> cluster.fileCount },
                     statusText = statusText,
+                    displayNameInput = displayNameInput,
+                    onDisplayNameInputChange = { displayNameInput = it },
+                    onSaveName = ::saveSettingName,
+                    nameSaveEnabled = displayNameInput.trim().isNotEmpty() &&
+                        displayNameInput.trim() != selectedSetting.displayName,
                     generationRunning = generationRunning,
                     onToggle = { enabled ->
                         scope.launch {
@@ -1120,6 +1174,7 @@ fun SimilarityClusterDetailScreen(
 }
 
 private class SimilaritySettingDraftState {
+    var displayNameInput by mutableStateOf("")
     var minSizeInput by mutableStateOf("100")
     var minSizeUnit by mutableStateOf(SimilaritySizeUnit.MB)
     var mediaScope by mutableStateOf(SimilarityMediaScope.Video)
@@ -1239,6 +1294,9 @@ private fun SimilarityMethodCard(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExactThumbnailSettingForm(
+    displayNameInput: String,
+    onDisplayNameInputChange: (String) -> Unit,
+    defaultDisplayName: String,
     minSizeInput: String,
     onMinSizeInputChange: (String) -> Unit,
     minSizeUnit: SimilaritySizeUnit,
@@ -1269,6 +1327,11 @@ private fun ExactThumbnailSettingForm(
             Text(
                 text = "Configures cached-media matching with editable inputs.",
                 style = MaterialTheme.typography.bodySmall
+            )
+            SettingNameField(
+                displayNameInput = displayNameInput,
+                onDisplayNameInputChange = onDisplayNameInputChange,
+                defaultDisplayName = defaultDisplayName
             )
             SizeFloorControls(
                 minSizeInput = minSizeInput,
@@ -1344,6 +1407,9 @@ private fun ExactThumbnailSettingForm(
 private fun DurationSettingForm(
     description: String,
     buttonText: String,
+    displayNameInput: String,
+    onDisplayNameInputChange: (String) -> Unit,
+    defaultDisplayName: String,
     minSizeInput: String,
     onMinSizeInputChange: (String) -> Unit,
     minSizeUnit: SimilaritySizeUnit,
@@ -1362,6 +1428,11 @@ private fun DurationSettingForm(
         ) {
             Text(text = "Duration parameters", style = MaterialTheme.typography.titleMedium)
             Text(text = description, style = MaterialTheme.typography.bodySmall)
+            SettingNameField(
+                displayNameInput = displayNameInput,
+                onDisplayNameInputChange = onDisplayNameInputChange,
+                defaultDisplayName = defaultDisplayName
+            )
             SizeFloorControls(
                 minSizeInput = minSizeInput,
                 onMinSizeInputChange = onMinSizeInputChange,
@@ -1397,6 +1468,22 @@ private fun DurationSettingForm(
             }
         }
     }
+}
+
+@Composable
+private fun SettingNameField(
+    displayNameInput: String,
+    onDisplayNameInputChange: (String) -> Unit,
+    defaultDisplayName: String
+) {
+    OutlinedTextField(
+        value = displayNameInput,
+        onValueChange = onDisplayNameInputChange,
+        label = { Text("Setting name") },
+        supportingText = { Text("Default: $defaultDisplayName") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1439,6 +1526,10 @@ private fun SimilaritySettingDetailCard(
     clusterCount: Int,
     fileCount: Int,
     statusText: String,
+    displayNameInput: String,
+    onDisplayNameInputChange: (String) -> Unit,
+    onSaveName: () -> Unit,
+    nameSaveEnabled: Boolean,
     generationRunning: Boolean,
     onToggle: (Boolean) -> Unit,
     onUpdate: () -> Unit,
@@ -1465,6 +1556,25 @@ private fun SimilaritySettingDetailCard(
                     onCheckedChange = onToggle,
                     enabled = !generationRunning
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = displayNameInput,
+                    onValueChange = onDisplayNameInputChange,
+                    label = { Text("Setting name") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(
+                    onClick = onSaveName,
+                    enabled = nameSaveEnabled && !generationRunning
+                ) {
+                    Text("Save name")
+                }
             }
             Text(text = settingParametersSummary(setting), style = MaterialTheme.typography.bodySmall)
             Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)

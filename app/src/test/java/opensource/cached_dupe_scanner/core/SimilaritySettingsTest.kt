@@ -57,6 +57,22 @@ class SimilaritySettingsTest {
     }
 
     @Test
+    fun settingDisplayNameFallsBackWhenBlank() {
+        assertEquals(
+            "Custom similarity",
+            normalizedSimilaritySettingDisplayName("  Custom similarity  ", "Fallback")
+        )
+        assertEquals(
+            "Fallback",
+            normalizedSimilaritySettingDisplayName("   ", "Fallback")
+        )
+        assertEquals(
+            "Similarity setting",
+            normalizedSimilaritySettingDisplayName(null, "   ")
+        )
+    }
+
+    @Test
     fun durationToleranceIdentityChangesWithTolerance() {
         val oneSecond = durationToleranceSettingDraft(
             minSizeBytes = DEFAULT_SIMILARITY_MIN_SIZE_BYTES,
@@ -221,4 +237,3 @@ class SimilaritySettingsTest {
         )
     }
 }
-
