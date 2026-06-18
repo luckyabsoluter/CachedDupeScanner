@@ -37,6 +37,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Newly created similarity settings now start enabled, including when creation reuses an existing disabled setting identity.
 - Similarity group and member sort selections now persist across screen recreation and app restarts.
 - Enabling a paused similarity setting now stays lightweight; paused settings catch up during the next scan-cache generation.
 - Similarity cluster detail top-right video preview, duration, and resolution menu selections now stay enabled when returning to the screen.

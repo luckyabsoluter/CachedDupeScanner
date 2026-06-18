@@ -46,6 +46,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("repository.createExactThumbnailSetting("))
         assertTrue(content.contains("repository.createDurationToleranceSetting("))
         assertTrue(content.contains("repository.createDurationNeighborListSetting("))
+        assertTrue(content.contains("enabled = true"))
         assertTrue(content.contains("label = { Text(\"Setting name\") }"))
         assertTrue(content.contains("Text(\"Save name\")"))
         assertTrue(content.contains("defaultDisplayName"))

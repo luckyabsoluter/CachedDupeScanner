@@ -154,11 +154,15 @@ class SimilaritySettingsRepository(
             if (existing.paramsJson != draft.paramsJson) {
                 error("Similarity setting parameter hash collision for ${draft.methodId}.")
             }
-            if (updateExistingDisplayName && existing.displayName != draft.displayName) {
-                similarityDao.updateSettingDisplayName(
-                    settingId = existing.settingId,
-                    displayName = draft.displayName,
-                    updatedAtMillis = now
+            val nextDisplayName = if (updateExistingDisplayName) draft.displayName else existing.displayName
+            val nextEnabled = existing.enabled || enabled
+            if (existing.displayName != nextDisplayName || existing.enabled != nextEnabled) {
+                similarityDao.updateSetting(
+                    existing.copy(
+                        displayName = nextDisplayName,
+                        enabled = nextEnabled,
+                        updatedAtMillis = now
+                    )
                 )
             }
         }

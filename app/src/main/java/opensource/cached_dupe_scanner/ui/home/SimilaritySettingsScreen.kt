@@ -253,6 +253,7 @@ fun SimilarityExactThumbnailSettingScreen(
                     mediaScope = draft.mediaScope,
                     minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
                     step = exactStep,
+                    enabled = true,
                     displayName = draft.displayNameInput
                 )
             }
@@ -333,12 +334,14 @@ fun SimilarityDurationSettingScreen(
                     repository.createDurationNeighborListSetting(
                         minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
                         step = durationNeighborStep,
+                        enabled = true,
                         displayName = draft.displayNameInput
                     )
                 } else {
                     repository.createDurationToleranceSetting(
                         minSizeBytes = parsedMinSizeBytes(draft.minSizeInput, draft.minSizeUnit),
                         step = durationToleranceStep,
+                        enabled = true,
                         displayName = draft.displayNameInput
                     )
                 }

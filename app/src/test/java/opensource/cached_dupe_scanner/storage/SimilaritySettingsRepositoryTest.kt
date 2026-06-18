@@ -16,6 +16,7 @@ import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -133,6 +134,30 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(setting.settingId, sameIdentity.settingId)
         assertEquals("Updated videos", sameIdentity.displayName)
         assertEquals(1, repository.listSettings().size)
+    }
+
+    @Test
+    fun creatingExistingSettingCanEnableIt() {
+        val repository = repository()
+        val disabled = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = false
+        )
+
+        assertFalse(disabled.enabled)
+
+        val enabled = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+
+        assertEquals(disabled.settingId, enabled.settingId)
+        assertTrue(enabled.enabled)
+        assertTrue(repository.listSettings().single().enabled)
     }
 
     @Test
