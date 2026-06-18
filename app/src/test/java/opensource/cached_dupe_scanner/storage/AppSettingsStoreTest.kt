@@ -37,6 +37,11 @@ class AppSettingsStoreTest {
         assertEquals("", settings.filesFilterDefinitionJson)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
+        assertEquals("FileCount", settings.similarityClusterSortKey)
+        assertEquals("Desc", settings.similarityClusterSortDirection)
+        assertEquals("Path", settings.similarityMemberSortKey)
+        assertEquals("Asc", settings.similarityMemberSortDirection)
+        assertEquals("Asc", settings.similarityDurationMemberSortDirection)
     }
 
     @Test
@@ -106,6 +111,18 @@ class AppSettingsStoreTest {
         val fileSortSettings = store.load()
         assertEquals("Size", fileSortSettings.filesSortKey)
         assertEquals("Desc", fileSortSettings.filesSortDirection)
+
+        store.setSimilarityClusterSortKey("TotalSize")
+        store.setSimilarityClusterSortDirection("Asc")
+        store.setSimilarityMemberSortKey("Modified")
+        store.setSimilarityMemberSortDirection("Desc")
+        store.setSimilarityDurationMemberSortDirection("Desc")
+        val similaritySortSettings = store.load()
+        assertEquals("TotalSize", similaritySortSettings.similarityClusterSortKey)
+        assertEquals("Asc", similaritySortSettings.similarityClusterSortDirection)
+        assertEquals("Modified", similaritySortSettings.similarityMemberSortKey)
+        assertEquals("Desc", similaritySortSettings.similarityMemberSortDirection)
+        assertEquals("Desc", similaritySortSettings.similarityDurationMemberSortDirection)
     }
 
     @Test
@@ -126,6 +143,11 @@ class AppSettingsStoreTest {
         assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
+        assertEquals("FileCount", imported.similarityClusterSortKey)
+        assertEquals("Desc", imported.similarityClusterSortDirection)
+        assertEquals("Path", imported.similarityMemberSortKey)
+        assertEquals("Asc", imported.similarityMemberSortDirection)
+        assertEquals("Asc", imported.similarityDurationMemberSortDirection)
         assertTrue(store.load().skipZeroSizeInDb)
         assertTrue(store.load().skipTrashBinContentsInScan)
     }
@@ -154,6 +176,11 @@ class AppSettingsStoreTest {
         store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}")
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
+        store.setSimilarityClusterSortKey("TotalSize")
+        store.setSimilarityClusterSortDirection("Asc")
+        store.setSimilarityMemberSortKey("Modified")
+        store.setSimilarityMemberSortDirection("Desc")
+        store.setSimilarityDurationMemberSortDirection("Desc")
 
         val exported = store.exportToJson()
 
@@ -179,6 +206,11 @@ class AppSettingsStoreTest {
         assertEquals("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}", imported.filesFilterDefinitionJson)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
+        assertEquals("TotalSize", imported.similarityClusterSortKey)
+        assertEquals("Asc", imported.similarityClusterSortDirection)
+        assertEquals("Modified", imported.similarityMemberSortKey)
+        assertEquals("Desc", imported.similarityMemberSortDirection)
+        assertEquals("Desc", imported.similarityDurationMemberSortDirection)
         assertEquals(imported, importedStore.load())
     }
 

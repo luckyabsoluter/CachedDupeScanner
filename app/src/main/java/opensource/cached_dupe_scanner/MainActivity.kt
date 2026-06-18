@@ -515,6 +515,7 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.SimilaritySettingGroups -> SimilaritySettingGroupsScreen(
                                 repository = similarityRepo,
+                                settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
@@ -537,6 +538,7 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.SimilarityClusterDetail -> SimilarityClusterDetailScreen(
                                 repository = similarityRepo,
+                                settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
                                 snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,

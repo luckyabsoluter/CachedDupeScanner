@@ -115,6 +115,10 @@ class MainActivityBackgroundTaskSourceTest {
             "Similarity detail screen should update the hoisted video preview selection",
             content.contains("onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it }")
         )
+        assertTrue(
+            "Similarity group and detail screens should receive persistent settings",
+            content.contains("settingsStore = settingsStore")
+        )
     }
 
     private fun source(relativePath: String): String {

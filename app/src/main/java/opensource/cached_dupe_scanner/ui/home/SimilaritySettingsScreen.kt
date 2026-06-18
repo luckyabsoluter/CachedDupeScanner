@@ -78,6 +78,7 @@ import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
+import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -587,6 +588,7 @@ fun SimilaritySettingDetailScreen(
 @Composable
 fun SimilaritySettingGroupsScreen(
     repository: SimilaritySettingsRepository,
+    settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
@@ -601,10 +603,21 @@ fun SimilaritySettingGroupsScreen(
     val context = LocalContext.current
     val imageLoader = rememberSimilarityImageLoader(context)
     val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
+    val settingsSnapshot = remember { settingsStore.load() }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var clusterSortKey by remember { mutableStateOf(SimilarityClusterSortKey.FileCount) }
-    var clusterSortDirection by remember { mutableStateOf(SortDirection.Desc) }
+    var clusterSortKey by remember {
+        mutableStateOf(
+            runCatching { SimilarityClusterSortKey.valueOf(settingsSnapshot.similarityClusterSortKey) }
+                .getOrDefault(SimilarityClusterSortKey.FileCount)
+        )
+    }
+    var clusterSortDirection by remember {
+        mutableStateOf(
+            runCatching { SortDirection.valueOf(settingsSnapshot.similarityClusterSortDirection) }
+                .getOrDefault(SortDirection.Desc)
+        )
+    }
     val displayedClusters = sortSimilarityClusters(
         clusters = clusters,
         sortKey = clusterSortKey,
@@ -656,6 +669,8 @@ fun SimilaritySettingGroupsScreen(
                     onApplySort = { key, direction ->
                         clusterSortKey = key
                         clusterSortDirection = direction
+                        settingsStore.setSimilarityClusterSortKey(key.name)
+                        settingsStore.setSimilarityClusterSortDirection(direction.name)
                     }
                 )
             }
@@ -688,6 +703,7 @@ fun SimilaritySettingGroupsScreen(
 @Composable
 fun SimilarityClusterDetailScreen(
     repository: SimilaritySettingsRepository,
+    settingsStore: AppSettingsStore,
     keepLoadedThumbnailsInMemory: Boolean,
     keepLoadedVideoPreviewsInMemory: Boolean,
     snapVideoPreviewFramesToWidth: Boolean,
@@ -717,6 +733,7 @@ fun SimilarityClusterDetailScreen(
     val detailPreviewHeight = 180.dp * thumbnailSizeScale.coerceAtLeast(0f)
     val videoPreviewFrameHeight = 44.dp * videoPreviewSizeScale.coerceAtLeast(0f)
     val memberListState = rememberLazyListState()
+    val settingsSnapshot = remember { settingsStore.load() }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
     val members = remember { mutableStateListOf<SimilarityClusterMember>() }
@@ -724,9 +741,24 @@ fun SimilarityClusterDetailScreen(
     var memberOffset by remember { mutableStateOf(0) }
     var membersExhausted by remember { mutableStateOf(false) }
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
-    var memberSortKey by remember { mutableStateOf(ResultGroupMemberSortKey.Path) }
-    var memberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
-    var durationMemberSortDirection by remember { mutableStateOf(SortDirection.Asc) }
+    var memberSortKey by remember {
+        mutableStateOf(
+            runCatching { ResultGroupMemberSortKey.valueOf(settingsSnapshot.similarityMemberSortKey) }
+                .getOrDefault(ResultGroupMemberSortKey.Path)
+        )
+    }
+    var memberSortDirection by remember {
+        mutableStateOf(
+            runCatching { SortDirection.valueOf(settingsSnapshot.similarityMemberSortDirection) }
+                .getOrDefault(SortDirection.Asc)
+        )
+    }
+    var durationMemberSortDirection by remember {
+        mutableStateOf(
+            runCatching { SortDirection.valueOf(settingsSnapshot.similarityDurationMemberSortDirection) }
+                .getOrDefault(SortDirection.Asc)
+        )
+    }
     var previewMenuExpanded by remember { mutableStateOf(false) }
     val selectionState = rememberLazyDetailSelectionState("similarity-cluster:$clusterId")
     var confirmDeleteSelected by remember(clusterId) { mutableStateOf(false) }
@@ -765,6 +797,7 @@ fun SimilarityClusterDetailScreen(
     fun applyDurationMemberSortDirection(direction: SortDirection) {
         if (durationMemberSortDirection == direction || memberLoading) return
         durationMemberSortDirection = direction
+        settingsStore.setSimilarityDurationMemberSortDirection(direction.name)
         members.clear()
         memberOffset = 0
         membersExhausted = false
@@ -949,6 +982,8 @@ fun SimilarityClusterDetailScreen(
                     onApplySort = { key, direction ->
                         memberSortKey = key
                         memberSortDirection = direction
+                        settingsStore.setSimilarityMemberSortKey(key.name)
+                        settingsStore.setSimilarityMemberSortDirection(direction.name)
                     }
                 )
             }
