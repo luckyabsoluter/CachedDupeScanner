@@ -119,7 +119,7 @@ fun bulkDeleteCompletedDetail(successCount: Int, failedCount: Int): String {
 }
 
 fun similarityGenerationTaskTitle(rebuild: Boolean): String {
-    return if (rebuild) "Rebuilding similarity setting" else "Updating similarity setting"
+    return if (rebuild) "Rebuilding similarity" else "Updating similarity"
 }
 
 fun similarityGenerationTaskDetail(progress: SimilarityMaintenanceProgress): String {

@@ -8,9 +8,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity settings management for named video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and per-setting update, rebuild, and clear controls.
-- Similarity settings now provide separate flows for setting type selection, custom creation controls, setting management, and similarity group member browsing.
-- Similarity settings identity now treats different method parameters as separate settings, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
+- Similarity management for named video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, duration-neighbor video lists, and update, rebuild, and clear controls.
+- Similarity now provides separate flows for type selection, custom creation controls, management, and similarity group member browsing.
+- Similarity identity now treats different method parameters as separate entries, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
 - Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
 - Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
 - Video timeline preview menus now provide optional duration and resolution labels in Files and similarity cluster details without forcing timeline frames on.
@@ -18,33 +18,33 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
-- Similarity setting detail now provides explicit Update and Rebuild actions and explains how they relate to scan-cache generation.
-- Similarity settings management now separates setting creation, maintenance, per-setting management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
-- Similarity settings screens now restore the previous template-style flow, detailed cluster and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping the maintained settings terminology.
+- Similarity detail now provides explicit Update and Rebuild actions and explains how they relate to scan-cache generation.
+- Similarity management now separates creation, maintenance, entry management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
+- Similarity screens now restore the previous template-style flow, detailed cluster and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping maintained similarity terminology.
 - Similarity cluster detail member cards now restore the previous full-width media card layout with exact byte counts, selection styling, and separated video metadata/timeline preview rows.
-- Similarity settings group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
-- Similarity setting management pages now keep clear/delete controls separate from the group browsing screen while scan completion generates similarity results.
-- Similarity settings keep scan-completion generation while exposing manual per-setting Update/Rebuild controls.
+- Similarity group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
+- Similarity management pages now keep clear/delete controls separate from the group browsing screen while scan completion generates similarity results.
+- Similarity keeps scan-completion generation while exposing manual Update/Rebuild controls.
 - Similarity cluster detail member browsing now shares the result member sort control and automatically loads additional members near the end of the list.
-- Similarity setting group lists now restore cluster sort controls for file count and total size order.
-- Similarity cluster detail screens in maintained settings now restore long-press member selection, selected-file deletion, and video preview menu options.
+- Similarity group lists now restore cluster sort controls for file count and total size order.
+- Similarity cluster detail screens in maintained entries now restore long-press member selection, selected-file deletion, and video preview menu options.
 - Duration-neighbor similarity cluster details now restore duration-order controls and display known member durations.
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
-- Similarity data now uses settings-based sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
+- Similarity data now uses sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
 - Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
 - Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact clusters.
 - File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.
 
 ### Fixed
 
-- Similarity setting Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
-- Newly created similarity settings now start enabled, including when creation reuses an existing disabled setting identity.
+- Similarity Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
+- Newly created similarity entries now start enabled, including when creation reuses an existing disabled identity.
 - Similarity group and member sort selections now persist across screen recreation and app restarts.
-- Enabling a paused similarity setting now stays lightweight; paused settings catch up during the next scan-cache generation.
+- Enabling paused similarity now stays lightweight; paused entries catch up during the next scan-cache generation.
 - Similarity cluster detail top-right video preview, duration, and resolution menu selections now stay enabled when returning to the screen.
-- Similarity settings no longer auto-create default rows when opened, and individual settings can now be deleted with their generated data.
+- Similarity no longer auto-creates default rows when opened, and individual entries can now be deleted with their generated data.
 - Top-right checkbox menu items now stay open after toggling preview and path display options.
-- Similarity setting parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same setting rows.
+- Similarity parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same rows.
 - Duration-neighbor similarity generation now builds connected neighbor clusters with stable normalized range keys.
 - Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
 - Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.

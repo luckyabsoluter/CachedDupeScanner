@@ -21,7 +21,7 @@ fun normalizedSimilarityMinSizeBytes(minSizeBytes: Long): Long {
 }
 
 fun normalizedSimilaritySettingDisplayName(displayName: String?, fallbackDisplayName: String): String {
-    val fallback = fallbackDisplayName.trim().ifBlank { "Similarity setting" }
+    val fallback = fallbackDisplayName.trim().ifBlank { "Similarity" }
     return displayName?.trim()?.ifBlank { fallback } ?: fallback
 }
 

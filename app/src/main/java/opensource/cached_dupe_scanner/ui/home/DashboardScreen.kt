@@ -104,8 +104,8 @@ fun DashboardScreen(
 
         item {
             DashboardCard(
-                title = "Similarity settings",
-                description = "Manage similarity settings and maintained duplicate-candidate clusters.",
+                title = "Similarity",
+                description = "Configure similarity matching and browse maintained duplicate-candidate clusters.",
                 actionLabel = "Open similarity",
                 onAction = onOpenSimilaritySettings
             )

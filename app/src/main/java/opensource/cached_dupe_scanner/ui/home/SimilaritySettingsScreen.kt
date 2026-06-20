@@ -150,7 +150,7 @@ fun SimilaritySettingsScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Similarity settings",
+                title = "Similarity",
                 onBack = onBack
             )
         }
@@ -159,7 +159,7 @@ fun SimilaritySettingsScreen(
                 onClick = onCreateSetting,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("New setting")
+                Text("New similarity")
             }
         }
         item(key = "settings_header") {
@@ -192,7 +192,7 @@ fun SimilaritySettingCreateScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "New similarity setting",
+                title = "New similarity",
                 onBack = onBack
             )
         }
@@ -235,7 +235,7 @@ fun SimilarityExactThumbnailSettingScreen(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    var statusText by remember { mutableStateOf("Ready to create setting.") }
+    var statusText by remember { mutableStateOf("Ready to create similarity.") }
     val draft = rememberSimilaritySettingDraftState()
     val exactStep = parsedExactThumbnailStep(
         frameSecondsInput = draft.frameSecondsInput,
@@ -272,7 +272,7 @@ fun SimilarityExactThumbnailSettingScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = "Exact thumbnail setting",
+                title = "Exact thumbnail similarity",
                 onBack = onBack
             )
         }
@@ -316,7 +316,7 @@ fun SimilarityDurationSettingScreen(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    var statusText by remember { mutableStateOf("Ready to create setting.") }
+    var statusText by remember { mutableStateOf("Ready to create similarity.") }
     val draft = rememberSimilaritySettingDraftState()
     val durationToleranceStep = parsedDurationToleranceStep(draft.durationToleranceInput, draft.durationToleranceUnit)
     val durationNeighborStep = parsedDurationNeighborListStep(draft.durationToleranceInput, draft.durationToleranceUnit)
@@ -354,13 +354,17 @@ fun SimilarityDurationSettingScreen(
             onCreated(created.settingId)
         }
     }
-    val title = if (neighborList) "Duration neighbor setting" else "Duration tolerance setting"
+    val title = if (neighborList) "Duration neighbor similarity" else "Duration tolerance similarity"
     val description = if (neighborList) {
         "Tolerance is the maximum duration gap between adjacent sorted videos. Isolated videos are omitted."
     } else {
         "Tolerance is the maximum duration gap inside one group. Use 0 for exact millisecond duration matches."
     }
-    val buttonText = if (neighborList) "Create duration neighbor setting" else "Create duration tolerance setting"
+    val buttonText = if (neighborList) {
+        "Create duration neighbor similarity"
+    } else {
+        "Create duration tolerance similarity"
+    }
 
     ScreenScrollColumn(
         modifier = modifier,
@@ -410,7 +414,7 @@ fun SimilaritySettingDetailScreen(
     val scope = rememberCoroutineScope()
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
-    var statusText by remember { mutableStateOf("Scans generate enabled settings; use Update or Rebuild to run this setting now.") }
+    var statusText by remember { mutableStateOf("Scans generate enabled similarity entries; use Update or Rebuild to run this similarity now.") }
     val activeSimilarityTask = taskCoordinator.activeTask(TaskArea.Similarity)
     val generationRunning = activeSimilarityTask != null
     val displayedStatusText = activeSimilarityTask?.detail ?: statusText
@@ -452,7 +456,7 @@ fun SimilaritySettingDetailScreen(
             withContext(Dispatchers.IO) {
                 repository.clearSettingResults(settingId)
             }
-            statusText = "Generated similarity data was cleared for this setting."
+            statusText = "Generated similarity data was cleared for this similarity."
             onChanged()
             refresh()
         }
@@ -496,7 +500,7 @@ fun SimilaritySettingDetailScreen(
     ) {
         item(key = "top_bar") {
             AppTopBar(
-                title = setting?.displayName ?: "Similarity setting",
+                title = setting?.displayName ?: "Similarity",
                 onBack = onBack
             )
         }
@@ -504,7 +508,7 @@ fun SimilaritySettingDetailScreen(
         if (selectedSetting == null) {
             item(key = "missing_setting") {
                 MissingSelectionCard(
-                    message = "This similarity setting is no longer available.",
+                    message = "This similarity is no longer available.",
                     onBack = onBack
                 )
             }
@@ -524,17 +528,17 @@ fun SimilaritySettingDetailScreen(
                     onToggle = { enabled ->
                         scope.launch {
                             statusText = if (enabled) {
-                                "Enabled. Scans generate this setting; use Update to catch up now."
+                                "Enabled. Scans generate this similarity; use Update to catch up now."
                             } else {
-                                "Similarity setting paused. Scans skip it until enabled."
+                                "Similarity paused. Scans skip it until enabled."
                             }
                             withContext(Dispatchers.IO) {
                                 repository.setEnabled(settingId, enabled)
                             }
                             statusText = if (enabled) {
-                                "Enabled. Scans generate this setting; use Update to catch up now."
+                                "Enabled. Scans generate this similarity; use Update to catch up now."
                             } else {
-                                "Similarity setting paused. Scans skip it until enabled."
+                                "Similarity paused. Scans skip it until enabled."
                             }
                             onChanged()
                             refresh()
@@ -557,8 +561,8 @@ fun SimilaritySettingDetailScreen(
     }
     if (confirmClearSetting) {
         ConfirmationDialog(
-            title = "Clear this setting's results?",
-            text = "Generated groups and member links for this setting will be removed. The setting itself remains.",
+            title = "Clear this similarity's results?",
+            text = "Generated groups and member links for this similarity will be removed. The similarity configuration remains.",
             confirmText = "Clear",
             onConfirm = ::clearSettingResults,
             onDismissRequest = { confirmClearSetting = false },
@@ -567,8 +571,8 @@ fun SimilaritySettingDetailScreen(
     }
     if (confirmDeleteSetting) {
         ConfirmationDialog(
-            title = "Delete this similarity setting?",
-            text = "The setting, generated groups, member links, method features, and maintenance history will be removed.",
+            title = "Delete this similarity?",
+            text = "This similarity, generated groups, member links, method features, and maintenance history will be removed.",
             confirmText = "Delete",
             onConfirm = ::deleteSetting,
             onDismissRequest = { confirmDeleteSetting = false },
@@ -646,7 +650,7 @@ fun SimilaritySettingGroupsScreen(
         if (selectedSetting == null) {
             item(key = "missing_setting") {
                 MissingSelectionCard(
-                    message = "This similarity setting is no longer available.",
+                    message = "This similarity is no longer available.",
                     onBack = onBack
                 )
             }
@@ -669,7 +673,7 @@ fun SimilaritySettingGroupsScreen(
             if (clusters.isEmpty()) {
                 item(key = "clusters_empty") {
                     Text(
-                        text = "No similarity clusters found for this setting.",
+                        text = "No similarity clusters found for this similarity.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1235,13 +1239,13 @@ private fun SimilaritySettingsHeader(hasSettings: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(text = "Similarity settings", style = MaterialTheme.typography.titleMedium)
+        Text(text = "Similarity", style = MaterialTheme.typography.titleMedium)
         Text(
-            text = "Scans generate enabled settings from the scan cache. Use Update to catch up from current cached files, or Rebuild to clear and recalculate a setting.",
+            text = "Scans generate enabled similarity entries from the scan cache. Use Update to catch up from current cached files, or Rebuild to clear and recalculate one similarity.",
             style = MaterialTheme.typography.bodySmall
         )
         if (!hasSettings) {
-            Text(text = "No similarity settings yet.", style = MaterialTheme.typography.bodySmall)
+            Text(text = "No similarity configured yet.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1423,7 +1427,7 @@ private fun ExactThumbnailSettingForm(
             )
             Text(text = statusText, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-                Text("Create exact thumbnail setting")
+                Text("Create exact thumbnail similarity")
             }
         }
     }
@@ -1633,7 +1637,7 @@ private fun SimilaritySettingDetailCard(
                     onClick = onDelete,
                     enabled = !generationRunning
                 ) {
-                    Text("Delete setting")
+                    Text("Delete similarity")
                 }
             }
         }
@@ -2379,9 +2383,9 @@ private fun settingSummary(setting: SimilaritySettingEntity): String {
 
 private fun settingGenerationSummary(setting: SimilaritySettingEntity): String {
     return if (setting.enabled) {
-        "Enabled: scans generate this setting automatically. Update catches up from the current scan cache; Rebuild clears and recalculates it."
+        "Enabled: scans generate this similarity automatically. Update catches up from the current scan cache; Rebuild clears and recalculates it."
     } else {
-        "Paused: scans skip this setting. Stored results remain available, and Update/Rebuild can still run manually."
+        "Paused: scans skip this similarity. Stored results remain available, and Update/Rebuild can still run manually."
     }
 }
 

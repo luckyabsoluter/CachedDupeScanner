@@ -152,7 +152,7 @@ class SimilaritySettingsRepository(
                 paramsHash = draft.paramsHash
             ) ?: return@runInTransaction
             if (existing.paramsJson != draft.paramsJson) {
-                error("Similarity setting parameter hash collision for ${draft.methodId}.")
+                error("Similarity parameter hash collision for ${draft.methodId}.")
             }
             val nextDisplayName = if (updateExistingDisplayName) draft.displayName else existing.displayName
             val nextEnabled = existing.enabled || enabled

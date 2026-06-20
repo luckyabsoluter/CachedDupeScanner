@@ -81,16 +81,16 @@ class MainActivityBackgroundTaskSourceTest {
             trashContent.contains("scope = appScope")
         )
         assertTrue(
-            "Similarity settings should not expose a manual maintenance task runner",
+            "Similarity should not expose a manual maintenance task runner",
             !similarityContent.contains("fun SimilarityMaintenanceScreen(") &&
                 !similarityContent.contains("startSimilarityMaintenanceTask(")
         )
         assertTrue(
-            "Similarity setting detail should accept an app scope for update and rebuild progress",
+            "Similarity detail should accept an app scope for update and rebuild progress",
             similarityContent.contains("appScope: CoroutineScope")
         )
         assertTrue(
-            "Similarity setting detail should publish shared task progress",
+            "Similarity detail should publish shared task progress",
             similarityContent.contains("startSimilaritySettingGenerationTask(")
         )
         assertTrue(

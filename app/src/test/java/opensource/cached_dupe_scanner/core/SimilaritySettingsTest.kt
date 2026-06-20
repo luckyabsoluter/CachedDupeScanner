@@ -67,7 +67,7 @@ class SimilaritySettingsTest {
             normalizedSimilaritySettingDisplayName("   ", "Fallback")
         )
         assertEquals(
-            "Similarity setting",
+            "Similarity",
             normalizedSimilaritySettingDisplayName(null, "   ")
         )
     }
