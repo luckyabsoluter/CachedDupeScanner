@@ -34,6 +34,10 @@ class MainActivityBackgroundTaskSourceTest {
             "Similarity task banners should open the settings route because similarity results are scan-generated",
             content.contains("TaskArea.Similarity -> Screen.SimilaritySettings")
         )
+        assertTrue(
+            "Similarity update and rebuild should run on the app-owned task scope",
+            content.contains("appScope = AppWorkScopes.taskScope")
+        )
         assertFalse(
             "DB management should not receive the Compose coroutine scope for long tasks",
             content.contains("appScope = scope,")
@@ -80,6 +84,14 @@ class MainActivityBackgroundTaskSourceTest {
             "Similarity settings should not expose a manual maintenance task runner",
             !similarityContent.contains("fun SimilarityMaintenanceScreen(") &&
                 !similarityContent.contains("startSimilarityMaintenanceTask(")
+        )
+        assertTrue(
+            "Similarity setting detail should accept an app scope for update and rebuild progress",
+            similarityContent.contains("appScope: CoroutineScope")
+        )
+        assertTrue(
+            "Similarity setting detail should publish shared task progress",
+            similarityContent.contains("startSimilaritySettingGenerationTask(")
         )
         assertTrue(
             "Bulk delete command screens should accept a task scope for execution",

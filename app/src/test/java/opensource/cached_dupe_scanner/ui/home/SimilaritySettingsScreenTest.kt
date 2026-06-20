@@ -14,6 +14,7 @@ class SimilaritySettingsScreenTest {
     @Test
     fun similarityScreensUseRouteLevelComposablesWithSettingsFlowText() {
         val content = sourceText("SimilaritySettingsScreen.kt")
+        val generationTaskContent = sourceText("similarity/SimilaritySettingGenerationTask.kt")
 
         assertTrue(content.contains("fun SimilaritySettingsScreen("))
         assertFalse(content.contains("fun SimilarityMaintenanceScreen("))
@@ -21,6 +22,9 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("fun SimilarityExactThumbnailSettingScreen("))
         assertTrue(content.contains("fun SimilarityDurationSettingScreen("))
         assertTrue(content.contains("fun SimilaritySettingDetailScreen("))
+        assertTrue(content.contains("appScope: CoroutineScope"))
+        assertTrue(content.contains("taskCoordinator: TaskCoordinator"))
+        assertTrue(content.contains("notificationController: TaskNotificationController"))
         assertTrue(content.contains("fun SimilaritySettingGroupsScreen("))
         assertTrue(content.contains("fun SimilarityClusterDetailScreen("))
         assertTrue(content.contains("settingsStore: AppSettingsStore"))
@@ -36,7 +40,9 @@ class SimilaritySettingsScreenTest {
         assertFalse(content.contains("Text(\"Run\")"))
         assertTrue(content.contains("Text(\"Update\")"))
         assertTrue(content.contains("Text(\"Rebuild\")"))
-        assertTrue(content.contains("repository.runSettingMaintenance("))
+        assertTrue(content.contains("startSimilaritySettingGenerationTask("))
+        assertTrue(content.contains("TaskArea.Similarity"))
+        assertTrue(generationTaskContent.contains("repository.runSettingMaintenance("))
         assertTrue(content.contains("Text(\"Delete setting\")"))
         assertTrue(content.contains("title = \"Delete this similarity setting?\""))
         assertFalse(content.contains("ensureDefaultSettings()"))

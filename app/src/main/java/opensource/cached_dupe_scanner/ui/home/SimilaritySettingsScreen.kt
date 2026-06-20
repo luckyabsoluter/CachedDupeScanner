@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -78,9 +78,12 @@ import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.similarityMethodLabel
+import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
+import opensource.cached_dupe_scanner.tasks.TaskArea
+import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
@@ -95,6 +98,7 @@ import opensource.cached_dupe_scanner.ui.home.similarity.parsedFrameSeconds
 import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
+import opensource.cached_dupe_scanner.ui.home.similarity.startSimilaritySettingGenerationTask
 
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT = 10
 private const val SIMILARITY_CLUSTER_PREVIEW_TEXT_MEMBER_LIMIT = 4
@@ -393,6 +397,9 @@ fun SimilarityDurationSettingScreen(
 @Composable
 fun SimilaritySettingDetailScreen(
     repository: SimilaritySettingsRepository,
+    appScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     settingId: Long,
     refreshVersion: Int,
     onChanged: () -> Unit,
@@ -404,7 +411,9 @@ fun SimilaritySettingDetailScreen(
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
     var statusText by remember { mutableStateOf("Scans generate enabled settings; use Update or Rebuild to run this setting now.") }
-    var generationRunning by remember { mutableStateOf(false) }
+    val activeSimilarityTask = taskCoordinator.activeTask(TaskArea.Similarity)
+    val generationRunning = activeSimilarityTask != null
+    val displayedStatusText = activeSimilarityTask?.detail ?: statusText
     var displayNameInput by remember(settingId) { mutableStateOf("") }
     var lastLoadedDisplayName by remember(settingId) { mutableStateOf<String?>(null) }
     var confirmClearSetting by remember { mutableStateOf(false) }
@@ -449,41 +458,21 @@ fun SimilaritySettingDetailScreen(
         }
     }
     fun runSettingGeneration(rebuild: Boolean) {
-        if (generationRunning) return
-        scope.launch {
-            generationRunning = true
-            statusText = if (rebuild) {
-                "Rebuilding similarity results from the scan cache..."
-            } else {
-                "Updating similarity results from the scan cache..."
-            }
-            try {
-                val summary = withContext(Dispatchers.IO) {
-                    repository.runSettingMaintenance(
-                        settingId = settingId,
-                        rebuild = rebuild,
-                        shouldContinue = { true },
-                        onProgress = {}
-                    )
-                }
-                statusText = if (rebuild) {
-                    "Rebuild complete: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
-                } else {
-                    "Update complete: ${summary.clusterCount} clusters, ${summary.duplicateFileCount} files."
-                }
+        val started = startSimilaritySettingGenerationTask(
+            repository = repository,
+            settingId = settingId,
+            rebuild = rebuild,
+            scope = appScope,
+            taskCoordinator = taskCoordinator,
+            notificationController = notificationController,
+            onStatusText = { status -> statusText = status },
+            onFinished = {
                 onChanged()
                 refresh()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                statusText = if (rebuild) {
-                    "Rebuild failed."
-                } else {
-                    "Update failed."
-                }
-            } finally {
-                generationRunning = false
             }
+        )
+        if (!started) {
+            statusText = "Another similarity update or rebuild is already running."
         }
     }
     fun deleteSetting() {
@@ -525,7 +514,7 @@ fun SimilaritySettingDetailScreen(
                     setting = selectedSetting,
                     clusterCount = clusters.size,
                     fileCount = clusters.sumOf { cluster -> cluster.fileCount },
-                    statusText = statusText,
+                    statusText = displayedStatusText,
                     displayNameInput = displayNameInput,
                     onDisplayNameInputChange = { displayNameInput = it },
                     onSaveName = ::saveSettingName,

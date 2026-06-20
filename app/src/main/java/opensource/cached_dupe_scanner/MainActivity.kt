@@ -499,6 +499,9 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.SimilaritySettingDetail -> SimilaritySettingDetailScreen(
                                 repository = similarityRepo,
+                                appScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onChanged = { similarityRefreshVersion.value += 1 },

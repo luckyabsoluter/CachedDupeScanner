@@ -10,6 +10,8 @@ import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRunSummary
 
@@ -114,4 +116,23 @@ fun bulkDeleteTaskDetail(processed: Int, total: Int, failed: Int): String {
 
 fun bulkDeleteCompletedDetail(successCount: Int, failedCount: Int): String {
     return "Deleted $successCount • Failed $failedCount"
+}
+
+fun similarityGenerationTaskTitle(rebuild: Boolean): String {
+    return if (rebuild) "Rebuilding similarity setting" else "Updating similarity setting"
+}
+
+fun similarityGenerationTaskDetail(progress: SimilarityMaintenanceProgress): String {
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    val setting = progress.settingName?.let { " • $it" } ?: ""
+    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}$setting"
+}
+
+fun similarityGenerationCompletedDetail(summary: SimilarityMaintenanceSummary): String {
+    return "Clusters ${summary.clusterCount} • Files ${summary.duplicateFileCount} • Skipped ${summary.skippedCount}"
+}
+
+fun similarityGenerationCancelledDetail(summary: SimilarityMaintenanceSummary): String {
+    val totalText = if (summary.candidateCount > 0) summary.candidateCount.toString() else "?"
+    return "Cancelled after ${summary.processedCount}/$totalText candidates."
 }

@@ -37,6 +37,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity setting Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
 - Newly created similarity settings now start enabled, including when creation reuses an existing disabled setting identity.
 - Similarity group and member sort selections now persist across screen recreation and app restarts.
 - Enabling a paused similarity setting now stays lightweight; paused settings catch up during the next scan-cache generation.
