@@ -37,6 +37,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster group lists now preserve scroll position when returning from a cluster detail screen.
 - Similarity Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
 - Newly created similarity entries now start enabled, including when creation reuses an existing disabled identity.
 - Similarity group and member sort selections now persist across screen recreation and app restarts.

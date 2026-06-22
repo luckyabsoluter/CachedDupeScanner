@@ -602,6 +602,8 @@ fun SimilaritySettingGroupsScreen(
     val settingsSnapshot = remember { settingsStore.load() }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    val groupListState = rememberLazyListState()
+    var groupsLoaded by remember(settingId) { mutableStateOf(false) }
     var clusterSortKey by remember {
         mutableStateOf(
             runCatching { SimilarityClusterSortKey.valueOf(settingsSnapshot.similarityClusterSortKey) }
@@ -622,6 +624,7 @@ fun SimilaritySettingGroupsScreen(
 
     fun refresh() {
         scope.launch {
+            groupsLoaded = false
             val loadedSetting = withContext(Dispatchers.IO) {
                 repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
             }
@@ -629,6 +632,7 @@ fun SimilaritySettingGroupsScreen(
             setting = loadedSetting
             clusters.clear()
             clusters.addAll(loadedClusters)
+            groupsLoaded = true
         }
     }
 
@@ -636,60 +640,74 @@ fun SimilaritySettingGroupsScreen(
         refresh()
     }
 
-    ScreenScrollColumn(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "top_bar") {
+    if (!groupsLoaded) {
+        Column(
+            modifier = modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             AppTopBar(
                 title = setting?.displayName ?: "Similarity results",
                 onBack = onBack
             )
+            Text(text = "Loading similarity results...", style = MaterialTheme.typography.bodySmall)
         }
-        val selectedSetting = setting
-        if (selectedSetting == null) {
-            item(key = "missing_setting") {
-                MissingSelectionCard(
-                    message = "This similarity is no longer available.",
+    } else {
+        ScreenScrollColumn(
+            modifier = modifier,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            listState = groupListState
+        ) {
+            item(key = "top_bar") {
+                AppTopBar(
+                    title = setting?.displayName ?: "Similarity results",
                     onBack = onBack
                 )
             }
-        } else {
-            item(key = "cluster_header") {
-                SimilarityGroupsHeader(
-                    clusterCount = clusters.size,
-                    fileCount = clusters.sumOf { cluster -> cluster.fileCount },
-                    sortKey = clusterSortKey,
-                    sortDirection = clusterSortDirection,
-                    sortEnabled = clusters.isNotEmpty(),
-                    onApplySort = { key, direction ->
-                        clusterSortKey = key
-                        clusterSortDirection = direction
-                        settingsStore.setSimilarityClusterSortKey(key.name)
-                        settingsStore.setSimilarityClusterSortDirection(direction.name)
-                    }
-                )
-            }
-            if (clusters.isEmpty()) {
-                item(key = "clusters_empty") {
-                    Text(
-                        text = "No similarity clusters found for this similarity.",
-                        style = MaterialTheme.typography.bodySmall
+            val selectedSetting = setting
+            if (selectedSetting == null) {
+                item(key = "missing_setting") {
+                    MissingSelectionCard(
+                        message = "This similarity is no longer available.",
+                        onBack = onBack
                     )
                 }
-            }
-            displayedClusters.forEach { cluster ->
-                item(key = "cluster:${cluster.clusterId}") {
-                    SimilarityClusterListCard(
-                        repository = repository,
-                        cluster = cluster,
-                        imageLoader = imageLoader,
-                        rememberedPreviewCache = rememberedPreviewCache,
-                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
-                        previewThumbnailSize = previewThumbnailSize,
-                        showFullPaths = showFullPaths,
-                        onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
+            } else {
+                item(key = "cluster_header") {
+                    SimilarityGroupsHeader(
+                        clusterCount = clusters.size,
+                        fileCount = clusters.sumOf { cluster -> cluster.fileCount },
+                        sortKey = clusterSortKey,
+                        sortDirection = clusterSortDirection,
+                        sortEnabled = clusters.isNotEmpty(),
+                        onApplySort = { key, direction ->
+                            clusterSortKey = key
+                            clusterSortDirection = direction
+                            settingsStore.setSimilarityClusterSortKey(key.name)
+                            settingsStore.setSimilarityClusterSortDirection(direction.name)
+                        }
                     )
+                }
+                if (clusters.isEmpty()) {
+                    item(key = "clusters_empty") {
+                        Text(
+                            text = "No similarity clusters found for this similarity.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                displayedClusters.forEach { cluster ->
+                    item(key = "cluster:${cluster.clusterId}") {
+                        SimilarityClusterListCard(
+                            repository = repository,
+                            cluster = cluster,
+                            imageLoader = imageLoader,
+                            rememberedPreviewCache = rememberedPreviewCache,
+                            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                            previewThumbnailSize = previewThumbnailSize,
+                            showFullPaths = showFullPaths,
+                            onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
+                        )
+                    }
                 }
             }
         }
