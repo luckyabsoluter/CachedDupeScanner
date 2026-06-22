@@ -64,6 +64,16 @@ data class SimilarityClusterMember(
     val durationMillis: Long? = null
 )
 
+data class SimilarityClusterSummary(
+    val clusterCount: Int = 0,
+    val fileCount: Int = 0
+)
+
+enum class SimilarityClusterSortColumn {
+    FileCount,
+    TotalSize
+}
+
 class SimilaritySettingsRepository(
     private val database: CacheDatabase,
     private val fileDao: FileCacheDao,
@@ -231,6 +241,61 @@ class SimilaritySettingsRepository(
 
     fun listClusters(settingId: Long): List<SimilarityClusterEntity> {
         return similarityDao.listActiveClusters(settingId)
+    }
+
+    fun getCluster(settingId: Long, clusterId: Long): SimilarityClusterEntity? {
+        return similarityDao.getActiveCluster(settingId = settingId, clusterId = clusterId)
+    }
+
+    fun getClusterSummary(settingId: Long): SimilarityClusterSummary {
+        val row = similarityDao.activeClusterSummary(settingId)
+        return SimilarityClusterSummary(
+            clusterCount = row.clusterCount,
+            fileCount = row.fileCount
+        )
+    }
+
+    fun listClustersPage(
+        settingId: Long,
+        offset: Int,
+        limit: Int,
+        sortColumn: SimilarityClusterSortColumn,
+        direction: SortDirection
+    ): List<SimilarityClusterEntity> {
+        val safeOffset = offset.coerceAtLeast(0)
+        val safeLimit = limit.coerceAtLeast(0)
+        return when (sortColumn) {
+            SimilarityClusterSortColumn.FileCount -> {
+                if (direction == SortDirection.Asc) {
+                    similarityDao.listActiveClustersByFileCountAsc(
+                        settingId = settingId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listActiveClustersByFileCountDesc(
+                        settingId = settingId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                }
+            }
+            SimilarityClusterSortColumn.TotalSize -> {
+                if (direction == SortDirection.Asc) {
+                    similarityDao.listActiveClustersByTotalSizeAsc(
+                        settingId = settingId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listActiveClustersByTotalSizeDesc(
+                        settingId = settingId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                }
+            }
+        }
     }
 
     fun listClusterMembers(clusterId: Long): List<SimilarityClusterMember> {

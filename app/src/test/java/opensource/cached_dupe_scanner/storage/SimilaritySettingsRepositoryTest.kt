@@ -418,6 +418,77 @@ class SimilaritySettingsRepositoryTest {
         )
     }
 
+    @Test
+    fun clustersCanBeLoadedBySortedPagesWithSummary() {
+        val alphaOne = videoFile("cluster-alpha-1.mp4")
+        val alphaTwo = videoFile("cluster-alpha-2.mp4")
+        val betaOne = videoFile("cluster-beta-1.mp4")
+        val betaTwo = videoFile("cluster-beta-2.mp4")
+        val betaThree = videoFile("cluster-beta-3.mp4")
+        val gammaOne = videoFile("cluster-gamma-1.mp4")
+        val gammaTwo = videoFile("cluster-gamma-2.mp4")
+        listOf(
+            entity(alphaOne, sizeBytes = 100L),
+            entity(alphaTwo, sizeBytes = 100L),
+            entity(betaOne, sizeBytes = 50L),
+            entity(betaTwo, sizeBytes = 50L),
+            entity(betaThree, sizeBytes = 50L),
+            entity(gammaOne, sizeBytes = 300L),
+            entity(gammaTwo, sizeBytes = 300L)
+        ).forEach { entity -> database.fileCacheDao().upsert(entity) }
+        val repository = repository(
+            signatures = mapOf(
+                alphaOne.absolutePath to "alpha",
+                alphaTwo.absolutePath to "alpha",
+                betaOne.absolutePath to "beta",
+                betaTwo.absolutePath to "beta",
+                betaThree.absolutePath to "beta",
+                gammaOne.absolutePath to "gamma",
+                gammaTwo.absolutePath to "gamma"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+
+        val summary = repository.getClusterSummary(setting.settingId)
+        val firstByCount = repository.listClustersPage(
+            settingId = setting.settingId,
+            offset = 0,
+            limit = 2,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            direction = SortDirection.Desc
+        )
+        val secondByCount = repository.listClustersPage(
+            settingId = setting.settingId,
+            offset = 2,
+            limit = 2,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            direction = SortDirection.Desc
+        )
+        val firstBySize = repository.listClustersPage(
+            settingId = setting.settingId,
+            offset = 0,
+            limit = 3,
+            sortColumn = SimilarityClusterSortColumn.TotalSize,
+            direction = SortDirection.Asc
+        )
+
+        assertEquals(3, summary.clusterCount)
+        assertEquals(7, summary.fileCount)
+        assertEquals(listOf("beta", "gamma"), firstByCount.map { cluster -> cluster.clusterKey })
+        assertEquals(listOf("alpha"), secondByCount.map { cluster -> cluster.clusterKey })
+        assertEquals(listOf("beta", "alpha", "gamma"), firstBySize.map { cluster -> cluster.clusterKey })
+        assertEquals(
+            "beta",
+            repository.getCluster(setting.settingId, firstByCount.first().clusterId)?.clusterKey
+        )
+    }
+
     private fun repository(
         signatures: Map<String, String> = emptyMap(),
         durations: Map<String, Long> = emptyMap()

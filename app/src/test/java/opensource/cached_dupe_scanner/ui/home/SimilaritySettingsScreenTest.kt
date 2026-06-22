@@ -61,6 +61,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("settingsStore.setSimilarityMemberSortKey("))
         assertTrue(content.contains("settingsStore.setSimilarityMemberSortDirection("))
         assertTrue(content.contains("settingsStore.setSimilarityDurationMemberSortDirection("))
+        assertTrue(content.contains("repository.getClusterSummary("))
         assertTrue(content.contains("title = \"Similarity\""))
         assertTrue(content.contains("Text(\"New similarity\")"))
         assertTrue(content.contains("text = \"Similarity\""))
@@ -93,11 +94,18 @@ class SimilaritySettingsScreenTest {
         assertFalse(settingDetailContent.contains("SimilarityClusterListCard("))
         assertTrue(settingGroupsContent.contains("val groupListState = rememberLazyListState()"))
         assertTrue(settingGroupsContent.contains("var groupsLoaded by remember(settingId)"))
+        assertTrue(settingGroupsContent.contains("var clusterOffset by remember(settingId)"))
+        assertTrue(settingGroupsContent.contains("var clustersExhausted by remember(settingId)"))
+        assertTrue(settingGroupsContent.contains("repository.listClustersPage("))
+        assertTrue(settingGroupsContent.contains("SIMILARITY_CLUSTER_GROUP_PAGE_SIZE"))
+        assertTrue(settingGroupsContent.contains("shouldTriggerSimilarityClusterAutoLoad("))
         assertTrue(settingGroupsContent.contains("if (!groupsLoaded)"))
         assertTrue(settingGroupsContent.contains("Loading similarity results..."))
         assertTrue(settingGroupsContent.contains("listState = groupListState"))
+        assertTrue(settingGroupsContent.contains("clusterSummary.clusterCount"))
         assertTrue(settingGroupsContent.contains("SimilarityGroupsHeader("))
         assertTrue(settingGroupsContent.contains("SimilarityClusterListCard("))
+        assertTrue(content.contains("repository.getCluster(settingId = settingId, clusterId = clusterId)"))
         assertTrue(content.contains("SimilarityClusterDetailOverviewCard("))
         assertTrue(content.contains("ExactHashReductionPreviewCard("))
         assertTrue(content.contains("SimilarityMemberCard("))
@@ -134,6 +142,8 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("Group rule: exact thumbnail hash equality"))
         assertTrue(content.contains("List rule: duration-sorted neighbor filter"))
         assertFalse(content.contains("clusters.take("))
+        assertFalse(settingGroupsContent.contains("repository.listClusters(settingId)"))
+        assertFalse(content.contains("repository.listClusters(settingId).firstOrNull"))
         assertFalse(content.contains("repository.listClusterMembers(clusterId)"))
         assertFalse(content.contains("\"${'$'}index. "))
     }
@@ -286,6 +296,46 @@ class SimilaritySettingsScreenTest {
         )
         assertFalse(
             shouldTriggerSimilarityMemberAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = true
+            )
+        )
+    }
+
+    @Test
+    fun similarityClusterAutoLoadUsesSameGuardRulesAsMemberPaging() {
+        assertTrue(
+            shouldTriggerSimilarityClusterAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityClusterAutoLoad(
+                lastVisibleItemIndex = 4,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = false,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityClusterAutoLoad(
+                lastVisibleItemIndex = 8,
+                totalItemsCount = 10,
+                thresholdItems = 3,
+                isLoading = true,
+                isComplete = false
+            )
+        )
+        assertFalse(
+            shouldTriggerSimilarityClusterAutoLoad(
                 lastVisibleItemIndex = 8,
                 totalItemsCount = 10,
                 thresholdItems = 3,
