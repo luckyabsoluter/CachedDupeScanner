@@ -115,8 +115,87 @@ interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_clusters WHERE settingId = :settingId AND clusterKey = :clusterKey LIMIT 1")
     fun getClusterByKey(settingId: Long, clusterKey: String): SimilarityClusterEntity?
 
+    @Query("SELECT * FROM similarity_clusters WHERE settingId = :settingId AND clusterId = :clusterId AND fileCount > 1 LIMIT 1")
+    fun getStoredCluster(settingId: Long, clusterId: Long): SimilarityClusterEntity?
+
     @Query("SELECT * FROM similarity_clusters WHERE settingId = :settingId")
     fun listStoredClusters(settingId: Long): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT
+            COUNT(*) AS clusterCount,
+            COALESCE(SUM(fileCount), 0) AS fileCount
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+        """
+    )
+    fun storedClusterSummary(settingId: Long): SimilarityClusterSummaryRow
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+        ORDER BY fileCount ASC, totalBytes ASC, clusterKey ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listStoredClustersByFileCountAsc(
+        settingId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+        ORDER BY fileCount DESC, totalBytes DESC, clusterKey ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listStoredClustersByFileCountDesc(
+        settingId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+        ORDER BY totalBytes ASC, fileCount ASC, clusterKey ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listStoredClustersByTotalSizeAsc(
+        settingId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+        ORDER BY totalBytes DESC, fileCount DESC, clusterKey ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listStoredClustersByTotalSizeDesc(
+        settingId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     fun insertCluster(cluster: SimilarityClusterEntity): Long
@@ -190,157 +269,6 @@ interface SimilaritySettingsDao {
         """
     )
     fun listActiveClusters(settingId: Long): List<SimilarityClusterEntity>
-
-    @Query(
-        """
-        SELECT
-            cluster.clusterId AS clusterId,
-            cluster.settingId AS settingId,
-            cluster.clusterKey AS clusterKey,
-            COUNT(file.normalizedPath) AS fileCount,
-            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes,
-            cluster.updatedAtMillis AS updatedAtMillis
-        FROM similarity_clusters AS cluster
-        INNER JOIN similarity_cluster_members AS member
-            ON member.clusterId = cluster.clusterId
-        INNER JOIN cached_files AS file
-            ON file.normalizedPath = member.normalizedPath
-        WHERE cluster.settingId = :settingId
-          AND cluster.clusterId = :clusterId
-        GROUP BY cluster.clusterId, cluster.settingId, cluster.clusterKey, cluster.updatedAtMillis
-        HAVING COUNT(file.normalizedPath) > 1
-        LIMIT 1
-        """
-    )
-    fun getActiveCluster(settingId: Long, clusterId: Long): SimilarityClusterEntity?
-
-    @Query(
-        """
-        SELECT
-            COUNT(*) AS clusterCount,
-            COALESCE(SUM(fileCount), 0) AS fileCount
-        FROM (
-            SELECT COUNT(file.normalizedPath) AS fileCount
-            FROM similarity_clusters AS cluster
-            INNER JOIN similarity_cluster_members AS member
-                ON member.clusterId = cluster.clusterId
-            INNER JOIN cached_files AS file
-                ON file.normalizedPath = member.normalizedPath
-            WHERE cluster.settingId = :settingId
-            GROUP BY cluster.clusterId
-            HAVING COUNT(file.normalizedPath) > 1
-        )
-        """
-    )
-    fun activeClusterSummary(settingId: Long): SimilarityClusterSummaryRow
-
-    @Query(
-        """
-        SELECT
-            cluster.clusterId AS clusterId,
-            cluster.settingId AS settingId,
-            cluster.clusterKey AS clusterKey,
-            COUNT(file.normalizedPath) AS fileCount,
-            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes,
-            cluster.updatedAtMillis AS updatedAtMillis
-        FROM similarity_clusters AS cluster
-        INNER JOIN similarity_cluster_members AS member
-            ON member.clusterId = cluster.clusterId
-        INNER JOIN cached_files AS file
-            ON file.normalizedPath = member.normalizedPath
-        WHERE cluster.settingId = :settingId
-        GROUP BY cluster.clusterId, cluster.settingId, cluster.clusterKey, cluster.updatedAtMillis
-        HAVING COUNT(file.normalizedPath) > 1
-        ORDER BY fileCount ASC, totalBytes ASC, cluster.clusterKey ASC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    fun listActiveClustersByFileCountAsc(
-        settingId: Long,
-        offset: Int,
-        limit: Int
-    ): List<SimilarityClusterEntity>
-
-    @Query(
-        """
-        SELECT
-            cluster.clusterId AS clusterId,
-            cluster.settingId AS settingId,
-            cluster.clusterKey AS clusterKey,
-            COUNT(file.normalizedPath) AS fileCount,
-            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes,
-            cluster.updatedAtMillis AS updatedAtMillis
-        FROM similarity_clusters AS cluster
-        INNER JOIN similarity_cluster_members AS member
-            ON member.clusterId = cluster.clusterId
-        INNER JOIN cached_files AS file
-            ON file.normalizedPath = member.normalizedPath
-        WHERE cluster.settingId = :settingId
-        GROUP BY cluster.clusterId, cluster.settingId, cluster.clusterKey, cluster.updatedAtMillis
-        HAVING COUNT(file.normalizedPath) > 1
-        ORDER BY fileCount DESC, totalBytes DESC, cluster.clusterKey ASC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    fun listActiveClustersByFileCountDesc(
-        settingId: Long,
-        offset: Int,
-        limit: Int
-    ): List<SimilarityClusterEntity>
-
-    @Query(
-        """
-        SELECT
-            cluster.clusterId AS clusterId,
-            cluster.settingId AS settingId,
-            cluster.clusterKey AS clusterKey,
-            COUNT(file.normalizedPath) AS fileCount,
-            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes,
-            cluster.updatedAtMillis AS updatedAtMillis
-        FROM similarity_clusters AS cluster
-        INNER JOIN similarity_cluster_members AS member
-            ON member.clusterId = cluster.clusterId
-        INNER JOIN cached_files AS file
-            ON file.normalizedPath = member.normalizedPath
-        WHERE cluster.settingId = :settingId
-        GROUP BY cluster.clusterId, cluster.settingId, cluster.clusterKey, cluster.updatedAtMillis
-        HAVING COUNT(file.normalizedPath) > 1
-        ORDER BY totalBytes ASC, fileCount ASC, cluster.clusterKey ASC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    fun listActiveClustersByTotalSizeAsc(
-        settingId: Long,
-        offset: Int,
-        limit: Int
-    ): List<SimilarityClusterEntity>
-
-    @Query(
-        """
-        SELECT
-            cluster.clusterId AS clusterId,
-            cluster.settingId AS settingId,
-            cluster.clusterKey AS clusterKey,
-            COUNT(file.normalizedPath) AS fileCount,
-            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes,
-            cluster.updatedAtMillis AS updatedAtMillis
-        FROM similarity_clusters AS cluster
-        INNER JOIN similarity_cluster_members AS member
-            ON member.clusterId = cluster.clusterId
-        INNER JOIN cached_files AS file
-            ON file.normalizedPath = member.normalizedPath
-        WHERE cluster.settingId = :settingId
-        GROUP BY cluster.clusterId, cluster.settingId, cluster.clusterKey, cluster.updatedAtMillis
-        HAVING COUNT(file.normalizedPath) > 1
-        ORDER BY totalBytes DESC, fileCount DESC, cluster.clusterKey ASC
-        LIMIT :limit OFFSET :offset
-        """
-    )
-    fun listActiveClustersByTotalSizeDesc(
-        settingId: Long,
-        offset: Int,
-        limit: Int
-    ): List<SimilarityClusterEntity>
 
     @Query(
         """

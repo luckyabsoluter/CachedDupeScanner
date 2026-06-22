@@ -37,6 +37,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity group browsing now opens from stored cluster pages instead of blocking initial load on active cluster aggregation.
 - Similarity cluster group lists now preserve scroll position when returning from a cluster detail screen.
 - Similarity Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
 - Newly created similarity entries now start enabled, including when creation reuses an existing disabled identity.

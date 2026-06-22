@@ -244,11 +244,11 @@ class SimilaritySettingsRepository(
     }
 
     fun getCluster(settingId: Long, clusterId: Long): SimilarityClusterEntity? {
-        return similarityDao.getActiveCluster(settingId = settingId, clusterId = clusterId)
+        return similarityDao.getStoredCluster(settingId = settingId, clusterId = clusterId)
     }
 
     fun getClusterSummary(settingId: Long): SimilarityClusterSummary {
-        val row = similarityDao.activeClusterSummary(settingId)
+        val row = similarityDao.storedClusterSummary(settingId)
         return SimilarityClusterSummary(
             clusterCount = row.clusterCount,
             fileCount = row.fileCount
@@ -267,13 +267,13 @@ class SimilaritySettingsRepository(
         return when (sortColumn) {
             SimilarityClusterSortColumn.FileCount -> {
                 if (direction == SortDirection.Asc) {
-                    similarityDao.listActiveClustersByFileCountAsc(
+                    similarityDao.listStoredClustersByFileCountAsc(
                         settingId = settingId,
                         offset = safeOffset,
                         limit = safeLimit
                     )
                 } else {
-                    similarityDao.listActiveClustersByFileCountDesc(
+                    similarityDao.listStoredClustersByFileCountDesc(
                         settingId = settingId,
                         offset = safeOffset,
                         limit = safeLimit
@@ -282,13 +282,13 @@ class SimilaritySettingsRepository(
             }
             SimilarityClusterSortColumn.TotalSize -> {
                 if (direction == SortDirection.Asc) {
-                    similarityDao.listActiveClustersByTotalSizeAsc(
+                    similarityDao.listStoredClustersByTotalSizeAsc(
                         settingId = settingId,
                         offset = safeOffset,
                         limit = safeLimit
                     )
                 } else {
-                    similarityDao.listActiveClustersByTotalSizeDesc(
+                    similarityDao.listStoredClustersByTotalSizeDesc(
                         settingId = settingId,
                         offset = safeOffset,
                         limit = safeLimit
