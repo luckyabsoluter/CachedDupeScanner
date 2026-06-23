@@ -23,6 +23,12 @@ data class SimilarityClusterSummaryRow(
     val fileCount: Int
 )
 
+data class SimilarityClusterRepairRow(
+    val clusterId: Long,
+    val fileCount: Int,
+    val totalBytes: Long
+)
+
 @Dao
 interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_settings ORDER BY updatedAtMillis DESC, settingId DESC")
@@ -112,6 +118,9 @@ interface SimilaritySettingsDao {
     @Query("DELETE FROM similarity_cluster_members WHERE normalizedPath IN (:normalizedPaths)")
     fun deleteClusterMembersByPaths(normalizedPaths: List<String>)
 
+    @Query("SELECT DISTINCT clusterId FROM similarity_cluster_members WHERE normalizedPath IN (:normalizedPaths)")
+    fun listClusterIdsForMemberPaths(normalizedPaths: List<String>): List<Long>
+
     @Query("SELECT * FROM similarity_clusters WHERE settingId = :settingId AND clusterKey = :clusterKey LIMIT 1")
     fun getClusterByKey(settingId: Long, clusterKey: String): SimilarityClusterEntity?
 
@@ -120,6 +129,23 @@ interface SimilaritySettingsDao {
 
     @Query("SELECT * FROM similarity_clusters WHERE settingId = :settingId")
     fun listStoredClusters(settingId: Long): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT
+            cluster.clusterId AS clusterId,
+            COUNT(file.normalizedPath) AS fileCount,
+            COALESCE(SUM(file.sizeBytes), 0) AS totalBytes
+        FROM similarity_clusters AS cluster
+        LEFT JOIN similarity_cluster_members AS member
+            ON member.clusterId = cluster.clusterId
+        LEFT JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        WHERE cluster.clusterId IN (:clusterIds)
+        GROUP BY cluster.clusterId
+        """
+    )
+    fun listClusterRepairRows(clusterIds: List<Long>): List<SimilarityClusterRepairRow>
 
     @Query(
         """

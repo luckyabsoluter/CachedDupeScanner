@@ -14,7 +14,15 @@ import androidx.room.PrimaryKey
         ),
         Index(value = ["settingId"], name = "index_similarity_clusters_settingId"),
         Index(value = ["fileCount"], name = "index_similarity_clusters_fileCount"),
-        Index(value = ["totalBytes"], name = "index_similarity_clusters_totalBytes")
+        Index(value = ["totalBytes"], name = "index_similarity_clusters_totalBytes"),
+        Index(
+            value = ["settingId", "fileCount", "totalBytes", "clusterKey"],
+            name = "index_similarity_clusters_setting_file_count_sort"
+        ),
+        Index(
+            value = ["settingId", "totalBytes", "fileCount", "clusterKey"],
+            name = "index_similarity_clusters_setting_total_size_sort"
+        )
     ]
 )
 data class SimilarityClusterEntity(

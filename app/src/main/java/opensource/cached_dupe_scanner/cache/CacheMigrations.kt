@@ -583,6 +583,23 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_clusters_setting_file_count_sort
+                ON similarity_clusters(settingId, fileCount, totalBytes, clusterKey)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS index_similarity_clusters_setting_total_size_sort
+                ON similarity_clusters(settingId, totalBytes, fileCount, clusterKey)
+                """.trimIndent()
+            )
+        }
+    }
+
 }
 
 private data class MigrationSimilarityClusterMember(

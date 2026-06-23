@@ -361,10 +361,12 @@ class SimilaritySettingsRepository(
     override fun onCachedFilesChanged(normalizedPaths: List<String>) {
         if (normalizedPaths.isEmpty()) return
         normalizedPaths.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { chunk ->
+            val affectedClusterIds = similarityDao.listClusterIdsForMemberPaths(chunk)
             similarityDao.deleteSettingFilesByPaths(chunk)
             similarityDao.deleteExactThumbnailFeaturesByPaths(chunk)
             similarityDao.deleteDurationFeaturesByPaths(chunk)
             similarityDao.deleteClusterMembersByPaths(chunk)
+            repairStoredClusters(affectedClusterIds)
         }
     }
 
@@ -812,6 +814,25 @@ class SimilaritySettingsRepository(
                         )
                     }
                 )
+            }
+        }
+    }
+
+    private fun repairStoredClusters(clusterIds: List<Long>) {
+        if (clusterIds.isEmpty()) return
+        clusterIds.distinct().chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { ids ->
+            similarityDao.listClusterRepairRows(ids).forEach { row ->
+                if (row.fileCount <= 1) {
+                    similarityDao.deleteClusterMembersByIds(listOf(row.clusterId))
+                    similarityDao.deleteClustersByIds(listOf(row.clusterId))
+                } else {
+                    similarityDao.updateCluster(
+                        clusterId = row.clusterId,
+                        fileCount = row.fileCount,
+                        totalBytes = row.totalBytes,
+                        updatedAtMillis = System.currentTimeMillis()
+                    )
+                }
             }
         }
     }

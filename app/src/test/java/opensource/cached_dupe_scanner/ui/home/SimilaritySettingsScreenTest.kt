@@ -96,6 +96,8 @@ class SimilaritySettingsScreenTest {
         assertTrue(settingGroupsContent.contains("var groupsLoaded by remember(settingId)"))
         assertTrue(settingGroupsContent.contains("var clusterOffset by remember(settingId)"))
         assertTrue(settingGroupsContent.contains("var clustersExhausted by remember(settingId)"))
+        assertTrue(settingGroupsContent.contains("var pendingClusterResetIndex by remember(settingId)"))
+        assertTrue(settingGroupsContent.contains("pendingClusterResetIndex = restoredFirstVisibleIndex"))
         assertTrue(settingGroupsContent.contains("repository.listClustersPage("))
         assertTrue(settingGroupsContent.contains("SIMILARITY_CLUSTER_GROUP_PAGE_SIZE"))
         assertTrue(settingGroupsContent.contains("shouldTriggerSimilarityClusterAutoLoad("))

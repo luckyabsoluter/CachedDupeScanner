@@ -37,6 +37,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster pages now remove or refresh stored cluster rows when cached files are deleted or changed.
+- Similarity cluster sort changes now rerun after any in-flight page load instead of leaving stale ordering.
 - Similarity group browsing now opens from stored cluster pages instead of blocking initial load on active cluster aggregation.
 - Similarity cluster group lists now preserve scroll position when returning from a cluster detail screen.
 - Similarity Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
@@ -66,6 +68,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Similarity cluster page queries now use setting-aware sort indexes for file-count and total-size ordering.
 - Similarity group browsing now loads cluster rows by page and uses aggregate summaries instead of materializing every cluster.
 - Similarity cluster detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
 - Similarity cluster detail screens now load members page-by-page instead of materializing entire large clusters at once.

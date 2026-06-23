@@ -227,6 +227,7 @@ class SimilaritySettingsRepositoryTest {
             enabled = true
         )
         repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+        val cluster = repository.listClusters(setting.settingId).single()
         val history = ScanHistoryRepository(
             dao = database.fileCacheDao(),
             settingsStore = AppSettingsStore(ApplicationProvider.getApplicationContext()),
@@ -238,6 +239,17 @@ class SimilaritySettingsRepositoryTest {
         history.deleteByNormalizedPath(second.normalizedPath())
 
         assertTrue(repository.listClusters(setting.settingId).isEmpty())
+        assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
+        assertEquals(null, repository.getCluster(setting.settingId, cluster.clusterId))
+        assertTrue(
+            repository.listClustersPage(
+                settingId = setting.settingId,
+                offset = 0,
+                limit = 10,
+                sortColumn = SimilarityClusterSortColumn.FileCount,
+                direction = SortDirection.Desc
+            ).isEmpty()
+        )
     }
 
     @Test

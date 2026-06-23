@@ -610,6 +610,7 @@ fun SimilaritySettingGroupsScreen(
     val groupListState = rememberLazyListState()
     var groupsLoaded by remember(settingId) { mutableStateOf(false) }
     var clusterLoading by remember(settingId) { mutableStateOf(false) }
+    var pendingClusterResetIndex by remember(settingId) { mutableStateOf<Int?>(null) }
     var clusterOffset by remember(settingId) { mutableStateOf(0) }
     var clustersExhausted by remember(settingId) { mutableStateOf(false) }
     var clusterSortKey by remember {
@@ -626,9 +627,15 @@ fun SimilaritySettingGroupsScreen(
     }
 
     fun loadClusterPage(reset: Boolean, restoredFirstVisibleIndex: Int = groupListState.firstVisibleItemIndex) {
-        if (clusterLoading) return
+        if (clusterLoading) {
+            if (reset) {
+                pendingClusterResetIndex = restoredFirstVisibleIndex
+            }
+            return
+        }
         clusterLoading = true
         if (reset) {
+            pendingClusterResetIndex = null
             groupsLoaded = false
             clusterOffset = 0
             clustersExhausted = false
@@ -679,6 +686,10 @@ fun SimilaritySettingGroupsScreen(
                 groupsLoaded = true
             } finally {
                 clusterLoading = false
+                pendingClusterResetIndex?.let { pendingIndex ->
+                    pendingClusterResetIndex = null
+                    loadClusterPage(reset = true, restoredFirstVisibleIndex = pendingIndex)
+                }
             }
         }
     }

@@ -517,6 +517,57 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration18to19AddsSimilarityClusterSortIndexes() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-18-19-${UUID.randomUUID()}.db"
+
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(18) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion17SimilarityTables(db)
+                        db.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS cached_files (
+                                normalizedPath TEXT NOT NULL PRIMARY KEY,
+                                path TEXT NOT NULL,
+                                sizeBytes INTEGER NOT NULL,
+                                lastModifiedMillis INTEGER NOT NULL,
+                                hashHex TEXT
+                            )
+                            """.trimIndent()
+                        )
+                        CacheMigrations.MIGRATION_17_18.migrate(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_18_19.migrate(db)
+
+            assertTrue(hasIndex(db, "similarity_clusters", "index_similarity_clusters_setting_file_count_sort"))
+            assertTrue(hasIndex(db, "similarity_clusters", "index_similarity_clusters_setting_total_size_sort"))
+            assertEquals(
+                listOf("settingId", "fileCount", "totalBytes", "clusterKey"),
+                indexColumns(db, "index_similarity_clusters_setting_file_count_sort")
+            )
+            assertEquals(
+                listOf("settingId", "totalBytes", "fileCount", "clusterKey"),
+                indexColumns(db, "index_similarity_clusters_setting_total_size_sort")
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
