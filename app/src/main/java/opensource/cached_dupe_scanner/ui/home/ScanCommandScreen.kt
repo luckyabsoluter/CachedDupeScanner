@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.room.Room
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -28,9 +27,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
-import opensource.cached_dupe_scanner.cache.CacheDatabase
-import opensource.cached_dupe_scanner.cache.CacheMigrations
-import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultMerger
 import opensource.cached_dupe_scanner.engine.IncrementalScanner
@@ -59,63 +55,6 @@ import opensource.cached_dupe_scanner.storage.TrashPaths
 
 @Composable
 fun ScanCommandScreen(
-    state: MutableState<ScanUiState>,
-    onScanComplete: (ScanResult) -> Unit,
-    onScanCancelled: () -> Unit,
-    reportRepo: ScanReportRepository,
-    settingsStore: AppSettingsStore,
-    targetsVersion: Int,
-    scanScope: CoroutineScope,
-    onReportSaved: () -> Unit,
-    taskCoordinator: TaskCoordinator,
-    notificationController: TaskNotificationController,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val database = remember {
-        Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-            .addMigrations(
-                CacheMigrations.MIGRATION_1_3,
-                CacheMigrations.MIGRATION_2_3,
-                CacheMigrations.MIGRATION_3_4,
-                CacheMigrations.MIGRATION_4_5,
-                CacheMigrations.MIGRATION_5_6,
-                CacheMigrations.MIGRATION_6_7,
-                CacheMigrations.MIGRATION_7_8,
-                CacheMigrations.MIGRATION_8_9,
-                CacheMigrations.MIGRATION_9_10,
-                CacheMigrations.MIGRATION_10_11,
-                CacheMigrations.MIGRATION_11_12,
-                CacheMigrations.MIGRATION_12_13,
-                CacheMigrations.MIGRATION_13_14,
-                CacheMigrations.MIGRATION_14_15,
-                CacheMigrations.MIGRATION_15_16,
-                CacheMigrations.MIGRATION_16_17
-            )
-            .build()
-    }
-    val cacheStore = remember { CacheStore(database.fileCacheDao()) }
-    val scanner = remember { IncrementalScanner(cacheStore) }
-    ScanCommandScreen(
-        state = state,
-        onScanComplete = onScanComplete,
-        onScanCancelled = onScanCancelled,
-        reportRepo = reportRepo,
-        settingsStore = settingsStore,
-        targetsVersion = targetsVersion,
-        scanScope = scanScope,
-        onReportSaved = onReportSaved,
-        taskCoordinator = taskCoordinator,
-        notificationController = notificationController,
-        onBack = onBack,
-        scanner = scanner,
-        modifier = modifier
-    )
-}
-
-@Composable
-internal fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
     onScanComplete: (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
