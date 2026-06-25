@@ -8,6 +8,7 @@ import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.Hashing
+import opensource.cached_dupe_scanner.core.ScanCacheSnapshot
 import opensource.cached_dupe_scanner.core.ScanResult
 
 class DocumentScanner(
@@ -21,6 +22,7 @@ class DocumentScanner(
             ?: return ScanResult(scannedAtMillis, emptyList(), emptyList())
 
         val files = mutableListOf<FileMetadata>()
+        val cacheSnapshots = mutableListOf<ScanCacheSnapshot>()
 
         walker.walk(root, ignore).forEach { doc ->
             val metadata = doc.toMetadata()
@@ -29,6 +31,10 @@ class DocumentScanner(
             }
 
             val cached = cacheStore.lookup(metadata)
+            cacheSnapshots += ScanCacheSnapshot(
+                normalizedPath = metadata.normalizedPath,
+                previous = cached.cached
+            )
             val hashHex = when (cached.status) {
                 CacheStatus.FRESH -> cached.cached?.hashHex
                 CacheStatus.STALE, CacheStatus.MISS -> hashDocument(doc)
@@ -49,7 +55,7 @@ class DocumentScanner(
             .filterValues { it.size > 1 }
             .map { (hash, groupFiles) -> DuplicateGroup(hash, groupFiles) }
 
-        return ScanResult(scannedAtMillis, files, duplicateGroups)
+        return ScanResult(scannedAtMillis, files, duplicateGroups, cacheSnapshots)
     }
 
     private fun hashDocument(doc: DocumentFile): String? {

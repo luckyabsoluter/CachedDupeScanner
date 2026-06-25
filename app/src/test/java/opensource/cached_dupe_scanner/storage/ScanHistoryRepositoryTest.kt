@@ -7,6 +7,7 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.Hashing
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.ScanCacheSnapshot
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import org.junit.Assert.assertEquals
@@ -947,5 +948,110 @@ class ScanHistoryRepositoryTest {
         } finally {
             database.close()
         }
+    }
+
+    @Test
+    fun recordScanUsesCacheSnapshotsWhenScannerAlreadyUpsertedRows() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val settings = AppSettingsStore(context)
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = settings,
+                groupDao = database.duplicateGroupDao(),
+                database = database
+            )
+            val size = 42L
+            val oldHash = "old"
+            val newHash = "new"
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(
+                        FileMetadata("/a", "/a", size, 1L, oldHash),
+                        FileMetadata("/b", "/b", size, 1L, oldHash)
+                    ),
+                    duplicateGroups = emptyList()
+                )
+            )
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            val beforeA = FileMetadata("/a", "/a", size, 1L, oldHash)
+            database.fileCacheDao().upsert(
+                CachedFileEntity(
+                    normalizedPath = "/a",
+                    path = "/a",
+                    sizeBytes = size,
+                    lastModifiedMillis = 2L,
+                    hashHex = newHash
+                )
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 2L,
+                    files = listOf(FileMetadata("/a", "/a", size, 2L, newHash)),
+                    duplicateGroups = emptyList(),
+                    cacheSnapshots = listOf(ScanCacheSnapshot("/a", beforeA))
+                )
+            )
+
+            assertEquals(0, database.duplicateGroupDao().countGroups())
+            assertNull(database.duplicateGroupDao().get(size, oldHash))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun recordScanUsesCacheSnapshotMissesForSimilarityInvalidation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val observer = RecordingCacheMutationObserver()
+            val repo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = AppSettingsStore(context),
+                groupDao = database.duplicateGroupDao(),
+                database = database,
+                cacheMutationObserver = observer
+            )
+
+            database.fileCacheDao().upsert(
+                CachedFileEntity(
+                    normalizedPath = "/new",
+                    path = "/new",
+                    sizeBytes = 10L,
+                    lastModifiedMillis = 1L,
+                    hashHex = null
+                )
+            )
+            repo.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(FileMetadata("/new", "/new", 10L, 1L, null)),
+                    duplicateGroups = emptyList(),
+                    cacheSnapshots = listOf(ScanCacheSnapshot("/new", null))
+                )
+            )
+
+            assertEquals(listOf("/new"), observer.changedPaths)
+        } finally {
+            database.close()
+        }
+    }
+
+    private class RecordingCacheMutationObserver : CacheMutationObserver {
+        val changedPaths = mutableListOf<String>()
+
+        override fun onCachedFilesChanged(normalizedPaths: List<String>) {
+            changedPaths += normalizedPaths
+        }
+
+        override fun onCacheCleared() = Unit
     }
 }

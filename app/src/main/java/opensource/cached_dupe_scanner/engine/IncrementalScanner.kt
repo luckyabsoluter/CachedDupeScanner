@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.CacheStatus
 import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.ScanCacheSnapshot
 import opensource.cached_dupe_scanner.core.ScanResult
 import java.io.File
 
@@ -79,6 +80,13 @@ class IncrementalScanner(
         }
 
         val lookupByPath = uniqueScanned.associateBy({ it.normalizedPath }) { cacheStore.lookup(it) }
+        val cacheSnapshots = linkedMapOf<String, ScanCacheSnapshot>()
+        lookupByPath.forEach { (normalizedPath, lookup) ->
+            cacheSnapshots[normalizedPath] = ScanCacheSnapshot(
+                normalizedPath = normalizedPath,
+                previous = lookup.cached
+            )
+        }
         val candidates = uniqueScanned.filter {
             val size = it.sizeBytes
             if (size == 0L && !includeZeroSize) return@filter false
@@ -92,6 +100,15 @@ class IncrementalScanner(
             candidates.map { it.sizeBytes }.toSet()
         ).filter { cached ->
             uniqueScanned.none { it.normalizedPath == cached.normalizedPath }
+        }
+        missingCachedCandidates.forEach { cached ->
+            cacheSnapshots.putIfAbsent(
+                cached.normalizedPath,
+                ScanCacheSnapshot(
+                    normalizedPath = cached.normalizedPath,
+                    previous = cached
+                )
+            )
         }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
         val hashTargets = candidates.filter {
@@ -216,7 +233,8 @@ class IncrementalScanner(
         return ScanResult(
             scannedAtMillis = scannedAtMillis,
             files = files,
-            duplicateGroups = duplicateGroups
+            duplicateGroups = duplicateGroups,
+            cacheSnapshots = cacheSnapshots.values.toList()
         )
     }
 }

@@ -4,7 +4,6 @@ import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
-import opensource.cached_dupe_scanner.cache.PathGroupKey
 import opensource.cached_dupe_scanner.cache.toCachedFileEntity
 import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -28,18 +27,22 @@ class ScanHistoryRepository(
         val files = result.files
             .filter { file -> !settings.skipZeroSizeInDb || file.sizeBytes > 0 }
             .map { file -> file.toCachedFileEntity() }
+        val cacheSnapshotsByPath = result.cacheSnapshots.associateBy { snapshot -> snapshot.normalizedPath }
 
         files.chunked(RECORD_SCAN_CHUNK_SIZE).forEach { chunk ->
             runInConsistencyTransaction {
                 val existingByPath = chunk.associate { entity ->
-                    entity.normalizedPath to dao.getByNormalizedPath(entity.normalizedPath)
+                    val snapshot = cacheSnapshotsByPath[entity.normalizedPath]
+                    val existing = if (cacheSnapshotsByPath.containsKey(entity.normalizedPath)) {
+                        snapshot?.previous?.toCachedFileEntity()
+                    } else {
+                        dao.getByNormalizedPath(entity.normalizedPath)
+                    }
+                    entity.normalizedPath to existing
                 }
-                val existingKeysByPath = loadExistingGroupKeysByPath(
-                    paths = chunk.map { it.normalizedPath }
-                )
                 dao.upsertAll(chunk)
                 val touched = linkedSetOf<GroupKey>()
-                existingKeysByPath.values.forEach { touched.add(it) }
+                existingByPath.values.forEach { before -> before.toGroupKey()?.let(touched::add) }
                 chunk.forEach { entity ->
                     entity.toGroupKey()?.let(touched::add)
                 }
@@ -496,21 +499,6 @@ class ScanHistoryRepository(
         }
     }
 
-    private fun loadExistingGroupKeysByPath(paths: List<String>): Map<String, GroupKey> {
-        if (paths.isEmpty()) return emptyMap()
-        val keysByPath = LinkedHashMap<String, GroupKey>(paths.size)
-        paths.distinct()
-            .chunked(PATH_QUERY_CHUNK_SIZE)
-            .forEach { chunk ->
-                dao.findGroupKeysByPaths(chunk).forEach { row ->
-                    row.toGroupKey()?.let { group ->
-                        keysByPath[row.normalizedPath] = group
-                    }
-                }
-            }
-        return keysByPath
-    }
-
     private fun touchedGroupKeys(before: CachedFileEntity?, after: CachedFileEntity?): Set<GroupKey> {
         val keys = linkedSetOf<GroupKey>()
         before.toGroupKey()?.let(keys::add)
@@ -544,14 +532,6 @@ private fun CachedFileEntity?.toGroupKey(): GroupKey? {
     )
 }
 
-private fun PathGroupKey.toGroupKey(): GroupKey? {
-    val hash = hashHex?.takeIf { it.isNotBlank() } ?: return null
-    return GroupKey(
-        sizeBytes = sizeBytes,
-        hashHex = hash
-    )
-}
-
 private fun CachedFileEntity.affectsSimilarity(before: CachedFileEntity?): Boolean {
     return before == null ||
         before.path != path ||
@@ -560,4 +540,3 @@ private fun CachedFileEntity.affectsSimilarity(before: CachedFileEntity?): Boole
 }
 
 private const val RECORD_SCAN_CHUNK_SIZE = 500
-private const val PATH_QUERY_CHUNK_SIZE = 800

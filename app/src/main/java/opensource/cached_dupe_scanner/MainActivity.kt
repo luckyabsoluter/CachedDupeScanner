@@ -175,28 +175,26 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun handleScanComplete(scan: ScanResult) {
+                suspend fun handleScanComplete(scan: ScanResult) {
                     Log.d("MainActivity", "Scan complete callback received")
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            Log.d("MainActivity", "Persisting scan to DB")
+                            historyRepo.recordScan(scan)
+                            similarityRepo.generateEnabledResults(
+                                shouldContinue = { true },
+                                onProgress = {}
+                            )
+                        }
+                    }.onFailure { error ->
+                        Log.e("MainActivity", "Failed to persist scan results", error)
+                    }
                     state.value = ScanUiState.Success(scan)
                     deletedPaths.value = emptySet()
                     filesRefreshVersion.value += 1
                     selectedResultsGroupIndex.value = null
-                    scope.launch {
-                        runCatching {
-                            withContext(Dispatchers.IO) {
-                                Log.d("MainActivity", "Persisting scan to DB")
-                                historyRepo.recordScan(scan)
-                                similarityRepo.generateEnabledResults(
-                                    shouldContinue = { true },
-                                    onProgress = {}
-                                )
-                            }
-                        }.onFailure { error ->
-                            Log.e("MainActivity", "Failed to persist scan results", error)
-                        }
-                        resultsRefreshVersion.value += 1
-                        similarityRefreshVersion.value += 1
-                    }
+                    resultsRefreshVersion.value += 1
+                    similarityRefreshVersion.value += 1
                 }
 
                 fun refreshSimilarityFromCache(onComplete: (() -> Unit)? = null) {

@@ -56,7 +56,7 @@ import opensource.cached_dupe_scanner.storage.TrashPaths
 @Composable
 fun ScanCommandScreen(
     state: MutableState<ScanUiState>,
-    onScanComplete: (ScanResult) -> Unit,
+    onScanComplete: suspend (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     settingsStore: AppSettingsStore,
@@ -215,7 +215,7 @@ private fun runScanForTarget(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     target: ScanTarget,
-    onScanComplete: (ScanResult) -> Unit,
+    onScanComplete: suspend (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
@@ -405,6 +405,20 @@ private fun runScanForTarget(
                 onScanCancelled()
                 return@scanJob
             }
+            taskCoordinator.update(TaskArea.Scan) { task ->
+                task.copy(
+                    detail = scanTaskDetail(
+                        phase = ScanPhase.Saving,
+                        scanned = result.files.size,
+                        total = result.files.size,
+                        targetPath = target.path
+                    ),
+                    processed = result.files.size,
+                    total = result.files.size,
+                    indeterminate = true
+                )
+            }?.let(notificationController::showActive)
+            onScanComplete(result)
             taskCoordinator.complete(
                 area = TaskArea.Scan,
                 title = "Scan complete",
@@ -413,7 +427,6 @@ private fun runScanForTarget(
                 total = result.files.size,
                 indeterminate = false
             )?.let(notificationController::showTerminal)
-            onScanComplete(result)
         } finally {
             currentJob.value = null
         }
@@ -425,7 +438,7 @@ private fun runScanForAllTargets(
     scanner: IncrementalScanner,
     state: MutableState<ScanUiState>,
     targets: List<ScanTarget>,
-    onScanComplete: (ScanResult) -> Unit,
+    onScanComplete: suspend (ScanResult) -> Unit,
     onScanCancelled: () -> Unit,
     reportRepo: ScanReportRepository,
     skipZeroSizeInDb: Boolean,
@@ -653,6 +666,20 @@ private fun runScanForAllTargets(
             )
             persistScanReport(reportRepo, report)
             onReportSaved()
+            taskCoordinator.update(TaskArea.Scan) { task ->
+                task.copy(
+                    detail = scanTaskDetail(
+                        phase = ScanPhase.Saving,
+                        scanned = merged.files.size,
+                        total = merged.files.size,
+                        targetPath = null
+                    ),
+                    processed = merged.files.size,
+                    total = merged.files.size,
+                    indeterminate = true
+                )
+            }?.let(notificationController::showActive)
+            onScanComplete(merged)
             taskCoordinator.complete(
                 area = TaskArea.Scan,
                 title = "Scan complete",
@@ -661,7 +688,6 @@ private fun runScanForAllTargets(
                 total = merged.files.size,
                 indeterminate = false
             )?.let(notificationController::showTerminal)
-            onScanComplete(merged)
         } finally {
             currentJob.value = null
         }

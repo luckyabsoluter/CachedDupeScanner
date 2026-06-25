@@ -25,7 +25,8 @@ object ScanResultViewFilter {
         return ScanResult(
             scannedAtMillis = result.scannedAtMillis,
             files = files,
-            duplicateGroups = sortedGroups
+            duplicateGroups = sortedGroups,
+            cacheSnapshots = result.cacheSnapshots
         )
     }
 
