@@ -83,6 +83,7 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSortColumn
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMemberSortColumn
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
@@ -872,10 +873,16 @@ fun SimilarityClusterDetailScreen(
     fun loadMoreMembers(directionOverride: SortDirection? = null) {
         if (memberLoading || membersExhausted) return
         memberLoading = true
-        val pageDirection = if (isDurationNeighborSetting()) {
+        val durationMode = isDurationNeighborSetting()
+        val pageSortColumn = if (durationMode) {
+            SimilarityMemberSortColumn.Position
+        } else {
+            similarityMemberSortColumn(memberSortKey)
+        }
+        val pageDirection = if (durationMode) {
             directionOverride ?: durationMemberSortDirection
         } else {
-            SortDirection.Asc
+            memberSortDirection
         }
         scope.launch {
             val nextMembers = withContext(Dispatchers.IO) {
@@ -883,6 +890,7 @@ fun SimilarityClusterDetailScreen(
                     clusterId = clusterId,
                     offset = memberOffset,
                     limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
+                    sortColumn = pageSortColumn,
                     direction = pageDirection
                 )
             }
@@ -906,6 +914,20 @@ fun SimilarityClusterDetailScreen(
         loadMoreMembers(directionOverride = direction)
     }
 
+    fun applyMemberSort(key: ResultGroupMemberSortKey, direction: SortDirection) {
+        if ((memberSortKey == key && memberSortDirection == direction) || memberLoading) return
+        memberSortKey = key
+        memberSortDirection = direction
+        settingsStore.setSimilarityMemberSortKey(key.name)
+        settingsStore.setSimilarityMemberSortDirection(direction.name)
+        members.clear()
+        memberOffset = 0
+        membersExhausted = false
+        selectedFile = null
+        selectionState.clear()
+        loadMoreMembers()
+    }
+
     LaunchedEffect(settingId, clusterId) {
         memberLoading = true
         setting = null
@@ -921,14 +943,20 @@ fun SimilarityClusterDetailScreen(
             repository.getCluster(settingId = settingId, clusterId = clusterId)
         }
         val firstMembers = withContext(Dispatchers.IO) {
+            val durationMode = loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
             repository.listClusterMembersPage(
                 clusterId = clusterId,
                 offset = 0,
                 limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
-                direction = if (loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST) {
+                sortColumn = if (durationMode) {
+                    SimilarityMemberSortColumn.Position
+                } else {
+                    similarityMemberSortColumn(memberSortKey)
+                },
+                direction = if (durationMode) {
                     durationMemberSortDirection
                 } else {
-                    SortDirection.Asc
+                    memberSortDirection
                 }
             )
         }
@@ -1079,12 +1107,7 @@ fun SimilarityClusterDetailScreen(
                     sortingEnabled = !durationNeighborMode,
                     sortKey = memberSortKey,
                     sortDirection = memberSortDirection,
-                    onApplySort = { key, direction ->
-                        memberSortKey = key
-                        memberSortDirection = direction
-                        settingsStore.setSimilarityMemberSortKey(key.name)
-                        settingsStore.setSimilarityMemberSortDirection(direction.name)
-                    }
+                    onApplySort = ::applyMemberSort
                 )
             }
             if (durationNeighborMode) {
@@ -3024,6 +3047,13 @@ private fun clusterSortColumn(sortKey: SimilarityClusterSortKey): SimilarityClus
     return when (sortKey) {
         SimilarityClusterSortKey.FileCount -> SimilarityClusterSortColumn.FileCount
         SimilarityClusterSortKey.TotalSize -> SimilarityClusterSortColumn.TotalSize
+    }
+}
+
+private fun similarityMemberSortColumn(sortKey: ResultGroupMemberSortKey): SimilarityMemberSortColumn {
+    return when (sortKey) {
+        ResultGroupMemberSortKey.Path -> SimilarityMemberSortColumn.Path
+        ResultGroupMemberSortKey.Modified -> SimilarityMemberSortColumn.Modified
     }
 }
 

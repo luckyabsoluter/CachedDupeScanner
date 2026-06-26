@@ -89,6 +89,8 @@ class SimilaritySettingsScreenTest {
             .substringBefore("@Composable\nfun SimilarityClusterDetailScreen(")
 
         assertTrue(content.contains("repository.listClusterMembersPage("))
+        assertTrue(content.contains("similarityMemberSortColumn(memberSortKey)"))
+        assertTrue(content.contains("onApplySort = ::applyMemberSort"))
         assertTrue(settingDetailContent.contains("SimilarityGroupsEntryCard("))
         assertFalse(settingDetailContent.contains("SimilarityGroupsHeader("))
         assertFalse(settingDetailContent.contains("SimilarityClusterListCard("))

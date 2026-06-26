@@ -74,6 +74,12 @@ enum class SimilarityClusterSortColumn {
     TotalSize
 }
 
+enum class SimilarityMemberSortColumn {
+    Position,
+    Path,
+    Modified
+}
+
 class SimilaritySettingsRepository(
     private val database: CacheDatabase,
     private val fileDao: FileCacheDao,
@@ -310,22 +316,57 @@ class SimilaritySettingsRepository(
         clusterId: Long,
         offset: Int,
         limit: Int,
+        sortColumn: SimilarityMemberSortColumn = SimilarityMemberSortColumn.Position,
         direction: SortDirection = SortDirection.Asc
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
-        val rows = if (direction == SortDirection.Desc) {
-            similarityDao.listActiveClusterMembersPageDescending(
-                clusterId = clusterId,
-                offset = safeOffset,
-                limit = safeLimit
-            )
-        } else {
-            similarityDao.listActiveClusterMembersPage(
-                clusterId = clusterId,
-                offset = safeOffset,
-                limit = safeLimit
-            )
+        val rows = when (sortColumn) {
+            SimilarityMemberSortColumn.Position -> {
+                if (direction == SortDirection.Desc) {
+                    similarityDao.listActiveClusterMembersPageDescending(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listActiveClusterMembersPage(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                }
+            }
+            SimilarityMemberSortColumn.Path -> {
+                if (direction == SortDirection.Desc) {
+                    similarityDao.listActiveClusterMembersPageByPathDesc(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listActiveClusterMembersPageByPathAsc(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                }
+            }
+            SimilarityMemberSortColumn.Modified -> {
+                if (direction == SortDirection.Desc) {
+                    similarityDao.listActiveClusterMembersPageByModifiedDesc(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listActiveClusterMembersPageByModifiedAsc(
+                        clusterId = clusterId,
+                        offset = safeOffset,
+                        limit = safeLimit
+                    )
+                }
+            }
         }
         return rows.map { row ->
             row.toClusterMember()

@@ -503,6 +503,52 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun clusterMembersCanBeLoadedBySortedPages() {
+        val older = videoFile("member-a.mp4").apply { setLastModified(1_000L) }
+        val newest = videoFile("member-b.mp4").apply { setLastModified(3_000L) }
+        val middle = videoFile("member-c.mp4").apply { setLastModified(2_000L) }
+        listOf(older, newest, middle).forEach { file ->
+            database.fileCacheDao().upsert(entity(file))
+        }
+        val repository = repository(
+            signatures = mapOf(
+                older.absolutePath to "same",
+                newest.absolutePath to "same",
+                middle.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+        val cluster = repository.listClusters(setting.settingId).single()
+
+        val firstPage = repository.listClusterMembersPage(
+            clusterId = cluster.clusterId,
+            offset = 0,
+            limit = 2,
+            sortColumn = SimilarityMemberSortColumn.Modified,
+            direction = SortDirection.Desc
+        )
+        val secondPage = repository.listClusterMembersPage(
+            clusterId = cluster.clusterId,
+            offset = 2,
+            limit = 2,
+            sortColumn = SimilarityMemberSortColumn.Modified,
+            direction = SortDirection.Desc
+        )
+
+        assertEquals(
+            listOf(newest.normalizedPath(), middle.normalizedPath()),
+            firstPage.map { it.metadata.normalizedPath }
+        )
+        assertEquals(listOf(older.normalizedPath()), secondPage.map { it.metadata.normalizedPath })
+    }
+
+    @Test
     fun rebuildCancellationBeforeClusteringRecordsCancelledSummary() {
         val first = videoFile("cancel-a.mp4")
         val second = videoFile("cancel-b.mp4")

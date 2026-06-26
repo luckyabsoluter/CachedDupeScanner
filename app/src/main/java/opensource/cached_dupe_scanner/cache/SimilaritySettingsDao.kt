@@ -378,6 +378,118 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            file.sizeBytes AS sizeBytes,
+            file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashHex AS hashHex,
+            duration.durationMillis AS durationMillis
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+        ORDER BY file.normalizedPath ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listActiveClusterMembersPageByPathAsc(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            file.sizeBytes AS sizeBytes,
+            file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashHex AS hashHex,
+            duration.durationMillis AS durationMillis
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+        ORDER BY file.normalizedPath DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listActiveClusterMembersPageByPathDesc(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            file.sizeBytes AS sizeBytes,
+            file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashHex AS hashHex,
+            duration.durationMillis AS durationMillis
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+        ORDER BY file.lastModifiedMillis ASC, file.normalizedPath ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listActiveClusterMembersPageByModifiedAsc(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            file.sizeBytes AS sizeBytes,
+            file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashHex AS hashHex,
+            duration.durationMillis AS durationMillis
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN cached_files AS file
+            ON file.normalizedPath = member.normalizedPath
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+        ORDER BY file.lastModifiedMillis DESC, file.normalizedPath DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    fun listActiveClusterMembersPageByModifiedDesc(
+        clusterId: Long,
+        offset: Int,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
             feature.normalizedPath AS normalizedPath,
             feature.thumbnailSignature AS thumbnailSignature,
             file.sizeBytes AS sizeBytes
