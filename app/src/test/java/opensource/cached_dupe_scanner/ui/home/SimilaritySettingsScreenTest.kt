@@ -2,6 +2,8 @@ package opensource.cached_dupe_scanner.ui.home
 
 import java.io.File
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.core.DurationNeighborClusterExplanation
+import opensource.cached_dupe_scanner.core.ExactThumbnailClusterExplanation
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
@@ -140,8 +142,6 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("MaterialTheme.colorScheme.secondaryContainer"))
         assertTrue(content.contains("DropdownMenuItem("))
         assertTrue(content.contains("onOpenCluster"))
-        assertTrue(content.contains("exactThumbnailClusterExplanation("))
-        assertTrue(content.contains("durationNeighborClusterExplanation("))
         assertTrue(content.contains("similarityClusterPreviewLineTexts("))
         assertTrue(content.contains("Group rule: exact thumbnail hash equality"))
         assertTrue(content.contains("List rule: duration-sorted neighbor filter"))
@@ -164,11 +164,20 @@ class SimilaritySettingsScreenTest {
 
     @Test
     fun similarityClusterExplanationRestoresReadableSettingSummaries() {
-        val exact = exactThumbnailClusterExplanation("thumb-v1:video:color:2x1:q16:0,1:0f0f0f,000000|ffffff,101010")
-        val neighbor = durationNeighborClusterExplanation("duration-neighbor-list-v1:500:1000-1500")
+        val exact = ExactThumbnailClusterExplanation(
+            mediaScope = "video",
+            colorMode = "color",
+            resize = "2x1",
+            quantization = "q16",
+            frameSeconds = listOf("0", "1"),
+            sampleSignatures = listOf("0f0f0f,000000", "ffffff,101010")
+        )
+        val neighbor = DurationNeighborClusterExplanation(
+            toleranceMillis = 500L,
+            minDurationMillis = 1_000L,
+            maxDurationMillis = 1_500L
+        )
 
-        requireNotNull(exact)
-        requireNotNull(neighbor)
         assertEquals(
             "Exact hash: Video, 0s, 1s, 2x1, color, 16 levels",
             exactHashClusterSummary(exact)

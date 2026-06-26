@@ -28,6 +28,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity cluster detail member browsing now shares the result member sort control and automatically loads additional members near the end of the list.
 - Similarity group lists now restore cluster sort controls for file count and total size order.
 - Similarity cluster detail screens in maintained entries now restore long-press member selection, selected-file deletion, and video preview menu options.
+- Similarity signature explanations now use shared core parsing before the UI formats readable cluster summaries.
 - Duration-neighbor similarity cluster details now restore duration-order controls and display known member durations.
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
 - Similarity data now uses sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
