@@ -40,6 +40,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Scan command now uses the shared cache database builder so newly added Room migrations are registered consistently.
 - Scan completion now waits for cache persistence and similarity refresh before marking scan tasks complete.
 - Scan history recording now uses scanner cache snapshots so duplicate groups and similarity invalidation still see pre-scan cache state.
+- Similarity maintenance now reports cancellation before rebuilding clusters and serializes automatic and manual generation runs.
 - Similarity cluster pages now remove or refresh stored cluster rows when cached files are deleted or changed.
 - Similarity cluster sort changes now rerun after any in-flight page load instead of leaving stale ordering.
 - Similarity group browsing now opens from stored cluster pages instead of blocking initial load on active cluster aggregation.

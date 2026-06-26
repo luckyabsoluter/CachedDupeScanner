@@ -18,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -499,6 +500,40 @@ class SimilaritySettingsRepositoryTest {
             "beta",
             repository.getCluster(setting.settingId, firstByCount.first().clusterId)?.clusterKey
         )
+    }
+
+    @Test
+    fun rebuildCancellationBeforeClusteringRecordsCancelledSummary() {
+        val first = videoFile("cancel-a.mp4")
+        val second = videoFile("cancel-b.mp4")
+        database.fileCacheDao().upsert(entity(first))
+        database.fileCacheDao().upsert(entity(second))
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
+        assertNotNull(repository.listClusters(setting.settingId).singleOrNull())
+
+        var shouldContinueCalls = 0
+        val summary = repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { shouldContinueCalls++ == 0 },
+            onProgress = {}
+        )
+
+        assertTrue(summary.cancelled)
+        assertEquals(0, summary.processedCount)
+        assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
     }
 
     private fun repository(

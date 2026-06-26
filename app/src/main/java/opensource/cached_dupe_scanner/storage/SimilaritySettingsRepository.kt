@@ -81,6 +81,8 @@ class SimilaritySettingsRepository(
     private val frameSignatureExtractor: VideoFrameSignatureExtractor = AndroidVideoFrameSignatureExtractor(),
     private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor()
 ) : CacheMutationObserver {
+    private val maintenanceLock = Any()
+
     fun createExactThumbnailSetting(
         mediaScope: SimilarityMediaScope,
         minSizeBytes: Long,
@@ -334,13 +336,15 @@ class SimilaritySettingsRepository(
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
     ): SimilarityMaintenanceSummary {
-        val settings = similarityDao.listEnabledSettings()
-        return runSettingsMaintenance(
-            settings = settings,
-            rebuild = false,
-            shouldContinue = shouldContinue,
-            onProgress = onProgress
-        )
+        return synchronized(maintenanceLock) {
+            val settings = similarityDao.listEnabledSettings()
+            runSettingsMaintenance(
+                settings = settings,
+                rebuild = false,
+                shouldContinue = shouldContinue,
+                onProgress = onProgress
+            )
+        }
     }
 
     fun runSettingMaintenance(
@@ -349,13 +353,15 @@ class SimilaritySettingsRepository(
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
     ): SimilarityMaintenanceSummary {
-        val setting = similarityDao.getSetting(settingId) ?: return emptySummary(cancelled = false)
-        return runSettingsMaintenance(
-            settings = listOf(setting),
-            rebuild = rebuild,
-            shouldContinue = shouldContinue,
-            onProgress = onProgress
-        )
+        return synchronized(maintenanceLock) {
+            val setting = similarityDao.getSetting(settingId) ?: return@synchronized emptySummary(cancelled = false)
+            runSettingsMaintenance(
+                settings = listOf(setting),
+                rebuild = rebuild,
+                shouldContinue = shouldContinue,
+                onProgress = onProgress
+            )
+        }
     }
 
     override fun onCachedFilesChanged(normalizedPaths: List<String>) {
@@ -541,7 +547,27 @@ class SimilaritySettingsRepository(
             if (batch.size < SIMILARITY_MAINTENANCE_BATCH_SIZE) break
         }
 
+        if (!shouldContinue()) {
+            return finishSingleSummary(
+                setting = setting,
+                startedAt = startedAt,
+                candidateCount = total,
+                processed = processed,
+                skipped = skipped,
+                cancelled = true
+            )
+        }
         val clusterDrafts = buildClusters(setting)
+        if (!shouldContinue()) {
+            return finishSingleSummary(
+                setting = setting,
+                startedAt = startedAt,
+                candidateCount = total,
+                processed = processed,
+                skipped = skipped,
+                cancelled = true
+            )
+        }
         replaceClusters(setting.settingId, clusterDrafts)
         val clusterSummary = similarityDao.listActiveClusters(setting.settingId)
         val duplicateFiles = clusterSummary.sumOf { cluster -> cluster.fileCount }
