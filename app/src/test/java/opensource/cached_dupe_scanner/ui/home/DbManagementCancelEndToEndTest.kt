@@ -10,7 +10,8 @@ import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -69,7 +70,8 @@ class DbManagementCancelEndToEndTest {
     @Test
     fun cancellingMaintenanceClearsRunningUi() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val enteredHash = AtomicBoolean(false)
+        val enteredHash = CountDownLatch(1)
+        val releaseHash = CountDownLatch(1)
         val settingsStore = AppSettingsStore(context)
         val historyRepo = ScanHistoryRepository(
             dao = database.fileCacheDao(),
@@ -77,10 +79,9 @@ class DbManagementCancelEndToEndTest {
             groupDao = database.duplicateGroupDao(),
             database = database,
             hashFile = { _, shouldContinue ->
-                enteredHash.set(true)
-                while (shouldContinue()) {
-                    Thread.sleep(10)
-                }
+                enteredHash.countDown()
+                releaseHash.await(5, TimeUnit.SECONDS)
+                assertTrue(!shouldContinue())
                 null
             }
         )
@@ -130,12 +131,13 @@ class DbManagementCancelEndToEndTest {
             )
         }
 
-        composeRule.waitUntil(5_000) { enteredHash.get() }
+        assertTrue(enteredHash.await(5, TimeUnit.SECONDS))
 
         composeRule.onNodeWithText("Cancel running task").fetchSemanticsNode()
         composeRule.runOnIdle {
             assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Db))
         }
+        releaseHash.countDown()
 
         composeRule.waitUntil(5_000) {
             !taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
@@ -163,7 +165,8 @@ class DbManagementCancelEndToEndTest {
         val uiState = DbManagementUiState()
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(context)
-        val enteredTask = AtomicBoolean(false)
+        val enteredTask = CountDownLatch(1)
+        val releaseTask = CountDownLatch(1)
 
         composeRule.setContent {
             DbManagementHarness(
@@ -185,20 +188,20 @@ class DbManagementCancelEndToEndTest {
                 onMaintenanceApplied = {},
                 refreshOverview = {},
                 runRebuildGroups = { shouldContinue, _ ->
-                    enteredTask.set(true)
-                    while (shouldContinue()) {
-                        Thread.sleep(10)
-                    }
+                    enteredTask.countDown()
+                    releaseTask.await(5, TimeUnit.SECONDS)
+                    assertTrue(!shouldContinue())
                     RebuildGroupsSummary(total = 7, processed = 3, cancelled = true)
                 }
             )
         }
 
-        composeRule.waitUntil(5_000) { enteredTask.get() }
+        assertTrue(enteredTask.await(5, TimeUnit.SECONDS))
         composeRule.onNodeWithText("Rebuilding groups").fetchSemanticsNode()
         composeRule.runOnIdle {
             assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Db))
         }
+        releaseTask.countDown()
 
         composeRule.waitUntil(5_000) {
             !taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
@@ -223,7 +226,8 @@ class DbManagementCancelEndToEndTest {
         val uiState = DbManagementUiState()
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(context)
-        val enteredTask = AtomicBoolean(false)
+        val enteredTask = CountDownLatch(1)
+        val releaseTask = CountDownLatch(1)
 
         composeRule.setContent {
             DbManagementHarness(
@@ -253,10 +257,9 @@ class DbManagementCancelEndToEndTest {
                             currentPath = "/storage/emulated/0/Download/missing.mp4"
                         )
                     )
-                    enteredTask.set(true)
-                    while (shouldContinue()) {
-                        Thread.sleep(10)
-                    }
+                    enteredTask.countDown()
+                    releaseTask.await(5, TimeUnit.SECONDS)
+                    assertTrue(!shouldContinue())
                     RebuildGroupsSummary(
                         total = 2,
                         processed = 1,
@@ -268,7 +271,7 @@ class DbManagementCancelEndToEndTest {
         }
 
         composeRule.waitUntil(5_000) {
-            enteredTask.get() &&
+            enteredTask.count == 0L &&
                 taskCoordinator.activeTask(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
                     ?.detail == "Repairing missing hashes 1/2 before rebuilding groups."
         }
@@ -282,6 +285,7 @@ class DbManagementCancelEndToEndTest {
         composeRule.runOnIdle {
             assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Db))
         }
+        releaseTask.countDown()
         composeRule.waitUntil(5_000) {
             !taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Db)
         }
@@ -301,7 +305,8 @@ class DbManagementCancelEndToEndTest {
         val uiState = DbManagementUiState()
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(context)
-        val enteredTask = AtomicBoolean(false)
+        val enteredTask = CountDownLatch(1)
+        val releaseTask = CountDownLatch(1)
 
         composeRule.setContent {
             DbManagementHarness(
@@ -323,10 +328,9 @@ class DbManagementCancelEndToEndTest {
                 onCacheCleared = {},
                 refreshOverview = {},
                 runClearAll = { shouldContinue, _ ->
-                    enteredTask.set(true)
-                    while (shouldContinue()) {
-                        Thread.sleep(10)
-                    }
+                    enteredTask.countDown()
+                    releaseTask.await(5, TimeUnit.SECONDS)
+                    assertTrue(!shouldContinue())
                     ClearCacheSummary(
                         total = 9,
                         processed = 4,
@@ -338,11 +342,12 @@ class DbManagementCancelEndToEndTest {
             )
         }
 
-        composeRule.waitUntil(5_000) { enteredTask.get() }
+        assertTrue(enteredTask.await(5, TimeUnit.SECONDS))
         composeRule.onNodeWithText("Clearing cached results").fetchSemanticsNode()
         composeRule.runOnIdle {
             assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Db))
         }
+        releaseTask.countDown()
 
         composeRule.waitUntil(5_000) {
             !taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Db)

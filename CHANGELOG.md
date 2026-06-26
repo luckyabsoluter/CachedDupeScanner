@@ -42,6 +42,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Scan history recording now uses scanner cache snapshots so duplicate groups and similarity invalidation still see pre-scan cache state.
 - Similarity maintenance now reports cancellation before rebuilding clusters and serializes automatic and manual generation runs.
 - Similarity cluster detail member sorting now applies at the paged query source instead of sorting only the already loaded subset.
+- Settings and cancellation tests now isolate persisted preferences and avoid sleep-loop task bodies.
 - Similarity cluster pages now remove or refresh stored cluster rows when cached files are deleted or changed.
 - Similarity cluster sort changes now rerun after any in-flight page load instead of leaving stale ordering.
 - Similarity group browsing now opens from stored cluster pages instead of blocking initial load on active cluster aggregation.

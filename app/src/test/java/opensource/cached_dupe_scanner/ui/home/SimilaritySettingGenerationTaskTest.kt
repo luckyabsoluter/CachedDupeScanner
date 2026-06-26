@@ -84,17 +84,17 @@ class SimilaritySettingGenerationTaskTest {
 
         assertTrue(started)
         assertTrue(progressPublished.await(5, TimeUnit.SECONDS))
-        waitUntil {
-            taskCoordinator.activeTask(TaskArea.Similarity)?.detail ==
-                "Processed 4/10 • Cluster candidates 2 • Skipped 1 • Exact 2x2"
-        }
+        assertEquals(
+            "Processed 4/10 • Cluster candidates 2 • Skipped 1 • Exact 2x2",
+            taskCoordinator.activeTask(TaskArea.Similarity)?.detail
+        )
         val activeTask = taskCoordinator.activeTask(TaskArea.Similarity)
         assertEquals(TaskKind.SimilarityGeneration, activeTask?.kind)
         assertEquals("/storage/emulated/0/DCIM/sample.mp4", activeTask?.currentPath)
 
         releaseRun.countDown()
         assertTrue(finished.await(5, TimeUnit.SECONDS))
-        waitUntil { !taskCoordinator.isAreaBusy(TaskArea.Similarity) }
+        assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
 
         val terminal = taskCoordinator.terminalSummary(TaskArea.Similarity)
         assertEquals(TaskStatus.Completed, terminal?.status)
@@ -107,6 +107,7 @@ class SimilaritySettingGenerationTaskTest {
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
         val enteredRun = CountDownLatch(1)
+        val releaseRun = CountDownLatch(1)
         val finished = CountDownLatch(1)
 
         startSimilaritySettingGenerationTask(
@@ -118,9 +119,8 @@ class SimilaritySettingGenerationTaskTest {
             onFinished = { finished.countDown() },
             runGeneration = { shouldContinue, _ ->
                 enteredRun.countDown()
-                while (shouldContinue()) {
-                    Thread.sleep(10)
-                }
+                assertTrue(releaseRun.await(5, TimeUnit.SECONDS))
+                assertFalse(shouldContinue())
                 SimilarityMaintenanceSummary(
                     settingCount = 1,
                     candidateCount = 8,
@@ -135,7 +135,7 @@ class SimilaritySettingGenerationTaskTest {
 
         assertTrue(enteredRun.await(5, TimeUnit.SECONDS))
         assertTrue(taskCoordinator.requestCancel(TaskArea.Similarity))
-        waitUntil { !taskCoordinator.isAreaBusy(TaskArea.Similarity) }
+        releaseRun.countDown()
         assertTrue(finished.await(5, TimeUnit.SECONDS))
 
         val terminal = taskCoordinator.terminalSummary(TaskArea.Similarity)
@@ -143,13 +143,4 @@ class SimilaritySettingGenerationTaskTest {
         assertEquals("Similarity rebuild cancelled", terminal?.title)
         assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
     }
-}
-
-private fun waitUntil(condition: () -> Boolean) {
-    val deadline = System.currentTimeMillis() + 5_000L
-    while (System.currentTimeMillis() < deadline) {
-        if (condition()) return
-        Thread.sleep(10)
-    }
-    assertTrue("Condition was not met before timeout", condition())
 }

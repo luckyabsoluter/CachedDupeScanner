@@ -2,15 +2,27 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AppSettingsStoreTest {
+    @Before
+    fun setUp() {
+        clearSettings()
+    }
+
+    @After
+    fun tearDown() {
+        clearSettings()
+    }
+
     @Test
     fun defaultsToExcludeZeroSizeDuplicates() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -242,5 +254,13 @@ class AppSettingsStoreTest {
 
         store.setVideoPreviewLineCount(-9)
         assertEquals(1, store.load().videoPreviewLineCount)
+    }
+
+    private fun clearSettings() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("cached_dupe_scanner", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
     }
 }
