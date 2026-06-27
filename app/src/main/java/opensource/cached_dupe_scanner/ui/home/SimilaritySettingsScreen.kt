@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -617,7 +618,9 @@ fun SimilaritySettingGroupsScreen(
     val groupListState = rememberLazyListState()
     var groupsLoaded by remember(settingId) { mutableStateOf(false) }
     var clusterLoading by remember(settingId) { mutableStateOf(false) }
+    var groupsLoadError by remember(settingId) { mutableStateOf<String?>(null) }
     var pendingClusterResetIndex by remember(settingId) { mutableStateOf<Int?>(null) }
+    var pendingClusterScrollIndex by remember(settingId) { mutableStateOf<Int?>(null) }
     var clusterOffset by remember(settingId) { mutableStateOf(0) }
     var clustersExhausted by remember(settingId) { mutableStateOf(false) }
     var clusterSortKey by remember {
@@ -644,6 +647,7 @@ fun SimilaritySettingGroupsScreen(
         if (reset) {
             pendingClusterResetIndex = null
             groupsLoaded = false
+            groupsLoadError = null
             clusterOffset = 0
             clustersExhausted = false
         }
@@ -657,9 +661,6 @@ fun SimilaritySettingGroupsScreen(
         val sortDirection = clusterSortDirection
         scope.launch {
             try {
-                if (reset && restoredFirstVisibleIndex <= 0) {
-                    groupListState.scrollToItem(0)
-                }
                 val loadedSetting = if (reset) {
                     withContext(Dispatchers.IO) {
                         repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
@@ -691,6 +692,23 @@ fun SimilaritySettingGroupsScreen(
                 clustersExhausted = loadedClusters.size < pageLimit ||
                     clusterOffset >= loadedSummary.clusterCount
                 groupsLoaded = true
+                groupsLoadError = null
+                if (reset && restoredFirstVisibleIndex <= 0) {
+                    pendingClusterScrollIndex = 0
+                }
+            } catch (_: Exception) {
+                groupsLoadError = if (reset) {
+                    "Similarity results could not be loaded. Retry, or rebuild this similarity."
+                } else {
+                    "More similarity results could not be loaded. Retry from the top."
+                }
+                if (reset) {
+                    clusters.clear()
+                    clusterSummary = SimilarityClusterSummary()
+                    clusterOffset = 0
+                    clustersExhausted = true
+                    groupsLoaded = true
+                }
             } finally {
                 clusterLoading = false
                 pendingClusterResetIndex?.let { pendingIndex ->
@@ -703,6 +721,13 @@ fun SimilaritySettingGroupsScreen(
 
     LaunchedEffect(settingId, refreshVersion) {
         loadClusterPage(reset = true)
+    }
+
+    LaunchedEffect(groupsLoaded, pendingClusterScrollIndex) {
+        val targetIndex = pendingClusterScrollIndex ?: return@LaunchedEffect
+        if (!groupsLoaded) return@LaunchedEffect
+        pendingClusterScrollIndex = null
+        groupListState.scrollToItem(targetIndex)
     }
 
     LaunchedEffect(settingId, groupListState) {
@@ -751,7 +776,15 @@ fun SimilaritySettingGroupsScreen(
                 )
             }
             val selectedSetting = setting
-            if (selectedSetting == null) {
+            val loadError = groupsLoadError
+            if (loadError != null) {
+                item(key = "load_error") {
+                    SimilarityResultsLoadErrorCard(
+                        message = loadError,
+                        onRetry = { loadClusterPage(reset = true, restoredFirstVisibleIndex = 0) }
+                    )
+                }
+            } else if (selectedSetting == null) {
                 item(key = "missing_setting") {
                     MissingSelectionCard(
                         message = "This similarity is no longer available.",
@@ -848,6 +881,9 @@ fun SimilarityClusterDetailScreen(
     var memberOffset by remember { mutableStateOf(0) }
     var membersExhausted by remember { mutableStateOf(false) }
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
+    var clusterLoaded by remember(settingId, clusterId) { mutableStateOf(false) }
+    var clusterLoadError by remember(settingId, clusterId) { mutableStateOf<String?>(null) }
+    var clusterReloadToken by remember(settingId, clusterId) { mutableStateOf(0) }
     var memberSortKey by remember {
         mutableStateOf(
             runCatching { ResultGroupMemberSortKey.valueOf(settingsSnapshot.similarityMemberSortKey) }
@@ -891,20 +927,80 @@ fun SimilarityClusterDetailScreen(
             memberSortDirection
         }
         scope.launch {
-            val nextMembers = withContext(Dispatchers.IO) {
+            try {
+                val nextMembers = withContext(Dispatchers.IO) {
+                    repository.listClusterMembersPage(
+                        clusterId = clusterId,
+                        offset = memberOffset,
+                        limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
+                        sortColumn = pageSortColumn,
+                        direction = pageDirection
+                    )
+                }
+                members.addAll(nextMembers)
+                memberOffset += nextMembers.size
+                membersExhausted = nextMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
+                    memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
+                clusterLoadError = null
+            } catch (_: Exception) {
+                clusterLoadError = "More similarity result members could not be loaded. Retry this result."
+            } finally {
+                memberLoading = false
+            }
+        }
+    }
+
+    fun reloadClusterDetail() {
+        clusterReloadToken += 1
+    }
+
+    LaunchedEffect(settingId, clusterId, clusterReloadToken) {
+        memberLoading = true
+        clusterLoaded = false
+        clusterLoadError = null
+        setting = null
+        cluster = null
+        members.clear()
+        memberOffset = 0
+        membersExhausted = false
+        selectionState.clear()
+        try {
+            val loadedSetting = withContext(Dispatchers.IO) {
+                repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+            }
+            val loadedCluster = withContext(Dispatchers.IO) {
+                repository.getCluster(settingId = settingId, clusterId = clusterId)
+            }
+            val firstMembers = withContext(Dispatchers.IO) {
+                val durationMode = loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
                 repository.listClusterMembersPage(
                     clusterId = clusterId,
-                    offset = memberOffset,
+                    offset = 0,
                     limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
-                    sortColumn = pageSortColumn,
-                    direction = pageDirection
+                    sortColumn = if (durationMode) {
+                        SimilarityMemberSortColumn.Position
+                    } else {
+                        similarityMemberSortColumn(memberSortKey)
+                    },
+                    direction = if (durationMode) {
+                        durationMemberSortDirection
+                    } else {
+                        memberSortDirection
+                    }
                 )
             }
-            members.addAll(nextMembers)
-            memberOffset += nextMembers.size
-            membersExhausted = nextMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
-                memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
+            setting = loadedSetting
+            cluster = loadedCluster
+            members.clear()
+            members.addAll(firstMembers)
+            memberOffset = firstMembers.size
+            membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
+                firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
+        } catch (_: Exception) {
+            clusterLoadError = "This similarity result could not be loaded. Retry, or rebuild this similarity."
+        } finally {
             memberLoading = false
+            clusterLoaded = true
         }
     }
 
@@ -932,48 +1028,6 @@ fun SimilarityClusterDetailScreen(
         selectedFile = null
         selectionState.clear()
         loadMoreMembers()
-    }
-
-    LaunchedEffect(settingId, clusterId) {
-        memberLoading = true
-        setting = null
-        cluster = null
-        members.clear()
-        memberOffset = 0
-        membersExhausted = false
-        selectionState.clear()
-        val loadedSetting = withContext(Dispatchers.IO) {
-            repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
-        }
-        val loadedCluster = withContext(Dispatchers.IO) {
-            repository.getCluster(settingId = settingId, clusterId = clusterId)
-        }
-        val firstMembers = withContext(Dispatchers.IO) {
-            val durationMode = loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
-            repository.listClusterMembersPage(
-                clusterId = clusterId,
-                offset = 0,
-                limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
-                sortColumn = if (durationMode) {
-                    SimilarityMemberSortColumn.Position
-                } else {
-                    similarityMemberSortColumn(memberSortKey)
-                },
-                direction = if (durationMode) {
-                    durationMemberSortDirection
-                } else {
-                    memberSortDirection
-                }
-            )
-        }
-        setting = loadedSetting
-        cluster = loadedCluster
-        members.clear()
-        members.addAll(firstMembers)
-        memberOffset = firstMembers.size
-        membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
-            firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
-        memberLoading = false
     }
 
     LaunchedEffect(clusterId, memberListState) {
@@ -1082,7 +1136,19 @@ fun SimilarityClusterDetailScreen(
         }
         val selectedSetting = setting
         val selectedCluster = cluster
-        if (selectedSetting == null || selectedCluster == null) {
+        val loadError = clusterLoadError
+        if (!clusterLoaded) {
+            item(key = "loading_cluster") {
+                Text(text = "Loading similarity result...", style = MaterialTheme.typography.bodySmall)
+            }
+        } else if (loadError != null) {
+            item(key = "load_error") {
+                SimilarityResultsLoadErrorCard(
+                    message = loadError,
+                    onRetry = ::reloadClusterDetail
+                )
+            }
+        } else if (selectedSetting == null || selectedCluster == null) {
             item(key = "missing_cluster") {
                 MissingSelectionCard(
                     message = "This similarity result is no longer available.",
@@ -1834,6 +1900,28 @@ private fun SimilarityGroupsHeader(
 }
 
 @Composable
+private fun SimilarityResultsLoadErrorCard(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            OutlinedButton(onClick = onRetry) {
+                Text("Retry")
+            }
+        }
+    }
+}
+
+@Composable
 private fun SimilarityClusterSortButton(
     sortKey: SimilarityClusterSortKey,
     sortDirection: SortDirection,
@@ -1968,6 +2056,7 @@ private fun SimilarityClusterListCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("similarity-cluster:${cluster.clusterId}")
             .clickable(onClick = onOpenCluster)
     ) {
         Row(
