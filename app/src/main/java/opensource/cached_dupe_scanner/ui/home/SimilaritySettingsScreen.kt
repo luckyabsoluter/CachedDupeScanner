@@ -2446,14 +2446,14 @@ private fun SimilarityMemberCard(
                 if (selectionMode) {
                     Checkbox(
                         checked = selected,
-                        enabled = !deleted || selected,
+                        enabled = true,
                         onCheckedChange = { onToggleSelection() }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 if (showMemberThumbnail) {
                     GroupPreviewThumbnail(
-                        candidatePaths = if (deleted) emptyList() else listOf(metadata.normalizedPath),
+                        candidatePaths = listOf(metadata.normalizedPath),
                         previewMemoryKey = "similarity-member:${metadata.normalizedPath}",
                         rememberedPreviewCache = rememberedPreviewCache,
                         imageLoader = imageLoader,
@@ -2469,31 +2469,19 @@ private fun SimilarityMemberCard(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = if (deleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "${formatBytesWithExact(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (deleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     durationMillis?.let { value ->
                         Text(
                             text = "Duration ${durationMillisLabel(value)}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (deleted) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -2501,14 +2489,13 @@ private fun SimilarityMemberCard(
             SimilarityClusterMemberVideoMetadata(
                 visible = !showVideoPreviews &&
                     (showVideoPreviewDurations || showVideoPreviewResolutions) &&
-                    isVideo &&
-                    !deleted,
+                    isVideo,
                 filePath = metadata.normalizedPath,
                 showDuration = showVideoPreviewDurations,
                 showResolution = showVideoPreviewResolutions
             )
             SimilarityClusterMemberVideoPreview(
-                visible = showVideoPreviews && showMemberThumbnail && isVideo && !deleted,
+                visible = showVideoPreviews && showMemberThumbnail && isVideo,
                 filePath = metadata.normalizedPath,
                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                 imageLoader = imageLoader,
@@ -2519,14 +2506,6 @@ private fun SimilarityMemberCard(
                 showDuration = showVideoPreviewDurations,
                 showResolution = showVideoPreviewResolutions
             )
-            if (deleted) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Deleted in this session",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
         }
     }
 }
