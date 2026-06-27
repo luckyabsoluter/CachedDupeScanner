@@ -108,6 +108,9 @@ class SimilaritySettingsScreenTest {
         assertTrue(settingGroupsContent.contains("if (!groupsLoaded)"))
         assertTrue(settingGroupsContent.contains("Loading similarity results..."))
         assertTrue(settingGroupsContent.contains("listState = groupListState"))
+        assertTrue(settingGroupsContent.contains("loadIndicatorText = groupLoadIndicatorText"))
+        assertTrue(content.contains("loadIndicatorText = memberLoadIndicatorText"))
+        assertTrue(content.contains("similarityLoadIndicatorText("))
         assertTrue(settingGroupsContent.contains("clusterSummary.clusterCount"))
         assertTrue(settingGroupsContent.contains("SimilarityGroupsHeader("))
         assertTrue(settingGroupsContent.contains("SimilarityClusterListCard("))
@@ -354,6 +357,29 @@ class SimilaritySettingsScreenTest {
                 thresholdItems = 3,
                 isLoading = false,
                 isComplete = true
+            )
+        )
+    }
+
+    @Test
+    fun similarityLoadIndicatorTextUsesLoadedWindowAndHeaderOffset() {
+        assertEquals(
+            "3/10/25 (30%/40%)",
+            similarityLoadIndicatorText(
+                firstVisibleItemIndex = 4,
+                loadedCount = 10,
+                totalCount = 25,
+                nonDataItemCount = 2
+            )
+        )
+        assertEquals(
+            null,
+            similarityLoadIndicatorText(
+                firstVisibleItemIndex = 4,
+                loadedCount = 10,
+                totalCount = 25,
+                nonDataItemCount = 2,
+                hidden = true
             )
         )
     }

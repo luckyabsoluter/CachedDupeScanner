@@ -99,6 +99,7 @@ import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
+import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
 import opensource.cached_dupe_scanner.ui.home.similarity.parsedDurationNeighborListStep
@@ -118,6 +119,8 @@ private const val SIMILARITY_CLUSTER_GROUP_AUTO_LOAD_THRESHOLD_ITEMS = 4
 private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
 private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
 private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32
+private const val SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT = 2
+private const val SIMILARITY_CLUSTER_DETAIL_BASE_HEADER_ITEM_COUNT = 3
 
 internal enum class SimilarityClusterSortKey(val label: String) {
     FileCount("File count"),
@@ -752,6 +755,14 @@ fun SimilaritySettingGroupsScreen(
             }
     }
 
+    val groupLoadIndicatorText = similarityLoadIndicatorText(
+        firstVisibleItemIndex = groupListState.firstVisibleItemIndex,
+        loadedCount = clusters.size,
+        totalCount = clusterSummary.clusterCount,
+        nonDataItemCount = SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT,
+        hidden = !groupsLoaded || groupsLoadError != null || setting == null
+    )
+
     if (!groupsLoaded) {
         Column(
             modifier = modifier.padding(16.dp),
@@ -767,7 +778,8 @@ fun SimilaritySettingGroupsScreen(
         ScreenScrollColumn(
             modifier = modifier,
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            listState = groupListState
+            listState = groupListState,
+            loadIndicatorText = groupLoadIndicatorText
         ) {
             item(key = "top_bar") {
                 AppTopBar(
@@ -1076,10 +1088,23 @@ fun SimilarityClusterDetailScreen(
         }
     }
 
+    val memberLoadIndicatorText = similarityLoadIndicatorText(
+        firstVisibleItemIndex = memberListState.firstVisibleItemIndex,
+        loadedCount = members.size,
+        totalCount = cluster?.fileCount ?: 0,
+        nonDataItemCount = similarityClusterDetailHeaderItemCount(
+            durationNeighborMode = durationNeighborMode,
+            selectionMode = selectionMode,
+            hasSelectionMessage = deleteSelectedMessage != null
+        ),
+        hidden = !clusterLoaded || clusterLoadError != null || cluster == null
+    )
+
     ScreenScrollColumn(
         modifier = modifier,
         listState = memberListState,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        loadIndicatorText = memberLoadIndicatorText
     ) {
         item(key = "top_bar") {
             AppTopBar(
@@ -3052,6 +3077,37 @@ internal fun shouldTriggerSimilarityClusterAutoLoad(
         isLoading = isLoading,
         isComplete = isComplete
     )
+}
+
+internal fun similarityLoadIndicatorText(
+    firstVisibleItemIndex: Int,
+    loadedCount: Int,
+    totalCount: Int,
+    nonDataItemCount: Int,
+    hidden: Boolean = false
+): String? {
+    if (hidden || totalCount <= 0) return null
+    val loaded = loadedCount.coerceAtMost(totalCount).coerceAtLeast(1)
+    val current = (firstVisibleItemIndex - nonDataItemCount + 1)
+        .coerceAtLeast(1)
+        .coerceAtMost(loaded)
+    return formatLoadProgressText(
+        current = current,
+        loaded = loaded,
+        total = totalCount
+    )
+}
+
+private fun similarityClusterDetailHeaderItemCount(
+    durationNeighborMode: Boolean,
+    selectionMode: Boolean,
+    hasSelectionMessage: Boolean
+): Int {
+    var count = SIMILARITY_CLUSTER_DETAIL_BASE_HEADER_ITEM_COUNT
+    if (durationNeighborMode) count += 1
+    if (selectionMode) count += 1
+    if (hasSelectionMessage) count += 1
+    return count
 }
 
 private fun clusterSortColumn(sortKey: SimilarityClusterSortKey): SimilarityClusterSortColumn {

@@ -21,6 +21,7 @@ fun ScreenScrollColumn(
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
     contentPadding: PaddingValues = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp),
     listState: LazyListState = rememberLazyListState(),
+    loadIndicatorText: String? = null,
     content: LazyListScope.() -> Unit
 ) {
     Box(modifier = modifier) {
@@ -41,5 +42,7 @@ fun ScreenScrollColumn(
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+
+        TopRightLoadIndicator(text = loadIndicatorText)
     }
 }

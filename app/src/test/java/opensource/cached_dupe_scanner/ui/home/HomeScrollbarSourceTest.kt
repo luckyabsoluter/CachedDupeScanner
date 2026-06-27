@@ -44,6 +44,11 @@ class HomeScrollbarSourceTest {
             "The shared scrollbar container should reserve the result-style gutter",
             content.contains("ScrollbarDefaults.ThumbWidth")
         )
+        assertTrue(
+            "The shared lazy container should own the top-right load indicator",
+            content.contains("loadIndicatorText: String? = null") &&
+                content.contains("TopRightLoadIndicator(text = loadIndicatorText)")
+        )
     }
 
     @Test
