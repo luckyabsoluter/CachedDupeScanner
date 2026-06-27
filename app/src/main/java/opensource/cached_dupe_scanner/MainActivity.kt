@@ -379,7 +379,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                        refreshSimilarityFromCache()
                                     }
                                     ok
                                 },
@@ -389,7 +388,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                        refreshSimilarityFromCache()
                                     }
                                     ok
                                 },
@@ -551,7 +549,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (ok) {
                                         deletedPaths.value = deletedPaths.value + file.normalizedPath
-                                        refreshSimilarityFromCache()
                                     }
                                     ok
                                 },
