@@ -89,6 +89,12 @@ class SimilaritySettingsScreenTest {
         val settingGroupsContent = content
             .substringAfter("fun SimilaritySettingGroupsScreen(")
             .substringBefore("@Composable\nfun SimilarityClusterDetailScreen(")
+        val groupsHeaderContent = content
+            .substringAfter("private fun SimilarityGroupsHeader(")
+            .substringBefore("@Composable\nprivate fun SimilarityResultsLoadErrorCard(")
+        val clusterOverviewContent = content
+            .substringAfter("private fun SimilarityClusterDetailOverviewCard(")
+            .substringBefore("@Composable\nprivate fun SimilarityMembersHeader(")
 
         assertTrue(content.contains("repository.listClusterMembersPage("))
         assertTrue(content.contains("similarityMemberSortColumn(memberSortKey)"))
@@ -113,9 +119,16 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("similarityLoadIndicatorText("))
         assertTrue(settingGroupsContent.contains("clusterSummary.clusterCount"))
         assertTrue(settingGroupsContent.contains("SimilarityGroupsHeader("))
+        assertTrue(settingGroupsContent.contains("setting = selectedSetting"))
+        assertTrue(groupsHeaderContent.contains("Similarity groups"))
+        assertTrue(groupsHeaderContent.contains("similarityGroupRuleLines(setting)"))
+        assertTrue(content.contains("Group sort options"))
         assertTrue(settingGroupsContent.contains("SimilarityClusterListCard("))
         assertTrue(content.contains("repository.getCluster(settingId = settingId, clusterId = clusterId)"))
         assertTrue(content.contains("SimilarityClusterDetailOverviewCard("))
+        assertFalse(clusterOverviewContent.contains("settingParametersSummary(setting)"))
+        assertFalse(clusterOverviewContent.contains("Group rule: exact thumbnail hash equality"))
+        assertFalse(clusterOverviewContent.contains("List rule: duration-sorted neighbor filter"))
         assertTrue(content.contains("ExactHashReductionPreviewCard("))
         assertTrue(content.contains("SimilarityMemberCard("))
         assertTrue(content.contains("GroupPreviewThumbnail("))
@@ -151,8 +164,7 @@ class SimilaritySettingsScreenTest {
         assertTrue(content.contains("DropdownMenuItem("))
         assertTrue(content.contains("onOpenCluster"))
         assertTrue(content.contains("similarityClusterPreviewLineTexts("))
-        assertTrue(content.contains("Group rule: exact thumbnail hash equality"))
-        assertTrue(content.contains("List rule: duration-sorted neighbor filter"))
+        assertTrue(content.contains("similarityGroupRuleLines(setting: SimilaritySettingEntity)"))
         assertFalse(content.contains("clusters.take("))
         assertFalse(settingGroupsContent.contains("repository.listClusters(settingId)"))
         assertFalse(content.contains("repository.listClusters(settingId).firstOrNull"))
@@ -171,7 +183,7 @@ class SimilaritySettingsScreenTest {
     }
 
     @Test
-    fun similarityClusterExplanationRestoresReadableSettingSummaries() {
+    fun similarityClusterExplanationKeepsSettingDetailsOutOfClusterSummaries() {
         val exact = ExactThumbnailClusterExplanation(
             mediaScope = "video",
             colorMode = "color",
@@ -187,11 +199,11 @@ class SimilaritySettingsScreenTest {
         )
 
         assertEquals(
-            "Exact hash: Video, 0s, 1s, 2x1, color, 16 levels",
+            "Matched thumbnail signature: 0f0f0f,000000 | ffffff,101010",
             exactHashClusterSummary(exact)
         )
         assertEquals(
-            "Duration neighbor list: 1s - 1.500s, tolerance 0.500s",
+            "Visible duration span: 1s - 1.500s",
             durationNeighborClusterSummary(neighbor)
         )
         assertEquals(
