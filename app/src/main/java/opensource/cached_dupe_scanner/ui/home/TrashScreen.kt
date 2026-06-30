@@ -78,7 +78,7 @@ fun TrashScreen(
     appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
-    onTrashChanged: () -> Unit = {},
+    onTrashChanged: (restoredOriginalPath: String?) -> Unit = { _ -> },
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -304,7 +304,7 @@ fun TrashScreen(
                     when (result) {
                         TrashController.RestoreResult.Success -> {
                             selectedEntry.value = null
-                            onTrashChanged()
+                            onTrashChanged(entry.originalPath)
                             resetAndLoad()
                         }
 
