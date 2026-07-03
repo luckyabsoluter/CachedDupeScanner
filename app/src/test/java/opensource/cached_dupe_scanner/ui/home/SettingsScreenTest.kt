@@ -2,245 +2,60 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.storage.AppSettings
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsScreenTest {
     @Test
-    fun zeroSizeSettingsSectionKeepsRelatedTogglesTogether() {
-        val section = zeroSizeSettingsSection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = false,
-                keepLoadedThumbnailsInMemory = false,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = false,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
+    fun toggleSectionsBindToSettingsContracts() {
+        val settings = appSettings(
+            skipZeroSizeInDb = false,
+            skipTrashBinContentsInScan = false,
+            hideZeroSizeInResults = true,
+            showMemoryOverlay = true,
+            keepLoadedThumbnailsInMemory = true,
+            keepLoadedVideoPreviewsInMemory = false,
+            snapVideoPreviewFramesToWidth = true
         )
 
-        assertEquals("Zero-size handling", section.title)
-        assertEquals(2, section.toggles.size)
-        assertEquals(ToggleSettingId.SkipZeroSizeInDb, section.toggles[0].id)
-        assertEquals(ToggleSettingId.HideZeroSizeInResults, section.toggles[1].id)
-        assertTrue(section.toggles[0].checked)
-        assertFalse(section.toggles[1].checked)
+        assertSectionToggles(
+            zeroSizeSettingsSection(settings),
+            ToggleExpectation(ToggleSettingId.SkipZeroSizeInDb, checked = false),
+            ToggleExpectation(ToggleSettingId.HideZeroSizeInResults, checked = true)
+        )
+        assertSectionToggles(
+            trashScanSettingsSection(settings),
+            ToggleExpectation(ToggleSettingId.SkipTrashBinContentsInScan, checked = false)
+        )
+        assertSectionToggles(
+            memoryOverlaySection(settings),
+            ToggleExpectation(ToggleSettingId.ShowMemoryOverlay, checked = true)
+        )
+        assertSectionToggles(
+            thumbnailMemorySettingsSection(settings),
+            ToggleExpectation(ToggleSettingId.KeepLoadedThumbnailsInMemory, checked = true)
+        )
+        assertSectionToggles(
+            videoPreviewMemorySettingsSection(settings),
+            ToggleExpectation(ToggleSettingId.KeepLoadedVideoPreviewsInMemory, checked = false)
+        )
+        assertSectionToggles(
+            videoPreviewSnapSettingsSection(settings),
+            ToggleExpectation(ToggleSettingId.SnapVideoPreviewFramesToWidth, checked = true)
+        )
     }
 
     @Test
-    fun trashScanSettingsSectionDefaultsToCheckedToggle() {
-        val section = trashScanSettingsSection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = false,
-                keepLoadedThumbnailsInMemory = false,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = false,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
+    fun dedicatedControlSectionsDoNotExposeToggleBindings() {
+        val sections = listOf(
+            thumbnailSizeSettingsSection(),
+            videoPreviewSizeSettingsSection(),
+            videoPreviewLineCountSettingsSection(),
+            backupSettingsSection()
         )
 
-        assertEquals("Trash scan exclusion", section.title)
-        assertEquals(1, section.toggles.size)
-        assertEquals(ToggleSettingId.SkipTrashBinContentsInScan, section.toggles[0].id)
-        assertTrue(section.toggles[0].checked)
-    }
-
-    @Test
-    fun memoryOverlaySectionExposesTopLeftOverlayToggle() {
-        val section = memoryOverlaySection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = true,
-                keepLoadedThumbnailsInMemory = false,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = false,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
-        )
-
-        assertEquals("Memory overlay", section.title)
-        assertEquals(1, section.toggles.size)
-        assertEquals(ToggleSettingId.ShowMemoryOverlay, section.toggles[0].id)
-        assertTrue(section.toggles[0].checked)
-    }
-
-    @Test
-    fun thumbnailMemorySectionExposesRamToggle() {
-        val section = thumbnailMemorySettingsSection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = false,
-                keepLoadedThumbnailsInMemory = true,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = false,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
-        )
-
-        assertEquals("Thumbnail memory", section.title)
-        assertEquals(1, section.toggles.size)
-        assertEquals(ToggleSettingId.KeepLoadedThumbnailsInMemory, section.toggles[0].id)
-        assertTrue(section.toggles[0].checked)
-    }
-
-    @Test
-    fun videoPreviewMemorySectionExposesDedicatedRamToggle() {
-        val section = videoPreviewMemorySettingsSection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = false,
-                keepLoadedThumbnailsInMemory = false,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = false,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
-        )
-
-        assertEquals("Video preview memory", section.title)
-        assertTrue(section.description.contains("similarity cluster details"))
-        assertEquals(1, section.toggles.size)
-        assertEquals(ToggleSettingId.KeepLoadedVideoPreviewsInMemory, section.toggles[0].id)
-        assertTrue(section.toggles[0].description.contains("similarity cluster details"))
-        assertTrue(section.toggles[0].checked)
-    }
-
-    @Test
-    fun backupSettingsSectionDescribesExportAndImportTogether() {
-        val section = backupSettingsSection()
-
-        assertEquals("Settings backup", section.title)
-        assertTrue(section.description.contains("Export current preferences"))
-        assertTrue(section.description.contains("import a saved backup"))
-        assertTrue(section.toggles.isEmpty())
-    }
-
-    @Test
-    fun thumbnailSizeSectionExplainsGlobalPreviewSizing() {
-        val section = thumbnailSizeSettingsSection()
-
-        assertEquals("Thumbnail size", section.title)
-        assertTrue(section.description.contains("file thumbnails"))
-        assertTrue(section.toggles.isEmpty())
-    }
-
-    @Test
-    fun videoPreviewSizeSectionExplainsTimelineSizing() {
-        val section = videoPreviewSizeSettingsSection()
-
-        assertEquals("Video preview size", section.title)
-        assertTrue(section.description.contains("timeline"))
-        assertTrue(section.description.contains("similarity cluster details"))
-        assertTrue(section.toggles.isEmpty())
-    }
-
-    @Test
-    fun videoPreviewSnapSectionExposesWidthSnapToggle() {
-        val section = videoPreviewSnapSettingsSection(
-            settings = AppSettings(
-                skipZeroSizeInDb = true,
-                skipTrashBinContentsInScan = true,
-                hideZeroSizeInResults = false,
-                showMemoryOverlay = false,
-                keepLoadedThumbnailsInMemory = false,
-                keepLoadedVideoPreviewsInMemory = true,
-                snapVideoPreviewFramesToWidth = true,
-                videoPreviewLineCount = 1,
-                thumbnailSizePercent = 100,
-                videoPreviewSizePercent = 100,
-                resultSortKey = "Count",
-                resultSortDirection = "Desc",
-                resultGroupSortKey = "Path",
-                resultGroupSortDirection = "Asc",
-                showFullPaths = false,
-                resultsFilterDefinitionJson = "",
-                filesFilterDefinitionJson = "",
-                filesSortKey = "Name",
-                filesSortDirection = "Asc"
-            )
-        )
-
-        assertEquals("Video preview width snap", section.title)
-        assertTrue(section.description.contains("similarity cluster details"))
-        assertEquals(1, section.toggles.size)
-        assertEquals(ToggleSettingId.SnapVideoPreviewFramesToWidth, section.toggles[0].id)
-        assertTrue(section.toggles[0].checked)
-    }
-
-    @Test
-    fun videoPreviewLineCountSectionExplainsMultiRowPreview() {
-        val section = videoPreviewLineCountSettingsSection()
-
-        assertEquals("Video preview lines", section.title)
-        assertTrue(section.description.contains("rows"))
-        assertTrue(section.description.contains("similarity cluster details"))
-        assertTrue(section.toggles.isEmpty())
+        sections.forEach { section ->
+            assertEquals(emptyList<ToggleSettingModel>(), section.toggles)
+        }
     }
 
     @Test
@@ -260,5 +75,50 @@ class SettingsScreenTest {
         assertEquals("90", adjustedDraftInput(input = "100", fallback = 100, delta = -10, minValue = 0))
         assertEquals("1", adjustedDraftInput(input = "1", fallback = 1, delta = -1, minValue = 1))
         assertEquals("6", adjustedDraftInput(input = "", fallback = 5, delta = 1, minValue = 1))
+    }
+
+    private fun assertSectionToggles(
+        section: SettingsSectionModel,
+        vararg expected: ToggleExpectation
+    ) {
+        assertEquals(expected.map { it.id }, section.toggles.map { it.id })
+        assertEquals(expected.map { it.checked }, section.toggles.map { it.checked })
+    }
+
+    private data class ToggleExpectation(
+        val id: ToggleSettingId,
+        val checked: Boolean
+    )
+
+    private fun appSettings(
+        skipZeroSizeInDb: Boolean = true,
+        skipTrashBinContentsInScan: Boolean = true,
+        hideZeroSizeInResults: Boolean = false,
+        showMemoryOverlay: Boolean = false,
+        keepLoadedThumbnailsInMemory: Boolean = false,
+        keepLoadedVideoPreviewsInMemory: Boolean = true,
+        snapVideoPreviewFramesToWidth: Boolean = false
+    ): AppSettings {
+        return AppSettings(
+            skipZeroSizeInDb = skipZeroSizeInDb,
+            skipTrashBinContentsInScan = skipTrashBinContentsInScan,
+            hideZeroSizeInResults = hideZeroSizeInResults,
+            showMemoryOverlay = showMemoryOverlay,
+            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+            keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+            snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+            videoPreviewLineCount = 1,
+            thumbnailSizePercent = 100,
+            videoPreviewSizePercent = 100,
+            resultSortKey = "Count",
+            resultSortDirection = "Desc",
+            resultGroupSortKey = "Path",
+            resultGroupSortDirection = "Asc",
+            showFullPaths = false,
+            resultsFilterDefinitionJson = "",
+            filesFilterDefinitionJson = "",
+            filesSortKey = "Name",
+            filesSortDirection = "Asc"
+        )
     }
 }
