@@ -166,7 +166,27 @@ class SimilaritySettingsRepositoryTest {
         val repository = repository()
 
         assertTrue(repository.listSettings().isEmpty())
+        assertFalse(repository.hasEnabledSettings())
         assertEquals(0, database.similaritySettingsDao().countSettings())
+    }
+
+    @Test
+    fun hasEnabledSettingsReflectsEnabledRowsOnly() {
+        val repository = repository()
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = false
+        )
+
+        assertFalse(repository.hasEnabledSettings())
+
+        repository.setEnabled(setting.settingId, true)
+        assertTrue(repository.hasEnabledSettings())
+
+        repository.setEnabled(setting.settingId, false)
+        assertFalse(repository.hasEnabledSettings())
     }
 
     @Test

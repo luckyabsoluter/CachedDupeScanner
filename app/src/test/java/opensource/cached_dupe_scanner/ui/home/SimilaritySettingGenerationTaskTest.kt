@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.ui.home
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +15,7 @@ import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.TaskStatus
+import opensource.cached_dupe_scanner.ui.home.similarity.startScanGeneratedSimilarityTask
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilaritySettingGenerationTask
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -100,6 +102,59 @@ class SimilaritySettingGenerationTaskTest {
         assertEquals(TaskStatus.Completed, terminal?.status)
         assertEquals("Similarity update complete", terminal?.title)
         assertTrue(statuses.any { status -> status.contains("Update complete: 2 clusters, 5 files.") })
+    }
+
+    @Test
+    fun scanGeneratedSimilarityTaskDoesNotBlockCallerWhileGenerationRuns() {
+        val taskCoordinator = TaskCoordinator()
+        val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
+        val enteredRun = CountDownLatch(1)
+        val releaseRun = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val finishedFlag = AtomicBoolean(false)
+
+        val started = startScanGeneratedSimilarityTask(
+            scope = appScope,
+            taskCoordinator = taskCoordinator,
+            notificationController = notificationController,
+            onFinished = {
+                finishedFlag.set(true)
+                finished.countDown()
+            },
+            runGeneration = { _, onProgress ->
+                enteredRun.countDown()
+                onProgress(
+                    SimilarityMaintenanceProgress(
+                        total = 2,
+                        processed = 1,
+                        skipped = 0,
+                        clusterCandidates = 1,
+                        currentPath = "/storage/emulated/0/DCIM/scan.mp4",
+                        settingName = "Scan generated"
+                    )
+                )
+                assertTrue(releaseRun.await(5, TimeUnit.SECONDS))
+                SimilarityMaintenanceSummary(
+                    settingCount = 1,
+                    candidateCount = 2,
+                    processedCount = 2,
+                    skippedCount = 0,
+                    clusterCount = 1,
+                    duplicateFileCount = 2,
+                    cancelled = false
+                )
+            }
+        )
+
+        assertTrue(started)
+        assertTrue(enteredRun.await(5, TimeUnit.SECONDS))
+        assertTrue(taskCoordinator.isAreaBusy(TaskArea.Similarity))
+        assertFalse(finishedFlag.get())
+
+        releaseRun.countDown()
+        assertTrue(finished.await(5, TimeUnit.SECONDS))
+        assertTrue(finishedFlag.get())
+        assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
     }
 
     @Test

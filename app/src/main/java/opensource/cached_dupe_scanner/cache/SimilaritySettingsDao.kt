@@ -37,6 +37,9 @@ interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_settings WHERE enabled = 1 ORDER BY updatedAtMillis DESC, settingId DESC")
     fun listEnabledSettings(): List<SimilaritySettingEntity>
 
+    @Query("SELECT COUNT(*) FROM similarity_settings WHERE enabled = 1")
+    fun countEnabledSettings(): Int
+
     @Query("SELECT * FROM similarity_settings WHERE settingId = :settingId LIMIT 1")
     fun getSetting(settingId: Long): SimilaritySettingEntity?
 

@@ -80,6 +80,7 @@ import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
+import opensource.cached_dupe_scanner.ui.home.similarity.startScanGeneratedSimilarityTask
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
@@ -175,16 +176,36 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun startScanGeneratedSimilarityIfNeeded() {
+                    AppWorkScopes.taskScope.launch {
+                        val hasEnabledSettings = withContext(Dispatchers.IO) {
+                            similarityRepo.hasEnabledSettings()
+                        }
+                        if (!hasEnabledSettings) return@launch
+                        val started = startScanGeneratedSimilarityTask(
+                            repository = similarityRepo,
+                            scope = AppWorkScopes.taskScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            onFinished = {
+                                similarityRefreshVersion.value += 1
+                            }
+                        )
+                        if (!started) {
+                            Log.d(
+                                "MainActivity",
+                                "Skipped scan-generated similarity because another similarity task is running"
+                            )
+                        }
+                    }
+                }
+
                 suspend fun handleScanComplete(scan: ScanResult) {
                     Log.d("MainActivity", "Scan complete callback received")
-                    runCatching {
+                    val persisted = runCatching {
                         withContext(Dispatchers.IO) {
                             Log.d("MainActivity", "Persisting scan to DB")
                             historyRepo.recordScan(scan)
-                            similarityRepo.generateEnabledResults(
-                                shouldContinue = { true },
-                                onProgress = {}
-                            )
                         }
                     }.onFailure { error ->
                         Log.e("MainActivity", "Failed to persist scan results", error)
@@ -195,6 +216,9 @@ class MainActivity : ComponentActivity() {
                     selectedResultsGroupIndex.value = null
                     resultsRefreshVersion.value += 1
                     similarityRefreshVersion.value += 1
+                    if (persisted.isSuccess) {
+                        startScanGeneratedSimilarityIfNeeded()
+                    }
                 }
 
                 fun refreshSimilarityFromCache(onComplete: (() -> Unit)? = null) {

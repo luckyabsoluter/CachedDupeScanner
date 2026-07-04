@@ -198,6 +198,10 @@ class SimilaritySettingsRepository(
         return similarityDao.listSettings()
     }
 
+    fun hasEnabledSettings(): Boolean {
+        return similarityDao.countEnabledSettings() > 0
+    }
+
     fun setEnabled(settingId: Long, enabled: Boolean) {
         database.runInTransaction {
             similarityDao.updateSettingEnabled(

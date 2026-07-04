@@ -40,6 +40,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Scan completion now stops waiting for automatic similarity generation; scan-cache persistence completes the scan while similarity catch-up runs as a separate progress-tracked task.
 - Scan command now uses the shared cache database builder so newly added Room migrations are registered consistently.
 - Scan completion now waits for cache persistence and similarity refresh before marking scan tasks complete.
 - Scan history recording now uses scanner cache snapshots so duplicate groups and similarity invalidation still see pre-scan cache state.
