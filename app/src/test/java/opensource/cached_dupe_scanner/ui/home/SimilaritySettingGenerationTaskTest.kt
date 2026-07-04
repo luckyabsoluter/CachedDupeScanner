@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
 import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
@@ -15,7 +17,7 @@ import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.TaskStatus
-import opensource.cached_dupe_scanner.ui.home.similarity.startScanGeneratedSimilarityTask
+import opensource.cached_dupe_scanner.ui.home.similarity.runScanIntegratedSimilarityGeneration
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilaritySettingGenerationTask
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -105,56 +107,103 @@ class SimilaritySettingGenerationTaskTest {
     }
 
     @Test
-    fun scanGeneratedSimilarityTaskDoesNotBlockCallerWhileGenerationRuns() {
+    fun scanIntegratedSimilarityGenerationUpdatesScanTaskAndWaitsForCompletion() = runBlocking {
         val taskCoordinator = TaskCoordinator()
         val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
         val enteredRun = CountDownLatch(1)
         val releaseRun = CountDownLatch(1)
         val finished = CountDownLatch(1)
         val finishedFlag = AtomicBoolean(false)
+        taskCoordinator.tryStart(
+            area = TaskArea.Scan,
+            kind = TaskKind.ScanTarget,
+            title = "Scanning files",
+            detail = "Saving cache"
+        )
 
-        val started = startScanGeneratedSimilarityTask(
-            scope = appScope,
+        val job = launch(Dispatchers.Default) {
+            val ran = runScanIntegratedSimilarityGeneration(
+                hasEnabledSettings = { true },
+                taskCoordinator = taskCoordinator,
+                notificationController = notificationController,
+                shouldContinue = { taskCoordinator.isAreaBusy(TaskArea.Scan) },
+                onFinished = {
+                    finishedFlag.set(true)
+                    finished.countDown()
+                },
+                runGeneration = { shouldContinue, onProgress ->
+                    assertTrue(shouldContinue())
+                    onProgress(
+                        SimilarityMaintenanceProgress(
+                            total = 2,
+                            processed = 1,
+                            skipped = 0,
+                            clusterCandidates = 1,
+                            currentPath = "/storage/emulated/0/DCIM/scan.mp4",
+                            settingName = "Scan generated"
+                        )
+                    )
+                    enteredRun.countDown()
+                    assertTrue(releaseRun.await(5, TimeUnit.SECONDS))
+                    SimilarityMaintenanceSummary(
+                        settingCount = 1,
+                        candidateCount = 2,
+                        processedCount = 2,
+                        skippedCount = 0,
+                        clusterCount = 1,
+                        duplicateFileCount = 2,
+                        cancelled = false
+                    )
+                }
+            )
+            assertTrue(ran)
+        }
+
+        assertTrue(enteredRun.await(5, TimeUnit.SECONDS))
+        assertTrue(taskCoordinator.isAreaBusy(TaskArea.Scan))
+        assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
+        assertEquals(
+            "Generating similarity • 1/2 • Cluster candidates 1 • Skipped 0 • Scan generated",
+            taskCoordinator.activeTask(TaskArea.Scan)?.detail
+        )
+        assertEquals("/storage/emulated/0/DCIM/scan.mp4", taskCoordinator.activeTask(TaskArea.Scan)?.currentPath)
+        assertFalse(finishedFlag.get())
+
+        releaseRun.countDown()
+        job.join()
+        assertTrue(finished.await(5, TimeUnit.SECONDS))
+        assertTrue(finishedFlag.get())
+        assertTrue(taskCoordinator.isAreaBusy(TaskArea.Scan))
+    }
+
+    @Test
+    fun scanIntegratedSimilarityGenerationSkipsWhenNoSettingIsEnabled() = runBlocking {
+        val taskCoordinator = TaskCoordinator()
+        val notificationController = TaskNotificationController(RuntimeEnvironment.getApplication())
+        var generationRan = false
+
+        val ran = runScanIntegratedSimilarityGeneration(
+            hasEnabledSettings = { false },
             taskCoordinator = taskCoordinator,
             notificationController = notificationController,
-            onFinished = {
-                finishedFlag.set(true)
-                finished.countDown()
-            },
-            runGeneration = { _, onProgress ->
-                enteredRun.countDown()
-                onProgress(
-                    SimilarityMaintenanceProgress(
-                        total = 2,
-                        processed = 1,
-                        skipped = 0,
-                        clusterCandidates = 1,
-                        currentPath = "/storage/emulated/0/DCIM/scan.mp4",
-                        settingName = "Scan generated"
-                    )
-                )
-                assertTrue(releaseRun.await(5, TimeUnit.SECONDS))
+            shouldContinue = { true },
+            onFinished = {},
+            runGeneration = { _, _ ->
+                generationRan = true
                 SimilarityMaintenanceSummary(
-                    settingCount = 1,
-                    candidateCount = 2,
-                    processedCount = 2,
+                    settingCount = 0,
+                    candidateCount = 0,
+                    processedCount = 0,
                     skippedCount = 0,
-                    clusterCount = 1,
-                    duplicateFileCount = 2,
+                    clusterCount = 0,
+                    duplicateFileCount = 0,
                     cancelled = false
                 )
             }
         )
 
-        assertTrue(started)
-        assertTrue(enteredRun.await(5, TimeUnit.SECONDS))
-        assertTrue(taskCoordinator.isAreaBusy(TaskArea.Similarity))
-        assertFalse(finishedFlag.get())
-
-        releaseRun.countDown()
-        assertTrue(finished.await(5, TimeUnit.SECONDS))
-        assertTrue(finishedFlag.get())
-        assertFalse(taskCoordinator.isAreaBusy(TaskArea.Similarity))
+        assertFalse(ran)
+        assertFalse(generationRan)
     }
 
     @Test

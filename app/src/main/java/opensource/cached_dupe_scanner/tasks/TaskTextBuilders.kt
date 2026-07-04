@@ -47,6 +47,12 @@ fun scanTaskCancelledDetail(processed: Int?, total: Int?): String {
     return "Cancelled after $processedText/$totalText."
 }
 
+fun scanSimilarityTaskDetail(progress: SimilarityMaintenanceProgress): String {
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    val setting = progress.settingName?.let { " • $it" } ?: ""
+    return "Generating similarity • ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}$setting"
+}
+
 fun dbMaintenanceTaskTitle(): String = "DB maintenance"
 
 fun dbMaintenanceTaskDetail(progress: DbMaintenanceProgress): String {
