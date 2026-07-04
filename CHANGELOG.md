@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Test coverage now removes placeholder, timing-threshold, and prose-snippet checks in favor of settings and Trash cache contract assertions.
 - Similarity detail now provides explicit Update and Rebuild actions and explains how they relate to scan-cache generation.
 - Similarity management now separates creation, maintenance, entry management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
 - Similarity screens now restore the previous template-style flow, detailed group and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping maintained similarity terminology.

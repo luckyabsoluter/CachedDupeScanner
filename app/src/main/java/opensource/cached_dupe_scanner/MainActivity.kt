@@ -590,10 +590,7 @@ class MainActivity : ComponentActivity() {
                                 notificationController = notificationController,
                                 onTrashChanged = { restoredOriginalPath ->
                                     if (restoredOriginalPath != null) {
-                                        deletedPaths.value = deletedPathsAfterTrashRestore(
-                                            deletedPaths = deletedPaths.value,
-                                            restoredPath = restoredOriginalPath
-                                        )
+                                        deletedPaths.value = deletedPaths.value - restoredOriginalPath
                                     }
                                     refreshSimilarityFromCache {
                                         filesRefreshVersion.value += 1
@@ -716,14 +713,6 @@ internal fun restoreScreenStack(tokens: List<String>): List<Screen> {
         return restored
     }
     return listOf(Screen.Dashboard) + restored
-}
-
-internal fun deletedPathsAfterTrashRestore(
-    deletedPaths: Set<String>,
-    restoredPath: String
-): Set<String> {
-    if (restoredPath.isBlank()) return deletedPaths
-    return deletedPaths - restoredPath
 }
 
 internal sealed class Screen {

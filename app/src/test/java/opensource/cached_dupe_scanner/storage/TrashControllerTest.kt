@@ -16,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.nio.file.Files
 
 @RunWith(RobolectricTestRunner::class)
 class TrashControllerTest {
@@ -26,62 +27,74 @@ class TrashControllerTest {
     }
 
     @Test
-    fun restoreReinsertsCachedRecordWithHash() {
+    fun moveAndRestoreSynchronizeCacheDerivedContracts() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
-        val original = File(volumeRoot, "docs/a.txt")
-        original.parentFile!!.mkdirs()
-        original.writeText("hello")
+        val volumeRoot = createVolumeRoot()
+        try {
+            val fileA = File(volumeRoot, "docs/a.txt")
+            val fileB = File(volumeRoot, "docs/b.txt")
+            fileA.parentFile!!.mkdirs()
+            fileA.writeText("same")
+            fileB.writeText("same")
 
-        val normalizedPath = original.absolutePath
-        val hash = "deadbeef"
-        database.fileCacheDao().upsert(
-            CachedFileEntity(
-                normalizedPath = normalizedPath,
-                path = normalizedPath,
-                sizeBytes = original.length(),
-                lastModifiedMillis = original.lastModified(),
-                hashHex = hash
+            val hash = Hashing.sha256Hex(fileA)
+            val size = fileA.length()
+            database.fileCacheDao().upsert(cachedEntity(fileA, hash))
+            database.fileCacheDao().upsert(cachedEntity(fileB, hash))
+            database.duplicateGroupDao().rebuildFromCache(System.currentTimeMillis())
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+
+            val observer = RecordingCacheMutationObserver()
+            val historyRepo = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = AppSettingsStore(context),
+                groupDao = database.duplicateGroupDao(),
+                database = database,
+                cacheMutationObserver = observer
             )
-        )
+            val trashRepo = TrashRepository(database.trashDao())
+            val controller = TrashController(
+                context = context,
+                database = database,
+                historyRepo = historyRepo,
+                trashRepo = trashRepo,
+                storageRootProvider = FakeRootProvider(volumeRoot)
+            )
 
-        val settings = AppSettingsStore(context)
-        val historyRepo = ScanHistoryRepository(database.fileCacheDao(), settings)
-        val trashRepo = TrashRepository(database.trashDao())
-        val controller = TrashController(
-            context = context,
-            database = database,
-            historyRepo = historyRepo,
-            trashRepo = trashRepo,
-            storageRootProvider = FakeRootProvider(volumeRoot)
-        )
+            val move = controller.moveToTrash(fileA.absolutePath)
+            assertTrue(move.success)
+            val entry = requireNotNull(move.entry)
+            assertFalse(fileA.exists())
+            assertNull(database.fileCacheDao().getByNormalizedPath(fileA.absolutePath))
+            assertEquals(0, database.duplicateGroupDao().countGroups())
+            assertEquals(listOf(fileA.absolutePath), observer.changedPaths)
 
-        val move = controller.moveToTrash(normalizedPath)
-        assertTrue(move.success)
-        val entry = move.entry
-        assertNotNull(entry)
-        assertNull(database.fileCacheDao().getByNormalizedPath(normalizedPath))
-        assertTrue(!File(normalizedPath).exists())
+            val savedTrash = trashRepo.getById(entry.id)
+            assertNotNull(savedTrash)
+            assertEquals(hash, savedTrash?.hashHex)
 
-        val savedTrash = trashRepo.getById(entry!!.id)
-        assertNotNull(savedTrash)
-        assertEquals(hash, savedTrash?.hashHex)
+            observer.changedPaths.clear()
+            val restore = controller.restoreFromTrash(entry)
+            assertEquals(TrashController.RestoreResult.Success, restore)
+            assertTrue(fileA.exists())
 
-        val restore = controller.restoreFromTrash(entry)
-        assertEquals(TrashController.RestoreResult.Success, restore)
-        assertTrue(File(normalizedPath).exists())
-
-        val restoredCache = database.fileCacheDao().getByNormalizedPath(normalizedPath)
-        assertNotNull(restoredCache)
-        assertEquals(hash, restoredCache?.hashHex)
-        assertNull(trashRepo.getById(entry.id))
-
-        volumeRoot.deleteRecursively()
-        database.close()
+            val restoredCache = database.fileCacheDao().getByNormalizedPath(fileA.absolutePath)
+            assertNotNull(restoredCache)
+            assertEquals(hash, restoredCache?.hashHex)
+            assertEquals(1, database.duplicateGroupDao().countGroups())
+            val restoredGroup = database.duplicateGroupDao().get(size, hash)
+            assertNotNull(restoredGroup)
+            assertEquals(2, restoredGroup?.fileCount)
+            assertEquals(listOf(fileA.absolutePath), observer.changedPaths)
+            assertNull(trashRepo.getById(entry.id))
+        } finally {
+            volumeRoot.deleteRecursively()
+            database.close()
+        }
     }
 
     @Test
@@ -91,7 +104,7 @@ class TrashControllerTest {
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val original = File(volumeRoot, "docs/b.txt")
         original.parentFile!!.mkdirs()
         original.writeText("hello")
@@ -139,73 +152,13 @@ class TrashControllerTest {
     }
 
     @Test
-    fun moveToTrashSynchronizesDuplicateGroupsThroughHistoryRepository() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
-
-        val volumeRoot = createTempDir(prefix = "volume_")
-        val fileA = File(volumeRoot, "docs/c_a.txt")
-        val fileB = File(volumeRoot, "docs/c_b.txt")
-        fileA.parentFile!!.mkdirs()
-        fileA.writeText("same")
-        fileB.writeText("same")
-
-        val hash = Hashing.sha256Hex(fileA)
-        val size = fileA.length()
-        database.fileCacheDao().upsert(
-            CachedFileEntity(
-                normalizedPath = fileA.absolutePath,
-                path = fileA.absolutePath,
-                sizeBytes = size,
-                lastModifiedMillis = fileA.lastModified(),
-                hashHex = hash
-            )
-        )
-        database.fileCacheDao().upsert(
-            CachedFileEntity(
-                normalizedPath = fileB.absolutePath,
-                path = fileB.absolutePath,
-                sizeBytes = size,
-                lastModifiedMillis = fileB.lastModified(),
-                hashHex = hash
-            )
-        )
-        database.duplicateGroupDao().rebuildFromCache(System.currentTimeMillis())
-        assertEquals(1, database.duplicateGroupDao().countGroups())
-
-        val settings = AppSettingsStore(context)
-        val historyRepo = ScanHistoryRepository(
-            dao = database.fileCacheDao(),
-            settingsStore = settings,
-            groupDao = database.duplicateGroupDao()
-        )
-        val trashRepo = TrashRepository(database.trashDao())
-        val controller = TrashController(
-            context = context,
-            database = database,
-            historyRepo = historyRepo,
-            trashRepo = trashRepo,
-            storageRootProvider = FakeRootProvider(volumeRoot)
-        )
-
-        val moved = controller.moveToTrash(fileA.absolutePath)
-        assertTrue(moved.success)
-        assertEquals(0, database.duplicateGroupDao().countGroups())
-
-        volumeRoot.deleteRecursively()
-        database.close()
-    }
-
-    @Test
     fun emptyTrashReportsProgressAndSupportsCancellation() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
         try {
             repeat(3) { index ->
@@ -257,7 +210,7 @@ class TrashControllerTest {
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
         try {
             val entryCount = EMPTY_TRASH_PAGE_SIZE + 3
@@ -300,7 +253,7 @@ class TrashControllerTest {
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
         try {
             val entryCount = EMPTY_TRASH_PAGE_SIZE + 3
@@ -357,7 +310,7 @@ class TrashControllerTest {
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
         try {
             val entryCount = EMPTY_TRASH_PAGE_SIZE + 3
@@ -400,7 +353,7 @@ class TrashControllerTest {
             .allowMainThreadQueries()
             .build()
 
-        val volumeRoot = createTempDir(prefix = "volume_")
+        val volumeRoot = createVolumeRoot()
         val trashDir = File(volumeRoot, ".CachedDupeScanner/trashbin").apply { mkdirs() }
         try {
             val failingDir = File(trashDir, "blocked").apply {
@@ -471,5 +424,31 @@ class TrashControllerTest {
         )
         database.trashDao().upsert(entry)
         return entry
+    }
+
+    private fun createVolumeRoot(): File {
+        val projectDir = File(requireNotNull(System.getProperty("user.dir")))
+        val baseDir = File(projectDir, "build/test-tmp/trash-controller").apply { mkdirs() }
+        return Files.createTempDirectory(baseDir.toPath(), "volume_").toFile()
+    }
+
+    private fun cachedEntity(file: File, hash: String): CachedFileEntity {
+        return CachedFileEntity(
+            normalizedPath = file.absolutePath,
+            path = file.absolutePath,
+            sizeBytes = file.length(),
+            lastModifiedMillis = file.lastModified(),
+            hashHex = hash
+        )
+    }
+
+    private class RecordingCacheMutationObserver : CacheMutationObserver {
+        val changedPaths = mutableListOf<String>()
+
+        override fun onCachedFilesChanged(normalizedPaths: List<String>) {
+            changedPaths += normalizedPaths
+        }
+
+        override fun onCacheCleared() = Unit
     }
 }
