@@ -890,6 +890,7 @@ fun SimilarityClusterDetailScreen(
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
     val members = remember { mutableStateListOf<SimilarityClusterMember>() }
+    val missingMemberPaths = remember { mutableStateMapOf<String, Boolean>() }
     var memberLoading by remember { mutableStateOf(false) }
     var memberOffset by remember { mutableStateOf(0) }
     var membersExhausted by remember { mutableStateOf(false) }
@@ -941,16 +942,25 @@ fun SimilarityClusterDetailScreen(
         }
         scope.launch {
             try {
-                val nextMembers = withContext(Dispatchers.IO) {
-                    repository.listClusterMembersPage(
+                val (nextMembers, nextMissingPaths) = withContext(Dispatchers.IO) {
+                    val loaded = repository.listClusterMembersPage(
                         clusterId = clusterId,
                         offset = memberOffset,
                         limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
                         sortColumn = pageSortColumn,
                         direction = pageDirection
                     )
+                    loaded to missingFilePaths(loaded.map { member -> member.metadata })
                 }
                 members.addAll(nextMembers)
+                nextMembers.forEach { member ->
+                    val path = member.metadata.normalizedPath
+                    if (nextMissingPaths.contains(path)) {
+                        missingMemberPaths[path] = true
+                    } else {
+                        missingMemberPaths.remove(path)
+                    }
+                }
                 memberOffset += nextMembers.size
                 membersExhausted = nextMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
                     memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
@@ -974,6 +984,7 @@ fun SimilarityClusterDetailScreen(
         setting = null
         cluster = null
         members.clear()
+        missingMemberPaths.clear()
         memberOffset = 0
         membersExhausted = false
         selectionState.clear()
@@ -984,9 +995,9 @@ fun SimilarityClusterDetailScreen(
             val loadedCluster = withContext(Dispatchers.IO) {
                 repository.getCluster(settingId = settingId, clusterId = clusterId)
             }
-            val firstMembers = withContext(Dispatchers.IO) {
+            val (firstMembers, firstMissingPaths) = withContext(Dispatchers.IO) {
                 val durationMode = loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
-                repository.listClusterMembersPage(
+                val loaded = repository.listClusterMembersPage(
                     clusterId = clusterId,
                     offset = 0,
                     limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
@@ -1001,11 +1012,14 @@ fun SimilarityClusterDetailScreen(
                         memberSortDirection
                     }
                 )
+                loaded to missingFilePaths(loaded.map { member -> member.metadata })
             }
             setting = loadedSetting
             cluster = loadedCluster
             members.clear()
             members.addAll(firstMembers)
+            missingMemberPaths.clear()
+            firstMissingPaths.forEach { path -> missingMemberPaths[path] = true }
             memberOffset = firstMembers.size
             membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
                 firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
@@ -1022,6 +1036,7 @@ fun SimilarityClusterDetailScreen(
         durationMemberSortDirection = direction
         settingsStore.setSimilarityDurationMemberSortDirection(direction.name)
         members.clear()
+        missingMemberPaths.clear()
         memberOffset = 0
         membersExhausted = false
         selectedFile = null
@@ -1036,6 +1051,7 @@ fun SimilarityClusterDetailScreen(
         settingsStore.setSimilarityMemberSortKey(key.name)
         settingsStore.setSimilarityMemberSortDirection(direction.name)
         members.clear()
+        missingMemberPaths.clear()
         memberOffset = 0
         membersExhausted = false
         selectedFile = null
@@ -1245,9 +1261,11 @@ fun SimilarityClusterDetailScreen(
                 val metadata = member.metadata
                 item(key = "member:${metadata.normalizedPath}") {
                     val isDeleted = deletedPaths.contains(metadata.normalizedPath)
+                    val isMissing = missingMemberPaths.containsKey(metadata.normalizedPath)
                     SimilarityMemberCard(
                         metadata = metadata,
                         deleted = isDeleted,
+                        missing = isMissing,
                         selected = selectionState.isPathSelected(metadata.normalizedPath),
                         selectionMode = selectionMode,
                         imageLoader = imageLoader,
@@ -2403,6 +2421,7 @@ private fun SimilaritySelectionControls(
 private fun SimilarityMemberCard(
     metadata: FileMetadata,
     deleted: Boolean,
+    missing: Boolean,
     selected: Boolean,
     selectionMode: Boolean,
     imageLoader: ImageLoader,
@@ -2423,7 +2442,7 @@ private fun SimilarityMemberCard(
     onToggleSelection: () -> Unit
 ) {
     val isVideo = isVideoFile(metadata.normalizedPath)
-    val showMemberThumbnail = isMediaFile(metadata.normalizedPath)
+    val showMemberThumbnail = !missing && isMediaFile(metadata.normalizedPath)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -2437,10 +2456,14 @@ private fun SimilarityMemberCard(
                 },
                 onLongClick = onToggleSelection
             ),
-        colors = if (deleted) {
-            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-        } else {
-            CardDefaults.cardColors()
+        colors = when {
+            deleted -> CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+            missing -> CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+            else -> CardDefaults.cardColors()
         }
     ) {
         Column(
@@ -2478,13 +2501,24 @@ private fun SimilarityMemberCard(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = when {
+                            deleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            missing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${formatBytesWithExact(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}",
+                        text = buildString {
+                            append("${formatBytesWithExact(metadata.sizeBytes)} | ${formatDate(metadata.lastModifiedMillis)}")
+                            if (missing) append(" | Missing")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = when {
+                            deleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            missing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     durationMillis?.let { value ->
                         Text(
@@ -2496,7 +2530,8 @@ private fun SimilarityMemberCard(
                 }
             }
             SimilarityClusterMemberVideoMetadata(
-                visible = !showVideoPreviews &&
+                visible = !missing &&
+                    !showVideoPreviews &&
                     (showVideoPreviewDurations || showVideoPreviewResolutions) &&
                     isVideo,
                 filePath = metadata.normalizedPath,

@@ -80,6 +80,7 @@ import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressTe
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 private class MembersCacheEntry {
     val members = mutableStateListOf<FileMetadata>()
+    val missingPaths = mutableStateMapOf<String, Boolean>()
     val cursor = mutableStateOf<String?>(null)
     val isLoading = mutableStateOf(false)
     val isComplete = mutableStateOf(false)
@@ -1186,19 +1187,28 @@ private fun GroupDetailDb(
                 if (reset) {
                     cursor.value = null
                     entry.members.clear()
+                    entry.missingPaths.clear()
                     entry.isComplete.value = false
                     lazySelection.clear()
                 }
-                val next = withContext(Dispatchers.IO) {
-                    resultsRepo.listGroupMembers(
+                val (next, nextMissingPaths) = withContext(Dispatchers.IO) {
+                    val loaded = resultsRepo.listGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex,
                         afterPath = cursor.value,
                         limit = pageSize
                     )
+                    loaded to missingFilePaths(loaded)
                 }
                 if (next.isNotEmpty()) {
                     entry.members.addAll(next)
+                    next.forEach { file ->
+                        if (nextMissingPaths.contains(file.normalizedPath)) {
+                            entry.missingPaths[file.normalizedPath] = true
+                        } else {
+                            entry.missingPaths.remove(file.normalizedPath)
+                        }
+                    }
                     cursor.value = next.last().normalizedPath
                 }
                 // Mark complete if we reached the known count or got a short/empty page.
@@ -1223,6 +1233,19 @@ private fun GroupDetailDb(
     }
 
     LaunchedEffect(group.sizeBytes, group.hashHex) {
+        val cachedMembers = entry.members.toList()
+        if (cachedMembers.isNotEmpty()) {
+            val cachedMissingPaths = withContext(Dispatchers.IO) {
+                missingFilePaths(cachedMembers)
+            }
+            cachedMembers.forEach { file ->
+                if (cachedMissingPaths.contains(file.normalizedPath)) {
+                    entry.missingPaths[file.normalizedPath] = true
+                } else {
+                    entry.missingPaths.remove(file.normalizedPath)
+                }
+            }
+        }
         // Continue loading when entering detail, even if preview members were already cached.
         if (entry.isLoading.value || entry.isComplete.value) return@LaunchedEffect
         loadMore(reset = entry.members.isEmpty())
@@ -1349,6 +1372,7 @@ private fun GroupDetailDb(
     sortedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
+        val isMissing = entry.missingPaths.containsKey(file.normalizedPath)
         val isSelected = lazySelection.isPathSelected(file.normalizedPath)
         Card(
             modifier = Modifier
@@ -1373,12 +1397,14 @@ private fun GroupDetailDb(
                         bulkDeleteMessage.value = null
                     }
                 ),
-            colors = if (isDeleted) {
-                CardDefaults.cardColors(
+            colors = when {
+                isDeleted -> CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer
                 )
-            } else {
-                CardDefaults.cardColors()
+                isMissing -> CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+                else -> CardDefaults.cardColors()
             }
         ) {
             Row(
@@ -1406,20 +1432,23 @@ private fun GroupDetailDb(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+                        color = when {
+                            isDeleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            isMissing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurface
                         }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${formatBytesWithExact(file.sizeBytes)} · ${date}",
+                        text = buildString {
+                            append("${formatBytesWithExact(file.sizeBytes)} · $date")
+                            if (isMissing) append(" · Missing")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        color = when {
+                            isDeleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            isMissing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
                 }

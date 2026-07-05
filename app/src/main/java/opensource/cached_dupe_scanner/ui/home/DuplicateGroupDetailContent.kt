@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,7 +34,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SortDirection
 
@@ -68,12 +71,21 @@ internal fun EagerDuplicateGroupDetailContent(
     val confirmDeleteSelected = remember(previewMemoryKey) { mutableStateOf(false) }
     val isDeletingSelected = remember(previewMemoryKey) { mutableStateOf(false) }
     val deleteSelectedMessage = remember(previewMemoryKey) { mutableStateOf<String?>(null) }
+    val missingPaths = remember(previewMemoryKey) { mutableStateMapOf<String, Boolean>() }
     val selectionMode = selectedPaths.value.isNotEmpty()
     val hasPreviewMedia = members.any { isMediaFile(it.normalizedPath) }
     val previewCandidates = mediaPreviewCandidates(
         files = members,
         deletedPaths = deletedPaths
     )
+
+    LaunchedEffect(members) {
+        val checkedMissingPaths = withContext(Dispatchers.IO) {
+            missingFilePaths(members)
+        }
+        missingPaths.clear()
+        checkedMissingPaths.forEach { path -> missingPaths[path] = true }
+    }
 
     Text(title)
     Spacer(modifier = Modifier.height(8.dp))
@@ -187,6 +199,7 @@ internal fun EagerDuplicateGroupDetailContent(
     displayedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
+        val isMissing = missingPaths.containsKey(file.normalizedPath)
         val isSelected = selectedPaths.value.contains(file.normalizedPath)
         Card(
             modifier = Modifier
@@ -215,12 +228,14 @@ internal fun EagerDuplicateGroupDetailContent(
                         }
                     }
                 ),
-            colors = if (isDeleted) {
-                CardDefaults.cardColors(
+            colors = when {
+                isDeleted -> CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer
                 )
-            } else {
-                CardDefaults.cardColors()
+                isMissing -> CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+                else -> CardDefaults.cardColors()
             }
         ) {
             Row(
@@ -245,7 +260,7 @@ internal fun EagerDuplicateGroupDetailContent(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                if (showMemberThumbnails && isMediaFile(file.normalizedPath)) {
+                if (showMemberThumbnails && !isMissing && isMediaFile(file.normalizedPath)) {
                     GroupPreviewThumbnail(
                         candidatePaths = if (isDeleted) emptyList() else listOf(file.normalizedPath),
                         previewMemoryKey = memberPreviewMemoryKey(
@@ -266,20 +281,23 @@ internal fun EagerDuplicateGroupDetailContent(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+                        color = when {
+                            isDeleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            isMissing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurface
                         }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${formatBytesWithExact(file.sizeBytes)} · $date",
+                        text = buildString {
+                            append("${formatBytesWithExact(file.sizeBytes)} · $date")
+                            if (isMissing) append(" · Missing")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isDeleted) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        color = when {
+                            isDeleted -> MaterialTheme.colorScheme.onSecondaryContainer
+                            isMissing -> MaterialTheme.colorScheme.onErrorContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
                 }
