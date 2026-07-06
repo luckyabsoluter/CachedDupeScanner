@@ -2450,6 +2450,7 @@ private fun SimilarityMemberCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("similarity-member:${metadata.normalizedPath}")
             .combinedClickable(
                 onClick = {
                     if (selectionMode) {

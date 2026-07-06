@@ -2,16 +2,21 @@ package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
 import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
@@ -22,6 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
@@ -30,11 +36,17 @@ import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
+import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
+import opensource.cached_dupe_scanner.storage.StorageRootProvider
+import opensource.cached_dupe_scanner.storage.StorageRootResolver
+import opensource.cached_dupe_scanner.storage.TrashController
+import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -139,6 +151,120 @@ class SimilarityResultsNavigationTest {
         }
     }
 
+    @Test
+    fun deletingDetailMemberKeepsClusterWhenReturningToGroups() {
+        val fixture = createSimilarityFixture()
+
+        composeRule.setContent {
+            SimilarityDeleteNavigationHarness(
+                fixture = fixture,
+                settingsStore = AppSettingsStore(context),
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("2 files", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").performClick()
+
+        scrollUntilText(fixture.firstFile.name)
+        composeRule.onNodeWithTag(
+            "similarity-member:${fixture.firstFile.normalizedPathForTest()}"
+        ).performClick()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Move").performClick()
+
+        composeRule.waitUntil(5_000) { !fixture.firstFile.exists() }
+        composeRule.onNodeWithText(fixture.firstFile.name).fetchSemanticsNode()
+        assertTrue(
+            composeRule.onAllNodesWithText("Missing", substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+
+        repeat(8) {
+            composeRule.onRoot().performTouchInput { swipeDown() }
+            composeRule.waitForIdle()
+        }
+        composeRule.onNodeWithContentDescription("Back").performClick()
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("2 files", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").fetchSemanticsNode()
+        assertEquals(1, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+    }
+
+    @Composable
+    private fun SimilarityDeleteNavigationHarness(
+        fixture: SimilarityFixture,
+        settingsStore: AppSettingsStore,
+        modifier: Modifier
+    ) {
+        val selectedClusterId = remember { mutableStateOf<Long?>(null) }
+        val deletedPaths = remember { mutableStateOf<Set<String>>(emptySet()) }
+        val thumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
+        val videoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
+        val clusterId = selectedClusterId.value
+
+        if (clusterId == null) {
+            SimilaritySettingGroupsScreen(
+                repository = fixture.repository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                thumbnailSizeScale = 1f,
+                rememberedPreviewCache = thumbnailCache,
+                showFullPaths = false,
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                onBack = {},
+                onOpenCluster = { _, openedClusterId ->
+                    selectedClusterId.value = openedClusterId
+                },
+                modifier = modifier
+            )
+        } else {
+            SimilarityClusterDetailScreen(
+                repository = fixture.repository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = false,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizeScale = 1f,
+                videoPreviewSizeScale = 1f,
+                rememberedPreviewCache = thumbnailCache,
+                rememberedVideoPreviewCache = videoPreviewCache,
+                showFullPaths = false,
+                showVideoPreviews = false,
+                showVideoPreviewDurations = false,
+                showVideoPreviewResolutions = false,
+                onShowVideoPreviewsChange = {},
+                onShowVideoPreviewDurationsChange = {},
+                onShowVideoPreviewResolutionsChange = {},
+                deletedPaths = deletedPaths.value,
+                onDeleteFile = { file ->
+                    val moved = withContext(Dispatchers.IO) {
+                        fixture.trashController.moveToTrash(file.normalizedPath).success
+                    }
+                    if (moved) {
+                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                    }
+                    moved
+                },
+                settingId = fixture.settingId,
+                clusterId = clusterId,
+                onBack = { selectedClusterId.value = null },
+                modifier = modifier
+            )
+        }
+    }
+
     private fun createSimilarityFixture(): SimilarityFixture {
         val first = videoFile("first.mp4")
         val second = videoFile("second.mp4")
@@ -177,10 +303,30 @@ class SimilarityResultsNavigationTest {
         )
         val cluster = repository.listClusters(setting.settingId).singleOrNull()
         assertNotNull(cluster)
+        val historyRepository = ScanHistoryRepository(
+            dao = database.fileCacheDao(),
+            settingsStore = AppSettingsStore(context),
+            groupDao = database.duplicateGroupDao(),
+            database = database,
+            cacheMutationObserver = repository
+        )
+        val trashController = TrashController(
+            context = context,
+            database = database,
+            historyRepo = historyRepository,
+            trashRepo = TrashRepository(database.trashDao()),
+            storageRootProvider = object : StorageRootProvider {
+                override fun resolve(context: Context, absolutePath: String): StorageRootResolver.Root {
+                    return StorageRootResolver.Root(tempDir.absolutePath)
+                }
+            }
+        )
         return SimilarityFixture(
             repository = repository,
             settingId = setting.settingId,
-            clusterId = cluster!!.clusterId
+            clusterId = cluster!!.clusterId,
+            firstFile = first,
+            trashController = trashController
         )
     }
 
@@ -233,7 +379,9 @@ class SimilarityResultsNavigationTest {
     private data class SimilarityFixture(
         val repository: SimilaritySettingsRepository,
         val settingId: Long,
-        val clusterId: Long
+        val clusterId: Long,
+        val firstFile: File,
+        val trashController: TrashController
     )
 
     private class FakeSignatureExtractor(

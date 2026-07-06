@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Similarity deletion regression coverage now exercises group navigation, detail deletion through Trash, and return-to-list snapshot preservation as one Compose path.
 - Duplicate and similarity detail views now check loaded members against the filesystem and mark missing files explicitly.
 - Test coverage now removes placeholder, timing-threshold, and prose-snippet checks in favor of settings and Trash cache contract assertions.
 - Similarity detail now provides explicit Update and Rebuild actions and explains how they relate to scan-cache generation.
