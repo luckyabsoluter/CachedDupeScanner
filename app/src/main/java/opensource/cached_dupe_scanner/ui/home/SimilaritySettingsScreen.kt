@@ -1261,7 +1261,11 @@ fun SimilarityClusterDetailScreen(
                 val metadata = member.metadata
                 item(key = "member:${metadata.normalizedPath}") {
                     val isDeleted = deletedPaths.contains(metadata.normalizedPath)
-                    val isMissing = missingMemberPaths.containsKey(metadata.normalizedPath)
+                    val isMissing = isMissingDetailFile(
+                        path = metadata.normalizedPath,
+                        deletedPaths = deletedPaths,
+                        missingPaths = missingMemberPaths.keys
+                    )
                     SimilarityMemberCard(
                         metadata = metadata,
                         deleted = isDeleted,

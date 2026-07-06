@@ -274,6 +274,65 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun cacheDeletionCanPreserveStoredClusterUntilMaintenance() {
+        val first = videoFile("preserved-a.mp4")
+        val second = videoFile("preserved-b.mp4")
+        database.fileCacheDao().upsert(entity(first))
+        database.fileCacheDao().upsert(entity(second))
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val history = ScanHistoryRepository(
+            dao = database.fileCacheDao(),
+            settingsStore = AppSettingsStore(ApplicationProvider.getApplicationContext()),
+            groupDao = database.duplicateGroupDao(),
+            database = database,
+            cacheMutationObserver = repository
+        )
+
+        history.deleteByNormalizedPath(
+            normalizedPath = second.normalizedPath(),
+            notifyCacheMutationObserver = false
+        )
+
+        assertEquals(1, repository.getClusterSummary(setting.settingId).clusterCount)
+        assertEquals(
+            1,
+            repository.listClustersPage(
+                settingId = setting.settingId,
+                offset = 0,
+                limit = 10,
+                sortColumn = SimilarityClusterSortColumn.FileCount,
+                direction = SortDirection.Desc
+            ).size
+        )
+
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = false,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
+    }
+
+    @Test
     fun durationToleranceMaintenanceUsesSeparateDurationFeatureTable() {
         val first = videoFile("duration-a.mp4")
         val second = videoFile("duration-b.mp4")

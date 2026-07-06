@@ -71,7 +71,7 @@ class TrashControllerTest {
             assertFalse(fileA.exists())
             assertNull(database.fileCacheDao().getByNormalizedPath(fileA.absolutePath))
             assertEquals(0, database.duplicateGroupDao().countGroups())
-            assertEquals(listOf(fileA.absolutePath), observer.changedPaths)
+            assertTrue(observer.changedPaths.isEmpty())
 
             val savedTrash = trashRepo.getById(entry.id)
             assertNotNull(savedTrash)

@@ -71,6 +71,14 @@ internal fun missingFilePaths(
         .toCollection(linkedSetOf())
 }
 
+internal fun isMissingDetailFile(
+    path: String,
+    deletedPaths: Set<String>,
+    missingPaths: Set<String>
+): Boolean {
+    return !deletedPaths.contains(path) && missingPaths.contains(path)
+}
+
 fun openFile(context: android.content.Context, path: String) {
     val file = File(path)
     if (!file.exists()) {

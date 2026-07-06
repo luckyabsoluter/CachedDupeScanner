@@ -32,6 +32,32 @@ class FileUiUtilsTest {
         assertEquals(emptySet<String>(), missingPaths)
     }
 
+    @Test
+    fun deletedDetailFileIsNotMarkedMissing() {
+        val path = "/deleted/a.jpg"
+
+        val isMissing = isMissingDetailFile(
+            path = path,
+            deletedPaths = setOf(path),
+            missingPaths = setOf(path)
+        )
+
+        assertEquals(false, isMissing)
+    }
+
+    @Test
+    fun unavailableDetailFileIsMarkedMissingWhenNotDeleted() {
+        val path = "/missing/a.jpg"
+
+        val isMissing = isMissingDetailFile(
+            path = path,
+            deletedPaths = emptySet(),
+            missingPaths = setOf(path)
+        )
+
+        assertEquals(true, isMissing)
+    }
+
     private fun file(path: String): FileMetadata {
         return FileMetadata(
             path = path,

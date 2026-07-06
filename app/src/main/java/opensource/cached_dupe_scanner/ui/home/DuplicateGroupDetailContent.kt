@@ -199,7 +199,11 @@ internal fun EagerDuplicateGroupDetailContent(
     displayedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
-        val isMissing = missingPaths.containsKey(file.normalizedPath)
+        val isMissing = isMissingDetailFile(
+            path = file.normalizedPath,
+            deletedPaths = deletedPaths,
+            missingPaths = missingPaths.keys
+        )
         val isSelected = selectedPaths.value.contains(file.normalizedPath)
         Card(
             modifier = Modifier

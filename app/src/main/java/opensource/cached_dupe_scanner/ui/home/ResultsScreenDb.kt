@@ -1372,7 +1372,11 @@ private fun GroupDetailDb(
     sortedMembers.forEach { file ->
         val date = formatDate(file.lastModifiedMillis)
         val isDeleted = deletedPaths.contains(file.normalizedPath)
-        val isMissing = entry.missingPaths.containsKey(file.normalizedPath)
+        val isMissing = isMissingDetailFile(
+            path = file.normalizedPath,
+            deletedPaths = deletedPaths,
+            missingPaths = entry.missingPaths.keys
+        )
         val isSelected = lazySelection.isPathSelected(file.normalizedPath)
         Card(
             modifier = Modifier

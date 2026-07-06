@@ -442,12 +442,15 @@ class ScanHistoryRepository(
         )
     }
 
-    fun deleteByNormalizedPath(normalizedPath: String) {
+    fun deleteByNormalizedPath(
+        normalizedPath: String,
+        notifyCacheMutationObserver: Boolean = true
+    ) {
         runInConsistencyTransaction {
             val before = dao.getByNormalizedPath(normalizedPath)
             dao.deleteByNormalizedPath(normalizedPath)
             refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
-            if (before != null) {
+            if (before != null && notifyCacheMutationObserver) {
                 cacheMutationObserver?.onCachedFilesChanged(listOf(normalizedPath))
             }
         }
