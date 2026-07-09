@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -208,6 +209,7 @@ internal fun EagerDuplicateGroupDetailContent(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag("duplicate-member:${file.normalizedPath}")
                 .combinedClickable(
                     onClick = {
                         if (selectionMode) {

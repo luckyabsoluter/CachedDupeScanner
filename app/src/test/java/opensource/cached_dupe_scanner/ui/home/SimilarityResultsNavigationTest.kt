@@ -178,6 +178,11 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithText("Move").performClick()
 
         composeRule.waitUntil(5_000) { !fixture.firstFile.exists() }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("File details")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
         composeRule.onNodeWithText(fixture.firstFile.name).fetchSemanticsNode()
         assertTrue(
             composeRule.onAllNodesWithText("Missing", substring = true)
@@ -198,6 +203,53 @@ class SimilarityResultsNavigationTest {
         }
         composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").fetchSemanticsNode()
         assertEquals(1, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+    }
+
+    @Test
+    fun videoPreviewToggleKeepsDetailMenuOpen() {
+        val fixture = createSimilarityFixture()
+        val previewEnabled = mutableStateOf(false)
+        val thumbnailCache = mutableStateMapOf<String, ImageBitmap>()
+        val videoPreviewCache = mutableStateMapOf<String, ImageBitmap>()
+
+        composeRule.setContent {
+            SimilarityClusterDetailScreen(
+                repository = fixture.repository,
+                settingsStore = AppSettingsStore(context),
+                keepLoadedThumbnailsInMemory = false,
+                keepLoadedVideoPreviewsInMemory = false,
+                snapVideoPreviewFramesToWidth = false,
+                videoPreviewLineCount = 1,
+                thumbnailSizeScale = 1f,
+                videoPreviewSizeScale = 1f,
+                rememberedPreviewCache = thumbnailCache,
+                rememberedVideoPreviewCache = videoPreviewCache,
+                showFullPaths = false,
+                showVideoPreviews = previewEnabled.value,
+                showVideoPreviewDurations = false,
+                showVideoPreviewResolutions = false,
+                onShowVideoPreviewsChange = { enabled -> previewEnabled.value = enabled },
+                onShowVideoPreviewDurationsChange = {},
+                onShowVideoPreviewResolutionsChange = {},
+                deletedPaths = emptySet(),
+                onDeleteFile = null,
+                settingId = fixture.settingId,
+                clusterId = fixture.clusterId,
+                onBack = {},
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("2 files", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("Menu").performClick()
+        composeRule.onNodeWithText("Video preview").performClick()
+
+        composeRule.runOnIdle { assertTrue(previewEnabled.value) }
+        composeRule.onNodeWithText("Video duration").assertExists()
     }
 
     @Composable

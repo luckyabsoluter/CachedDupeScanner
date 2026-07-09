@@ -418,14 +418,10 @@ private fun runScanForTarget(
                     indeterminate = true
                 )
             }?.let(notificationController::showActive)
-            onScanComplete(result)
-            taskCoordinator.complete(
-                area = TaskArea.Scan,
-                title = "Scan complete",
-                detail = scanTaskCompletedDetail(result),
-                processed = result.files.size,
-                total = result.files.size,
-                indeterminate = false
+            completeScanTaskAfterCallback(
+                result = result,
+                onScanComplete = onScanComplete,
+                taskCoordinator = taskCoordinator
             )?.let(notificationController::showTerminal)
         } finally {
             currentJob.value = null
@@ -679,19 +675,31 @@ private fun runScanForAllTargets(
                     indeterminate = true
                 )
             }?.let(notificationController::showActive)
-            onScanComplete(merged)
-            taskCoordinator.complete(
-                area = TaskArea.Scan,
-                title = "Scan complete",
-                detail = scanTaskCompletedDetail(merged),
-                processed = merged.files.size,
-                total = merged.files.size,
-                indeterminate = false
+            completeScanTaskAfterCallback(
+                result = merged,
+                onScanComplete = onScanComplete,
+                taskCoordinator = taskCoordinator
             )?.let(notificationController::showTerminal)
         } finally {
             currentJob.value = null
         }
     }
+}
+
+internal suspend fun completeScanTaskAfterCallback(
+    result: ScanResult,
+    onScanComplete: suspend (ScanResult) -> Unit,
+    taskCoordinator: TaskCoordinator
+) = run {
+    onScanComplete(result)
+    taskCoordinator.complete(
+        area = TaskArea.Scan,
+        title = "Scan complete",
+        detail = scanTaskCompletedDetail(result),
+        processed = result.files.size,
+        total = result.files.size,
+        indeterminate = false
+    )
 }
 
 private suspend fun persistScanReport(

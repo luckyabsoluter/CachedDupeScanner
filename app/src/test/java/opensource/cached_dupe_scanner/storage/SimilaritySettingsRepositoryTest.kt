@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
@@ -330,6 +333,61 @@ class SimilaritySettingsRepositoryTest {
         )
 
         assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
+    }
+
+    @Test
+    fun concurrentMaintenanceCallsEnterFeatureExtractionSerially() {
+        val first = videoFile("serialized-a.mp4")
+        val second = videoFile("serialized-b.mp4")
+        database.fileCacheDao().upsert(entity(first))
+        database.fileCacheDao().upsert(entity(second))
+        val extractor = BlockingConcurrencySignatureExtractor()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = extractor,
+            durationExtractor = FakeDurationExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        val firstRun = Thread {
+            repository.runSettingMaintenance(
+                settingId = setting.settingId,
+                rebuild = true,
+                shouldContinue = { true },
+                onProgress = {}
+            )
+        }
+        val secondRunStarted = CountDownLatch(1)
+        val secondRun = Thread {
+            secondRunStarted.countDown()
+            repository.runSettingMaintenance(
+                settingId = setting.settingId,
+                rebuild = false,
+                shouldContinue = { true },
+                onProgress = {}
+            )
+        }
+
+        firstRun.start()
+        assertTrue(extractor.firstExtractionEntered.await(5, TimeUnit.SECONDS))
+        secondRun.start()
+        assertTrue(secondRunStarted.await(5, TimeUnit.SECONDS))
+        waitForThreadState(secondRun, Thread.State.BLOCKED)
+        assertEquals(1, extractor.activeExtractions.get())
+
+        extractor.releaseFirstExtraction.countDown()
+        firstRun.join(5_000)
+        secondRun.join(5_000)
+
+        assertFalse(firstRun.isAlive)
+        assertFalse(secondRun.isAlive)
+        assertEquals(1, extractor.maxConcurrentExtractions.get())
     }
 
     @Test
@@ -703,6 +761,14 @@ class SimilaritySettingsRepositoryTest {
             grayscale = false
         )
     }
+
+    private fun waitForThreadState(thread: Thread, expected: Thread.State) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (thread.state != expected && System.nanoTime() < deadline) {
+            Thread.yield()
+        }
+        assertEquals(expected, thread.state)
+    }
 }
 
 private class FakeSignatureExtractor(
@@ -723,5 +789,31 @@ private class FakeDurationExtractor(
 ) : VideoDurationExtractor {
     override fun durationMillis(file: File, shouldContinue: () -> Boolean): Long? {
         return durationsByPath[file.absolutePath]
+    }
+}
+
+private class BlockingConcurrencySignatureExtractor : VideoFrameSignatureExtractor {
+    val firstExtractionEntered = CountDownLatch(1)
+    val releaseFirstExtraction = CountDownLatch(1)
+    val activeExtractions = AtomicInteger(0)
+    val maxConcurrentExtractions = AtomicInteger(0)
+
+    override fun signature(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): String? {
+        val active = activeExtractions.incrementAndGet()
+        maxConcurrentExtractions.updateAndGet { previous -> maxOf(previous, active) }
+        return try {
+            if (firstExtractionEntered.count > 0L) {
+                firstExtractionEntered.countDown()
+                releaseFirstExtraction.await(5, TimeUnit.SECONDS)
+            }
+            "same"
+        } finally {
+            activeExtractions.decrementAndGet()
+        }
     }
 }
