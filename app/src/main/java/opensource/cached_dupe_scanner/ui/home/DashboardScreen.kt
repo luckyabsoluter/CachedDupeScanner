@@ -25,7 +25,7 @@ fun DashboardScreen(
     onOpenFiles: () -> Unit,
     onOpenTrash: () -> Unit,
     onOpenDbManagement: () -> Unit,
-    onOpenSimilarityExperiments: () -> Unit,
+    onOpenSimilaritySettings: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -104,10 +104,10 @@ fun DashboardScreen(
 
         item {
             DashboardCard(
-                title = "Similarity experiments",
-                description = "Build independent duplicate-detection clusters with video similarity methods.",
-                actionLabel = "Open experiments",
-                onAction = onOpenSimilarityExperiments
+                title = "Similarity",
+                description = "Configure similarity matching and browse maintained duplicate-candidate clusters.",
+                actionLabel = "Open similarity",
+                onAction = onOpenSimilaritySettings
             )
         }
 

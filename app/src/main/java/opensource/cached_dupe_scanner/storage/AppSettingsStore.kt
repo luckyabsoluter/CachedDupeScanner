@@ -24,7 +24,12 @@ data class AppSettings(
     val resultsFilterDefinitionJson: String,
     val filesFilterDefinitionJson: String,
     val filesSortKey: String,
-    val filesSortDirection: String
+    val filesSortDirection: String,
+    val similarityClusterSortKey: String = "FileCount",
+    val similarityClusterSortDirection: String = "Desc",
+    val similarityMemberSortKey: String = "Path",
+    val similarityMemberSortDirection: String = "Asc",
+    val similarityDurationMemberSortDirection: String = "Asc"
 )
 
 class AppSettingsStore(context: Context) {
@@ -120,6 +125,26 @@ class AppSettingsStore(context: Context) {
         prefs.edit().putString(KEY_FILES_SORT_DIR, value).apply()
     }
 
+    fun setSimilarityClusterSortKey(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_CLUSTER_SORT_KEY, value).apply()
+    }
+
+    fun setSimilarityClusterSortDirection(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_CLUSTER_SORT_DIR, value).apply()
+    }
+
+    fun setSimilarityMemberSortKey(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_MEMBER_SORT_KEY, value).apply()
+    }
+
+    fun setSimilarityMemberSortDirection(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_MEMBER_SORT_DIR, value).apply()
+    }
+
+    fun setSimilarityDurationMemberSortDirection(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR, value).apply()
+    }
+
     fun exportToJson(): String {
         return toJson(load()).toString()
     }
@@ -191,7 +216,27 @@ class AppSettingsStore(context: Context) {
             filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey)
                 ?: DEFAULT_SETTINGS.filesSortKey,
             filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
-                ?: DEFAULT_SETTINGS.filesSortDirection
+                ?: DEFAULT_SETTINGS.filesSortDirection,
+            similarityClusterSortKey = prefs.getString(
+                KEY_SIMILARITY_CLUSTER_SORT_KEY,
+                DEFAULT_SETTINGS.similarityClusterSortKey
+            ) ?: DEFAULT_SETTINGS.similarityClusterSortKey,
+            similarityClusterSortDirection = prefs.getString(
+                KEY_SIMILARITY_CLUSTER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityClusterSortDirection
+            ) ?: DEFAULT_SETTINGS.similarityClusterSortDirection,
+            similarityMemberSortKey = prefs.getString(
+                KEY_SIMILARITY_MEMBER_SORT_KEY,
+                DEFAULT_SETTINGS.similarityMemberSortKey
+            ) ?: DEFAULT_SETTINGS.similarityMemberSortKey,
+            similarityMemberSortDirection = prefs.getString(
+                KEY_SIMILARITY_MEMBER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityMemberSortDirection
+            ) ?: DEFAULT_SETTINGS.similarityMemberSortDirection,
+            similarityDurationMemberSortDirection = prefs.getString(
+                KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityDurationMemberSortDirection
+            ) ?: DEFAULT_SETTINGS.similarityDurationMemberSortDirection
         )
     }
 
@@ -251,7 +296,27 @@ class AppSettingsStore(context: Context) {
                 DEFAULT_SETTINGS.filesFilterDefinitionJson
             ),
             filesSortKey = obj.optString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey),
-            filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
+            filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection),
+            similarityClusterSortKey = obj.optString(
+                KEY_SIMILARITY_CLUSTER_SORT_KEY,
+                DEFAULT_SETTINGS.similarityClusterSortKey
+            ),
+            similarityClusterSortDirection = obj.optString(
+                KEY_SIMILARITY_CLUSTER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityClusterSortDirection
+            ),
+            similarityMemberSortKey = obj.optString(
+                KEY_SIMILARITY_MEMBER_SORT_KEY,
+                DEFAULT_SETTINGS.similarityMemberSortKey
+            ),
+            similarityMemberSortDirection = obj.optString(
+                KEY_SIMILARITY_MEMBER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityMemberSortDirection
+            ),
+            similarityDurationMemberSortDirection = obj.optString(
+                KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR,
+                DEFAULT_SETTINGS.similarityDurationMemberSortDirection
+            )
         )
     }
 
@@ -276,6 +341,14 @@ class AppSettingsStore(context: Context) {
             .putString(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
+            .putString(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
+            .putString(KEY_SIMILARITY_CLUSTER_SORT_DIR, settings.similarityClusterSortDirection)
+            .putString(KEY_SIMILARITY_MEMBER_SORT_KEY, settings.similarityMemberSortKey)
+            .putString(KEY_SIMILARITY_MEMBER_SORT_DIR, settings.similarityMemberSortDirection)
+            .putString(
+                KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR,
+                settings.similarityDurationMemberSortDirection
+            )
             .apply()
     }
 
@@ -300,6 +373,11 @@ class AppSettingsStore(context: Context) {
             .put(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
             .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
+            .put(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
+            .put(KEY_SIMILARITY_CLUSTER_SORT_DIR, settings.similarityClusterSortDirection)
+            .put(KEY_SIMILARITY_MEMBER_SORT_KEY, settings.similarityMemberSortKey)
+            .put(KEY_SIMILARITY_MEMBER_SORT_DIR, settings.similarityMemberSortDirection)
+            .put(KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR, settings.similarityDurationMemberSortDirection)
     }
 
     private fun sanitizePreviewSizePercent(value: Int): Int {
@@ -330,7 +408,12 @@ class AppSettingsStore(context: Context) {
             resultsFilterDefinitionJson = "",
             filesFilterDefinitionJson = "",
             filesSortKey = "Name",
-            filesSortDirection = "Asc"
+            filesSortDirection = "Asc",
+            similarityClusterSortKey = "FileCount",
+            similarityClusterSortDirection = "Desc",
+            similarityMemberSortKey = "Path",
+            similarityMemberSortDirection = "Asc",
+            similarityDurationMemberSortDirection = "Asc"
         )
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
@@ -352,5 +435,10 @@ class AppSettingsStore(context: Context) {
         private const val KEY_FILES_FILTER_DEFINITION_JSON = "files_filter_definition_json"
         private const val KEY_FILES_SORT_KEY = "files_sort_key"
         private const val KEY_FILES_SORT_DIR = "files_sort_dir"
+        private const val KEY_SIMILARITY_CLUSTER_SORT_KEY = "similarity_cluster_sort_key"
+        private const val KEY_SIMILARITY_CLUSTER_SORT_DIR = "similarity_cluster_sort_dir"
+        private const val KEY_SIMILARITY_MEMBER_SORT_KEY = "similarity_member_sort_key"
+        private const val KEY_SIMILARITY_MEMBER_SORT_DIR = "similarity_member_sort_dir"
+        private const val KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR = "similarity_duration_member_sort_dir"
     }
 }

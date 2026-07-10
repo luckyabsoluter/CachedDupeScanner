@@ -2,21 +2,35 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Entity
 import androidx.room.Index
+import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "similarity_clusters",
-    primaryKeys = ["experimentId", "signature"],
     indices = [
-        Index(value = ["experimentId"], name = "index_similarity_clusters_experimentId"),
+        Index(
+            value = ["settingId", "clusterKey"],
+            unique = true,
+            name = "index_similarity_clusters_settingId_clusterKey"
+        ),
+        Index(value = ["settingId"], name = "index_similarity_clusters_settingId"),
         Index(value = ["fileCount"], name = "index_similarity_clusters_fileCount"),
-        Index(value = ["totalBytes"], name = "index_similarity_clusters_totalBytes")
+        Index(value = ["totalBytes"], name = "index_similarity_clusters_totalBytes"),
+        Index(
+            value = ["settingId", "fileCount", "totalBytes", "clusterKey"],
+            name = "index_similarity_clusters_setting_file_count_sort"
+        ),
+        Index(
+            value = ["settingId", "totalBytes", "fileCount", "clusterKey"],
+            name = "index_similarity_clusters_setting_total_size_sort"
+        )
     ]
 )
 data class SimilarityClusterEntity(
-    val experimentId: String,
-    val signature: String,
+    @PrimaryKey(autoGenerate = true)
+    val clusterId: Long = 0L,
+    val settingId: Long,
+    val clusterKey: String,
     val fileCount: Int,
     val totalBytes: Long,
-    val memberNormalizedPathsText: String,
     val updatedAtMillis: Long
 )

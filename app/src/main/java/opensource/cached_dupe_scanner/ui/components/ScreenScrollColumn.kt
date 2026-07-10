@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -19,10 +20,10 @@ fun ScreenScrollColumn(
     modifier: Modifier = Modifier,
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
     contentPadding: PaddingValues = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp),
+    listState: LazyListState = rememberLazyListState(),
+    loadIndicatorText: String? = null,
     content: LazyListScope.() -> Unit
 ) {
-    val listState = rememberLazyListState()
-
     Box(modifier = modifier) {
         LazyColumn(
             state = listState,
@@ -41,5 +42,7 @@ fun ScreenScrollColumn(
                 .fillMaxHeight()
                 .padding(end = 4.dp)
         )
+
+        TopRightLoadIndicator(text = loadIndicatorText)
     }
 }

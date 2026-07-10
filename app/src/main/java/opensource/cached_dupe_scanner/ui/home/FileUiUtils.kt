@@ -5,6 +5,7 @@ import android.net.Uri
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import opensource.cached_dupe_scanner.core.FileMetadata
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -57,6 +58,25 @@ fun isMediaFile(path: String): Boolean {
 fun isVideoFile(path: String): Boolean {
     val extension = File(path).extension.lowercase(Locale.getDefault())
     return extension in VIDEO_EXTENSIONS
+}
+
+internal fun missingFilePaths(
+    files: Collection<FileMetadata>,
+    pathExists: (String) -> Boolean = { path -> File(path).exists() }
+): Set<String> {
+    return files.asSequence()
+        .map { file -> file.normalizedPath }
+        .distinct()
+        .filterNot(pathExists)
+        .toCollection(linkedSetOf())
+}
+
+internal fun isMissingDetailFile(
+    path: String,
+    deletedPaths: Set<String>,
+    missingPaths: Set<String>
+): Boolean {
+    return !deletedPaths.contains(path) && missingPaths.contains(path)
 }
 
 fun openFile(context: android.content.Context, path: String) {

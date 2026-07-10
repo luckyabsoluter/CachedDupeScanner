@@ -84,6 +84,7 @@ fun FilesScreenDb(
     rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
     clearVersion: Int,
     refreshVersion: Int,
+    onFilesChanged: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -542,6 +543,7 @@ fun FilesScreenDb(
                         currentDeletedPaths = deletedPaths.value,
                         deletedPath = file.normalizedPath
                     )
+                    onFilesChanged()
                 }
             },
             onDismiss = { selectedFile.value = null }

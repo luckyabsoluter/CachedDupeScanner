@@ -1,104 +1,62 @@
 package opensource.cached_dupe_scanner.ui
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import androidx.test.core.app.ApplicationProvider
+import opensource.cached_dupe_scanner.MainActivity
+import opensource.cached_dupe_scanner.notifications.TaskForegroundService
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ManifestConfigChangesTest {
+    private val context = ApplicationProvider.getApplicationContext<Context>()
+    private val packageManager = context.packageManager
+
     @Test
     fun mainActivityHandlesUiAndScreenSizeChanges() {
-        val configList = mainActivityConfigChanges()
+        val activityInfo = packageManager.getActivityInfo(
+            ComponentName(context, MainActivity::class.java),
+            PackageManager.GET_META_DATA
+        )
+        val expectedChanges = ActivityInfo.CONFIG_UI_MODE or
+            ActivityInfo.CONFIG_ORIENTATION or
+            ActivityInfo.CONFIG_SCREEN_SIZE or
+            ActivityInfo.CONFIG_SMALLEST_SCREEN_SIZE or
+            ActivityInfo.CONFIG_SCREEN_LAYOUT or
+            ActivityInfo.CONFIG_KEYBOARD_HIDDEN
 
-        listOf(
-            "uiMode",
-            "orientation",
-            "screenSize",
-            "smallestScreenSize",
-            "screenLayout",
-            "keyboardHidden"
-        ).forEach { expectedChange ->
-            assertTrue(
-                "MainActivity should handle $expectedChange config changes",
-                configList.contains(expectedChange)
-            )
-        }
+        assertEquals(expectedChanges, activityInfo.configChanges and expectedChanges)
     }
 
     @Test
-    fun taskForegroundServiceIsDeclaredForBackgroundTasks() {
-        val document = parseManifest()
-        val manifest = document.documentElement
-        val permissions = (0 until manifest.getElementsByTagName("uses-permission").length)
-            .map { manifest.getElementsByTagName("uses-permission").item(it) }
-            .mapNotNull { it as? org.w3c.dom.Element }
-            .map { it.getAttributeNS(ANDROID_NS, "name") }
-
-        assertTrue(
-            "Task foreground service should have the base foreground service permission",
-            permissions.contains("android.permission.FOREGROUND_SERVICE")
+    fun taskForegroundServiceHasRuntimeManifestContract() {
+        val packageInfo = packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.GET_PERMISSIONS
         )
-        assertTrue(
-            "Task foreground service should declare the dataSync foreground service permission",
-            permissions.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
+        val requestedPermissions = packageInfo.requestedPermissions.orEmpty().toSet()
+        assertTrue(requestedPermissions.contains(Manifest.permission.FOREGROUND_SERVICE))
+        assertTrue(requestedPermissions.contains(Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC))
+
+        val serviceInfo = packageManager.getServiceInfo(
+            ComponentName(context, TaskForegroundService::class.java),
+            PackageManager.GET_META_DATA
         )
-
-        val services = document.getElementsByTagName("service")
-        val taskService = (0 until services.length)
-            .map { services.item(it) }
-            .mapNotNull { it as? org.w3c.dom.Element }
-            .firstOrNull {
-                val name = it.getAttributeNS(ANDROID_NS, "name")
-                name == ".notifications.TaskForegroundService" || name.endsWith(".notifications.TaskForegroundService")
-            }
-
-        assertTrue("TaskForegroundService should be declared", taskService != null)
-        assertEquals("false", taskService?.getAttributeNS(ANDROID_NS, "exported"))
-        assertEquals("dataSync", taskService?.getAttributeNS(ANDROID_NS, "foregroundServiceType"))
-    }
-
-    private fun mainActivityConfigChanges(): List<String> {
-        val document = parseManifest()
-        val activities = document.getElementsByTagName("activity")
-
-        for (index in 0 until activities.length) {
-            val node = activities.item(index)
-            val element = node as? org.w3c.dom.Element ?: continue
-            val name = element.getAttributeNS(
-                ANDROID_NS,
-                "name"
-            )
-            if (name == ".MainActivity" || name.endsWith(".MainActivity")) {
-                return element.getAttributeNS(
-                    ANDROID_NS,
-                    "configChanges"
-                )
-                    .split("|")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            }
-        }
-
-        error("MainActivity should be declared in the manifest")
-    }
-
-    private fun parseManifest(): org.w3c.dom.Document {
-        val projectDir = File(requireNotNull(System.getProperty("user.dir")))
-        val manifestFile = sequenceOf(
-            File(projectDir, "app/src/main/AndroidManifest.xml"),
-            File(projectDir.parentFile ?: projectDir, "app/src/main/AndroidManifest.xml")
-        ).firstOrNull { it.exists() }
-        assertTrue("AndroidManifest.xml should exist", manifestFile != null)
-
-        return DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = true
-        }
-            .newDocumentBuilder()
-            .parse(manifestFile!!)
-    }
-
-    private companion object {
-        private const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
+        assertFalse(serviceInfo.exported)
+        assertEquals(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            serviceInfo.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
     }
 }

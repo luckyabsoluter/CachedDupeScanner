@@ -8,25 +8,68 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity experiments dashboard and saved-run browsing for video/image duplicate candidates, including exact-thumbnail clustering, duration-only video clustering, and duration-neighbor video lists.
-- Similarity experiment setup controls for candidate size filters, frame timestamps, resize targets, optional quantization, grayscale mode, menu-based duration tolerance units, and rebuilding duration-neighbor results from stored video lengths.
-- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, cluster list sort options, lazy result browsing, and task progress notifications.
-- Similarity cluster detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
-- Video timeline preview menus now provide optional duration and resolution labels in Files and similarity cluster details without forcing timeline frames on.
+- Similarity management for named video/image duplicate candidates, including exact-thumbnail grouping, duration-only video grouping, duration-neighbor video lists, and update, rebuild, and clear controls.
+- Similarity now provides separate flows for type selection, custom creation controls, management, and similarity group member browsing.
+- Similarity identity now treats different method parameters as separate entries, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
+- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, group list sort options, lazy result browsing, and task progress notifications.
+- Similarity group detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
+- Video timeline preview menus now provide optional duration and resolution labels in Files and similarity group details without forcing timeline frames on.
 - Duplicate group detail views now support long-press member selection and selected-file deletion.
 
 ### Changed
 
+- Source and manifest text assertions are replaced by runtime tests for merged package metadata, app-owned task survival, foreground-service routing, scan completion ordering, serialized similarity maintenance, and Compose detail interactions.
+- Similarity deletion regression coverage now exercises group navigation, detail deletion through Trash, and return-to-list snapshot preservation as one Compose path.
+- Duplicate and similarity detail views now check loaded members against the filesystem and mark missing files explicitly.
+- Test coverage now removes placeholder, timing-threshold, and prose-snippet checks in favor of settings and Trash cache contract assertions.
+- Similarity detail now provides explicit Update and Rebuild actions and explains how they relate to scan-cache generation.
+- Similarity management now separates creation, maintenance, entry management, and group browsing into clearer flows with readable summaries and confirmation dialogs for clearing generated similarity data.
+- Similarity screens now restore the previous template-style flow, detailed group and duration-neighbor explanations, exact-thumbnail reduction previews, and richer result card summaries while keeping maintained similarity terminology.
+- Similarity group detail member cards now restore the previous full-width media card layout with exact byte counts, selection styling, and separated video metadata/timeline preview rows.
+- Similarity group browsing now restores member previews, thumbnail-backed group cards, paged group-detail members, and file detail actions.
+- Similarity management pages now keep clear/delete controls separate from the group browsing screen while scan completion generates similarity results.
+- Similarity keeps scan-completion generation while exposing manual Update/Rebuild controls.
+- Similarity group detail member browsing now shares the result member sort control and automatically loads additional members near the end of the list.
+- Similarity group lists now restore group sort controls for file count and total size order.
+- Similarity group detail screens in maintained entries now restore long-press member selection, selected-file deletion, and video preview menu options.
+- Similarity signature explanations now use shared core parsing before the UI formats readable group summaries.
+- Similarity group browsing now shows setting rules and parameters in the group header while group cards and details focus on result-specific signatures and spans.
+- Duration-neighbor similarity group details now restore duration-order controls and display known member durations.
 - Bulk delete execution now shows shared task progress and notifications while deleting files.
-- Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity cluster details.
-- Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact clusters.
+- Similarity data now uses sidecar storage joined to the active file cache, so deleted files drop out of similarity results while restored files can reappear after maintenance.
+- Video preview settings now describe that timeline preview memory, size, lines, and width snapping apply to both files and similarity group details.
+- Duplicate group detail screens now share one member sort control across legacy results, DB results, and similarity exact groups.
 - File detail dialogs now show the cached file hash when available and an explicit no-hash state otherwise.
 
 ### Fixed
 
+- Scan completion now reports automatic similarity generation as part of the scan task instead of staying on the cache-saving status without progress.
+- Scan command now uses the shared cache database builder so newly added Room migrations are registered consistently.
+- Scan completion now waits for cache persistence and similarity refresh before marking scan tasks complete.
+- Scan history recording now uses scanner cache snapshots so duplicate groups and similarity invalidation still see pre-scan cache state.
+- Similarity maintenance now reports cancellation before rebuilding groups and serializes automatic and manual generation runs.
+- Similarity group detail member sorting now applies at the paged query source instead of sorting only the already loaded subset.
+- Similarity result routes now show retryable load errors instead of getting stuck on loading or missing-result states.
+- Similarity result lists and result details now use the shared lazy load indicator container.
+- Similarity result details keep deleted members across re-entry with only the deleted-background highlight, and parent group cards highlight when any stored member was deleted.
+- Trash file delete actions keep generated similarity groups in place without cache-mutation cleanup until an explicit scan, update, or rebuild refreshes them.
+- Restoring files from Trash now clears their session deleted state before refreshing similarity groups.
+- Settings and cancellation tests now isolate persisted preferences and avoid sleep-loop task bodies.
+- Similarity group pages now remove or refresh stored group rows when cached files are deleted or changed.
+- Similarity group sort changes now rerun after any in-flight page load instead of leaving stale ordering.
+- Similarity group browsing now opens from stored group pages instead of blocking initial load on active group aggregation.
+- Similarity group lists now preserve scroll position when returning from a group detail screen.
+- Similarity Update/Rebuild actions now publish shared task progress again while they process scan-cache candidates.
+- Newly created similarity entries now start enabled, including when creation reuses an existing disabled identity.
+- Similarity group and member sort selections now persist across screen recreation and app restarts.
+- Enabling paused similarity now stays lightweight; paused entries catch up during the next scan-cache generation.
+- Similarity group detail top-right video preview, duration, and resolution menu selections now stay enabled when returning to the screen.
+- Similarity no longer auto-creates default rows when opened, and individual entries can now be deleted with their generated data.
 - Top-right checkbox menu items now stay open after toggling preview and path display options.
-- Similarity cluster member loading now stays under SQLite binding limits for large clusters, preventing member previews and detail screens from falling back to unavailable.
-- Similarity cluster detail long-press select-all now keeps lazy not-loaded member handling while paging members.
+- Similarity parameters are now normalized before identity/storage matching, so equivalent custom values reuse the same rows.
+- Duration-neighbor similarity generation now builds connected neighbor groups with stable normalized range keys.
+- Similarity group member loading now stays under SQLite binding limits for large groups, preventing member previews and detail screens from falling back to unavailable.
+- Similarity group detail long-press select-all now keeps lazy not-loaded member handling while paging members.
 - Lazy result and similarity detail selection now share one selection state contract, while eager-only detail content is explicitly separated from paged detail screens.
 - Simple and result-detail screens now use result-style lazy side scrollbars instead of standalone scroll-state scrollbars.
 - Background DB, trash, bulk-delete, and similarity work now use the app-owned task runtime and foreground service, so UI lifecycle changes no longer cancel tracked tasks or reset active task monitoring.
@@ -43,8 +86,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
-- Similarity cluster detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
-- Similarity cluster detail screens now load members page-by-page instead of materializing entire large clusters at once.
+- Similarity group page queries now use setting-aware sort indexes for file-count and total-size ordering.
+- Similarity group browsing now loads stored group rows by page and uses aggregate summaries instead of materializing every group.
+- Similarity group detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
+- Similarity group detail screens now load members page-by-page instead of materializing entire large groups at once.
 - Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
 
 ## [1.4.0] - 2026-04-30

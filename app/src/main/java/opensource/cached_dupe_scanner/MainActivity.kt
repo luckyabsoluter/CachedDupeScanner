@@ -36,23 +36,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
-import opensource.cached_dupe_scanner.cache.CacheMigrations
+import opensource.cached_dupe_scanner.cache.CacheStore
+import opensource.cached_dupe_scanner.cache.buildCacheDatabase
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
 import opensource.cached_dupe_scanner.core.SortDirection
+import opensource.cached_dupe_scanner.engine.IncrementalScanner
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.PagedFileRepository
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
 import opensource.cached_dupe_scanner.storage.ScanHistoryRepository
 import opensource.cached_dupe_scanner.storage.ScanReportRepository
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentRepository
+import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
@@ -70,9 +71,16 @@ import opensource.cached_dupe_scanner.ui.home.ReportsScreen
 import opensource.cached_dupe_scanner.ui.home.ResultsScreenDb
 import opensource.cached_dupe_scanner.ui.home.ScanCommandScreen
 import opensource.cached_dupe_scanner.ui.home.SettingsScreen
-import opensource.cached_dupe_scanner.ui.home.SimilarityExperimentsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityClusterDetailScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityDurationSettingScreen
+import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
+import opensource.cached_dupe_scanner.ui.home.similarity.runScanIntegratedSimilarityGeneration
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
@@ -91,8 +99,12 @@ class MainActivity : ComponentActivity() {
                 val targetsVersion = remember { mutableStateOf(0) }
                 val reportsRefreshVersion = remember { mutableStateOf(0) }
                 val resultsRefreshVersion = remember { mutableStateOf(0) }
+                val similarityRefreshVersion = remember { mutableStateOf(0) }
                 val settingsVersion = remember { mutableStateOf(0) }
                 val selectedResultsGroupIndex = rememberSaveable { mutableStateOf<Int?>(null) }
+                val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }
+                val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
+                val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
                 val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
@@ -123,33 +135,23 @@ class MainActivity : ComponentActivity() {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                val database = remember {
-                    Room.databaseBuilder(context, CacheDatabase::class.java, "scan-cache.db")
-                        .addMigrations(
-                            CacheMigrations.MIGRATION_1_3,
-                            CacheMigrations.MIGRATION_2_3,
-                            CacheMigrations.MIGRATION_3_4,
-                            CacheMigrations.MIGRATION_4_5,
-                            CacheMigrations.MIGRATION_5_6,
-                            CacheMigrations.MIGRATION_6_7,
-                            CacheMigrations.MIGRATION_7_8,
-                            CacheMigrations.MIGRATION_8_9,
-                            CacheMigrations.MIGRATION_9_10,
-                            CacheMigrations.MIGRATION_10_11,
-                            CacheMigrations.MIGRATION_11_12,
-                            CacheMigrations.MIGRATION_12_13,
-                            CacheMigrations.MIGRATION_13_14,
-                            CacheMigrations.MIGRATION_14_15,
-                            CacheMigrations.MIGRATION_15_16
-                        )
-                        .build()
+                val database = remember { buildCacheDatabase(context) }
+                val scanCacheStore = remember { CacheStore(database.fileCacheDao()) }
+                val scanner = remember { IncrementalScanner(scanCacheStore) }
+                val similarityRepo = remember {
+                    SimilaritySettingsRepository(
+                        database = database,
+                        fileDao = database.fileCacheDao(),
+                        similarityDao = database.similaritySettingsDao()
+                    )
                 }
                 val historyRepo = remember {
                     ScanHistoryRepository(
                         dao = database.fileCacheDao(),
                         settingsStore = settingsStore,
                         groupDao = database.duplicateGroupDao(),
-                        database = database
+                        database = database,
+                        cacheMutationObserver = similarityRepo
                     )
                 }
                 val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
@@ -157,13 +159,6 @@ class MainActivity : ComponentActivity() {
                 val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
                 val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
                 val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
-                val similarityRepo = remember {
-                    SimilarityExperimentRepository(
-                        database = database,
-                        fileDao = database.fileCacheDao(),
-                        experimentDao = database.similarityExperimentDao()
-                    )
-                }
 
                 LaunchedEffect(Unit) {
                     // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.
@@ -181,22 +176,47 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun handleScanComplete(scan: ScanResult) {
+                suspend fun runScanSimilarityIfNeeded() {
+                    runScanIntegratedSimilarityGeneration(
+                        repository = similarityRepo,
+                        taskCoordinator = taskCoordinator,
+                        notificationController = notificationController,
+                        shouldContinue = { taskCoordinator.isAreaBusy(TaskArea.Scan) },
+                        onFinished = {}
+                    )
+                }
+
+                suspend fun handleScanComplete(scan: ScanResult) {
                     Log.d("MainActivity", "Scan complete callback received")
+                    val persisted = runCatching {
+                        withContext(Dispatchers.IO) {
+                            Log.d("MainActivity", "Persisting scan to DB")
+                            historyRepo.recordScan(scan)
+                        }
+                    }.onFailure { error ->
+                        Log.e("MainActivity", "Failed to persist scan results", error)
+                    }
+                    if (persisted.isSuccess) {
+                        runScanSimilarityIfNeeded()
+                    }
                     state.value = ScanUiState.Success(scan)
                     deletedPaths.value = emptySet()
                     filesRefreshVersion.value += 1
                     selectedResultsGroupIndex.value = null
+                    resultsRefreshVersion.value += 1
+                    similarityRefreshVersion.value += 1
+                }
+
+                fun refreshSimilarityFromCache(onComplete: (() -> Unit)? = null) {
                     scope.launch {
-                        runCatching {
-                            withContext(Dispatchers.IO) {
-                                Log.d("MainActivity", "Persisting scan to DB")
-                                historyRepo.recordScan(scan)
-                            }
-                        }.onFailure { error ->
-                            Log.e("MainActivity", "Failed to persist scan results", error)
+                        withContext(Dispatchers.IO) {
+                            similarityRepo.generateEnabledResults(
+                                shouldContinue = { true },
+                                onProgress = {}
+                            )
                         }
-                        resultsRefreshVersion.value += 1
+                        similarityRefreshVersion.value += 1
+                        onComplete?.invoke()
                     }
                 }
 
@@ -268,8 +288,8 @@ class MainActivity : ComponentActivity() {
                                 onOpenFiles = { navigateTo(backStack, screenCache, Screen.Files) },
                                 onOpenTrash = { navigateTo(backStack, screenCache, Screen.Trash) },
                                 onOpenDbManagement = { navigateTo(backStack, screenCache, Screen.DbManagement) },
-                                onOpenSimilarityExperiments = {
-                                    navigateTo(backStack, screenCache, Screen.SimilarityExperiments)
+                                onOpenSimilaritySettings = {
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettings)
                                 },
                                 onOpenSettings = { navigateTo(backStack, screenCache, Screen.Settings) },
                                 onOpenReports = { navigateTo(backStack, screenCache, Screen.Reports) },
@@ -302,6 +322,10 @@ class MainActivity : ComponentActivity() {
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 clearVersion = filesClearVersion.value,
                                 refreshVersion = filesRefreshVersion.value,
+                                onFilesChanged = {
+                                    resultsRefreshVersion.value += 1
+                                    refreshSimilarityFromCache()
+                                },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -314,8 +338,10 @@ class MainActivity : ComponentActivity() {
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onMaintenanceApplied = {
-                                    filesRefreshVersion.value += 1
-                                    resultsRefreshVersion.value += 1
+                                    refreshSimilarityFromCache {
+                                        filesRefreshVersion.value += 1
+                                        resultsRefreshVersion.value += 1
+                                    }
                                 },
                                 onCacheCleared = {
                                     state.value = ScanUiState.Idle
@@ -324,6 +350,7 @@ class MainActivity : ComponentActivity() {
                                     filesClearVersion.value += 1
                                     filesRefreshVersion.value += 1
                                     resultsRefreshVersion.value += 1
+                                    refreshSimilarityFromCache()
                                     selectedResultsGroupIndex.value = null
                                 },
                                 onBack = { pop(backStack) },
@@ -342,6 +369,7 @@ class MainActivity : ComponentActivity() {
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
                                 onBack = { pop(backStack) },
+                                scanner = scanner,
                                 modifier = screenModifier
                             )
 
@@ -398,11 +426,111 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
 
-                            Screen.SimilarityExperiments -> SimilarityExperimentsScreen(
+                            Screen.SimilaritySettings -> SimilaritySettingsScreen(
+                                repository = similarityRepo,
+                                refreshVersion = similarityRefreshVersion.value,
+                                onBack = { pop(backStack) },
+                                onCreateSetting = {
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingCreate)
+                                },
+                                onOpenSetting = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilaritySettingCreate -> SimilaritySettingCreateScreen(
+                                onBack = { pop(backStack) },
+                                onOpenExactThumbnail = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityExactThumbnailSetting)
+                                },
+                                onOpenDurationTolerance = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityDurationToleranceSetting)
+                                },
+                                onOpenDurationNeighbor = {
+                                    navigateTo(backStack, screenCache, Screen.SimilarityDurationNeighborSetting)
+                                },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityExactThumbnailSetting -> SimilarityExactThumbnailSettingScreen(
+                                repository = similarityRepo,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityDurationToleranceSetting -> SimilarityDurationSettingScreen(
+                                repository = similarityRepo,
+                                neighborList = false,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            Screen.SimilarityDurationNeighborSetting -> SimilarityDurationSettingScreen(
+                                repository = similarityRepo,
+                                neighborList = true,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onCreated = { settingId ->
+                                    navigateTo(backStack, screenCache, Screen.SimilaritySettingDetail(settingId))
+                                },
+                                onBack = { pop(backStack) },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilaritySettingDetail -> SimilaritySettingDetailScreen(
                                 repository = similarityRepo,
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                settingId = screen.settingId,
+                                refreshVersion = similarityRefreshVersion.value,
+                                onChanged = { similarityRefreshVersion.value += 1 },
+                                onBack = { pop(backStack) },
+                                onOpenGroups = { settingId ->
+                                    navigateTo(
+                                        backStack,
+                                        screenCache,
+                                        Screen.SimilaritySettingGroups(settingId)
+                                    )
+                                },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilaritySettingGroups -> SimilaritySettingGroupsScreen(
+                                repository = similarityRepo,
+                                settingsStore = settingsStore,
+                                keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                rememberedPreviewCache = rememberedThumbnailCache,
+                                showFullPaths = settingsSnapshot.showFullPaths,
+                                deletedPaths = deletedPaths.value,
+                                settingId = screen.settingId,
+                                refreshVersion = similarityRefreshVersion.value,
+                                onBack = { pop(backStack) },
+                                onOpenCluster = { settingId, clusterId ->
+                                    navigateTo(
+                                        backStack,
+                                        screenCache,
+                                        Screen.SimilarityClusterDetail(
+                                            settingId = settingId,
+                                            clusterId = clusterId
+                                        )
+                                    )
+                                },
+                                modifier = screenModifier
+                            )
+
+                            is Screen.SimilarityClusterDetail -> SimilarityClusterDetailScreen(
+                                repository = similarityRepo,
+                                settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
                                 keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
                                 snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,
@@ -411,11 +539,21 @@ class MainActivity : ComponentActivity() {
                                 videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 rememberedVideoPreviewCache = rememberedVideoPreviewCache,
-                                deletedPaths = deletedPaths.value,
                                 showFullPaths = settingsSnapshot.showFullPaths,
+                                showVideoPreviews = similarityShowVideoPreviews.value,
+                                showVideoPreviewDurations = similarityShowVideoPreviewDurations.value,
+                                showVideoPreviewResolutions = similarityShowVideoPreviewResolutions.value,
+                                onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it },
+                                onShowVideoPreviewDurationsChange = {
+                                    similarityShowVideoPreviewDurations.value = it
+                                },
+                                onShowVideoPreviewResolutionsChange = {
+                                    similarityShowVideoPreviewResolutions.value = it
+                                },
+                                deletedPaths = deletedPaths.value,
                                 onDeleteFile = { file ->
                                     if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
-                                        return@SimilarityExperimentsScreen false
+                                        return@SimilarityClusterDetailScreen false
                                     }
                                     val ok = withContext(Dispatchers.IO) {
                                         trashController.moveToTrash(file.normalizedPath).success
@@ -425,6 +563,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
+                                settingId = screen.settingId,
+                                clusterId = screen.clusterId,
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -459,6 +599,15 @@ class MainActivity : ComponentActivity() {
                                 appScope = AppWorkScopes.taskScope,
                                 taskCoordinator = taskCoordinator,
                                 notificationController = notificationController,
+                                onTrashChanged = { restoredOriginalPath ->
+                                    if (restoredOriginalPath != null) {
+                                        deletedPaths.value = deletedPaths.value - restoredOriginalPath
+                                    }
+                                    refreshSimilarityFromCache {
+                                        filesRefreshVersion.value += 1
+                                        resultsRefreshVersion.value += 1
+                                    }
+                                },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
                             )
@@ -553,7 +702,7 @@ private fun screenForTaskArea(area: TaskArea): Screen {
         TaskArea.Scan -> Screen.ScanCommand
         TaskArea.Db -> Screen.DbManagement
         TaskArea.Trash -> Screen.Trash
-        TaskArea.Similarity -> Screen.SimilarityExperiments
+        TaskArea.Similarity -> Screen.SimilaritySettings
     }
 }
 
@@ -587,7 +736,14 @@ internal sealed class Screen {
     data object ScanCommand : Screen()
     data object Results : Screen()
     data object Settings : Screen()
-    data object SimilarityExperiments : Screen()
+    data object SimilaritySettings : Screen()
+    data object SimilaritySettingCreate : Screen()
+    data object SimilarityExactThumbnailSetting : Screen()
+    data object SimilarityDurationToleranceSetting : Screen()
+    data object SimilarityDurationNeighborSetting : Screen()
+    data class SimilaritySettingDetail(val settingId: Long) : Screen()
+    data class SimilaritySettingGroups(val settingId: Long) : Screen()
+    data class SimilarityClusterDetail(val settingId: Long, val clusterId: Long) : Screen()
     data object About : Screen()
     data object Reports : Screen()
     data class ReportDetail(val id: String) : Screen()
@@ -603,7 +759,14 @@ internal sealed class Screen {
             ScanCommand -> "scan-command"
             Results -> "results"
             Settings -> "settings"
-            SimilarityExperiments -> "similarity-experiments"
+            SimilaritySettings -> "similarity-settings"
+            SimilaritySettingCreate -> "similarity-setting-create"
+            SimilarityExactThumbnailSetting -> "similarity-setting-exact-thumbnail"
+            SimilarityDurationToleranceSetting -> "similarity-setting-duration-tolerance"
+            SimilarityDurationNeighborSetting -> "similarity-setting-duration-neighbor"
+            is SimilaritySettingDetail -> "similarity-setting-detail:$settingId"
+            is SimilaritySettingGroups -> "similarity-setting-groups:$settingId"
+            is SimilarityClusterDetail -> "similarity-cluster-detail:$settingId:$clusterId"
             About -> "about"
             Reports -> "reports"
             is ReportDetail -> "report-detail:$id"
@@ -622,7 +785,32 @@ internal sealed class Screen {
                 token == "scan-command" -> ScanCommand
                 token == "results" -> Results
                 token == "settings" -> Settings
-                token == "similarity-experiments" -> SimilarityExperiments
+                token == "similarity-settings" -> SimilaritySettings
+                token == "similarity-maintenance" -> SimilaritySettings
+                token == "similarity-setting-create" -> SimilaritySettingCreate
+                token == "similarity-setting-exact-thumbnail" -> SimilarityExactThumbnailSetting
+                token == "similarity-setting-duration-tolerance" -> SimilarityDurationToleranceSetting
+                token == "similarity-setting-duration-neighbor" -> SimilarityDurationNeighborSetting
+                token.startsWith("similarity-setting-detail:") -> {
+                    token.substringAfter("similarity-setting-detail:")
+                        .toLongOrNull()
+                        ?.let { settingId -> SimilaritySettingDetail(settingId) }
+                }
+                token.startsWith("similarity-setting-groups:") -> {
+                    token.substringAfter("similarity-setting-groups:")
+                        .toLongOrNull()
+                        ?.let { settingId -> SimilaritySettingGroups(settingId) }
+                }
+                token.startsWith("similarity-cluster-detail:") -> {
+                    val ids = token.substringAfter("similarity-cluster-detail:").split(':')
+                    val settingId = ids.getOrNull(0)?.toLongOrNull()
+                    val clusterId = ids.getOrNull(1)?.toLongOrNull()
+                    if (settingId != null && clusterId != null) {
+                        SimilarityClusterDetail(settingId = settingId, clusterId = clusterId)
+                    } else {
+                        null
+                    }
+                }
                 token == "about" -> About
                 token == "reports" -> Reports
                 token.startsWith("report-detail:") -> ReportDetail(token.removePrefix("report-detail:"))

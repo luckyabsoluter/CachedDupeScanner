@@ -10,8 +10,8 @@ import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentProgress
-import opensource.cached_dupe_scanner.storage.SimilarityExperimentSummary
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
+import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.TrashProgress
 import opensource.cached_dupe_scanner.storage.TrashRunSummary
 
@@ -45,6 +45,12 @@ fun scanTaskCancelledDetail(processed: Int?, total: Int?): String {
     val processedText = processed ?: 0
     val totalText = total?.toString() ?: "?"
     return "Cancelled after $processedText/$totalText."
+}
+
+fun scanSimilarityTaskDetail(progress: SimilarityMaintenanceProgress): String {
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    val setting = progress.settingName?.let { " • $it" } ?: ""
+    return "Generating similarity • ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}$setting"
 }
 
 fun dbMaintenanceTaskTitle(): String = "DB maintenance"
@@ -118,18 +124,21 @@ fun bulkDeleteCompletedDetail(successCount: Int, failedCount: Int): String {
     return "Deleted $successCount • Failed $failedCount"
 }
 
-fun similarityExperimentTaskTitle(): String = "Running similarity experiment"
-
-fun similarityExperimentTaskDetail(progress: SimilarityExperimentProgress): String {
-    val totalText = if (progress.total > 0) progress.total.toString() else "?"
-    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}"
+fun similarityGenerationTaskTitle(rebuild: Boolean): String {
+    return if (rebuild) "Rebuilding similarity" else "Updating similarity"
 }
 
-fun similarityExperimentCompletedDetail(summary: SimilarityExperimentSummary): String {
+fun similarityGenerationTaskDetail(progress: SimilarityMaintenanceProgress): String {
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    val setting = progress.settingName?.let { " • $it" } ?: ""
+    return "Processed ${progress.processed}/$totalText • Cluster candidates ${progress.clusterCandidates} • Skipped ${progress.skipped}$setting"
+}
+
+fun similarityGenerationCompletedDetail(summary: SimilarityMaintenanceSummary): String {
     return "Clusters ${summary.clusterCount} • Files ${summary.duplicateFileCount} • Skipped ${summary.skippedCount}"
 }
 
-fun similarityExperimentCancelledDetail(summary: SimilarityExperimentSummary): String {
+fun similarityGenerationCancelledDetail(summary: SimilarityMaintenanceSummary): String {
     val totalText = if (summary.candidateCount > 0) summary.candidateCount.toString() else "?"
     return "Cancelled after ${summary.processedCount}/$totalText candidates."
 }

@@ -9,7 +9,8 @@ import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,8 +78,8 @@ class ScanCancelEndToEndTest {
     @Test
     fun cancellingScanClearsRunningUiImmediately() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val enteredHash = AtomicBoolean(false)
-        val releaseHash = AtomicBoolean(false)
+        val enteredHash = CountDownLatch(1)
+        val releaseHash = CountDownLatch(1)
         val scanner = IncrementalScanner(
             cacheStore = CacheStore(scanDatabase.fileCacheDao()),
             fileHasher = BlockingHasher(enteredHash, releaseHash),
@@ -108,7 +109,7 @@ class ScanCancelEndToEndTest {
         try {
             composeRule.onNodeWithText("Scan target").performClick()
 
-            composeRule.waitUntil(5_000) { enteredHash.get() }
+            assertTrue(enteredHash.await(5, TimeUnit.SECONDS))
             composeRule.onNodeWithText("Stop scan").fetchSemanticsNode()
             composeRule.runOnIdle {
                 assertTrue(taskCoordinator.requestCancel(opensource.cached_dupe_scanner.tasks.TaskArea.Scan))
@@ -119,23 +120,17 @@ class ScanCancelEndToEndTest {
             }
             assertTrue(!taskCoordinator.isAreaBusy(opensource.cached_dupe_scanner.tasks.TaskArea.Scan))
         } finally {
-            releaseHash.set(true)
+            releaseHash.countDown()
         }
     }
 
     private class BlockingHasher(
-        private val enteredHash: AtomicBoolean,
-        private val releaseHash: AtomicBoolean
+        private val enteredHash: CountDownLatch,
+        private val releaseHash: CountDownLatch
     ) : FileHasher {
         override fun hash(file: File, shouldContinue: () -> Boolean): String? {
-            enteredHash.set(true)
-            while (!releaseHash.get()) {
-                try {
-                    Thread.sleep(10)
-                } catch (_: InterruptedException) {
-                    // Keep blocking to simulate a hash that does not unwind immediately.
-                }
-            }
+            enteredHash.countDown()
+            releaseHash.await(5, TimeUnit.SECONDS)
             return if (shouldContinue()) "hash-${file.name}" else null
         }
     }
