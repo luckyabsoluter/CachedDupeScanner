@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -17,8 +19,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
@@ -205,7 +207,7 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
-    fun deletingDetailMemberKeepsClusterWhenReturningToGroups() {
+    fun deleteKeepsMemorySnapshotUntilSimilarityResultsAreExited() {
         val fixture = createSimilarityFixture()
 
         composeRule.setContent {
@@ -223,7 +225,12 @@ class SimilarityResultsNavigationTest {
         }
         composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").performClick()
 
-        scrollUntilText(fixture.firstFile.name)
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Similarity group detail")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        scrollSimilarityDetailToMember(fixture.clusterId, fixture.firstFile.normalizedPathForTest())
         composeRule.onNodeWithTag(
             "similarity-member:${fixture.firstFile.normalizedPathForTest()}"
         ).performClick()
@@ -243,31 +250,39 @@ class SimilarityResultsNavigationTest {
                 .isEmpty()
         )
 
-        repeat(8) {
-            composeRule.onRoot().performTouchInput { swipeDown() }
-            composeRule.waitForIdle()
-        }
-        composeRule.onNodeWithContentDescription("Back").performClick()
+        returnFromSimilarityDetail(fixture.clusterId)
 
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("2 files", substring = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        composeRule.waitForIdle()
         val clusterNode = composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}")
+        clusterNode.fetchSemanticsNode()
         composeRule.waitUntil(5_000) {
             clusterNode.fetchSemanticsNode().config[SemanticsProperties.StateDescription] ==
                 "Contains deleted files"
         }
-        assertEquals(1, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+        assertEquals(0, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
 
         clusterNode.performClick()
-        scrollUntilText(fixture.firstFile.name)
+        scrollSimilarityDetailToMember(fixture.clusterId, fixture.firstFile.normalizedPathForTest())
         composeRule.onNodeWithTag(
             "similarity-member:${fixture.firstFile.normalizedPathForTest()}"
         ).fetchSemanticsNode()
         assertTrue(
             composeRule.onAllNodesWithText("Missing", substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+
+        returnFromSimilarityDetail(fixture.clusterId)
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.onNodeWithText("Reopen similarity results").performClick()
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("No similarity groups found", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertTrue(
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
                 .fetchSemanticsNodes()
                 .isEmpty()
         )
@@ -326,31 +341,13 @@ class SimilarityResultsNavigationTest {
         settingsStore: AppSettingsStore,
         modifier: Modifier
     ) {
-        val selectedClusterId = remember { mutableStateOf<Long?>(null) }
+        val resultsOpen = remember { mutableStateOf(true) }
         val deletedPaths = remember { mutableStateOf<Set<String>>(emptySet()) }
         val thumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
         val videoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
-        val clusterId = selectedClusterId.value
 
-        if (clusterId == null) {
-            SimilaritySettingGroupsScreen(
-                repository = fixture.repository,
-                settingsStore = settingsStore,
-                keepLoadedThumbnailsInMemory = false,
-                thumbnailSizeScale = 1f,
-                rememberedPreviewCache = thumbnailCache,
-                showFullPaths = false,
-                deletedPaths = deletedPaths.value,
-                settingId = fixture.settingId,
-                refreshVersion = 0,
-                onBack = {},
-                onOpenCluster = { _, openedClusterId ->
-                    selectedClusterId.value = openedClusterId
-                },
-                modifier = modifier
-            )
-        } else {
-            SimilarityClusterDetailScreen(
+        if (resultsOpen.value) {
+            SimilaritySettingResultsScreen(
                 repository = fixture.repository,
                 settingsStore = settingsStore,
                 keepLoadedThumbnailsInMemory = false,
@@ -379,10 +376,14 @@ class SimilarityResultsNavigationTest {
                     moved
                 },
                 settingId = fixture.settingId,
-                clusterId = clusterId,
-                onBack = { selectedClusterId.value = null },
+                refreshVersion = 0,
+                onBack = { resultsOpen.value = false },
                 modifier = modifier
             )
+        } else {
+            Button(onClick = { resultsOpen.value = true }) {
+                androidx.compose.material3.Text("Reopen similarity results")
+            }
         }
     }
 
@@ -495,6 +496,21 @@ class SimilarityResultsNavigationTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
+    }
+
+    private fun scrollSimilarityDetailToMember(clusterId: Long, normalizedPath: String) {
+        composeRule.onNodeWithTag("similarity-detail-list:$clusterId")
+            .performScrollToIndex(3)
+        composeRule.onNodeWithTag("similarity-member:$normalizedPath").fetchSemanticsNode()
+    }
+
+    private fun returnFromSimilarityDetail(clusterId: Long) {
+        composeRule.onNodeWithTag("similarity-detail-list:$clusterId")
+            .performScrollToIndex(0)
+        val backNodes = composeRule.onAllNodesWithContentDescription("Back")
+        val detailBackIndex = backNodes.fetchSemanticsNodes().lastIndex
+        backNodes[detailBackIndex].performClick()
+        composeRule.waitForIdle()
     }
 
     private data class SimilarityFixture(

@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -120,6 +123,19 @@ private const val SIMILARITY_CLUSTER_PREVIEW_ITEMS_PER_LINE = 2
 private const val SIMILARITY_CLUSTER_GROUP_PAGE_SIZE = 50
 private const val SIMILARITY_CLUSTER_GROUP_AUTO_LOAD_THRESHOLD_ITEMS = 4
 private const val SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE = 100
+
+class SimilarityClusterDetailMemoryCache internal constructor() {
+    internal val setting = mutableStateOf<SimilaritySettingEntity?>(null)
+    internal val cluster = mutableStateOf<SimilarityClusterEntity?>(null)
+    internal val members = mutableStateListOf<SimilarityClusterMember>()
+    internal val missingMemberPaths = mutableStateMapOf<String, Boolean>()
+    internal val memberLoading = mutableStateOf(false)
+    internal val memberOffset = mutableStateOf(0)
+    internal val membersExhausted = mutableStateOf(false)
+    internal val clusterLoaded = mutableStateOf(false)
+    internal val clusterLoadError = mutableStateOf<String?>(null)
+}
+
 private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
 private const val SIMILARITY_SIGNATURE_SAMPLE_DISPLAY_LIMIT = 32
 private const val SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT = 2
@@ -600,6 +616,110 @@ fun SimilaritySettingDetailScreen(
 }
 
 @Composable
+fun SimilaritySettingResultsScreen(
+    repository: SimilaritySettingsRepository,
+    settingsStore: AppSettingsStore,
+    keepLoadedThumbnailsInMemory: Boolean,
+    keepLoadedVideoPreviewsInMemory: Boolean,
+    snapVideoPreviewFramesToWidth: Boolean,
+    videoPreviewLineCount: Int,
+    thumbnailSizeScale: Float,
+    videoPreviewSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    rememberedVideoPreviewCache: MutableMap<String, ImageBitmap>,
+    showFullPaths: Boolean,
+    showVideoPreviews: Boolean,
+    showVideoPreviewDurations: Boolean,
+    showVideoPreviewResolutions: Boolean,
+    onShowVideoPreviewsChange: (Boolean) -> Unit,
+    onShowVideoPreviewDurationsChange: (Boolean) -> Unit,
+    onShowVideoPreviewResolutionsChange: (Boolean) -> Unit,
+    deletedPaths: Set<String>,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    settingId: Long,
+    refreshVersion: Int,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedClusterId by remember(settingId) { mutableStateOf<Long?>(null) }
+    var memoryDeletedClusterIds by remember(settingId) { mutableStateOf<Set<Long>>(emptySet()) }
+    val detailCaches = remember(settingId) {
+        mutableMapOf<Long, SimilarityClusterDetailMemoryCache>()
+    }
+
+    Box(modifier = modifier) {
+        SimilaritySettingGroupsScreen(
+            repository = repository,
+            settingsStore = settingsStore,
+            keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+            thumbnailSizeScale = thumbnailSizeScale,
+            rememberedPreviewCache = rememberedPreviewCache,
+            showFullPaths = showFullPaths,
+            deletedPaths = deletedPaths,
+            memoryDeletedClusterIds = memoryDeletedClusterIds,
+            settingId = settingId,
+            refreshVersion = refreshVersion,
+            onBack = onBack,
+            onOpenCluster = { _, clusterId ->
+                detailCaches.getOrPut(clusterId) { SimilarityClusterDetailMemoryCache() }
+                selectedClusterId = clusterId
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        selectedClusterId?.let { clusterId ->
+            val memoryCache = detailCaches.getOrPut(clusterId) {
+                SimilarityClusterDetailMemoryCache()
+            }
+            val cachedDeleteHandler: (suspend (FileMetadata) -> Boolean)? =
+                onDeleteFile?.let { deleteHandler ->
+                    { file ->
+                        val deleted = deleteHandler(file)
+                        if (deleted) {
+                            memoryDeletedClusterIds = memoryDeletedClusterIds + clusterId
+                        }
+                        deleted
+                    }
+                }
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                SimilarityClusterDetailScreen(
+                    repository = repository,
+                    settingsStore = settingsStore,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
+                    snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+                    videoPreviewLineCount = videoPreviewLineCount,
+                    thumbnailSizeScale = thumbnailSizeScale,
+                    videoPreviewSizeScale = videoPreviewSizeScale,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    rememberedVideoPreviewCache = rememberedVideoPreviewCache,
+                    showFullPaths = showFullPaths,
+                    showVideoPreviews = showVideoPreviews,
+                    showVideoPreviewDurations = showVideoPreviewDurations,
+                    showVideoPreviewResolutions = showVideoPreviewResolutions,
+                    onShowVideoPreviewsChange = onShowVideoPreviewsChange,
+                    onShowVideoPreviewDurationsChange = onShowVideoPreviewDurationsChange,
+                    onShowVideoPreviewResolutionsChange = onShowVideoPreviewResolutionsChange,
+                    deletedPaths = deletedPaths,
+                    onDeleteFile = cachedDeleteHandler,
+                    settingId = settingId,
+                    clusterId = clusterId,
+                    onBack = { selectedClusterId = null },
+                    modifier = Modifier.fillMaxSize(),
+                    memoryCache = memoryCache
+                )
+            }
+        }
+    }
+    BackHandler(enabled = selectedClusterId != null) {
+        selectedClusterId = null
+    }
+}
+
+@Composable
 fun SimilaritySettingGroupsScreen(
     repository: SimilaritySettingsRepository,
     settingsStore: AppSettingsStore,
@@ -608,6 +728,7 @@ fun SimilaritySettingGroupsScreen(
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     showFullPaths: Boolean,
     deletedPaths: Set<String>,
+    memoryDeletedClusterIds: Set<Long> = emptySet(),
     settingId: Long,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -930,7 +1051,8 @@ fun SimilaritySettingGroupsScreen(
                             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                             previewThumbnailSize = previewThumbnailSize,
                             showFullPaths = showFullPaths,
-                            deleted = deletedClusterIds.contains(cluster.clusterId),
+                            deleted = memoryDeletedClusterIds.contains(cluster.clusterId) ||
+                                deletedClusterIds.contains(cluster.clusterId),
                             onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
                         )
                     }
@@ -985,7 +1107,8 @@ fun SimilarityClusterDetailScreen(
     settingId: Long,
     clusterId: Long,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    memoryCache: SimilarityClusterDetailMemoryCache? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -995,16 +1118,19 @@ fun SimilarityClusterDetailScreen(
     val videoPreviewFrameHeight = 44.dp * videoPreviewSizeScale.coerceAtLeast(0f)
     val memberListState = rememberLazyListState()
     val settingsSnapshot = remember { settingsStore.load() }
-    var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
-    var cluster by remember { mutableStateOf<SimilarityClusterEntity?>(null) }
-    val members = remember { mutableStateListOf<SimilarityClusterMember>() }
-    val missingMemberPaths = remember { mutableStateMapOf<String, Boolean>() }
-    var memberLoading by remember { mutableStateOf(false) }
-    var memberOffset by remember { mutableStateOf(0) }
-    var membersExhausted by remember { mutableStateOf(false) }
+    val detailMemory = memoryCache ?: remember(settingId, clusterId) {
+        SimilarityClusterDetailMemoryCache()
+    }
+    var setting by detailMemory.setting
+    var cluster by detailMemory.cluster
+    val members = detailMemory.members
+    val missingMemberPaths = detailMemory.missingMemberPaths
+    var memberLoading by detailMemory.memberLoading
+    var memberOffset by detailMemory.memberOffset
+    var membersExhausted by detailMemory.membersExhausted
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
-    var clusterLoaded by remember(settingId, clusterId) { mutableStateOf(false) }
-    var clusterLoadError by remember(settingId, clusterId) { mutableStateOf<String?>(null) }
+    var clusterLoaded by detailMemory.clusterLoaded
+    var clusterLoadError by detailMemory.clusterLoadError
     var clusterReloadToken by remember(settingId, clusterId) { mutableStateOf(0) }
     var memberSortKey by remember {
         mutableStateOf(
@@ -1086,6 +1212,9 @@ fun SimilarityClusterDetailScreen(
     }
 
     LaunchedEffect(settingId, clusterId, clusterReloadToken) {
+        if (clusterReloadToken == 0 && clusterLoaded) {
+            return@LaunchedEffect
+        }
         memberLoading = true
         clusterLoaded = false
         clusterLoadError = null
@@ -1227,6 +1356,7 @@ fun SimilarityClusterDetailScreen(
 
     ScreenScrollColumn(
         modifier = modifier,
+        listModifier = Modifier.testTag("similarity-detail-list:$clusterId"),
         listState = memberListState,
         verticalArrangement = Arrangement.spacedBy(12.dp),
         loadIndicatorText = memberLoadIndicatorText

@@ -76,7 +76,7 @@ import opensource.cached_dupe_scanner.ui.home.SimilarityDurationSettingScreen
 import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
-import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingResultsScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
@@ -504,27 +504,44 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
 
-                            is Screen.SimilaritySettingGroups -> SimilaritySettingGroupsScreen(
+                            is Screen.SimilaritySettingGroups -> SimilaritySettingResultsScreen(
                                 repository = similarityRepo,
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,
+                                videoPreviewLineCount = settingsSnapshot.videoPreviewLineCount,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
+                                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 showFullPaths = settingsSnapshot.showFullPaths,
+                                showVideoPreviews = similarityShowVideoPreviews.value,
+                                showVideoPreviewDurations = similarityShowVideoPreviewDurations.value,
+                                showVideoPreviewResolutions = similarityShowVideoPreviewResolutions.value,
+                                onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it },
+                                onShowVideoPreviewDurationsChange = {
+                                    similarityShowVideoPreviewDurations.value = it
+                                },
+                                onShowVideoPreviewResolutionsChange = {
+                                    similarityShowVideoPreviewResolutions.value = it
+                                },
                                 deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
+                                        return@SimilaritySettingResultsScreen false
+                                    }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onBack = { pop(backStack) },
-                                onOpenCluster = { settingId, clusterId ->
-                                    navigateTo(
-                                        backStack,
-                                        screenCache,
-                                        Screen.SimilarityClusterDetail(
-                                            settingId = settingId,
-                                            clusterId = clusterId
-                                        )
-                                    )
-                                },
                                 modifier = screenModifier
                             )
 

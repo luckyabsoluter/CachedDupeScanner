@@ -36,10 +36,7 @@ class TrashController(
         if (!file.exists()) {
             // Treat as success: if it's gone, remove cache and don't create trash entry.
             database.runInTransaction {
-                historyRepo.deleteByNormalizedPath(
-                    normalizedPath = normalizedPath,
-                    notifyCacheMutationObserver = false
-                )
+                historyRepo.deleteByNormalizedPath(normalizedPath)
             }
             return MoveResult(success = true, entry = null)
         }
@@ -80,10 +77,7 @@ class TrashController(
 
         runCatching {
             database.runInTransaction {
-                historyRepo.deleteByNormalizedPath(
-                    normalizedPath = normalizedPath,
-                    notifyCacheMutationObserver = false
-                )
+                historyRepo.deleteByNormalizedPath(normalizedPath)
                 trashRepo.upsert(entry)
             }
         }.onFailure {
