@@ -207,7 +207,7 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
-    fun deleteKeepsMemorySnapshotUntilSimilarityResultsAreExited() {
+    fun deleteKeepsMemorySnapshotAndMaintenanceReentryUsesPersistedState() {
         val fixture = createSimilarityFixture()
 
         composeRule.setContent {
@@ -274,6 +274,20 @@ class SimilarityResultsNavigationTest {
 
         returnFromSimilarityDetail(fixture.clusterId)
         composeRule.onNodeWithContentDescription("Back").performClick()
+
+        val maintenance = fixture.historyRepository.runMaintenance(
+            deleteMissing = true,
+            rehashStale = false,
+            rehashMissing = false,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        assertEquals(1, maintenance.total)
+        assertEquals(1, maintenance.processed)
+        assertEquals(0, maintenance.deleted)
+        fixture.repository.generateEnabledResults(shouldContinue = { true }, onProgress = {})
+        assertEquals(0, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+
         composeRule.onNodeWithText("Reopen similarity results").performClick()
 
         composeRule.waitUntil(5_000) {
@@ -445,6 +459,7 @@ class SimilarityResultsNavigationTest {
         )
         return SimilarityFixture(
             repository = repository,
+            historyRepository = historyRepository,
             settingId = setting.settingId,
             clusterId = cluster!!.clusterId,
             firstFile = first,
@@ -515,6 +530,7 @@ class SimilarityResultsNavigationTest {
 
     private data class SimilarityFixture(
         val repository: SimilaritySettingsRepository,
+        val historyRepository: ScanHistoryRepository,
         val settingId: Long,
         val clusterId: Long,
         val firstFile: File,
