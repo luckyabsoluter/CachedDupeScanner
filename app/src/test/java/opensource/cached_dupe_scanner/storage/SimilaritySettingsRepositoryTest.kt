@@ -277,9 +277,9 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
-    fun cacheDeletionCanPreserveStoredClusterUntilMaintenance() {
-        val first = videoFile("preserved-a.mp4")
-        val second = videoFile("preserved-b.mp4")
+    fun dbMaintenanceMissingFileDeletionAlsoRemovesSimilarityGroup() {
+        val first = videoFile("maintenance-a.mp4")
+        val second = videoFile("maintenance-b.mp4")
         database.fileCacheDao().upsert(entity(first))
         database.fileCacheDao().upsert(entity(second))
         val repository = repository(
@@ -307,44 +307,21 @@ class SimilaritySettingsRepositoryTest {
             database = database,
             cacheMutationObserver = repository
         )
-
-        history.deleteByNormalizedPath(
-            normalizedPath = second.normalizedPath(),
-            notifyCacheMutationObserver = false
-        )
-
         assertEquals(1, repository.getClusterSummary(setting.settingId).clusterCount)
-        val storedCluster = repository.listClustersPage(
-            settingId = setting.settingId,
-            offset = 0,
-            limit = 10,
-            sortColumn = SimilarityClusterSortColumn.FileCount,
-            direction = SortDirection.Desc
-        ).single()
-        assertEquals(
-            setOf(storedCluster.clusterId),
-            repository.clusterIdsContainingPaths(setOf(second.normalizedPath()))
-        )
-        assertEquals(
-            listOf(first, second).map { file -> file.normalizedPath() },
-            repository.listClusterMembersPage(
-                clusterId = storedCluster.clusterId,
-                offset = 0,
-                limit = 10,
-                sortColumn = SimilarityMemberSortColumn.Path,
-                direction = SortDirection.Asc
-            ).map { member -> member.metadata.normalizedPath }
-        )
+        assertTrue(second.delete())
 
-        repository.runSettingMaintenance(
-            settingId = setting.settingId,
-            rebuild = false,
+        val summary = history.runMaintenance(
+            deleteMissing = true,
+            rehashStale = false,
+            rehashMissing = false,
             shouldContinue = { true },
             onProgress = {}
         )
 
+        assertEquals(1, summary.deleted)
+        assertEquals(null, database.fileCacheDao().getByNormalizedPath(second.normalizedPath()))
         assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
-        assertTrue(repository.clusterIdsContainingPaths(setOf(second.normalizedPath())).isEmpty())
+        assertTrue(repository.listClusters(setting.settingId).isEmpty())
     }
 
     @Test
