@@ -23,6 +23,7 @@ data class AppSettings(
     val showFullPaths: Boolean,
     val resultsFilterDefinitionJson: String,
     val filesFilterDefinitionJson: String,
+    val similarityFilterDefinitionJson: String = "",
     val filesSortKey: String,
     val filesSortDirection: String,
     val similarityClusterSortKey: String = "FileCount",
@@ -115,6 +116,10 @@ class AppSettingsStore(context: Context) {
 
     fun setFilesFilterDefinitionJson(value: String) {
         prefs.edit().putString(KEY_FILES_FILTER_DEFINITION_JSON, value).apply()
+    }
+
+    fun setSimilarityFilterDefinitionJson(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_FILTER_DEFINITION_JSON, value).apply()
     }
 
     fun setFilesSortKey(value: String) {
@@ -213,6 +218,10 @@ class AppSettingsStore(context: Context) {
                 KEY_FILES_FILTER_DEFINITION_JSON,
                 DEFAULT_SETTINGS.filesFilterDefinitionJson
             ) ?: DEFAULT_SETTINGS.filesFilterDefinitionJson,
+            similarityFilterDefinitionJson = prefs.getString(
+                KEY_SIMILARITY_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.similarityFilterDefinitionJson
+            ) ?: DEFAULT_SETTINGS.similarityFilterDefinitionJson,
             filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey)
                 ?: DEFAULT_SETTINGS.filesSortKey,
             filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
@@ -295,6 +304,10 @@ class AppSettingsStore(context: Context) {
                 KEY_FILES_FILTER_DEFINITION_JSON,
                 DEFAULT_SETTINGS.filesFilterDefinitionJson
             ),
+            similarityFilterDefinitionJson = obj.optString(
+                KEY_SIMILARITY_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.similarityFilterDefinitionJson
+            ),
             filesSortKey = obj.optString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey),
             filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection),
             similarityClusterSortKey = obj.optString(
@@ -339,6 +352,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .putString(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .putString(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
+            .putString(KEY_SIMILARITY_FILTER_DEFINITION_JSON, settings.similarityFilterDefinitionJson)
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .putString(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
@@ -371,6 +385,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .put(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .put(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
+            .put(KEY_SIMILARITY_FILTER_DEFINITION_JSON, settings.similarityFilterDefinitionJson)
             .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .put(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
@@ -407,6 +422,7 @@ class AppSettingsStore(context: Context) {
             showFullPaths = false,
             resultsFilterDefinitionJson = "",
             filesFilterDefinitionJson = "",
+            similarityFilterDefinitionJson = "",
             filesSortKey = "Name",
             filesSortDirection = "Asc",
             similarityClusterSortKey = "FileCount",
@@ -433,6 +449,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SHOW_FULL_PATHS = "show_full_paths"
         private const val KEY_RESULTS_FILTER_DEFINITION_JSON = "results_filter_definition_json"
         private const val KEY_FILES_FILTER_DEFINITION_JSON = "files_filter_definition_json"
+        private const val KEY_SIMILARITY_FILTER_DEFINITION_JSON = "similarity_filter_definition_json"
         private const val KEY_FILES_SORT_KEY = "files_sort_key"
         private const val KEY_FILES_SORT_DIR = "files_sort_dir"
         private const val KEY_SIMILARITY_CLUSTER_SORT_KEY = "similarity_cluster_sort_key"

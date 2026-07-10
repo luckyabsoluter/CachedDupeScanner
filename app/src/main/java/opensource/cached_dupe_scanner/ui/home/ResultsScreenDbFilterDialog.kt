@@ -81,6 +81,29 @@ internal fun FileFilterScreen(
 }
 
 @Composable
+internal fun SimilarityFilterScreen(
+    definition: ResultsFilterDefinition,
+    onDefinitionChange: (ResultsFilterDefinition) -> Unit,
+    onBack: () -> Unit,
+    onApply: () -> Unit
+) {
+    FilterEditorScreen(
+        title = "Similarity filters",
+        summaryTitle = "Current summary",
+        introLines = listOf(
+            "Filter stored similarity groups with the same rules available in duplicate results.",
+            "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
+            "File name, folder, and modified-time rules match any member. Same-folder rules check every member in the group."
+        ),
+        definition = definition,
+        supportedTargets = ResultsFilterTarget.entries.toSet(),
+        onDefinitionChange = onDefinitionChange,
+        onBack = onBack,
+        onApply = onApply
+    )
+}
+
+@Composable
 private fun FilterEditorScreen(
     title: String,
     summaryTitle: String,

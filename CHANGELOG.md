@@ -15,6 +15,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity group detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
 - Video timeline preview menus now provide optional duration and resolution labels in Files and similarity group details without forcing timeline frames on.
 - Duplicate group detail views now support long-press member selection and selected-file deletion.
+- Similarity group browsing now supports the saved result filter editor and applies group and paged member rules before groups enter the visible list.
 
 ### Changed
 

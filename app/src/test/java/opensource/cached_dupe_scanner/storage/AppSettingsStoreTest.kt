@@ -47,6 +47,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.showFullPaths)
         assertEquals("", settings.resultsFilterDefinitionJson)
         assertEquals("", settings.filesFilterDefinitionJson)
+        assertEquals("", settings.similarityFilterDefinitionJson)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
         assertEquals("FileCount", settings.similarityClusterSortKey)
@@ -118,6 +119,12 @@ class AppSettingsStoreTest {
             store.load().filesFilterDefinitionJson
         )
 
+        store.setSimilarityFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_3\"}]}")
+        assertEquals(
+            "{\"clusters\":[{\"id\":\"cluster_3\"}]}",
+            store.load().similarityFilterDefinitionJson
+        )
+
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         val fileSortSettings = store.load()
@@ -155,6 +162,7 @@ class AppSettingsStoreTest {
         assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
+        assertEquals("", imported.similarityFilterDefinitionJson)
         assertEquals("FileCount", imported.similarityClusterSortKey)
         assertEquals("Desc", imported.similarityClusterSortDirection)
         assertEquals("Path", imported.similarityMemberSortKey)
@@ -186,6 +194,7 @@ class AppSettingsStoreTest {
         store.setShowFullPaths(true)
         store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}")
         store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}")
+        store.setSimilarityFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}")
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         store.setSimilarityClusterSortKey("TotalSize")
@@ -216,6 +225,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.showFullPaths)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}", imported.resultsFilterDefinitionJson)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}", imported.filesFilterDefinitionJson)
+        assertEquals("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}", imported.similarityFilterDefinitionJson)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals("TotalSize", imported.similarityClusterSortKey)

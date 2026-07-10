@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -151,6 +152,56 @@ class SimilarityResultsNavigationTest {
             assertEquals(fixture.settingId, openedSettingId)
             assertEquals(fixture.clusterId, openedClusterId)
         }
+    }
+
+    @Test
+    fun groupsScreenAppliesStoredMemberFilterAndOpensSharedEditor() {
+        val fixture = createSimilarityFixture()
+        val settingsStore = AppSettingsStore(context)
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                createResultsFilterCluster().copy(
+                    rules = listOf(
+                        createResultsFilterRule(ResultsFilterTarget.FileName).copy(
+                            textOperator = ResultsFilterTextOperator.Equals,
+                            value = "not-present.mp4"
+                        )
+                    )
+                )
+            )
+        )
+        settingsStore.setSimilarityFilterDefinitionJson(resultsFilterDefinitionToJson(definition))
+
+        composeRule.setContent {
+            SimilaritySettingGroupsScreen(
+                repository = fixture.repository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                thumbnailSizeScale = 1f,
+                rememberedPreviewCache = mutableStateMapOf(),
+                showFullPaths = false,
+                deletedPaths = emptySet(),
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                onBack = {},
+                onOpenCluster = { _, _ -> },
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("No similarity groups match", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertTrue(
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+        composeRule.onNodeWithContentDescription("Menu").performClick()
+        composeRule.onNodeWithText("Filters (1)").performClick()
+        composeRule.onNodeWithText("Similarity filters").fetchSemanticsNode()
     }
 
     @Test

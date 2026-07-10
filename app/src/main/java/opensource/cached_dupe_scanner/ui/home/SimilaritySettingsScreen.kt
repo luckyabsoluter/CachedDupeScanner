@@ -101,6 +101,7 @@ import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
+import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilarityTimeUnit
@@ -618,6 +619,21 @@ fun SimilaritySettingGroupsScreen(
     val imageLoader = rememberSimilarityImageLoader(context)
     val previewThumbnailSize = 72.dp * thumbnailSizeScale.coerceAtLeast(0f)
     val settingsSnapshot = remember { settingsStore.load() }
+    val initialFilterDefinition = remember(settingsSnapshot.similarityFilterDefinitionJson) {
+        resultsFilterDefinitionFromJson(settingsSnapshot.similarityFilterDefinitionJson)
+    }
+    var appliedFilter by remember { mutableStateOf(initialFilterDefinition) }
+    var draftFilter by remember {
+        mutableStateOf(
+            if (initialFilterDefinition.clusters.isEmpty()) {
+                ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+            } else {
+                initialFilterDefinition
+            }
+        )
+    }
+    var filterScreenOpen by remember { mutableStateOf(false) }
+    var groupsMenuExpanded by remember { mutableStateOf(false) }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var clusterSummary by remember(settingId) { mutableStateOf(SimilarityClusterSummary()) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
@@ -680,23 +696,41 @@ fun SimilaritySettingGroupsScreen(
                 } else {
                     clusterSummary
                 }
-                val loadedClusters = withContext(Dispatchers.IO) {
-                    repository.listClustersPage(
-                        settingId = settingId,
-                        offset = pageOffset,
-                        limit = pageLimit,
-                        sortColumn = sortColumn,
-                        direction = sortDirection
-                    )
+                val loadedPage = withContext(Dispatchers.IO) {
+                    if (appliedFilter.hasActiveRules()) {
+                        loadFilteredSimilarityClustersPage(
+                            repository = repository,
+                            settingId = settingId,
+                            sortColumn = sortColumn,
+                            sortDirection = sortDirection,
+                            definition = appliedFilter,
+                            startOffset = pageOffset,
+                            minMatches = pageLimit,
+                            sourcePageSize = SIMILARITY_CLUSTER_GROUP_PAGE_SIZE
+                        )
+                    } else {
+                        val loadedClusters = repository.listClustersPage(
+                            settingId = settingId,
+                            offset = pageOffset,
+                            limit = pageLimit,
+                            sortColumn = sortColumn,
+                            direction = sortDirection
+                        )
+                        FilteredSimilarityClustersPage(
+                            clusters = loadedClusters,
+                            nextSourceOffset = pageOffset + loadedClusters.size,
+                            exhausted = loadedClusters.size < pageLimit
+                        )
+                    }
                 }
                 if (reset) {
                     setting = loadedSetting
                     clusterSummary = loadedSummary
                     clusters.clear()
                 }
-                clusters.addAll(loadedClusters)
-                clusterOffset = pageOffset + loadedClusters.size
-                clustersExhausted = loadedClusters.size < pageLimit ||
+                clusters.addAll(loadedPage.clusters)
+                clusterOffset = loadedPage.nextSourceOffset
+                clustersExhausted = loadedPage.exhausted ||
                     clusterOffset >= loadedSummary.clusterCount
                 groupsLoaded = true
                 groupsLoadError = null
@@ -765,13 +799,24 @@ fun SimilaritySettingGroupsScreen(
             }
     }
 
-    val groupLoadIndicatorText = similarityLoadIndicatorText(
-        firstVisibleItemIndex = groupListState.firstVisibleItemIndex,
-        loadedCount = clusters.size,
-        totalCount = clusterSummary.clusterCount,
-        nonDataItemCount = SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT,
-        hidden = !groupsLoaded || groupsLoadError != null || setting == null
-    )
+    val groupLoadIndicatorText = if (appliedFilter.hasActiveRules()) {
+        formatFilteredLoadProgressText(
+            filteredCurrentIndex = (
+                groupListState.firstVisibleItemIndex - SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT
+            ).coerceAtLeast(0),
+            matchedCount = clusters.size,
+            sourceLoadedCount = clusterOffset,
+            totalCount = clusterSummary.clusterCount
+        ).takeUnless { !groupsLoaded || groupsLoadError != null || setting == null }
+    } else {
+        similarityLoadIndicatorText(
+            firstVisibleItemIndex = groupListState.firstVisibleItemIndex,
+            loadedCount = clusters.size,
+            totalCount = clusterSummary.clusterCount,
+            nonDataItemCount = SIMILARITY_CLUSTER_GROUP_HEADER_ITEM_COUNT,
+            hidden = !groupsLoaded || groupsLoadError != null || setting == null
+        )
+    }
 
     if (!groupsLoaded) {
         Column(
@@ -794,7 +839,37 @@ fun SimilaritySettingGroupsScreen(
             item(key = "top_bar") {
                 AppTopBar(
                     title = setting?.displayName ?: "Similarity results",
-                    onBack = onBack
+                    onBack = onBack,
+                    actions = {
+                        IconButton(onClick = { groupsMenuExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                        }
+                        DropdownMenu(
+                            expanded = groupsMenuExpanded,
+                            onDismissRequest = { groupsMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (appliedFilter.hasActiveRules()) {
+                                            "Filters (${appliedFilter.activeRuleCount()})"
+                                        } else {
+                                            "Filters"
+                                        }
+                                    )
+                                },
+                                onClick = {
+                                    draftFilter = if (appliedFilter.clusters.isEmpty()) {
+                                        ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+                                    } else {
+                                        appliedFilter
+                                    }
+                                    groupsMenuExpanded = false
+                                    filterScreenOpen = true
+                                }
+                            )
+                        }
+                    }
                 )
             }
             val selectedSetting = setting
@@ -822,6 +897,8 @@ fun SimilaritySettingGroupsScreen(
                         sortKey = clusterSortKey,
                         sortDirection = clusterSortDirection,
                         sortEnabled = clusterSummary.clusterCount > 0,
+                        filterSummary = appliedFilter.takeIf { it.hasActiveRules() }
+                            ?.let(::summarizeResultsFilter),
                         onApplySort = { key, direction ->
                             clusterSortKey = key
                             clusterSortDirection = direction
@@ -834,7 +911,11 @@ fun SimilaritySettingGroupsScreen(
                 if (clusters.isEmpty() && !clusterLoading) {
                     item(key = "clusters_empty") {
                         Text(
-                            text = "No similarity groups found for this similarity.",
+                            text = if (appliedFilter.hasActiveRules()) {
+                                "No similarity groups match the current filters."
+                            } else {
+                                "No similarity groups found for this similarity."
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -861,6 +942,22 @@ fun SimilaritySettingGroupsScreen(
                 }
             }
         }
+    }
+
+    if (filterScreenOpen) {
+        SimilarityFilterScreen(
+            definition = draftFilter,
+            onDefinitionChange = { draftFilter = it },
+            onBack = { filterScreenOpen = false },
+            onApply = {
+                appliedFilter = draftFilter
+                settingsStore.setSimilarityFilterDefinitionJson(
+                    resultsFilterDefinitionToJson(draftFilter)
+                )
+                filterScreenOpen = false
+                loadClusterPage(reset = true, restoredFirstVisibleIndex = 0)
+            }
+        )
     }
 }
 
@@ -1938,6 +2035,7 @@ private fun SimilarityGroupsHeader(
     sortKey: SimilarityClusterSortKey,
     sortDirection: SortDirection,
     sortEnabled: Boolean,
+    filterSummary: String?,
     onApplySort: (SimilarityClusterSortKey, SortDirection) -> Unit
 ) {
     Row(
@@ -1951,6 +2049,13 @@ private fun SimilarityGroupsHeader(
         ) {
             Text(text = "Similarity groups", style = MaterialTheme.typography.titleMedium)
             Text(text = resultSummary(clusterCount = clusterCount, fileCount = fileCount), style = MaterialTheme.typography.bodySmall)
+            filterSummary?.let { summary ->
+                Text(
+                    text = "Filters: $summary",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             similarityGroupRuleLines(setting).forEach { line ->
                 Text(
                     text = line,
