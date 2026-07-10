@@ -175,6 +175,36 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun matchesResultsFilterUsesSameFileSizeRule() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same size",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.SameFileSize
+                        )
+                    )
+                )
+            )
+        )
+        val sameSize = listOf(
+            file("/storage/camera/a.jpg", sizeBytes = 10L),
+            file("/storage/camera/b.jpg", sizeBytes = 10L)
+        )
+        val differentSizes = listOf(
+            file("/storage/camera/a.jpg", sizeBytes = 10L),
+            file("/storage/camera/b.jpg", sizeBytes = 11L)
+        )
+
+        assertTrue(matchesResultsFilter(definition, group(fileCount = 2), sameSize))
+        assertFalse(matchesResultsFilter(definition, group(fileCount = 2), differentSizes))
+        assertFalse(matchesResultsFilter(definition, group(fileCount = 0), emptyList()))
+    }
+
+    @Test
     fun matchesResultsFilterUsesModifiedTimeRule() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
@@ -290,6 +320,30 @@ class ResultsScreenDbFiltersTest {
             matchesResultsFilter(definition, group(fileCount = differentFolders.size), differentFolders),
             pagedFilterResult(definition, group(fileCount = differentFolders.size), differentFolders, pageSize = 1)
         )
+    }
+
+    @Test
+    fun pagedFilterEvaluatesSameFileSizeAcrossPages() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Same size",
+                    rules = listOf(
+                        ResultsFilterRule(id = "rule_1", target = ResultsFilterTarget.SameFileSize)
+                    )
+                )
+            )
+        )
+        val sameSize = listOf(
+            file("/same/a.jpg", sizeBytes = 20L),
+            file("/other/b.jpg", sizeBytes = 20L),
+            file("/third/c.jpg", sizeBytes = 20L)
+        )
+        val differentSizes = sameSize.dropLast(1) + file("/third/c.jpg", sizeBytes = 21L)
+
+        assertTrue(pagedFilterResult(definition, group(fileCount = 3), sameSize, pageSize = 1))
+        assertFalse(pagedFilterResult(definition, group(fileCount = 3), differentSizes, pageSize = 1))
     }
 
     @Test
@@ -512,6 +566,10 @@ class ResultsScreenDbFiltersTest {
                             target = ResultsFilterTarget.ModifiedTime,
                             timeOperator = ResultsFilterTimeOperator.OnOrBefore,
                             value = "2026-04-20 12:30"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_10",
+                            target = ResultsFilterTarget.SameFileSize
                         )
                     )
                 )
@@ -593,12 +651,13 @@ class ResultsScreenDbFiltersTest {
 
     private fun file(
         path: String,
-        modified: Long = 1L
+        modified: Long = 1L,
+        sizeBytes: Long = 10L
     ): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
-            sizeBytes = 10L,
+            sizeBytes = sizeBytes,
             lastModifiedMillis = modified,
             hashHex = "hash"
         )

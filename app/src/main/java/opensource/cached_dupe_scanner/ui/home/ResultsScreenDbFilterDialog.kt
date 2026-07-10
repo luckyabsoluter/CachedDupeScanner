@@ -47,7 +47,7 @@ internal fun ResultsFilterScreen(
         introLines = listOf(
             "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name, folder, and modified-time rules match if any file inside the duplicate group matches the rule. Same-folder rules check every file in the group."
+            "File name, folder, and modified-time rules match if any file inside the duplicate group matches the rule. Same-folder and same-size rules check every file in the group."
         ),
         definition = definition,
         supportedTargets = ResultsFilterTarget.entries.toSet(),
@@ -93,7 +93,7 @@ internal fun SimilarityFilterScreen(
         introLines = listOf(
             "Filter stored similarity groups with the same rules available in duplicate results.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name, folder, and modified-time rules match any member. Same-folder rules check every member in the group."
+            "File name, folder, and modified-time rules match any member. Same-folder and same-size rules check every member in the group."
         ),
         definition = definition,
         supportedTargets = ResultsFilterTarget.entries.toSet(),
@@ -450,6 +450,12 @@ private fun ResultsFilterRuleEditor(
             } else if (rule.target == ResultsFilterTarget.SameFolder) {
                 Text(
                     text = "Matches only when every file in the duplicate group is inside the same folder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (rule.target == ResultsFilterTarget.SameFileSize) {
+                Text(
+                    text = "Matches only when every file in the group has the same byte size.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

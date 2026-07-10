@@ -207,6 +207,48 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
+    fun groupsScreenAppliesSameFileSizeFilterToStoredMembers() {
+        val fixture = createSimilarityFixture(secondContents = "longer-video-content")
+        val settingsStore = AppSettingsStore(context)
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                createResultsFilterCluster().copy(
+                    rules = listOf(createResultsFilterRule(ResultsFilterTarget.SameFileSize))
+                )
+            )
+        )
+        settingsStore.setSimilarityFilterDefinitionJson(resultsFilterDefinitionToJson(definition))
+
+        composeRule.setContent {
+            SimilaritySettingGroupsScreen(
+                repository = fixture.repository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                thumbnailSizeScale = 1f,
+                rememberedPreviewCache = mutableStateMapOf(),
+                showFullPaths = false,
+                deletedPaths = emptySet(),
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                onBack = {},
+                onOpenCluster = { _, _ -> },
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("No similarity groups match", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertTrue(
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+    }
+
+    @Test
     fun deleteKeepsMemorySnapshotAndMaintenanceReentryUsesPersistedState() {
         val fixture = createSimilarityFixture()
 
@@ -401,9 +443,12 @@ class SimilarityResultsNavigationTest {
         }
     }
 
-    private fun createSimilarityFixture(): SimilarityFixture {
-        val first = videoFile("first.mp4")
-        val second = videoFile("second.mp4")
+    private fun createSimilarityFixture(
+        firstContents: String = "video",
+        secondContents: String = "video"
+    ): SimilarityFixture {
+        val first = videoFile("first.mp4", firstContents)
+        val second = videoFile("second.mp4", secondContents)
         database.fileCacheDao().upsert(entity(first))
         database.fileCacheDao().upsert(entity(second))
         val repository = SimilaritySettingsRepository(
@@ -467,9 +512,9 @@ class SimilarityResultsNavigationTest {
         )
     }
 
-    private fun videoFile(name: String): File {
+    private fun videoFile(name: String, contents: String): File {
         val file = File(tempDir, name)
-        file.writeText("video")
+        file.writeText(contents)
         return file
     }
 

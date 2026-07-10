@@ -12,7 +12,8 @@ internal enum class ResultsFilterTarget(val label: String) {
     FileName("File name"),
     FolderPath("Folder"),
     ModifiedTime("Modified time"),
-    SameFolder("All same folder")
+    SameFolder("All same folder"),
+    SameFileSize("All same size")
 }
 
 internal enum class ResultsFilterClusterMode(val label: String) {
@@ -284,6 +285,8 @@ private class ResultFilterRuleProgress(
     private var sawMember = false
     private var firstFolder: String? = null
     private var folderMismatch = false
+    private var firstFileSize: Long? = null
+    private var fileSizeMismatch = false
     private val groupResult: Boolean? = if (rule.target == ResultsFilterTarget.GroupItemCount) {
         val threshold = rule.value.trim().toIntOrNull()
         if (threshold == null) {
@@ -300,7 +303,9 @@ private class ResultFilterRuleProgress(
     }
 
     fun consume(page: List<FileMetadata>) {
-        if (groupResult != null || matched && rule.target != ResultsFilterTarget.SameFolder) return
+        val requiresAllMembers = rule.target == ResultsFilterTarget.SameFolder ||
+            rule.target == ResultsFilterTarget.SameFileSize
+        if (groupResult != null || matched && !requiresAllMembers) return
         page.forEach { member ->
             when (rule.target) {
                 ResultsFilterTarget.FileName -> {
@@ -335,6 +340,15 @@ private class ResultFilterRuleProgress(
                         folderMismatch = true
                     }
                 }
+                ResultsFilterTarget.SameFileSize -> {
+                    sawMember = true
+                    val currentFirst = firstFileSize
+                    if (currentFirst == null) {
+                        firstFileSize = member.sizeBytes
+                    } else if (currentFirst != member.sizeBytes) {
+                        fileSizeMismatch = true
+                    }
+                }
                 ResultsFilterTarget.GroupItemCount -> Unit
             }
         }
@@ -352,6 +366,11 @@ private class ResultFilterRuleProgress(
             }
             ResultsFilterTarget.SameFolder -> when {
                 folderMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+            ResultsFilterTarget.SameFileSize -> when {
+                fileSizeMismatch -> false
                 ended -> sawMember
                 else -> null
             }
@@ -378,6 +397,7 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.FolderPath -> rule.value.isNotBlank()
         ResultsFilterTarget.ModifiedTime -> parseResultsFilterTimeValue(rule.value) != null
         ResultsFilterTarget.SameFolder -> true
+        ResultsFilterTarget.SameFileSize -> true
     }
 }
 
@@ -431,6 +451,9 @@ private fun matchesResultsFilterRule(
                     .distinct()
                     .size == 1
             }
+        }
+        ResultsFilterTarget.SameFileSize -> {
+            members.isNotEmpty() && members.map { member -> member.sizeBytes }.distinct().size == 1
         }
     }
 }
