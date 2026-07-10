@@ -314,15 +314,26 @@ class SimilaritySettingsRepositoryTest {
         )
 
         assertEquals(1, repository.getClusterSummary(setting.settingId).clusterCount)
+        val storedCluster = repository.listClustersPage(
+            settingId = setting.settingId,
+            offset = 0,
+            limit = 10,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            direction = SortDirection.Desc
+        ).single()
         assertEquals(
-            1,
-            repository.listClustersPage(
-                settingId = setting.settingId,
+            setOf(storedCluster.clusterId),
+            repository.clusterIdsContainingPaths(setOf(second.normalizedPath()))
+        )
+        assertEquals(
+            listOf(first, second).map { file -> file.normalizedPath() },
+            repository.listClusterMembersPage(
+                clusterId = storedCluster.clusterId,
                 offset = 0,
                 limit = 10,
-                sortColumn = SimilarityClusterSortColumn.FileCount,
-                direction = SortDirection.Desc
-            ).size
+                sortColumn = SimilarityMemberSortColumn.Path,
+                direction = SortDirection.Asc
+            ).map { member -> member.metadata.normalizedPath }
         )
 
         repository.runSettingMaintenance(
@@ -333,6 +344,7 @@ class SimilaritySettingsRepositoryTest {
         )
 
         assertEquals(0, repository.getClusterSummary(setting.settingId).clusterCount)
+        assertTrue(repository.clusterIdsContainingPaths(setOf(second.normalizedPath())).isEmpty())
     }
 
     @Test

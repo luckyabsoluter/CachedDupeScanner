@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -131,6 +132,7 @@ class SimilarityResultsNavigationTest {
                 thumbnailSizeScale = 1f,
                 rememberedPreviewCache = previewCache,
                 showFullPaths = false,
+                deletedPaths = emptySet(),
                 settingId = fixture.settingId,
                 refreshVersion = 0,
                 onBack = {},
@@ -201,8 +203,23 @@ class SimilarityResultsNavigationTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").fetchSemanticsNode()
+        val clusterNode = composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}")
+        composeRule.waitUntil(5_000) {
+            clusterNode.fetchSemanticsNode().config[SemanticsProperties.StateDescription] ==
+                "Contains deleted files"
+        }
         assertEquals(1, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+
+        clusterNode.performClick()
+        scrollUntilText(fixture.firstFile.name)
+        composeRule.onNodeWithTag(
+            "similarity-member:${fixture.firstFile.normalizedPathForTest()}"
+        ).fetchSemanticsNode()
+        assertTrue(
+            composeRule.onAllNodesWithText("Missing", substring = true)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
     }
 
     @Test
@@ -272,6 +289,7 @@ class SimilarityResultsNavigationTest {
                 thumbnailSizeScale = 1f,
                 rememberedPreviewCache = thumbnailCache,
                 showFullPaths = false,
+                deletedPaths = deletedPaths.value,
                 settingId = fixture.settingId,
                 refreshVersion = 0,
                 onBack = {},

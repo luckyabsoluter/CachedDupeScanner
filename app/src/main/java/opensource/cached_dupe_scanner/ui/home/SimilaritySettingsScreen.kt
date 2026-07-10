@@ -52,6 +52,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -604,6 +606,7 @@ fun SimilaritySettingGroupsScreen(
     thumbnailSizeScale: Float,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     showFullPaths: Boolean,
+    deletedPaths: Set<String>,
     settingId: Long,
     refreshVersion: Int,
     onBack: () -> Unit,
@@ -618,6 +621,7 @@ fun SimilaritySettingGroupsScreen(
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var clusterSummary by remember(settingId) { mutableStateOf(SimilarityClusterSummary()) }
     val clusters = remember { mutableStateListOf<SimilarityClusterEntity>() }
+    var deletedClusterIds by remember(settingId) { mutableStateOf<Set<Long>>(emptySet()) }
     val groupListState = rememberLazyListState()
     var groupsLoaded by remember(settingId) { mutableStateOf(false) }
     var clusterLoading by remember(settingId) { mutableStateOf(false) }
@@ -724,6 +728,12 @@ fun SimilaritySettingGroupsScreen(
 
     LaunchedEffect(settingId, refreshVersion) {
         loadClusterPage(reset = true)
+    }
+
+    LaunchedEffect(settingId, deletedPaths) {
+        deletedClusterIds = withContext(Dispatchers.IO) {
+            repository.clusterIdsContainingPaths(deletedPaths)
+        }
     }
 
     LaunchedEffect(groupsLoaded, pendingClusterScrollIndex) {
@@ -839,6 +849,7 @@ fun SimilaritySettingGroupsScreen(
                             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
                             previewThumbnailSize = previewThumbnailSize,
                             showFullPaths = showFullPaths,
+                            deleted = deletedClusterIds.contains(cluster.clusterId),
                             onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
                         )
                     }
@@ -2088,6 +2099,7 @@ private fun SimilarityClusterListCard(
     keepLoadedThumbnailsInMemory: Boolean,
     previewThumbnailSize: Dp,
     showFullPaths: Boolean,
+    deleted: Boolean,
     onOpenCluster: () -> Unit
 ) {
     val previewMembers = remember(cluster.clusterId) { mutableStateListOf<SimilarityClusterMember>() }
@@ -2115,7 +2127,15 @@ private fun SimilarityClusterListCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("similarity-cluster:${cluster.clusterId}")
-            .clickable(onClick = onOpenCluster)
+            .semantics {
+                stateDescription = if (deleted) "Contains deleted files" else "Active"
+            }
+            .clickable(onClick = onOpenCluster),
+        colors = if (deleted) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -2506,10 +2526,10 @@ private fun SimilarityMemberCard(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = when {
-                            deleted -> MaterialTheme.colorScheme.onSecondaryContainer
-                            missing -> MaterialTheme.colorScheme.onErrorContainer
-                            else -> MaterialTheme.colorScheme.onSurface
+                        color = if (missing) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
                         }
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -2519,10 +2539,10 @@ private fun SimilarityMemberCard(
                             if (missing) append(" | Missing")
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = when {
-                            deleted -> MaterialTheme.colorScheme.onSecondaryContainer
-                            missing -> MaterialTheme.colorScheme.onErrorContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (missing) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
                     durationMillis?.let { value ->

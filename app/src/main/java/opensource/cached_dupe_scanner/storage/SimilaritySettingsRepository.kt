@@ -267,6 +267,15 @@ class SimilaritySettingsRepository(
         )
     }
 
+    fun clusterIdsContainingPaths(normalizedPaths: Set<String>): Set<Long> {
+        if (normalizedPaths.isEmpty()) return emptySet()
+        return normalizedPaths
+            .chunked(SIMILARITY_DB_BIND_CHUNK_SIZE)
+            .flatMapTo(linkedSetOf()) { chunk ->
+                similarityDao.listClusterIdsForMemberPaths(chunk)
+            }
+    }
+
     fun listClustersPage(
         settingId: Long,
         offset: Int,
@@ -311,7 +320,7 @@ class SimilaritySettingsRepository(
     }
 
     fun listClusterMembers(clusterId: Long): List<SimilarityClusterMember> {
-        return similarityDao.listActiveClusterMembers(clusterId).map { row ->
+        return similarityDao.listStoredClusterMembers(clusterId).map { row ->
             row.toClusterMember()
         }
     }
@@ -328,13 +337,13 @@ class SimilaritySettingsRepository(
         val rows = when (sortColumn) {
             SimilarityMemberSortColumn.Position -> {
                 if (direction == SortDirection.Desc) {
-                    similarityDao.listActiveClusterMembersPageDescending(
+                    similarityDao.listStoredClusterMembersPageDescending(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit
                     )
                 } else {
-                    similarityDao.listActiveClusterMembersPage(
+                    similarityDao.listStoredClusterMembersPage(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit
@@ -343,13 +352,13 @@ class SimilaritySettingsRepository(
             }
             SimilarityMemberSortColumn.Path -> {
                 if (direction == SortDirection.Desc) {
-                    similarityDao.listActiveClusterMembersPageByPathDesc(
+                    similarityDao.listStoredClusterMembersPageByPathDesc(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit
                     )
                 } else {
-                    similarityDao.listActiveClusterMembersPageByPathAsc(
+                    similarityDao.listStoredClusterMembersPageByPathAsc(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit
@@ -358,13 +367,13 @@ class SimilaritySettingsRepository(
             }
             SimilarityMemberSortColumn.Modified -> {
                 if (direction == SortDirection.Desc) {
-                    similarityDao.listActiveClusterMembersPageByModifiedDesc(
+                    similarityDao.listStoredClusterMembersPageByModifiedDesc(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit
                     )
                 } else {
-                    similarityDao.listActiveClusterMembersPageByModifiedAsc(
+                    similarityDao.listStoredClusterMembersPageByModifiedAsc(
                         clusterId = clusterId,
                         offset = safeOffset,
                         limit = safeLimit

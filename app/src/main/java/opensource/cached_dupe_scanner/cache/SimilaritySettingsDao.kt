@@ -302,49 +302,55 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY member.position ASC, file.normalizedPath ASC
+        ORDER BY member.position ASC, member.normalizedPath ASC
         """
     )
-    fun listActiveClusterMembers(clusterId: Long): List<SimilarityClusterMemberFileRow>
+    fun listStoredClusterMembers(clusterId: Long): List<SimilarityClusterMemberFileRow>
 
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY member.position ASC, file.normalizedPath ASC
+        ORDER BY member.position ASC, member.normalizedPath ASC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPage(
+    fun listStoredClusterMembersPage(
         clusterId: Long,
         offset: Int,
         limit: Int
@@ -353,26 +359,29 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY member.position DESC, file.normalizedPath DESC
+        ORDER BY member.position DESC, member.normalizedPath DESC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPageDescending(
+    fun listStoredClusterMembersPageDescending(
         clusterId: Long,
         offset: Int,
         limit: Int
@@ -381,26 +390,29 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY file.normalizedPath ASC
+        ORDER BY member.normalizedPath ASC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPageByPathAsc(
+    fun listStoredClusterMembersPageByPathAsc(
         clusterId: Long,
         offset: Int,
         limit: Int
@@ -409,26 +421,29 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY file.normalizedPath DESC
+        ORDER BY member.normalizedPath DESC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPageByPathDesc(
+    fun listStoredClusterMembersPageByPathDesc(
         clusterId: Long,
         offset: Int,
         limit: Int
@@ -437,26 +452,29 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY file.lastModifiedMillis ASC, file.normalizedPath ASC
+        ORDER BY setting_file.lastModifiedMillis ASC, member.normalizedPath ASC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPageByModifiedAsc(
+    fun listStoredClusterMembersPageByModifiedAsc(
         clusterId: Long,
         offset: Int,
         limit: Int
@@ -465,26 +483,29 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
-            file.normalizedPath AS normalizedPath,
-            file.path AS path,
-            file.sizeBytes AS sizeBytes,
-            file.lastModifiedMillis AS lastModifiedMillis,
+            member.normalizedPath AS normalizedPath,
+            COALESCE(file.path, member.normalizedPath) AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN cached_files AS file
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        LEFT JOIN cached_files AS file
             ON file.normalizedPath = member.normalizedPath
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.normalizedPath = member.normalizedPath
         WHERE member.clusterId = :clusterId
-        ORDER BY file.lastModifiedMillis DESC, file.normalizedPath DESC
+        ORDER BY setting_file.lastModifiedMillis DESC, member.normalizedPath DESC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun listActiveClusterMembersPageByModifiedDesc(
+    fun listStoredClusterMembersPageByModifiedDesc(
         clusterId: Long,
         offset: Int,
         limit: Int

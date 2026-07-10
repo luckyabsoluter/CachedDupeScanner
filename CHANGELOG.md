@@ -51,7 +51,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity group detail member sorting now applies at the paged query source instead of sorting only the already loaded subset.
 - Similarity result routes now show retryable load errors instead of getting stuck on loading or missing-result states.
 - Similarity result lists and result details now use the shared lazy load indicator container.
-- Similarity result details keep deleted members in place with only the deleted-background highlight.
+- Similarity result details keep deleted members across re-entry with only the deleted-background highlight, and parent group cards highlight when any stored member was deleted.
 - Trash file delete actions keep generated similarity groups in place without cache-mutation cleanup until an explicit scan, update, or rebuild refreshes them.
 - Restoring files from Trash now clears their session deleted state before refreshing similarity groups.
 - Settings and cancellation tests now isolate persisted preferences and avoid sleep-loop task bodies.

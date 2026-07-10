@@ -511,6 +511,7 @@ class MainActivity : ComponentActivity() {
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
                                 showFullPaths = settingsSnapshot.showFullPaths,
+                                deletedPaths = deletedPaths.value,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onBack = { pop(backStack) },
