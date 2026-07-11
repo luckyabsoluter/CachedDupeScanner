@@ -84,7 +84,7 @@ internal fun loadFilteredSimilarityClustersPage(
     )
 }
 
-private fun SimilarityClusterEntity.asFilterGroup(): DuplicateGroupEntity {
+internal fun SimilarityClusterEntity.asFilterGroup(): DuplicateGroupEntity {
     return DuplicateGroupEntity(
         sizeBytes = if (fileCount > 0) totalBytes / fileCount else 0L,
         hashHex = clusterKey,

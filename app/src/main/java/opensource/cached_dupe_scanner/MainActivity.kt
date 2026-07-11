@@ -539,6 +539,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                     ok
                                 },
+                                onBulkDeleteFile = { file ->
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                taskScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onBack = { pop(backStack) },

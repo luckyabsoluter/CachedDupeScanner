@@ -977,10 +977,12 @@ fun ResultsScreenDb(
         when (command) {
             ResultsBulkDeleteCommandType.KeepOneNonMatch -> {
                 KeepOneNonMatchBulkDeleteScreen(
-                    resultsRepo = resultsRepo,
-                    sortKey = mapSort(sortKey.value, sortDirection.value),
-                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
-                    totalGroupCount = totalGroupCount.value,
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
@@ -993,7 +995,7 @@ fun ResultsScreenDb(
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
-                    onResultsChanged = {
+                    onResultsChanged = { _ ->
                         refresh(reset = true, rebuild = false)
                     }
                 )
@@ -1001,10 +1003,12 @@ fun ResultsScreenDb(
 
             ResultsBulkDeleteCommandType.KeepByModified -> {
                 KeepByModifiedBulkDeleteScreen(
-                    resultsRepo = resultsRepo,
-                    sortKey = mapSort(sortKey.value, sortDirection.value),
-                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
-                    totalGroupCount = totalGroupCount.value,
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
@@ -1017,7 +1021,7 @@ fun ResultsScreenDb(
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
-                    onResultsChanged = {
+                    onResultsChanged = { _ ->
                         refresh(reset = true, rebuild = false)
                     }
                 )

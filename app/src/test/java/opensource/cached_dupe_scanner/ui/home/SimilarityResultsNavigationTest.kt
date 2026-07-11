@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
+import opensource.cached_dupe_scanner.core.PathNormalizer
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
@@ -46,7 +47,9 @@ import opensource.cached_dupe_scanner.storage.StorageRootProvider
 import opensource.cached_dupe_scanner.storage.StorageRootResolver
 import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
+import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -81,7 +84,7 @@ class SimilarityResultsNavigationTest {
             "similarity-results-navigation-${UUID.randomUUID()}"
         )
         tempDir.mkdirs()
-        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     }
 
     @After
@@ -251,11 +254,13 @@ class SimilarityResultsNavigationTest {
     @Test
     fun deleteKeepsMemorySnapshotAndMaintenanceReentryUsesPersistedState() {
         val fixture = createSimilarityFixture()
+        val taskCoordinator = TaskCoordinator()
 
         composeRule.setContent {
             SimilarityDeleteNavigationHarness(
                 fixture = fixture,
                 settingsStore = AppSettingsStore(context),
+                taskCoordinator = taskCoordinator,
                 modifier = Modifier.height(1_200.dp)
             )
         }
@@ -345,6 +350,76 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
+    fun bulkDeleteKeepsColoredParentSnapshotUntilResultsAreReopened() {
+        val fixture = createSimilarityFixture()
+        val taskCoordinator = TaskCoordinator()
+
+        composeRule.setContent {
+            SimilarityDeleteNavigationHarness(
+                fixture = fixture,
+                settingsStore = AppSettingsStore(context),
+                taskCoordinator = taskCoordinator,
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("Menu").performClick()
+        composeRule.onNodeWithText("Bulk delete").performClick()
+        composeRule.onNodeWithText("Keep by modified time").performClick()
+        composeRule.onNodeWithText("Build preview").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Build preview")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithTag("bulk-delete-keep-modified-list")
+            .performScrollToIndex(8)
+        composeRule.onNodeWithText("1 groups and 1 files are ready.").fetchSemanticsNode()
+        composeRule.onNodeWithText("Delete matching files").performClick()
+        composeRule.onNodeWithText("Delete").performClick()
+
+        composeRule.waitUntil(5_000) {
+            taskCoordinator.terminalSummary(TaskArea.Trash) != null
+        }
+        composeRule.waitForIdle()
+        val terminal = requireNotNull(taskCoordinator.terminalSummary(TaskArea.Trash))
+        assertEquals(terminal.detail, TaskStatus.Completed, terminal.status)
+        assertTrue(fixture.secondFile.exists().not())
+        assertTrue(fixture.firstFile.exists())
+        assertEquals(0, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+
+        composeRule.onNodeWithText("Back").performClick()
+        val catalogBackNodes = composeRule.onAllNodesWithContentDescription("Back")
+        catalogBackNodes[catalogBackNodes.fetchSemanticsNodes().lastIndex].performClick()
+        composeRule.waitForIdle()
+
+        val clusterNode = composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}")
+        clusterNode.fetchSemanticsNode()
+        composeRule.waitUntil(5_000) {
+            clusterNode.fetchSemanticsNode().config[SemanticsProperties.StateDescription] ==
+                "Contains deleted files"
+        }
+
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.onNodeWithText("Reopen similarity results").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("No similarity groups found", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertTrue(
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+    }
+
+    @Test
     fun videoPreviewToggleKeepsDetailMenuOpen() {
         val fixture = createSimilarityFixture()
         val previewEnabled = mutableStateOf(false)
@@ -395,6 +470,7 @@ class SimilarityResultsNavigationTest {
     private fun SimilarityDeleteNavigationHarness(
         fixture: SimilarityFixture,
         settingsStore: AppSettingsStore,
+        taskCoordinator: TaskCoordinator,
         modifier: Modifier
     ) {
         val resultsOpen = remember { mutableStateOf(true) }
@@ -431,6 +507,18 @@ class SimilarityResultsNavigationTest {
                     }
                     moved
                 },
+                onBulkDeleteFile = { file ->
+                    val moved = withContext(Dispatchers.IO) {
+                        fixture.trashController.moveToTrash(file.normalizedPath).success
+                    }
+                    if (moved) {
+                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                    }
+                    moved
+                },
+                taskScope = appScope,
+                taskCoordinator = taskCoordinator,
+                notificationController = remember { TaskNotificationController(context) },
                 settingId = fixture.settingId,
                 refreshVersion = 0,
                 onBack = { resultsOpen.value = false },
@@ -449,6 +537,8 @@ class SimilarityResultsNavigationTest {
     ): SimilarityFixture {
         val first = videoFile("first.mp4", firstContents)
         val second = videoFile("second.mp4", secondContents)
+        check(first.setLastModified(1_000L))
+        check(second.setLastModified(2_000L))
         database.fileCacheDao().upsert(entity(first))
         database.fileCacheDao().upsert(entity(second))
         val repository = SimilaritySettingsRepository(
@@ -508,6 +598,7 @@ class SimilarityResultsNavigationTest {
             settingId = setting.settingId,
             clusterId = cluster!!.clusterId,
             firstFile = first,
+            secondFile = second,
             trashController = trashController
         )
     }
@@ -529,7 +620,7 @@ class SimilarityResultsNavigationTest {
     }
 
     private fun File.normalizedPathForTest(): String {
-        return absolutePath.replace('\\', '/').lowercase()
+        return PathNormalizer.normalize(absolutePath)
     }
 
     private fun clearSettings() {
@@ -579,6 +670,7 @@ class SimilarityResultsNavigationTest {
         val settingId: Long,
         val clusterId: Long,
         val firstFile: File,
+        val secondFile: File,
         val trashController: TrashController
     )
 

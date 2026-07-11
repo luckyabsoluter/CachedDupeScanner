@@ -38,6 +38,9 @@ import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.normalizedSimilaritySettingDisplayName
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import kotlin.math.abs
 
 data class SimilarityMaintenanceProgress(
@@ -316,6 +319,44 @@ class SimilaritySettingsRepository(
                     )
                 }
             }
+        }
+    }
+
+    fun listClustersAfterId(
+        settingId: Long,
+        afterClusterId: Long,
+        limit: Int
+    ): List<SimilarityClusterEntity> {
+        return similarityDao.listStoredClustersAfterId(
+            settingId = settingId,
+            afterClusterId = afterClusterId.coerceAtLeast(0L),
+            limit = limit.coerceAtLeast(0)
+        )
+    }
+
+    fun clusterSnapshotKey(settingId: Long, pageSize: Int = 200): String {
+        require(pageSize > 0) { "pageSize must be positive" }
+        val digest = MessageDigest.getInstance("SHA-256")
+        var afterClusterId = 0L
+        while (true) {
+            val page = similarityDao.listStoredClustersAfterId(
+                settingId = settingId,
+                afterClusterId = afterClusterId,
+                limit = pageSize
+            )
+            if (page.isEmpty()) break
+            page.forEach { cluster ->
+                digest.updateLong(cluster.clusterId)
+                digest.updateString(cluster.clusterKey)
+                digest.updateLong(cluster.fileCount.toLong())
+                digest.updateLong(cluster.totalBytes)
+                digest.updateLong(cluster.updatedAtMillis)
+                afterClusterId = cluster.clusterId
+            }
+            if (page.size < pageSize) break
+        }
+        return digest.digest().joinToString(separator = "") { byte ->
+            "%02x".format(byte.toInt() and 0xff)
         }
     }
 
@@ -923,6 +964,16 @@ class SimilaritySettingsRepository(
         similarityDao.deleteDurationFeatures(settingId)
         similarityDao.deleteClusterMembersForSetting(settingId)
         similarityDao.deleteClustersForSetting(settingId)
+    }
+
+    private fun MessageDigest.updateLong(value: Long) {
+        update(ByteBuffer.allocate(Long.SIZE_BYTES).putLong(value).array())
+    }
+
+    private fun MessageDigest.updateString(value: String) {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        updateLong(bytes.size.toLong())
+        update(bytes)
     }
 
     private fun countCandidates(mediaScope: SimilarityMediaScope, minSizeBytes: Long): Int {

@@ -636,13 +636,25 @@ fun SimilaritySettingResultsScreen(
     onShowVideoPreviewResolutionsChange: (Boolean) -> Unit,
     deletedPaths: Set<String>,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onBulkDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
     settingId: Long,
     refreshVersion: Int,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val imageLoader = rememberSimilarityImageLoader(context)
     var selectedClusterId by remember(settingId) { mutableStateOf<Long?>(null) }
     var memoryDeletedClusterIds by remember(settingId) { mutableStateOf<Set<Long>>(emptySet()) }
+    var bulkDeleteCatalogOpen by remember(settingId) { mutableStateOf(false) }
+    var bulkDeleteCommand by remember(settingId) {
+        mutableStateOf<ResultsBulkDeleteCommandType?>(null)
+    }
+    var bulkDeleteFilter by remember(settingId) { mutableStateOf(ResultsFilterDefinition()) }
+    var bulkDeleteTotalGroupCount by remember(settingId) { mutableStateOf(0) }
     val detailCaches = remember(settingId) {
         mutableMapOf<Long, SimilarityClusterDetailMemoryCache>()
     }
@@ -663,6 +675,14 @@ fun SimilaritySettingResultsScreen(
             onOpenCluster = { _, clusterId ->
                 detailCaches.getOrPut(clusterId) { SimilarityClusterDetailMemoryCache() }
                 selectedClusterId = clusterId
+            },
+            onOpenBulkDelete = { totalGroupCount ->
+                bulkDeleteFilter = resultsFilterDefinitionFromJson(
+                    settingsStore.load().similarityFilterDefinitionJson
+                )
+                bulkDeleteTotalGroupCount = totalGroupCount
+                bulkDeleteCommand = null
+                bulkDeleteCatalogOpen = true
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -713,6 +733,61 @@ fun SimilaritySettingResultsScreen(
                 )
             }
         }
+
+        if (bulkDeleteCatalogOpen && bulkDeleteCommand == null) {
+            ResultsBulkDeleteCatalogScreen(
+                appliedFilter = bulkDeleteFilter,
+                onBack = { bulkDeleteCatalogOpen = false },
+                onOpenCommand = { command -> bulkDeleteCommand = command }
+            )
+        }
+
+        bulkDeleteCommand?.let { command ->
+            val operations = SimilarityBulkDeleteOperations(
+                repository = repository,
+                settingId = settingId,
+                totalGroupCount = bulkDeleteTotalGroupCount
+            )
+            when (command) {
+                ResultsBulkDeleteCommandType.KeepOneNonMatch -> {
+                    KeepOneNonMatchBulkDeleteScreen(
+                        operations = operations,
+                        appliedFilter = bulkDeleteFilter,
+                        imageLoader = imageLoader,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        thumbnailSizeScale = thumbnailSizeScale,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        taskScope = taskScope,
+                        taskCoordinator = taskCoordinator,
+                        notificationController = notificationController,
+                        onDeleteFile = onBulkDeleteFile,
+                        onBack = { bulkDeleteCommand = null },
+                        onResultsChanged = { outcome ->
+                            memoryDeletedClusterIds = memoryDeletedClusterIds + outcome.touchedSourceIds
+                        }
+                    )
+                }
+
+                ResultsBulkDeleteCommandType.KeepByModified -> {
+                    KeepByModifiedBulkDeleteScreen(
+                        operations = operations,
+                        appliedFilter = bulkDeleteFilter,
+                        imageLoader = imageLoader,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        thumbnailSizeScale = thumbnailSizeScale,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        taskScope = taskScope,
+                        taskCoordinator = taskCoordinator,
+                        notificationController = notificationController,
+                        onDeleteFile = onBulkDeleteFile,
+                        onBack = { bulkDeleteCommand = null },
+                        onResultsChanged = { outcome ->
+                            memoryDeletedClusterIds = memoryDeletedClusterIds + outcome.touchedSourceIds
+                        }
+                    )
+                }
+            }
+        }
     }
     BackHandler(enabled = selectedClusterId != null) {
         selectedClusterId = null
@@ -733,6 +808,7 @@ fun SimilaritySettingGroupsScreen(
     refreshVersion: Int,
     onBack: () -> Unit,
     onOpenCluster: (Long, Long) -> Unit,
+    onOpenBulkDelete: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -969,6 +1045,15 @@ fun SimilaritySettingGroupsScreen(
                             expanded = groupsMenuExpanded,
                             onDismissRequest = { groupsMenuExpanded = false }
                         ) {
+                            onOpenBulkDelete?.let { openBulkDelete ->
+                                DropdownMenuItem(
+                                    text = { Text("Bulk delete") },
+                                    onClick = {
+                                        groupsMenuExpanded = false
+                                        openBulkDelete(clusterSummary.clusterCount)
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = {
                                     Text(

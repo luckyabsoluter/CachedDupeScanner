@@ -135,6 +135,23 @@ interface SimilaritySettingsDao {
 
     @Query(
         """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+          AND clusterId > :afterClusterId
+        ORDER BY clusterId ASC
+        LIMIT :limit
+        """
+    )
+    fun listStoredClustersAfterId(
+        settingId: Long,
+        afterClusterId: Long,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
         SELECT
             cluster.clusterId AS clusterId,
             COUNT(file.normalizedPath) AS fileCount,
