@@ -462,6 +462,12 @@ private fun ResultsFilterRuleEditor(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else if (rule.target == ResultsFilterTarget.SameResolution) {
+                Text(
+                    text = "Matches only when every media file in the group has the same width and height.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else if (rule.target == ResultsFilterTarget.DurationFromAverage) {
                 Text(
                     text = "Matches only when every stored video duration is within this tolerance of the group average.",
@@ -469,32 +475,27 @@ private fun ResultsFilterRuleEditor(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
-                    value = rule.durationToleranceSeconds,
+                    value = rule.durationToleranceInput(),
                     onValueChange = { value ->
-                        if (value.isEmpty() || value.toLongOrNull()?.let { it >= 0L } == true) {
-                            onRuleChange(rule.copy(durationToleranceSeconds = value))
+                        if (value.all { character -> character.isDigit() }) {
+                            onRuleChange(rule.withDurationToleranceInput(value))
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("duration-average-seconds"),
-                    label = { Text("Seconds") },
+                        .testTag("duration-average-tolerance"),
+                    label = { Text("Tolerance") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
-                OutlinedTextField(
-                    value = rule.durationToleranceMilliseconds,
-                    onValueChange = { value ->
-                        if (value.isEmpty() || value.toIntOrNull()?.let { it in 0..999 } == true) {
-                            onRuleChange(rule.copy(durationToleranceMilliseconds = value))
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("duration-average-milliseconds"),
-                    label = { Text("Milliseconds (0-999)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                Text("Unit")
+                OptionButtonGrid(
+                    options = ResultsFilterDurationUnit.entries,
+                    selected = rule.durationToleranceUnit(),
+                    label = { unit -> unit.label },
+                    onSelect = { unit ->
+                        onRuleChange(rule.withDurationToleranceUnit(unit))
+                    }
                 )
             } else {
                 Text("Operator")

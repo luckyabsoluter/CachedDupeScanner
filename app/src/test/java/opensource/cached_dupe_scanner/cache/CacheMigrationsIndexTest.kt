@@ -568,6 +568,73 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration19to20AddsUncheckedSimilarityDimensions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-19-20-${UUID.randomUUID()}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(19) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE IF NOT EXISTS similarity_setting_files (
+                                settingId INTEGER NOT NULL,
+                                normalizedPath TEXT NOT NULL,
+                                sizeBytes INTEGER NOT NULL,
+                                lastModifiedMillis INTEGER NOT NULL,
+                                status TEXT NOT NULL,
+                                updatedAtMillis INTEGER NOT NULL,
+                                PRIMARY KEY(settingId, normalizedPath)
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            INSERT INTO similarity_setting_files (
+                                settingId,
+                                normalizedPath,
+                                sizeBytes,
+                                lastModifiedMillis,
+                                status,
+                                updatedAtMillis
+                            ) VALUES (1, '/video/a.mp4', 10, 20, 'ready', 30)
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_19_20.migrate(db)
+
+            assertTrue(hasColumn(db, "similarity_setting_files", "widthPixels"))
+            assertTrue(hasColumn(db, "similarity_setting_files", "heightPixels"))
+            assertTrue(hasColumn(db, "similarity_setting_files", "dimensionsChecked"))
+            db.query(
+                """
+                SELECT widthPixels, heightPixels, dimensionsChecked
+                FROM similarity_setting_files
+                WHERE settingId = 1 AND normalizedPath = '/video/a.mp4'
+                """.trimIndent()
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("widthPixels")))
+                assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("heightPixels")))
+                assertEquals(0, cursor.getInt(cursor.getColumnIndexOrThrow("dimensionsChecked")))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """

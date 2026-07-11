@@ -18,7 +18,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity group browsing now supports the saved result filter editor and applies group and paged member rules before groups enter the visible list.
 - Result and similarity group filters now support matching groups whose members all have the same byte size.
 - Similarity group browsing now provides the shared bulk-delete catalog, filtered previews, and keep-by-text or modified-time commands while retaining deletion highlights only in the active results screen.
-- Similarity filters now support matching groups where every stored video duration stays within a custom seconds-and-milliseconds tolerance of the exact group average.
+- Similarity filters now support matching groups where every stored video duration stays within a single-value `s` or `ms` tolerance of the exact group average.
+- Similarity filters can now match only groups whose media members all have the same stored width and height.
 
 ### Changed
 

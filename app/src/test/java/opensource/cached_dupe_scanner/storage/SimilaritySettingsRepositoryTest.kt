@@ -13,6 +13,8 @@ import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
+import opensource.cached_dupe_scanner.core.MediaDimensions
+import opensource.cached_dupe_scanner.core.MediaDimensionsExtractor
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
@@ -532,6 +534,149 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun sameResolutionFilterUsesPersistedDimensionsAcrossMemberPages() {
+        val matchingFiles = listOf(
+            videoFile("resolution-match-a.mp4"),
+            videoFile("resolution-match-b.mp4")
+        )
+        val differentFiles = listOf(
+            videoFile("resolution-different-a.mp4"),
+            videoFile("resolution-different-b.mp4")
+        )
+        (matchingFiles + differentFiles).forEach { file ->
+            database.fileCacheDao().upsert(entity(file))
+        }
+        val repository = repository(
+            signatures = mapOf(
+                matchingFiles[0].absolutePath to "matching-resolution",
+                matchingFiles[1].absolutePath to "matching-resolution",
+                differentFiles[0].absolutePath to "different-resolution",
+                differentFiles[1].absolutePath to "different-resolution"
+            ),
+            dimensions = mapOf(
+                matchingFiles[0].absolutePath to MediaDimensions(1920, 1080),
+                matchingFiles[1].absolutePath to MediaDimensions(1920, 1080),
+                differentFiles[0].absolutePath to MediaDimensions(1920, 1080),
+                differentFiles[1].absolutePath to MediaDimensions(1280, 720)
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_resolution",
+                    name = "Same resolution",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_resolution",
+                            target = ResultsFilterTarget.SameResolution
+                        )
+                    )
+                )
+            )
+        )
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = definition,
+            startOffset = 0,
+            minMatches = 10,
+            sourcePageSize = 1,
+            memberPageSize = 1
+        )
+
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(
+            matchingFiles.map { file -> file.normalizedPath() },
+            repository.listClusterMembers(filtered.clusters.single().clusterId)
+                .map { member -> member.metadata.normalizedPath }
+        )
+        assertEquals(
+            listOf(1920 to 1080, 1920 to 1080),
+            repository.listClusterMembers(filtered.clusters.single().clusterId)
+                .map { member -> member.metadata.widthPixels to member.metadata.heightPixels }
+        )
+    }
+
+    @Test
+    fun maintenanceBackfillsMigratedDimensionsWithoutRecalculatingFreshFeatures() {
+        val first = videoFile("backfill-a.mp4")
+        val second = videoFile("backfill-b.mp4")
+        listOf(first, second).forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val initialRepository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = initialRepository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+        initialRepository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val similarityDao = database.similaritySettingsDao()
+        listOf(first, second).forEach { file ->
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            similarityDao.upsertSettingFiles(
+                listOf(
+                    stored.copy(
+                        widthPixels = null,
+                        heightPixels = null,
+                        dimensionsChecked = false
+                    )
+                )
+            )
+        }
+        val backfillRepository = repository(
+            signatures = emptyMap(),
+            dimensions = mapOf(
+                first.absolutePath to MediaDimensions(3840, 2160),
+                second.absolutePath to MediaDimensions(3840, 2160)
+            )
+        )
+
+        backfillRepository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = false,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        val cluster = backfillRepository.listClusters(setting.settingId).single()
+        assertEquals(
+            listOf(3840 to 2160, 3840 to 2160),
+            backfillRepository.listClusterMembers(cluster.clusterId)
+                .map { member -> member.metadata.widthPixels to member.metadata.heightPixels }
+        )
+        listOf(first, second).forEach { file ->
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            assertEquals("ready", stored.status)
+            assertTrue(stored.dimensionsChecked)
+        }
+    }
+
+    @Test
     fun createSettingNormalizesSimilarityIdentity() {
         val repository = repository()
 
@@ -790,14 +935,16 @@ class SimilaritySettingsRepositoryTest {
 
     private fun repository(
         signatures: Map<String, String> = emptyMap(),
-        durations: Map<String, Long> = emptyMap()
+        durations: Map<String, Long> = emptyMap(),
+        dimensions: Map<String, MediaDimensions> = emptyMap()
     ): SimilaritySettingsRepository {
         return SimilaritySettingsRepository(
             database = database,
             fileDao = database.fileCacheDao(),
             similarityDao = database.similaritySettingsDao(),
             frameSignatureExtractor = FakeSignatureExtractor(signatures),
-            durationExtractor = FakeDurationExtractor(durations)
+            durationExtractor = FakeDurationExtractor(durations),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(dimensions)
         )
     }
 
@@ -858,6 +1005,18 @@ private class FakeDurationExtractor(
 ) : VideoDurationExtractor {
     override fun durationMillis(file: File, shouldContinue: () -> Boolean): Long? {
         return durationsByPath[file.absolutePath]
+    }
+}
+
+private class FakeMediaDimensionsExtractor(
+    private val dimensionsByPath: Map<String, MediaDimensions>
+) : MediaDimensionsExtractor {
+    override fun dimensions(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        shouldContinue: () -> Boolean
+    ): MediaDimensions? {
+        return dimensionsByPath[file.absolutePath]
     }
 }
 

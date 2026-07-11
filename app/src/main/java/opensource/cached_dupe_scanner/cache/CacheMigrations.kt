@@ -600,6 +600,17 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE similarity_setting_files ADD COLUMN widthPixels INTEGER")
+            db.execSQL("ALTER TABLE similarity_setting_files ADD COLUMN heightPixels INTEGER")
+            db.execSQL(
+                "ALTER TABLE similarity_setting_files " +
+                    "ADD COLUMN dimensionsChecked INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
 }
 
 private data class MigrationSimilarityClusterMember(

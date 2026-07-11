@@ -324,7 +324,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -350,7 +352,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -381,7 +385,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -412,7 +418,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -443,7 +451,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -474,7 +484,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -505,7 +517,9 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis
+            duration.durationMillis AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId

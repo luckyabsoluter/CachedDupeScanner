@@ -254,7 +254,7 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
-    fun similarityFilterEditorStoresAverageDurationSecondsAndMilliseconds() {
+    fun similarityFilterEditorUsesOneDurationInputWithAUnitSelector() {
         var editedRule: ResultsFilterRule? = null
 
         composeRule.setContent {
@@ -283,20 +283,30 @@ class SimilarityResultsNavigationTest {
         }
 
         scrollUntilText("All near average duration")
-        scrollUntilText("Seconds")
-        composeRule.onNodeWithTag("duration-average-seconds")
-            .performScrollTo()
-            .performTextInput("2")
-        composeRule.onNodeWithTag("duration-average-milliseconds")
+        scrollUntilText("Tolerance")
+        composeRule.onNodeWithTag("duration-average-tolerance")
             .performScrollTo()
             .performTextInput("375")
+        composeRule.onNodeWithText("ms")
+            .performScrollTo()
+            .performClick()
 
         composeRule.runOnIdle {
             assertEquals(ResultsFilterTarget.DurationFromAverage, editedRule?.target)
-            assertEquals("2", editedRule?.durationToleranceSeconds)
+            assertEquals("", editedRule?.durationToleranceSeconds)
             assertEquals("375", editedRule?.durationToleranceMilliseconds)
-            assertEquals(2_375L, editedRule?.durationToleranceMillis())
+            assertEquals(375L, editedRule?.durationToleranceMillis())
         }
+        assertTrue(
+            composeRule.onAllNodesWithTag("duration-average-seconds")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+        assertTrue(
+            composeRule.onAllNodesWithTag("duration-average-milliseconds")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
     }
 
     @Test

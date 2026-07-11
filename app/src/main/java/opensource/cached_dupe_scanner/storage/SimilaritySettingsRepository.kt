@@ -12,12 +12,15 @@ import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingsDao
+import opensource.cached_dupe_scanner.core.AndroidMediaDimensionsExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.MediaDimensions
+import opensource.cached_dupe_scanner.core.MediaDimensionsExtractor
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_DURATION_TOLERANCE
 import opensource.cached_dupe_scanner.core.SIMILARITY_METHOD_EXACT_THUMBNAIL
@@ -88,7 +91,8 @@ class SimilaritySettingsRepository(
     private val fileDao: FileCacheDao,
     private val similarityDao: SimilaritySettingsDao,
     private val frameSignatureExtractor: VideoFrameSignatureExtractor = AndroidVideoFrameSignatureExtractor(),
-    private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor()
+    private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor(),
+    private val mediaDimensionsExtractor: MediaDimensionsExtractor = AndroidMediaDimensionsExtractor()
 ) : CacheMutationObserver {
     private val maintenanceLock = Any()
 
@@ -590,11 +594,34 @@ class SimilaritySettingsRepository(
                 }
                 currentPath = entity.path.ifBlank { entity.normalizedPath }
                 val existing = similarityDao.getSettingFile(setting.settingId, entity.normalizedPath)
-                val isFresh = !rebuild &&
+                val featureIsFresh = !rebuild &&
                     existing?.status == SIMILARITY_FILE_STATUS_READY &&
                     existing.sizeBytes == entity.sizeBytes &&
                     existing.lastModifiedMillis == entity.lastModifiedMillis
-                if (isFresh) {
+                if (featureIsFresh && existing?.dimensionsChecked == true) {
+                    processed += 1
+                    afterPath = entity.normalizedPath
+                    continue
+                }
+
+                if (featureIsFresh && existing != null) {
+                    val dimensions = extractDimensions(mediaScope, entity, shouldContinue)
+                    if (!shouldContinue()) {
+                        return finishSingleSummary(
+                            setting = setting,
+                            startedAt = startedAt,
+                            candidateCount = total,
+                            processed = processed,
+                            skipped = skipped,
+                            cancelled = true
+                        )
+                    }
+                    settingFiles += existing.copy(
+                        widthPixels = dimensions?.widthPixels,
+                        heightPixels = dimensions?.heightPixels,
+                        dimensionsChecked = true,
+                        updatedAtMillis = now
+                    )
                     processed += 1
                     afterPath = entity.normalizedPath
                     continue
@@ -603,9 +630,34 @@ class SimilaritySettingsRepository(
                 val feature = calculateFeature(setting, mediaScope, entity, shouldContinue)
                 if (feature == null) {
                     skipped += 1
-                    settingFiles += settingFile(setting, entity, SIMILARITY_FILE_STATUS_SKIPPED, now)
+                    settingFiles += settingFile(
+                        setting = setting,
+                        entity = entity,
+                        status = SIMILARITY_FILE_STATUS_SKIPPED,
+                        dimensions = null,
+                        dimensionsChecked = false,
+                        updatedAtMillis = now
+                    )
                 } else {
-                    settingFiles += settingFile(setting, entity, SIMILARITY_FILE_STATUS_READY, now)
+                    val dimensions = extractDimensions(mediaScope, entity, shouldContinue)
+                    if (!shouldContinue()) {
+                        return finishSingleSummary(
+                            setting = setting,
+                            startedAt = startedAt,
+                            candidateCount = total,
+                            processed = processed,
+                            skipped = skipped,
+                            cancelled = true
+                        )
+                    }
+                    settingFiles += settingFile(
+                        setting = setting,
+                        entity = entity,
+                        status = SIMILARITY_FILE_STATUS_READY,
+                        dimensions = dimensions,
+                        dimensionsChecked = true,
+                        updatedAtMillis = now
+                    )
                     when (feature) {
                         is CalculatedFeature.ExactThumbnail -> exactFeatures += SimilarityExactThumbnailFeatureEntity(
                             settingId = setting.settingId,
@@ -999,6 +1051,8 @@ class SimilaritySettingsRepository(
         setting: SimilaritySettingEntity,
         entity: CachedFileEntity,
         status: String,
+        dimensions: MediaDimensions?,
+        dimensionsChecked: Boolean,
         updatedAtMillis: Long
     ): SimilaritySettingFileEntity {
         return SimilaritySettingFileEntity(
@@ -1007,7 +1061,25 @@ class SimilaritySettingsRepository(
             sizeBytes = entity.sizeBytes,
             lastModifiedMillis = entity.lastModifiedMillis,
             status = status,
+            widthPixels = dimensions?.widthPixels,
+            heightPixels = dimensions?.heightPixels,
+            dimensionsChecked = dimensionsChecked,
             updatedAtMillis = updatedAtMillis
+        )
+    }
+
+    private fun extractDimensions(
+        mediaScope: SimilarityMediaScope,
+        entity: CachedFileEntity,
+        shouldContinue: () -> Boolean
+    ): MediaDimensions? {
+        val path = entity.path.ifBlank { entity.normalizedPath }
+        val file = File(path)
+        if (!file.exists()) return null
+        return mediaDimensionsExtractor.dimensions(
+            file = file,
+            mediaScope = mediaScope,
+            shouldContinue = shouldContinue
         )
     }
 
@@ -1046,7 +1118,9 @@ private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {
         sizeBytes = sizeBytes,
         lastModifiedMillis = lastModifiedMillis,
         hashHex = hashHex,
-        durationMillis = durationMillis
+        durationMillis = durationMillis,
+        widthPixels = widthPixels,
+        heightPixels = heightPixels
     )
 }
 

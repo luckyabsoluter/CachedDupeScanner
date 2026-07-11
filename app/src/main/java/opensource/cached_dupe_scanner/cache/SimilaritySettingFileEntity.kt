@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.cache
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -17,6 +18,9 @@ data class SimilaritySettingFileEntity(
     val sizeBytes: Long,
     val lastModifiedMillis: Long,
     val status: String,
+    val widthPixels: Int?,
+    val heightPixels: Int?,
+    @ColumnInfo(defaultValue = "0")
+    val dimensionsChecked: Boolean,
     val updatedAtMillis: Long
 )
-

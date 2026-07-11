@@ -11,8 +11,11 @@ class ResultsScreenDbFiltersTest {
     @Test
     fun durationAverageTargetIsLimitedToSimilarityFilters() {
         assertTrue(SIMILARITY_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+        assertTrue(SIMILARITY_FILTER_TARGETS.contains(ResultsFilterTarget.SameResolution))
         assertFalse(RESULT_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+        assertFalse(RESULT_FILTER_TARGETS.contains(ResultsFilterTarget.SameResolution))
         assertFalse(FILE_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+        assertFalse(FILE_FILTER_TARGETS.contains(ResultsFilterTarget.SameResolution))
     }
 
     @Test
@@ -212,6 +215,63 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun similarityFilterRequiresEveryMemberToHaveTheSameResolution() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_resolution",
+                    name = "Same resolution",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_resolution",
+                            target = ResultsFilterTarget.SameResolution
+                        )
+                    )
+                )
+            )
+        )
+        val sameResolution = listOf(
+            file("/videos/a.mp4", widthPixels = 1920, heightPixels = 1080),
+            file("/videos/b.mp4", widthPixels = 1920, heightPixels = 1080)
+        )
+
+        assertTrue(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = sameResolution.size),
+                members = sameResolution,
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = sameResolution.dropLast(1) +
+                    file("/videos/b.mp4", widthPixels = 1280, heightPixels = 1080),
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = sameResolution.dropLast(1) +
+                    file("/videos/b.mp4", widthPixels = 1920, heightPixels = 1200),
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = sameResolution.dropLast(1) + file("/videos/unknown.mp4"),
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+    }
+
+    @Test
     fun similarityFilterRequiresEveryDurationWithinToleranceOfExactAverage() {
         val definition = durationAverageDefinition(seconds = "0", milliseconds = "100")
         val withinTolerance = listOf(
@@ -290,11 +350,11 @@ class ResultsScreenDbFiltersTest {
             ).durationToleranceMillis()
         )
         assertEquals(
-            500L,
+            2_375L,
             ResultsFilterRule(
                 id = "rule_2",
                 target = ResultsFilterTarget.DurationFromAverage,
-                durationToleranceMilliseconds = "500"
+                durationToleranceMilliseconds = "2375"
             ).durationToleranceMillis()
         )
         assertEquals(
@@ -312,6 +372,27 @@ class ResultsScreenDbFiltersTest {
                 id = "rule_4",
                 target = ResultsFilterTarget.DurationFromAverage
             ).durationToleranceMillis()
+        )
+    }
+
+    @Test
+    fun durationAverageEditorConvertsLegacyCompositeValuesToOneMillisecondInput() {
+        val legacyRule = ResultsFilterRule(
+            id = "rule_legacy",
+            target = ResultsFilterTarget.DurationFromAverage,
+            durationToleranceSeconds = "2",
+            durationToleranceMilliseconds = "375"
+        )
+
+        assertEquals(ResultsFilterDurationUnit.Milliseconds, legacyRule.durationToleranceUnit())
+        assertEquals("2375", legacyRule.durationToleranceInput())
+        assertEquals(
+            ResultsFilterRule(
+                id = "rule_legacy",
+                target = ResultsFilterTarget.DurationFromAverage,
+                durationToleranceMilliseconds = "2500"
+            ),
+            legacyRule.withDurationToleranceInput("2500")
         )
     }
 
@@ -455,6 +536,45 @@ class ResultsScreenDbFiltersTest {
 
         assertTrue(pagedFilterResult(definition, group(fileCount = 3), sameSize, pageSize = 1))
         assertFalse(pagedFilterResult(definition, group(fileCount = 3), differentSizes, pageSize = 1))
+    }
+
+    @Test
+    fun pagedSimilarityFilterEvaluatesResolutionAcrossEveryMemberPage() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_resolution",
+                    name = "Same resolution",
+                    rules = listOf(
+                        ResultsFilterRule(id = "rule_resolution", target = ResultsFilterTarget.SameResolution)
+                    )
+                )
+            )
+        )
+        val sameResolution = listOf(
+            file("/videos/a.mp4", widthPixels = 1920, heightPixels = 1080),
+            file("/videos/b.mp4", widthPixels = 1920, heightPixels = 1080),
+            file("/videos/c.mp4", widthPixels = 1920, heightPixels = 1080)
+        )
+        val differentResolution = sameResolution.dropLast(1) +
+            file("/videos/c.mp4", widthPixels = 1920, heightPixels = 1200)
+
+        assertTrue(
+            matchesResultsFilterPagedMembers(
+                definition = definition,
+                group = group(fileCount = sameResolution.size),
+                supportedTargets = SIMILARITY_FILTER_TARGETS,
+                memberPages = { pagedMembers(sameResolution, pageSize = 1) }
+            )
+        )
+        assertFalse(
+            matchesResultsFilterPagedMembers(
+                definition = definition,
+                group = group(fileCount = differentResolution.size),
+                supportedTargets = SIMILARITY_FILTER_TARGETS,
+                memberPages = { pagedMembers(differentResolution, pageSize = 1) }
+            )
+        )
     }
 
     @Test
@@ -687,6 +807,10 @@ class ResultsScreenDbFiltersTest {
                             target = ResultsFilterTarget.DurationFromAverage,
                             durationToleranceSeconds = "2",
                             durationToleranceMilliseconds = "375"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_12",
+                            target = ResultsFilterTarget.SameResolution
                         )
                     )
                 )
@@ -770,7 +894,9 @@ class ResultsScreenDbFiltersTest {
         path: String,
         modified: Long = 1L,
         sizeBytes: Long = 10L,
-        durationMillis: Long? = null
+        durationMillis: Long? = null,
+        widthPixels: Int? = null,
+        heightPixels: Int? = null
     ): FileMetadata {
         return FileMetadata(
             path = path,
@@ -778,7 +904,9 @@ class ResultsScreenDbFiltersTest {
             sizeBytes = sizeBytes,
             lastModifiedMillis = modified,
             hashHex = "hash",
-            durationMillis = durationMillis
+            durationMillis = durationMillis,
+            widthPixels = widthPixels,
+            heightPixels = heightPixels
         )
     }
 

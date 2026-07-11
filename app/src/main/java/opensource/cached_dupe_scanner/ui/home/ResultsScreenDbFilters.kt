@@ -15,7 +15,13 @@ internal enum class ResultsFilterTarget(val label: String) {
     ModifiedTime("Modified time"),
     SameFolder("All same folder"),
     SameFileSize("All same size"),
+    SameResolution("All same resolution"),
     DurationFromAverage("All near average duration")
+}
+
+internal enum class ResultsFilterDurationUnit(val label: String) {
+    Seconds("s"),
+    Milliseconds("ms")
 }
 
 internal enum class ResultsFilterClusterMode(val label: String) {
@@ -73,7 +79,10 @@ internal val FILE_FILTER_TARGETS: Set<ResultsFilterTarget> = setOf(
 )
 
 internal val RESULT_FILTER_TARGETS: Set<ResultsFilterTarget> =
-    ResultsFilterTarget.entries.toSet() - ResultsFilterTarget.DurationFromAverage
+    ResultsFilterTarget.entries.toSet() - setOf(
+        ResultsFilterTarget.DurationFromAverage,
+        ResultsFilterTarget.SameResolution
+    )
 
 internal val SIMILARITY_FILTER_TARGETS: Set<ResultsFilterTarget> =
     ResultsFilterTarget.entries.toSet()
@@ -307,6 +316,9 @@ private class ResultFilterRuleProgress(
     private var folderMismatch = false
     private var firstFileSize: Long? = null
     private var fileSizeMismatch = false
+    private var firstResolution: Pair<Int, Int>? = null
+    private var resolutionMismatch = false
+    private var resolutionInvalid = false
     private val durationAccumulator = DurationAverageAccumulator()
     private val groupResult: Boolean? = if (rule.target == ResultsFilterTarget.GroupItemCount) {
         val threshold = rule.value.trim().toIntOrNull()
@@ -326,6 +338,7 @@ private class ResultFilterRuleProgress(
     fun consume(page: List<FileMetadata>) {
         val requiresAllMembers = rule.target == ResultsFilterTarget.SameFolder ||
             rule.target == ResultsFilterTarget.SameFileSize ||
+            rule.target == ResultsFilterTarget.SameResolution ||
             rule.target == ResultsFilterTarget.DurationFromAverage
         if (groupResult != null || matched && !requiresAllMembers) return
         page.forEach { member ->
@@ -371,6 +384,20 @@ private class ResultFilterRuleProgress(
                         fileSizeMismatch = true
                     }
                 }
+                ResultsFilterTarget.SameResolution -> {
+                    sawMember = true
+                    val resolution = member.mediaResolution()
+                    if (resolution == null) {
+                        resolutionInvalid = true
+                    } else {
+                        val currentFirst = firstResolution
+                        if (currentFirst == null) {
+                            firstResolution = resolution
+                        } else if (currentFirst != resolution) {
+                            resolutionMismatch = true
+                        }
+                    }
+                }
                 ResultsFilterTarget.DurationFromAverage -> {
                     durationAccumulator.consume(member.durationMillis)
                 }
@@ -396,6 +423,11 @@ private class ResultFilterRuleProgress(
             }
             ResultsFilterTarget.SameFileSize -> when {
                 fileSizeMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+            ResultsFilterTarget.SameResolution -> when {
+                resolutionInvalid || resolutionMismatch -> false
                 ended -> sawMember
                 else -> null
             }
@@ -473,6 +505,7 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.ModifiedTime -> parseResultsFilterTimeValue(rule.value) != null
         ResultsFilterTarget.SameFolder -> true
         ResultsFilterTarget.SameFileSize -> true
+        ResultsFilterTarget.SameResolution -> true
         ResultsFilterTarget.DurationFromAverage -> rule.durationToleranceMillis() != null
     }
 }
@@ -531,6 +564,11 @@ private fun matchesResultsFilterRule(
         ResultsFilterTarget.SameFileSize -> {
             members.isNotEmpty() && members.map { member -> member.sizeBytes }.distinct().size == 1
         }
+        ResultsFilterTarget.SameResolution -> {
+            val resolutions = members.map { member -> member.mediaResolution() }
+            resolutions.isNotEmpty() && resolutions.none { resolution -> resolution == null } &&
+                resolutions.distinct().size == 1
+        }
         ResultsFilterTarget.DurationFromAverage -> {
             val toleranceMillis = rule.durationToleranceMillis() ?: return false
             DurationAverageAccumulator().run {
@@ -545,14 +583,78 @@ internal fun ResultsFilterRule.durationToleranceMillis(): Long? {
     val secondsText = durationToleranceSeconds.trim()
     val millisecondsText = durationToleranceMilliseconds.trim()
     if (secondsText.isEmpty() && millisecondsText.isEmpty()) return null
-    val seconds = secondsText.ifEmpty { "0" }.toLongOrNull() ?: return null
-    val milliseconds = millisecondsText.ifEmpty { "0" }.toLongOrNull() ?: return null
-    if (seconds < 0L || milliseconds !in 0L..999L) return null
     return try {
-        Math.addExact(Math.multiplyExact(seconds, 1_000L), milliseconds)
+        when {
+            secondsText.isNotEmpty() && millisecondsText.isNotEmpty() -> {
+                val seconds = secondsText.toLongOrNull() ?: return null
+                val milliseconds = millisecondsText.toLongOrNull() ?: return null
+                if (seconds < 0L || milliseconds !in 0L..999L) return null
+                Math.addExact(Math.multiplyExact(seconds, 1_000L), milliseconds)
+            }
+            secondsText.isNotEmpty() -> {
+                val seconds = secondsText.toLongOrNull()?.takeIf { value -> value >= 0L } ?: return null
+                Math.multiplyExact(seconds, 1_000L)
+            }
+            else -> millisecondsText.toLongOrNull()?.takeIf { value -> value >= 0L }
+        }
     } catch (_: ArithmeticException) {
         null
     }
+}
+
+internal fun ResultsFilterRule.durationToleranceUnit(): ResultsFilterDurationUnit {
+    return if (durationToleranceMilliseconds.isNotBlank()) {
+        ResultsFilterDurationUnit.Milliseconds
+    } else {
+        ResultsFilterDurationUnit.Seconds
+    }
+}
+
+internal fun ResultsFilterRule.durationToleranceInput(): String {
+    val secondsText = durationToleranceSeconds.trim()
+    val millisecondsText = durationToleranceMilliseconds.trim()
+    return if (secondsText.isNotEmpty() && millisecondsText.isNotEmpty()) {
+        durationToleranceMillis()?.toString().orEmpty()
+    } else if (millisecondsText.isNotEmpty()) {
+        millisecondsText
+    } else {
+        secondsText
+    }
+}
+
+internal fun ResultsFilterRule.withDurationToleranceInput(input: String): ResultsFilterRule {
+    return when (durationToleranceUnit()) {
+        ResultsFilterDurationUnit.Seconds -> copy(
+            durationToleranceSeconds = input,
+            durationToleranceMilliseconds = ""
+        )
+        ResultsFilterDurationUnit.Milliseconds -> copy(
+            durationToleranceSeconds = "",
+            durationToleranceMilliseconds = input
+        )
+    }
+}
+
+internal fun ResultsFilterRule.withDurationToleranceUnit(
+    unit: ResultsFilterDurationUnit
+): ResultsFilterRule {
+    val input = durationToleranceInput()
+    return when (unit) {
+        ResultsFilterDurationUnit.Seconds -> copy(
+            durationToleranceSeconds = input,
+            durationToleranceMilliseconds = ""
+        )
+        ResultsFilterDurationUnit.Milliseconds -> copy(
+            durationToleranceSeconds = "",
+            durationToleranceMilliseconds = input
+        )
+    }
+}
+
+private fun FileMetadata.mediaResolution(): Pair<Int, Int>? {
+    val width = widthPixels?.takeIf { value -> value > 0 } ?: return null
+    val height = heightPixels?.takeIf { value -> value > 0 } ?: return null
+    return width to height
 }
 
 internal fun matchesTextOperator(
