@@ -22,5 +22,7 @@ data class SimilaritySettingFileEntity(
     val heightPixels: Int?,
     @ColumnInfo(defaultValue = "0")
     val dimensionsChecked: Boolean,
+    @ColumnInfo(defaultValue = "0")
+    val durationChecked: Boolean,
     val updatedAtMillis: Long
 )

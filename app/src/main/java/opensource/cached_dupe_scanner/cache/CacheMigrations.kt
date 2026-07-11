@@ -611,6 +611,27 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE similarity_setting_files " +
+                    "ADD COLUMN durationChecked INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                """
+                UPDATE similarity_setting_files
+                SET durationChecked = 1
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM similarity_duration_features AS duration
+                    WHERE duration.settingId = similarity_setting_files.settingId
+                      AND duration.normalizedPath = similarity_setting_files.normalizedPath
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
 }
 
 private data class MigrationSimilarityClusterMember(

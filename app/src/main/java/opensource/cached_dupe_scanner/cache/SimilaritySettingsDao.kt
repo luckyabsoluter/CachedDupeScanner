@@ -109,11 +109,49 @@ interface SimilaritySettingsDao {
         updatedAtMillis: Long
     ): Int
 
+    @Query(
+        """
+        UPDATE similarity_setting_files
+        SET durationChecked = 1,
+            updatedAtMillis = :updatedAtMillis
+        WHERE settingId = :settingId
+          AND normalizedPath = :normalizedPath
+          AND sizeBytes = :sizeBytes
+          AND lastModifiedMillis = :lastModifiedMillis
+          AND durationChecked = 0
+        """
+    )
+    fun updateSettingFileDurationIfCurrent(
+        settingId: Long,
+        normalizedPath: String,
+        sizeBytes: Long,
+        lastModifiedMillis: Long,
+        updatedAtMillis: Long
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertExactThumbnailFeatures(features: List<SimilarityExactThumbnailFeatureEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertDurationFeatures(features: List<SimilarityDurationFeatureEntity>)
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_duration_features
+        WHERE settingId = :settingId AND normalizedPath = :normalizedPath
+        LIMIT 1
+        """
+    )
+    fun getDurationFeature(settingId: Long, normalizedPath: String): SimilarityDurationFeatureEntity?
+
+    @Query(
+        """
+        DELETE FROM similarity_duration_features
+        WHERE settingId = :settingId AND normalizedPath = :normalizedPath
+        """
+    )
+    fun deleteDurationFeature(settingId: Long, normalizedPath: String)
 
     @Query("DELETE FROM similarity_setting_files WHERE settingId = :settingId")
     fun deleteSettingFiles(settingId: Long)
@@ -349,10 +387,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -379,10 +418,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -414,10 +454,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -449,10 +490,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -484,10 +526,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -519,10 +562,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -554,10 +598,11 @@ interface SimilaritySettingsDao {
             setting_file.sizeBytes AS sizeBytes,
             setting_file.lastModifiedMillis AS lastModifiedMillis,
             file.hashHex AS hashHex,
-            duration.durationMillis AS durationMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
             setting_file.widthPixels AS widthPixels,
             setting_file.heightPixels AS heightPixels,
-            setting_file.dimensionsChecked AS dimensionsChecked
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId

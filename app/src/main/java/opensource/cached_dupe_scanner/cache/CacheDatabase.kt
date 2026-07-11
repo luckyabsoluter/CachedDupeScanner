@@ -28,7 +28,7 @@ import androidx.room.RoomDatabase
         SimilarityClusterMemberEntity::class,
         SimilarityMaintenanceRunEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class CacheDatabase : RoomDatabase() {

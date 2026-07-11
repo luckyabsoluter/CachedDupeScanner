@@ -534,6 +534,94 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun durationAverageFilterResolvesExactThumbnailDurationsWithoutMaintenance() {
+        val files = listOf(
+            videoFile("exact-duration-a.mp4"),
+            videoFile("exact-duration-b.mp4"),
+            videoFile("exact-duration-c.mp4")
+        )
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val repository = repository(
+            signatures = files.associate { file -> file.absolutePath to "same" },
+            durations = mapOf(
+                files[0].absolutePath to 10_000L,
+                files[1].absolutePath to 10_100L,
+                files[2].absolutePath to 10_200L
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_exact_duration",
+                    name = "Near average",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_exact_duration",
+                            target = ResultsFilterTarget.DurationFromAverage,
+                            durationToleranceMilliseconds = "100"
+                        )
+                    )
+                )
+            )
+        )
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = definition,
+            startOffset = 0,
+            minMatches = 10,
+            sourcePageSize = 1,
+            memberPageSize = 1
+        )
+
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(
+            listOf(10_000L, 10_100L, 10_200L),
+            repository.listClusterMembers(filtered.clusters.single().clusterId)
+                .map { member -> member.metadata.durationMillis }
+        )
+        files.forEach { file ->
+            assertTrue(
+                requireNotNull(
+                    database.similaritySettingsDao().getSettingFile(
+                        settingId = setting.settingId,
+                        normalizedPath = file.normalizedPath()
+                    )
+                ).durationChecked
+            )
+        }
+
+        val cached = loadFilteredSimilarityClustersPage(
+            repository = repository(),
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = definition,
+            startOffset = 0,
+            minMatches = 10,
+            sourcePageSize = 1,
+            memberPageSize = 1
+        )
+
+        assertEquals(1, cached.clusters.size)
+    }
+
+    @Test
     fun sameResolutionFilterUsesPersistedDimensionsAcrossMemberPages() {
         val matchingFiles = listOf(
             videoFile("resolution-match-a.mp4"),

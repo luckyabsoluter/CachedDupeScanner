@@ -33,5 +33,6 @@ data class SimilarityClusterMemberFileRow(
     val durationMillis: Long?,
     val widthPixels: Int?,
     val heightPixels: Int?,
-    val dimensionsChecked: Boolean
+    val dimensionsChecked: Boolean,
+    val durationChecked: Boolean
 )

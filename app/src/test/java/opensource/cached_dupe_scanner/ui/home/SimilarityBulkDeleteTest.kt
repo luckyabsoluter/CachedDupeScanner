@@ -195,6 +195,54 @@ class SimilarityBulkDeleteTest {
         }
     }
 
+    @Test
+    fun averageDurationFilterResolvesExactThumbnailBulkDeletePreview() = runBlocking {
+        val fixture = createFixture()
+        val files = listOf(
+            fixture.alphaOlder,
+            fixture.alphaNewer,
+            fixture.gammaOlder,
+            fixture.gammaNewer
+        ) + fixture.ineligibleFiles
+        val filter = ResultsFilterDefinition(
+            clusters = listOf(
+                createResultsFilterCluster().copy(
+                    rules = listOf(
+                        createResultsFilterRule(ResultsFilterTarget.DurationFromAverage).copy(
+                            durationToleranceMilliseconds = "50"
+                        )
+                    )
+                )
+            )
+        )
+        val operations = SimilarityBulkDeleteOperations(
+            repository = fixture.repository,
+            settingId = fixture.settingId,
+            totalGroupCount = 3,
+            sourcePageSize = 1
+        )
+
+        val preview = operations.buildKeepModifiedPreview(
+            filterDefinition = filter,
+            keepNewest = false,
+            onProgress = {}
+        )
+
+        assertEquals(3, preview.totalGroupCount)
+        assertEquals(2, preview.filterMatchedGroupCount)
+        assertEquals(2, preview.candidateGroupCount)
+        assertEquals(2, preview.candidateFileCount)
+        files.forEach { file ->
+            val stored = requireNotNull(
+                database.similaritySettingsDao().getSettingFile(
+                    settingId = fixture.settingId,
+                    normalizedPath = file.normalizedPath()
+                )
+            )
+            assertTrue(stored.durationChecked)
+        }
+    }
+
     private fun createFixture(): Fixture {
         val alphaOlder = videoFile("alpha-older.mp4", "same", 1_000L)
         val alphaNewer = videoFile("alpha-newer.mp4", "same", 2_000L)
@@ -227,12 +275,20 @@ class SimilarityBulkDeleteTest {
             gammaOlder.absolutePath to MediaDimensions(1280, 720),
             gammaNewer.absolutePath to MediaDimensions(1280, 720)
         )
+        val durations = mapOf(
+            alphaOlder.absolutePath to 10_000L,
+            alphaNewer.absolutePath to 10_100L,
+            differentSmall.absolutePath to 30_000L,
+            differentLarge.absolutePath to 31_000L,
+            gammaOlder.absolutePath to 20_000L,
+            gammaNewer.absolutePath to 20_100L
+        )
         val repository = SimilaritySettingsRepository(
             database = database,
             fileDao = database.fileCacheDao(),
             similarityDao = database.similaritySettingsDao(),
             frameSignatureExtractor = FakeSignatureExtractor(signatures),
-            durationExtractor = FakeDurationExtractor(),
+            durationExtractor = FakeDurationExtractor(durations),
             mediaDimensionsExtractor = FakeMediaDimensionsExtractor(dimensions)
         )
         val setting = repository.createExactThumbnailSetting(
@@ -336,8 +392,12 @@ class SimilarityBulkDeleteTest {
         }
     }
 
-    private class FakeDurationExtractor : VideoDurationExtractor {
-        override fun durationMillis(file: File, shouldContinue: () -> Boolean): Long? = null
+    private class FakeDurationExtractor(
+        private val durations: Map<String, Long>
+    ) : VideoDurationExtractor {
+        override fun durationMillis(file: File, shouldContinue: () -> Boolean): Long? {
+            return durations[file.absolutePath]
+        }
     }
 
     private class FakeMediaDimensionsExtractor(

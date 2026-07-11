@@ -376,7 +376,8 @@ class SimilaritySettingsRepository(
         limit: Int,
         sortColumn: SimilarityMemberSortColumn = SimilarityMemberSortColumn.Position,
         direction: SortDirection = SortDirection.Asc,
-        resolveDimensions: Boolean = false
+        resolveDimensions: Boolean = false,
+        resolveDurations: Boolean = false
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
@@ -427,11 +428,9 @@ class SimilaritySettingsRepository(
                 }
             }
         }
-        val resolvedRows = if (resolveDimensions) {
-            resolveUncheckedDimensions(rows)
-        } else {
-            rows
-        }
+        var resolvedRows = rows
+        if (resolveDimensions) resolvedRows = resolveUncheckedDimensions(resolvedRows)
+        if (resolveDurations) resolvedRows = resolveUncheckedDurations(resolvedRows)
         return resolvedRows.map { row ->
             row.toClusterMember()
         }
@@ -642,6 +641,7 @@ class SimilaritySettingsRepository(
                         status = SIMILARITY_FILE_STATUS_SKIPPED,
                         dimensions = null,
                         dimensionsChecked = false,
+                        durationChecked = false,
                         updatedAtMillis = now
                     )
                 } else {
@@ -662,6 +662,8 @@ class SimilaritySettingsRepository(
                         status = SIMILARITY_FILE_STATUS_READY,
                         dimensions = dimensions,
                         dimensionsChecked = true,
+                        durationChecked = mediaScope == SimilarityMediaScope.Image ||
+                            feature is CalculatedFeature.Duration,
                         updatedAtMillis = now
                     )
                     when (feature) {
@@ -1059,6 +1061,7 @@ class SimilaritySettingsRepository(
         status: String,
         dimensions: MediaDimensions?,
         dimensionsChecked: Boolean,
+        durationChecked: Boolean,
         updatedAtMillis: Long
     ): SimilaritySettingFileEntity {
         return SimilaritySettingFileEntity(
@@ -1070,6 +1073,7 @@ class SimilaritySettingsRepository(
             widthPixels = dimensions?.widthPixels,
             heightPixels = dimensions?.heightPixels,
             dimensionsChecked = dimensionsChecked,
+            durationChecked = durationChecked,
             updatedAtMillis = updatedAtMillis
         )
     }
@@ -1157,6 +1161,81 @@ class SimilaritySettingsRepository(
         return rows.map { row -> updatedRows[row.normalizedPath] ?: row }
     }
 
+    private fun resolveUncheckedDurations(
+        rows: List<SimilarityClusterMemberFileRow>
+    ): List<SimilarityClusterMemberFileRow> {
+        val uncheckedRows = rows.filterNot { row -> row.durationChecked }
+        if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
+        val settingId = uncheckedRows.first().settingId
+        val mediaScope = similarityDao.getSetting(settingId)
+            ?.mediaScope
+            ?.let { value -> runCatching { SimilarityMediaScope.valueOf(value) }.getOrNull() }
+            ?: return rows
+        val shouldContinue = { !Thread.currentThread().isInterrupted }
+        val resolved = uncheckedRows.mapNotNull { row ->
+            if (!shouldContinue()) return@mapNotNull null
+            val file = File(row.path)
+            val durationMillis = if (mediaScope == SimilarityMediaScope.Video && file.exists()) {
+                durationExtractor.durationMillis(
+                    file = file,
+                    shouldContinue = shouldContinue
+                )?.takeIf { value -> value >= 0L }
+            } else {
+                null
+            }
+            if (!shouldContinue()) null else PendingDurationResolution(row, durationMillis)
+        }
+        if (resolved.isEmpty()) return rows
+
+        val updatedRows = linkedMapOf<String, SimilarityClusterMemberFileRow>()
+        val acceptedDurations = mutableListOf<SimilarityDurationFeatureEntity>()
+        val updatedAtMillis = System.currentTimeMillis()
+        database.runInTransaction {
+            resolved.forEach { pending ->
+                val row = pending.row
+                val durationMillis = pending.durationMillis
+                val updated = similarityDao.updateSettingFileDurationIfCurrent(
+                    settingId = row.settingId,
+                    normalizedPath = row.normalizedPath,
+                    sizeBytes = row.sizeBytes,
+                    lastModifiedMillis = row.lastModifiedMillis,
+                    updatedAtMillis = updatedAtMillis
+                )
+                if (updated > 0) {
+                    similarityDao.deleteDurationFeature(row.settingId, row.normalizedPath)
+                    if (durationMillis != null) {
+                        acceptedDurations += SimilarityDurationFeatureEntity(
+                            settingId = row.settingId,
+                            normalizedPath = row.normalizedPath,
+                            durationMillis = durationMillis
+                        )
+                    }
+                    updatedRows[row.normalizedPath] = row.copy(
+                        durationMillis = durationMillis,
+                        durationChecked = true
+                    )
+                } else {
+                    val current = similarityDao.getSettingFile(row.settingId, row.normalizedPath)
+                    if (current?.durationChecked == true &&
+                        current.sizeBytes == row.sizeBytes &&
+                        current.lastModifiedMillis == row.lastModifiedMillis
+                    ) {
+                        updatedRows[row.normalizedPath] = row.copy(
+                            durationMillis = similarityDao
+                                .getDurationFeature(row.settingId, row.normalizedPath)
+                                ?.durationMillis,
+                            durationChecked = true
+                        )
+                    }
+                }
+            }
+            if (acceptedDurations.isNotEmpty()) {
+                similarityDao.upsertDurationFeatures(acceptedDurations)
+            }
+        }
+        return rows.map { row -> updatedRows[row.normalizedPath] ?: row }
+    }
+
     private fun emptySummary(cancelled: Boolean): SimilarityMaintenanceSummary {
         return SimilarityMaintenanceSummary(
             settingCount = 0,
@@ -1188,6 +1267,11 @@ private data class ClusterMemberDraft(
 private data class PendingDimensionResolution(
     val row: SimilarityClusterMemberFileRow,
     val dimensions: MediaDimensions?
+)
+
+private data class PendingDurationResolution(
+    val row: SimilarityClusterMemberFileRow,
+    val durationMillis: Long?
 )
 
 private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {
