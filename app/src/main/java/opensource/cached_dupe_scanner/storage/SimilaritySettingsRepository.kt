@@ -375,7 +375,8 @@ class SimilaritySettingsRepository(
         offset: Int,
         limit: Int,
         sortColumn: SimilarityMemberSortColumn = SimilarityMemberSortColumn.Position,
-        direction: SortDirection = SortDirection.Asc
+        direction: SortDirection = SortDirection.Asc,
+        resolveDimensions: Boolean = false
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
@@ -426,7 +427,12 @@ class SimilaritySettingsRepository(
                 }
             }
         }
-        return rows.map { row ->
+        val resolvedRows = if (resolveDimensions) {
+            resolveUncheckedDimensions(rows)
+        } else {
+            rows
+        }
+        return resolvedRows.map { row ->
             row.toClusterMember()
         }
     }
@@ -604,7 +610,7 @@ class SimilaritySettingsRepository(
                     continue
                 }
 
-                if (featureIsFresh && existing != null) {
+                if (featureIsFresh) {
                     val dimensions = extractDimensions(mediaScope, entity, shouldContinue)
                     if (!shouldContinue()) {
                         return finishSingleSummary(
@@ -1083,6 +1089,74 @@ class SimilaritySettingsRepository(
         )
     }
 
+    private fun resolveUncheckedDimensions(
+        rows: List<SimilarityClusterMemberFileRow>
+    ): List<SimilarityClusterMemberFileRow> {
+        val uncheckedRows = rows.filterNot { row -> row.dimensionsChecked }
+        if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
+        val settingId = uncheckedRows.first().settingId
+        val mediaScope = similarityDao.getSetting(settingId)
+            ?.mediaScope
+            ?.let { value -> runCatching { SimilarityMediaScope.valueOf(value) }.getOrNull() }
+            ?: return rows
+        val shouldContinue = { !Thread.currentThread().isInterrupted }
+        val resolved = uncheckedRows.mapNotNull { row ->
+            if (!shouldContinue()) return@mapNotNull null
+            val file = File(row.path)
+            val dimensions = if (file.exists()) {
+                mediaDimensionsExtractor.dimensions(
+                    file = file,
+                    mediaScope = mediaScope,
+                    shouldContinue = shouldContinue
+                )
+            } else {
+                null
+            }
+            if (!shouldContinue()) null else PendingDimensionResolution(row, dimensions)
+        }
+        if (resolved.isEmpty()) return rows
+
+        val updatedRows = linkedMapOf<String, SimilarityClusterMemberFileRow>()
+        val updatedAtMillis = System.currentTimeMillis()
+        database.runInTransaction {
+            resolved.forEach { pending ->
+                val row = pending.row
+                val dimensions = pending.dimensions
+                val updated = similarityDao.updateSettingFileDimensionsIfCurrent(
+                    settingId = row.settingId,
+                    normalizedPath = row.normalizedPath,
+                    sizeBytes = row.sizeBytes,
+                    lastModifiedMillis = row.lastModifiedMillis,
+                    widthPixels = dimensions?.widthPixels,
+                    heightPixels = dimensions?.heightPixels,
+                    updatedAtMillis = updatedAtMillis
+                )
+                val current = if (updated > 0) {
+                    null
+                } else {
+                    similarityDao.getSettingFile(row.settingId, row.normalizedPath)
+                }
+                when {
+                    updated > 0 -> updatedRows[row.normalizedPath] = row.copy(
+                        widthPixels = dimensions?.widthPixels,
+                        heightPixels = dimensions?.heightPixels,
+                        dimensionsChecked = true
+                    )
+                    current?.dimensionsChecked == true &&
+                        current.sizeBytes == row.sizeBytes &&
+                        current.lastModifiedMillis == row.lastModifiedMillis -> {
+                        updatedRows[row.normalizedPath] = row.copy(
+                            widthPixels = current.widthPixels,
+                            heightPixels = current.heightPixels,
+                            dimensionsChecked = true
+                        )
+                    }
+                }
+            }
+        }
+        return rows.map { row -> updatedRows[row.normalizedPath] ?: row }
+    }
+
     private fun emptySummary(cancelled: Boolean): SimilarityMaintenanceSummary {
         return SimilarityMaintenanceSummary(
             settingCount = 0,
@@ -1109,6 +1183,11 @@ private data class ClusterDraft(
 private data class ClusterMemberDraft(
     val normalizedPath: String,
     val sizeBytes: Long
+)
+
+private data class PendingDimensionResolution(
+    val row: SimilarityClusterMemberFileRow,
+    val dimensions: MediaDimensions?
 )
 
 private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {

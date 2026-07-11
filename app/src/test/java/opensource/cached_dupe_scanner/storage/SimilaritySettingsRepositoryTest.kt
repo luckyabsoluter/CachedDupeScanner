@@ -613,6 +613,84 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun sameResolutionFilterBackfillsUncheckedDimensionsWithoutMaintenance() {
+        val first = videoFile("filter-backfill-a.mp4")
+        val second = videoFile("filter-backfill-b.mp4")
+        listOf(first, second).forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val initialRepository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same"
+            )
+        )
+        val setting = initialRepository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+        initialRepository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val similarityDao = database.similaritySettingsDao()
+        listOf(first, second).forEach { file ->
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            similarityDao.upsertSettingFiles(
+                listOf(
+                    stored.copy(
+                        widthPixels = null,
+                        heightPixels = null,
+                        dimensionsChecked = false
+                    )
+                )
+            )
+        }
+        val filteringRepository = repository(
+            dimensions = mapOf(
+                first.absolutePath to MediaDimensions(1920, 1080),
+                second.absolutePath to MediaDimensions(1920, 1080)
+            )
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_resolution_backfill",
+                    name = "Same resolution",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_resolution_backfill",
+                            target = ResultsFilterTarget.SameResolution
+                        )
+                    )
+                )
+            )
+        )
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = filteringRepository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = definition,
+            startOffset = 0,
+            minMatches = 10,
+            sourcePageSize = 1,
+            memberPageSize = 1
+        )
+
+        assertEquals(1, filtered.clusters.size)
+        listOf(first, second).forEach { file ->
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            assertEquals(1920, stored.widthPixels)
+            assertEquals(1080, stored.heightPixels)
+            assertTrue(stored.dimensionsChecked)
+        }
+    }
+
+    @Test
     fun maintenanceBackfillsMigratedDimensionsWithoutRecalculatingFreshFeatures() {
         val first = videoFile("backfill-a.mp4")
         val second = videoFile("backfill-b.mp4")

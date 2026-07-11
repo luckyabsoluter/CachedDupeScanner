@@ -289,12 +289,20 @@ private suspend fun matchesSimilarityBulkDeleteFilter(
 ): Boolean {
     return withContext(Dispatchers.IO) {
         if (definition.requiresGroupMembers(SIMILARITY_FILTER_TARGETS)) {
+            val resolveDimensions = definition.hasActiveTarget(
+                target = ResultsFilterTarget.SameResolution,
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
             matchesResultsFilterPagedMembers(
                 definition = definition,
                 group = group,
                 supportedTargets = SIMILARITY_FILTER_TARGETS,
                 memberPages = {
-                    similarityBulkDeleteMemberPages(repository, cluster.clusterId)
+                    similarityBulkDeleteMemberPages(
+                        repository = repository,
+                        clusterId = cluster.clusterId,
+                        resolveDimensions = resolveDimensions
+                    )
                 }
             )
         } else {
@@ -310,7 +318,8 @@ private suspend fun matchesSimilarityBulkDeleteFilter(
 
 private fun similarityBulkDeleteMemberPages(
     repository: SimilaritySettingsRepository,
-    clusterId: Long
+    clusterId: Long,
+    resolveDimensions: Boolean
 ): Sequence<List<FileMetadata>> {
     return sequence {
         var offset = 0
@@ -320,7 +329,8 @@ private fun similarityBulkDeleteMemberPages(
                 offset = offset,
                 limit = SIMILARITY_BULK_DELETE_MEMBER_PAGE_SIZE,
                 sortColumn = SimilarityMemberSortColumn.Position,
-                direction = SortDirection.Asc
+                direction = SortDirection.Asc,
+                resolveDimensions = resolveDimensions
             ).map { member -> member.metadata }
             if (page.isNotEmpty()) {
                 yield(page)

@@ -24,6 +24,7 @@ data class SimilarityClusterMemberEntity(
 )
 
 data class SimilarityClusterMemberFileRow(
+    val settingId: Long,
     val normalizedPath: String,
     val path: String,
     val sizeBytes: Long,
@@ -31,5 +32,6 @@ data class SimilarityClusterMemberFileRow(
     val hashHex: String?,
     val durationMillis: Long?,
     val widthPixels: Int?,
-    val heightPixels: Int?
+    val heightPixels: Int?,
+    val dimensionsChecked: Boolean
 )

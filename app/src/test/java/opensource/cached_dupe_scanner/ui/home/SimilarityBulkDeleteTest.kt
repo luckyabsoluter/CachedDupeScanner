@@ -137,6 +137,29 @@ class SimilarityBulkDeleteTest {
     @Test
     fun sameResolutionFilterRestrictsBulkDeletePreview() = runBlocking {
         val fixture = createFixture()
+        val files = listOf(
+            fixture.alphaOlder,
+            fixture.alphaNewer,
+            fixture.gammaOlder,
+            fixture.gammaNewer
+        ) + fixture.ineligibleFiles
+        files.forEach { file ->
+            val stored = requireNotNull(
+                database.similaritySettingsDao().getSettingFile(
+                    settingId = fixture.settingId,
+                    normalizedPath = file.normalizedPath()
+                )
+            )
+            database.similaritySettingsDao().upsertSettingFiles(
+                listOf(
+                    stored.copy(
+                        widthPixels = null,
+                        heightPixels = null,
+                        dimensionsChecked = false
+                    )
+                )
+            )
+        }
         val filter = ResultsFilterDefinition(
             clusters = listOf(
                 createResultsFilterCluster().copy(
@@ -161,6 +184,15 @@ class SimilarityBulkDeleteTest {
         assertEquals(2, preview.filterMatchedGroupCount)
         assertEquals(2, preview.candidateGroupCount)
         assertEquals(2, preview.candidateFileCount)
+        files.forEach { file ->
+            val stored = requireNotNull(
+                database.similaritySettingsDao().getSettingFile(
+                    settingId = fixture.settingId,
+                    normalizedPath = file.normalizedPath()
+                )
+            )
+            assertTrue(stored.dimensionsChecked)
+        }
     }
 
     private fun createFixture(): Fixture {

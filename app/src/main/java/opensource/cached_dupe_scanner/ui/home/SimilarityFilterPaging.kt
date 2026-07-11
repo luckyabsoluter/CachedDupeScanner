@@ -28,6 +28,10 @@ internal fun loadFilteredSimilarityClustersPage(
         return FilteredSimilarityClustersPage(emptyList(), startOffset, exhausted = true)
     }
     val needsMembers = definition.requiresGroupMembers(SIMILARITY_FILTER_TARGETS)
+    val resolveDimensions = definition.hasActiveTarget(
+        target = ResultsFilterTarget.SameResolution,
+        supportedTargets = SIMILARITY_FILTER_TARGETS
+    )
     val page = loadFilteredSourcePage(
         startCursor = startOffset,
         minMatches = minMatches,
@@ -61,7 +65,8 @@ internal fun loadFilteredSimilarityClustersPage(
                                     offset = memberOffset,
                                     limit = memberPageSize,
                                     sortColumn = SimilarityMemberSortColumn.Position,
-                                    direction = SortDirection.Asc
+                                    direction = SortDirection.Asc,
+                                    resolveDimensions = resolveDimensions
                                 )
                                 if (members.isNotEmpty()) {
                                     yield(members.map { it.metadata })

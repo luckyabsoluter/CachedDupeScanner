@@ -136,6 +136,17 @@ internal fun ResultsFilterDefinition.hasActiveRules(
     }
 }
 
+internal fun ResultsFilterDefinition.hasActiveTarget(
+    target: ResultsFilterTarget,
+    supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
+): Boolean {
+    return clusters.any { cluster ->
+        cluster.enabled && configuredRules(cluster, supportedTargets).any { rule ->
+            rule.target == target
+        }
+    }
+}
+
 internal fun ResultsFilterDefinition.requiresGroupMembers(
     supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
 ): Boolean {

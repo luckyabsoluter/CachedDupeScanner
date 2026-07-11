@@ -85,6 +85,30 @@ interface SimilaritySettingsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertSettingFiles(files: List<SimilaritySettingFileEntity>)
 
+    @Query(
+        """
+        UPDATE similarity_setting_files
+        SET widthPixels = :widthPixels,
+            heightPixels = :heightPixels,
+            dimensionsChecked = 1,
+            updatedAtMillis = :updatedAtMillis
+        WHERE settingId = :settingId
+          AND normalizedPath = :normalizedPath
+          AND sizeBytes = :sizeBytes
+          AND lastModifiedMillis = :lastModifiedMillis
+          AND dimensionsChecked = 0
+        """
+    )
+    fun updateSettingFileDimensionsIfCurrent(
+        settingId: Long,
+        normalizedPath: String,
+        sizeBytes: Long,
+        lastModifiedMillis: Long,
+        widthPixels: Int?,
+        heightPixels: Int?,
+        updatedAtMillis: Long
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertExactThumbnailFeatures(features: List<SimilarityExactThumbnailFeatureEntity>)
 
@@ -319,6 +343,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -326,7 +351,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -347,6 +373,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -354,7 +381,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -380,6 +408,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -387,7 +416,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -413,6 +443,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -420,7 +451,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -446,6 +478,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -453,7 +486,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -479,6 +513,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -486,7 +521,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -512,6 +548,7 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            cluster.settingId AS settingId,
             member.normalizedPath AS normalizedPath,
             COALESCE(file.path, member.normalizedPath) AS path,
             setting_file.sizeBytes AS sizeBytes,
@@ -519,7 +556,8 @@ interface SimilaritySettingsDao {
             file.hashHex AS hashHex,
             duration.durationMillis AS durationMillis,
             setting_file.widthPixels AS widthPixels,
-            setting_file.heightPixels AS heightPixels
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
