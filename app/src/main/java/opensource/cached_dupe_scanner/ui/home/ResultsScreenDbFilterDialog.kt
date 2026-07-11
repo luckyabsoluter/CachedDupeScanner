@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
@@ -50,7 +51,7 @@ internal fun ResultsFilterScreen(
             "File name, folder, and modified-time rules match if any file inside the duplicate group matches the rule. Same-folder and same-size rules check every file in the group."
         ),
         definition = definition,
-        supportedTargets = ResultsFilterTarget.entries.toSet(),
+        supportedTargets = RESULT_FILTER_TARGETS,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -93,10 +94,10 @@ internal fun SimilarityFilterScreen(
         introLines = listOf(
             "Filter stored similarity groups with the same rules available in duplicate results.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name, folder, and modified-time rules match any member. Same-folder and same-size rules check every member in the group."
+            "File name, folder, and modified-time rules match any member. Same-folder, same-size, and average-duration rules check every member in the group."
         ),
         definition = definition,
-        supportedTargets = ResultsFilterTarget.entries.toSet(),
+        supportedTargets = SIMILARITY_FILTER_TARGETS,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -405,7 +406,9 @@ private fun ResultsFilterRuleEditor(
                             value = "",
                             textOperator = ResultsFilterTextOperator.Contains,
                             countOperator = ResultsFilterCountOperator.AtLeast,
-                            timeOperator = ResultsFilterTimeOperator.OnOrAfter
+                            timeOperator = ResultsFilterTimeOperator.OnOrAfter,
+                            durationToleranceSeconds = "",
+                            durationToleranceMilliseconds = ""
                         )
                     )
                 }
@@ -458,6 +461,40 @@ private fun ResultsFilterRuleEditor(
                     text = "Matches only when every file in the group has the same byte size.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (rule.target == ResultsFilterTarget.DurationFromAverage) {
+                Text(
+                    text = "Matches only when every stored video duration is within this tolerance of the group average.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = rule.durationToleranceSeconds,
+                    onValueChange = { value ->
+                        if (value.isEmpty() || value.toLongOrNull()?.let { it >= 0L } == true) {
+                            onRuleChange(rule.copy(durationToleranceSeconds = value))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("duration-average-seconds"),
+                    label = { Text("Seconds") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                OutlinedTextField(
+                    value = rule.durationToleranceMilliseconds,
+                    onValueChange = { value ->
+                        if (value.isEmpty() || value.toIntOrNull()?.let { it in 0..999 } == true) {
+                            onRuleChange(rule.copy(durationToleranceMilliseconds = value))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("duration-average-milliseconds"),
+                    label = { Text("Milliseconds (0-999)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             } else {
                 Text("Operator")

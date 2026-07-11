@@ -27,7 +27,7 @@ internal fun loadFilteredSimilarityClustersPage(
     if (sourcePageSize <= 0 || memberPageSize <= 0) {
         return FilteredSimilarityClustersPage(emptyList(), startOffset, exhausted = true)
     }
-    val needsMembers = definition.requiresGroupMembers()
+    val needsMembers = definition.requiresGroupMembers(SIMILARITY_FILTER_TARGETS)
     val page = loadFilteredSourcePage(
         startCursor = startOffset,
         minMatches = minMatches,
@@ -51,6 +51,7 @@ internal fun loadFilteredSimilarityClustersPage(
                 matchesResultsFilterPagedMembers(
                     definition = definition,
                     group = group,
+                    supportedTargets = SIMILARITY_FILTER_TARGETS,
                     memberPages = {
                         sequence {
                             var memberOffset = 0
@@ -71,7 +72,12 @@ internal fun loadFilteredSimilarityClustersPage(
                     }
                 )
             } else {
-                matchesResultsFilter(definition, group, emptyList())
+                matchesResultsFilter(
+                    definition = definition,
+                    group = group,
+                    members = emptyList(),
+                    supportedTargets = SIMILARITY_FILTER_TARGETS
+                )
             }
             cluster.takeIf { matched }
         },

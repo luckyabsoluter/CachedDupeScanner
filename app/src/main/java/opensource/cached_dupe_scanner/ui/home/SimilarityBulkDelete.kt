@@ -288,16 +288,22 @@ private suspend fun matchesSimilarityBulkDeleteFilter(
     definition: ResultsFilterDefinition
 ): Boolean {
     return withContext(Dispatchers.IO) {
-        if (definition.requiresGroupMembers()) {
+        if (definition.requiresGroupMembers(SIMILARITY_FILTER_TARGETS)) {
             matchesResultsFilterPagedMembers(
                 definition = definition,
                 group = group,
+                supportedTargets = SIMILARITY_FILTER_TARGETS,
                 memberPages = {
                     similarityBulkDeleteMemberPages(repository, cluster.clusterId)
                 }
             )
         } else {
-            matchesResultsFilter(definition, group, emptyList())
+            matchesResultsFilter(
+                definition = definition,
+                group = group,
+                members = emptyList(),
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
         }
     }
 }

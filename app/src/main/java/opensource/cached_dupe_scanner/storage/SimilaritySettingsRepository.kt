@@ -1045,7 +1045,8 @@ private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {
         normalizedPath = normalizedPath,
         sizeBytes = sizeBytes,
         lastModifiedMillis = lastModifiedMillis,
-        hashHex = hashHex
+        hashHex = hashHex,
+        durationMillis = durationMillis
     )
 }
 

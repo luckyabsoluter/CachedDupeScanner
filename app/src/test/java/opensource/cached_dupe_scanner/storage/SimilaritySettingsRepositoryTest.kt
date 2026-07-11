@@ -17,6 +17,11 @@ import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
+import opensource.cached_dupe_scanner.ui.home.ResultsFilterCluster
+import opensource.cached_dupe_scanner.ui.home.ResultsFilterDefinition
+import opensource.cached_dupe_scanner.ui.home.ResultsFilterRule
+import opensource.cached_dupe_scanner.ui.home.ResultsFilterTarget
+import opensource.cached_dupe_scanner.ui.home.loadFilteredSimilarityClustersPage
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -448,6 +453,81 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(
             listOf(third, second).map { file -> file.normalizedPath() },
             descendingPage.map { member -> member.metadata.normalizedPath }
+        )
+    }
+
+    @Test
+    fun durationAverageFilterUsesStoredDurationsAcrossMemberPages() {
+        val closeFiles = listOf(
+            videoFile("average-close-a.mp4"),
+            videoFile("average-close-b.mp4"),
+            videoFile("average-close-c.mp4")
+        )
+        val spreadFiles = listOf(
+            videoFile("average-spread-a.mp4"),
+            videoFile("average-spread-b.mp4"),
+            videoFile("average-spread-c.mp4")
+        )
+        (closeFiles + spreadFiles).forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val repository = repository(
+            durations = mapOf(
+                closeFiles[0].absolutePath to 10_000L,
+                closeFiles[1].absolutePath to 10_100L,
+                closeFiles[2].absolutePath to 10_200L,
+                spreadFiles[0].absolutePath to 20_000L,
+                spreadFiles[1].absolutePath to 21_000L,
+                spreadFiles[2].absolutePath to 24_000L
+            )
+        )
+        val setting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 4_000L),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_duration",
+                    name = "Near average",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_duration",
+                            target = ResultsFilterTarget.DurationFromAverage,
+                            durationToleranceMilliseconds = "100"
+                        )
+                    )
+                )
+            )
+        )
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = definition,
+            startOffset = 0,
+            minMatches = 10,
+            sourcePageSize = 1,
+            memberPageSize = 1
+        )
+
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(
+            closeFiles.map { file -> file.normalizedPath() },
+            repository.listClusterMembers(filtered.clusters.single().clusterId)
+                .map { member -> member.metadata.normalizedPath }
+        )
+        assertEquals(
+            listOf(10_000L, 10_100L, 10_200L),
+            repository.listClusterMembers(filtered.clusters.single().clusterId)
+                .map { member -> member.metadata.durationMillis }
         )
     }
 

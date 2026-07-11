@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import java.math.BigInteger
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -13,7 +14,8 @@ internal enum class ResultsFilterTarget(val label: String) {
     FolderPath("Folder"),
     ModifiedTime("Modified time"),
     SameFolder("All same folder"),
-    SameFileSize("All same size")
+    SameFileSize("All same size"),
+    DurationFromAverage("All near average duration")
 }
 
 internal enum class ResultsFilterClusterMode(val label: String) {
@@ -47,7 +49,9 @@ internal data class ResultsFilterRule(
     val textOperator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val countOperator: ResultsFilterCountOperator = ResultsFilterCountOperator.AtLeast,
     val timeOperator: ResultsFilterTimeOperator = ResultsFilterTimeOperator.OnOrAfter,
-    val value: String = ""
+    val value: String = "",
+    val durationToleranceSeconds: String = "",
+    val durationToleranceMilliseconds: String = ""
 )
 
 internal data class ResultsFilterCluster(
@@ -67,6 +71,12 @@ internal val FILE_FILTER_TARGETS: Set<ResultsFilterTarget> = setOf(
     ResultsFilterTarget.FolderPath,
     ResultsFilterTarget.ModifiedTime
 )
+
+internal val RESULT_FILTER_TARGETS: Set<ResultsFilterTarget> =
+    ResultsFilterTarget.entries.toSet() - ResultsFilterTarget.DurationFromAverage
+
+internal val SIMILARITY_FILTER_TARGETS: Set<ResultsFilterTarget> =
+    ResultsFilterTarget.entries.toSet()
 
 private object ResultsFilterIdGenerator {
     private var nextId = 1L
@@ -117,9 +127,11 @@ internal fun ResultsFilterDefinition.hasActiveRules(
     }
 }
 
-internal fun ResultsFilterDefinition.requiresGroupMembers(): Boolean {
+internal fun ResultsFilterDefinition.requiresGroupMembers(
+    supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
+): Boolean {
     return clusters.any { cluster ->
-        cluster.enabled && configuredRules(cluster).any { rule ->
+        cluster.enabled && configuredRules(cluster, supportedTargets).any { rule ->
             rule.target != ResultsFilterTarget.GroupItemCount
         }
     }
@@ -176,9 +188,10 @@ internal fun summarizeResultsFilter(
 internal fun matchesResultsFilter(
     definition: ResultsFilterDefinition,
     group: DuplicateGroupEntity,
-    members: List<FileMetadata>
+    members: List<FileMetadata>,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS
 ): Boolean {
-    val activeClusters = activeResultFilterClusters(definition)
+    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
     if (activeClusters.isEmpty()) return true
     return activeClusters.all { (cluster, rules) ->
         val results = rules.map { rule ->
@@ -198,13 +211,19 @@ internal fun matchesResultsFilter(
 internal fun matchesResultsFilterPagedMembers(
     definition: ResultsFilterDefinition,
     group: DuplicateGroupEntity,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS,
     memberPages: () -> Sequence<List<FileMetadata>>,
     onPreviewMembers: (List<FileMetadata>) -> Unit = {}
 ): Boolean {
-    val activeClusters = activeResultFilterClusters(definition)
+    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
     if (activeClusters.isEmpty()) return true
-    if (!definition.requiresGroupMembers()) {
-        return matchesResultsFilter(definition = definition, group = group, members = emptyList())
+    if (!definition.requiresGroupMembers(supportedTargets)) {
+        return matchesResultsFilter(
+            definition = definition,
+            group = group,
+            members = emptyList(),
+            supportedTargets = supportedTargets
+        )
     }
 
     val clusters = activeClusters.map { (cluster, rules) ->
@@ -240,13 +259,14 @@ internal fun matchesResultsFilterPagedMembers(
 }
 
 private fun activeResultFilterClusters(
-    definition: ResultsFilterDefinition
+    definition: ResultsFilterDefinition,
+    supportedTargets: Set<ResultsFilterTarget>
 ): List<Pair<ResultsFilterCluster, List<ResultsFilterRule>>> {
     return definition.clusters.mapNotNull { cluster ->
         if (!cluster.enabled) {
             null
         } else {
-            val rules = configuredRules(cluster)
+            val rules = configuredRules(cluster, supportedTargets)
             if (rules.isEmpty()) null else cluster to rules
         }
     }
@@ -287,6 +307,7 @@ private class ResultFilterRuleProgress(
     private var folderMismatch = false
     private var firstFileSize: Long? = null
     private var fileSizeMismatch = false
+    private val durationAccumulator = DurationAverageAccumulator()
     private val groupResult: Boolean? = if (rule.target == ResultsFilterTarget.GroupItemCount) {
         val threshold = rule.value.trim().toIntOrNull()
         if (threshold == null) {
@@ -304,7 +325,8 @@ private class ResultFilterRuleProgress(
 
     fun consume(page: List<FileMetadata>) {
         val requiresAllMembers = rule.target == ResultsFilterTarget.SameFolder ||
-            rule.target == ResultsFilterTarget.SameFileSize
+            rule.target == ResultsFilterTarget.SameFileSize ||
+            rule.target == ResultsFilterTarget.DurationFromAverage
         if (groupResult != null || matched && !requiresAllMembers) return
         page.forEach { member ->
             when (rule.target) {
@@ -349,6 +371,9 @@ private class ResultFilterRuleProgress(
                         fileSizeMismatch = true
                     }
                 }
+                ResultsFilterTarget.DurationFromAverage -> {
+                    durationAccumulator.consume(member.durationMillis)
+                }
                 ResultsFilterTarget.GroupItemCount -> Unit
             }
         }
@@ -374,8 +399,58 @@ private class ResultFilterRuleProgress(
                 ended -> sawMember
                 else -> null
             }
+            ResultsFilterTarget.DurationFromAverage -> when {
+                durationAccumulator.invalid -> false
+                ended -> rule.durationToleranceMillis()?.let(durationAccumulator::matches) ?: false
+                else -> null
+            }
             ResultsFilterTarget.GroupItemCount -> groupResult
         }
+    }
+}
+
+private class DurationAverageAccumulator {
+    private var count = 0L
+    private var sum = 0L
+    private var overflowSum: BigInteger? = null
+    private var minimum = Long.MAX_VALUE
+    private var maximum = Long.MIN_VALUE
+    var invalid: Boolean = false
+        private set
+
+    fun consume(durationMillis: Long?) {
+        if (durationMillis == null || durationMillis < 0L) {
+            invalid = true
+            return
+        }
+        count += 1L
+        minimum = minOf(minimum, durationMillis)
+        maximum = maxOf(maximum, durationMillis)
+        val currentOverflowSum = overflowSum
+        if (currentOverflowSum != null) {
+            overflowSum = currentOverflowSum.add(BigInteger.valueOf(durationMillis))
+        } else {
+            try {
+                sum = Math.addExact(sum, durationMillis)
+            } catch (_: ArithmeticException) {
+                overflowSum = BigInteger.valueOf(sum).add(BigInteger.valueOf(durationMillis))
+            }
+        }
+    }
+
+    fun matches(toleranceMillis: Long): Boolean {
+        if (invalid || count <= 0L || toleranceMillis < 0L) return false
+        val countValue = BigInteger.valueOf(count)
+        val sumValue = overflowSum ?: BigInteger.valueOf(sum)
+        val toleranceValue = BigInteger.valueOf(toleranceMillis).multiply(countValue)
+        val minimumDeviation = sumValue
+            .subtract(BigInteger.valueOf(minimum).multiply(countValue))
+            .abs()
+        val maximumDeviation = BigInteger.valueOf(maximum)
+            .multiply(countValue)
+            .subtract(sumValue)
+            .abs()
+        return minimumDeviation <= toleranceValue && maximumDeviation <= toleranceValue
     }
 }
 
@@ -398,6 +473,7 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.ModifiedTime -> parseResultsFilterTimeValue(rule.value) != null
         ResultsFilterTarget.SameFolder -> true
         ResultsFilterTarget.SameFileSize -> true
+        ResultsFilterTarget.DurationFromAverage -> rule.durationToleranceMillis() != null
     }
 }
 
@@ -455,6 +531,27 @@ private fun matchesResultsFilterRule(
         ResultsFilterTarget.SameFileSize -> {
             members.isNotEmpty() && members.map { member -> member.sizeBytes }.distinct().size == 1
         }
+        ResultsFilterTarget.DurationFromAverage -> {
+            val toleranceMillis = rule.durationToleranceMillis() ?: return false
+            DurationAverageAccumulator().run {
+                members.forEach { member -> consume(member.durationMillis) }
+                matches(toleranceMillis)
+            }
+        }
+    }
+}
+
+internal fun ResultsFilterRule.durationToleranceMillis(): Long? {
+    val secondsText = durationToleranceSeconds.trim()
+    val millisecondsText = durationToleranceMilliseconds.trim()
+    if (secondsText.isEmpty() && millisecondsText.isEmpty()) return null
+    val seconds = secondsText.ifEmpty { "0" }.toLongOrNull() ?: return null
+    val milliseconds = millisecondsText.ifEmpty { "0" }.toLongOrNull() ?: return null
+    if (seconds < 0L || milliseconds !in 0L..999L) return null
+    return try {
+        Math.addExact(Math.multiplyExact(seconds, 1_000L), milliseconds)
+    } catch (_: ArithmeticException) {
+        null
     }
 }
 
@@ -597,7 +694,9 @@ internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition):
                         rule.textOperator.name,
                         rule.countOperator.name,
                         encodeFilterToken(rule.value),
-                        rule.timeOperator.name
+                        rule.timeOperator.name,
+                        encodeFilterToken(rule.durationToleranceSeconds),
+                        encodeFilterToken(rule.durationToleranceMilliseconds)
                     ).joinToString("\t")
                 )
                 append('\n')
@@ -659,7 +758,9 @@ internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefini
                                 textOperator = parseResultsFilterTextOperator(parts[5]),
                                 countOperator = parseResultsFilterCountOperator(parts[6]),
                                 value = decodeFilterToken(parts[7]),
-                                timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty())
+                                timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty()),
+                                durationToleranceSeconds = decodeFilterToken(parts.getOrNull(9).orEmpty()),
+                                durationToleranceMilliseconds = decodeFilterToken(parts.getOrNull(10).orEmpty())
                             )
                         )
                 }

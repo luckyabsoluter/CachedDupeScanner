@@ -9,6 +9,13 @@ import org.junit.Test
 
 class ResultsScreenDbFiltersTest {
     @Test
+    fun durationAverageTargetIsLimitedToSimilarityFilters() {
+        assertTrue(SIMILARITY_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+        assertFalse(RESULT_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+        assertFalse(FILE_FILTER_TARGETS.contains(ResultsFilterTarget.DurationFromAverage))
+    }
+
+    @Test
     fun matchesResultsFilterUsesGroupItemCountRule() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
@@ -202,6 +209,110 @@ class ResultsScreenDbFiltersTest {
         assertTrue(matchesResultsFilter(definition, group(fileCount = 2), sameSize))
         assertFalse(matchesResultsFilter(definition, group(fileCount = 2), differentSizes))
         assertFalse(matchesResultsFilter(definition, group(fileCount = 0), emptyList()))
+    }
+
+    @Test
+    fun similarityFilterRequiresEveryDurationWithinToleranceOfExactAverage() {
+        val definition = durationAverageDefinition(seconds = "0", milliseconds = "100")
+        val withinTolerance = listOf(
+            file("/videos/a.mp4", durationMillis = 10_000L),
+            file("/videos/b.mp4", durationMillis = 10_100L),
+            file("/videos/c.mp4", durationMillis = 10_200L)
+        )
+        val outsideTolerance = withinTolerance.dropLast(1) +
+            file("/videos/c.mp4", durationMillis = 10_201L)
+
+        assertTrue(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = withinTolerance.size),
+                members = withinTolerance,
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = outsideTolerance.size),
+                members = outsideTolerance,
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+        assertFalse(
+            matchesResultsFilter(
+                definition = definition,
+                group = group(fileCount = 2),
+                members = listOf(
+                    file("/videos/a.mp4", durationMillis = 10_000L),
+                    file("/videos/unknown.mp4", durationMillis = null)
+                ),
+                supportedTargets = SIMILARITY_FILTER_TARGETS
+            )
+        )
+    }
+
+    @Test
+    fun pagedSimilarityFilterAccumulatesAverageAcrossEveryMemberPage() {
+        val definition = durationAverageDefinition(seconds = "1", milliseconds = "250")
+        val members = listOf(
+            file("/videos/a.mp4", durationMillis = 8_750L),
+            file("/videos/b.mp4", durationMillis = 10_000L),
+            file("/videos/c.mp4", durationMillis = 11_250L)
+        )
+
+        assertTrue(
+            matchesResultsFilterPagedMembers(
+                definition = definition,
+                group = group(fileCount = members.size),
+                supportedTargets = SIMILARITY_FILTER_TARGETS,
+                memberPages = { pagedMembers(members, pageSize = 1) }
+            )
+        )
+        assertFalse(
+            matchesResultsFilterPagedMembers(
+                definition = durationAverageDefinition(seconds = "1", milliseconds = "249"),
+                group = group(fileCount = members.size),
+                supportedTargets = SIMILARITY_FILTER_TARGETS,
+                memberPages = { pagedMembers(members, pageSize = 1) }
+            )
+        )
+    }
+
+    @Test
+    fun durationAverageToleranceParsesSecondsAndMillisecondsSafely() {
+        assertEquals(
+            1_250L,
+            ResultsFilterRule(
+                id = "rule_1",
+                target = ResultsFilterTarget.DurationFromAverage,
+                durationToleranceSeconds = "1",
+                durationToleranceMilliseconds = "250"
+            ).durationToleranceMillis()
+        )
+        assertEquals(
+            500L,
+            ResultsFilterRule(
+                id = "rule_2",
+                target = ResultsFilterTarget.DurationFromAverage,
+                durationToleranceMilliseconds = "500"
+            ).durationToleranceMillis()
+        )
+        assertEquals(
+            null,
+            ResultsFilterRule(
+                id = "rule_3",
+                target = ResultsFilterTarget.DurationFromAverage,
+                durationToleranceSeconds = "1",
+                durationToleranceMilliseconds = "1000"
+            ).durationToleranceMillis()
+        )
+        assertEquals(
+            null,
+            ResultsFilterRule(
+                id = "rule_4",
+                target = ResultsFilterTarget.DurationFromAverage
+            ).durationToleranceMillis()
+        )
     }
 
     @Test
@@ -570,6 +681,12 @@ class ResultsScreenDbFiltersTest {
                         ResultsFilterRule(
                             id = "rule_10",
                             target = ResultsFilterTarget.SameFileSize
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_11",
+                            target = ResultsFilterTarget.DurationFromAverage,
+                            durationToleranceSeconds = "2",
+                            durationToleranceMilliseconds = "375"
                         )
                     )
                 )
@@ -652,14 +769,38 @@ class ResultsScreenDbFiltersTest {
     private fun file(
         path: String,
         modified: Long = 1L,
-        sizeBytes: Long = 10L
+        sizeBytes: Long = 10L,
+        durationMillis: Long? = null
     ): FileMetadata {
         return FileMetadata(
             path = path,
             normalizedPath = path,
             sizeBytes = sizeBytes,
             lastModifiedMillis = modified,
-            hashHex = "hash"
+            hashHex = "hash",
+            durationMillis = durationMillis
+        )
+    }
+
+    private fun durationAverageDefinition(
+        seconds: String,
+        milliseconds: String
+    ): ResultsFilterDefinition {
+        return ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_duration",
+                    name = "Duration average",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_duration",
+                            target = ResultsFilterTarget.DurationFromAverage,
+                            durationToleranceSeconds = seconds,
+                            durationToleranceMilliseconds = milliseconds
+                        )
+                    )
+                )
+            )
         )
     }
 

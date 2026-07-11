@@ -19,7 +19,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
@@ -249,6 +251,52 @@ class SimilarityResultsNavigationTest {
                 .fetchSemanticsNodes()
                 .isEmpty()
         )
+    }
+
+    @Test
+    fun similarityFilterEditorStoresAverageDurationSecondsAndMilliseconds() {
+        var editedRule: ResultsFilterRule? = null
+
+        composeRule.setContent {
+            val definition = remember {
+                mutableStateOf(
+                    ResultsFilterDefinition(
+                        clusters = listOf(
+                            createResultsFilterCluster().copy(
+                                rules = listOf(
+                                    createResultsFilterRule(ResultsFilterTarget.DurationFromAverage)
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+            SimilarityFilterScreen(
+                definition = definition.value,
+                onDefinitionChange = { updated ->
+                    definition.value = updated
+                    editedRule = updated.clusters.single().rules.single()
+                },
+                onBack = {},
+                onApply = {}
+            )
+        }
+
+        scrollUntilText("All near average duration")
+        scrollUntilText("Seconds")
+        composeRule.onNodeWithTag("duration-average-seconds")
+            .performScrollTo()
+            .performTextInput("2")
+        composeRule.onNodeWithTag("duration-average-milliseconds")
+            .performScrollTo()
+            .performTextInput("375")
+
+        composeRule.runOnIdle {
+            assertEquals(ResultsFilterTarget.DurationFromAverage, editedRule?.target)
+            assertEquals("2", editedRule?.durationToleranceSeconds)
+            assertEquals("375", editedRule?.durationToleranceMilliseconds)
+            assertEquals(2_375L, editedRule?.durationToleranceMillis())
+        }
     }
 
     @Test
