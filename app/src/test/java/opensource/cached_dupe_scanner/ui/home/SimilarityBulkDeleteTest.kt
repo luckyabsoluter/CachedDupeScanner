@@ -114,6 +114,64 @@ class SimilarityBulkDeleteTest {
     }
 
     @Test
+    fun similarityBulkDeletePreviewReturnsEveryCandidateGroup() = runBlocking {
+        val groupCount = 52
+        val signatures = linkedMapOf<String, String>()
+        val dimensions = linkedMapOf<String, MediaDimensions>()
+        repeat(groupCount) { index ->
+            val older = videoFile("preview-$index-older.mp4", "pair-$index", 1_000L)
+            val newer = videoFile("preview-$index-newer.mp4", "pair-$index", 2_000L)
+            listOf(older, newer).forEach { file ->
+                database.fileCacheDao().upsert(file.entity())
+                signatures[file.absolutePath] = "preview-$index"
+                dimensions[file.absolutePath] = MediaDimensions(1920, 1080)
+            }
+        }
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(signatures),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(dimensions)
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = ExactThumbnailHashStep(
+                frameSeconds = listOf(0),
+                resizeWidthPx = 1,
+                resizeHeightPx = 1,
+                quantizationLevels = 16,
+                grayscale = false
+            ),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val operations = SimilarityBulkDeleteOperations(
+            repository = repository,
+            settingId = setting.settingId,
+            totalGroupCount = groupCount,
+            sourcePageSize = 7
+        )
+
+        val preview = operations.buildKeepModifiedPreview(
+            filterDefinition = ResultsFilterDefinition(),
+            keepNewest = true,
+            onProgress = {}
+        )
+
+        assertEquals(groupCount, preview.candidateGroupCount)
+        assertEquals(groupCount, preview.candidateFileCount)
+        assertEquals(groupCount, preview.candidates.size)
+    }
+
+    @Test
     fun canonicalClusterMutationInvalidatesBuiltPreview() = runBlocking {
         val fixture = createFixture()
         val operations = SimilarityBulkDeleteOperations(

@@ -148,10 +148,10 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepModifiedBulkDeletePreviewCapsDisplayedCandidatesAndKeepsTotalCounts() = runBlocking {
+    fun buildKeepModifiedBulkDeletePreviewReturnsEveryCandidateGroup() = runBlocking {
         val database = newDb()
         val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
-        val groupCount = BULK_DELETE_PREVIEW_SAMPLE_LIMIT + 2
+        val groupCount = 52
         repeat(groupCount) { index ->
             insertCachedFile(database, "/group-$index/old.mkv", size = index + 1L, modified = 10L)
             insertCachedFile(database, "/group-$index/new.mkv", size = index + 1L, modified = 20L)
@@ -168,10 +168,9 @@ class ResultsScreenDbBulkDeleteTest {
             sourcePageSize = 7
         )
 
-        assertEquals(BULK_DELETE_PREVIEW_SAMPLE_LIMIT, preview.candidates.size)
+        assertEquals(groupCount, preview.candidates.size)
         assertEquals(groupCount, preview.candidateGroupCount)
         assertEquals(groupCount, preview.candidateFileCount)
-        assertEquals(true, preview.hasCappedCandidates())
     }
 
     @Test
@@ -258,10 +257,10 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun executeBulkDeleteCommandDeletesTargetsBeyondPreviewSample() = runBlocking {
+    fun executeBulkDeleteCommandDeletesEveryDisplayedPreviewTarget() = runBlocking {
         val database = newDb()
         val resultsRepo = ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao())
-        val groupCount = BULK_DELETE_PREVIEW_SAMPLE_LIMIT + 2
+        val groupCount = 52
         repeat(groupCount) { index ->
             insertCachedFile(database, "/group-$index/old.mkv", size = index + 1L, modified = 10L)
             insertCachedFile(database, "/group-$index/new.mkv", size = index + 1L, modified = 20L)
@@ -304,7 +303,7 @@ class ResultsScreenDbBulkDeleteTest {
         assertEquals(groupCount, outcome.successCount)
         assertEquals(groupCount, outcome.touchedGroups.size)
         assertEquals(groupCount, deletedPaths.size)
-        assertEquals(true, deletedPaths.any { it !in previewPaths })
+        assertEquals(previewPaths, deletedPaths.toSet())
     }
 
     @Test

@@ -107,8 +107,6 @@ internal data class KeepByDurationBulkDeleteCommandConfig(
     val tieKeepMode: ResultsBulkDeleteModifiedKeepMode = ResultsBulkDeleteModifiedKeepMode.Oldest
 )
 
-internal const val BULK_DELETE_PREVIEW_SAMPLE_LIMIT = 50
-
 internal data class ResultsBulkDeleteCandidate(
     val group: DuplicateGroupEntity,
     val survivor: FileMetadata,
@@ -345,10 +343,6 @@ internal class ResultsDbBulkDeleteOperations(
 
 internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
     return candidateFileCount
-}
-
-internal fun ResultsBulkDeletePreview.hasCappedCandidates(): Boolean {
-    return candidateGroupCount > candidates.size
 }
 
 internal fun ResultsBulkDeletePreview.readyMessage(): String {
@@ -695,9 +689,7 @@ private suspend fun buildBulkDeletePreview(
                 candidate?.let { matchedCandidate ->
                     candidateGroupCount += 1
                     candidateFileCount += matchedCandidate.deleteTargets.size
-                    if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
-                        candidates += matchedCandidate
-                    }
+                    candidates += matchedCandidate
                 }
             }
         }
@@ -1318,13 +1310,6 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
                             }
-                            if (builtPreview.hasCappedCandidates()) {
-                                Text(
-                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
@@ -1358,7 +1343,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
                 )
             },
             confirmButton = {
@@ -1672,13 +1657,6 @@ internal fun KeepByModifiedBulkDeleteScreen(
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
                             }
-                            if (builtPreview.hasCappedCandidates()) {
-                                Text(
-                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
@@ -1712,7 +1690,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
                 )
             },
             confirmButton = {
@@ -2036,13 +2014,6 @@ internal fun KeepByDurationBulkDeleteScreen(
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
                             }
-                            if (builtPreview.hasCappedCandidates()) {
-                                Text(
-                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
@@ -2076,7 +2047,7 @@ internal fun KeepByDurationBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
                 )
             },
             confirmButton = {

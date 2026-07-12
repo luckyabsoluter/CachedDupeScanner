@@ -228,9 +228,7 @@ private suspend fun buildSimilarityBulkDeletePreviewAtSnapshot(
                 buildCandidate(group, members)?.let { candidate ->
                     candidateGroupCount += 1
                     candidateFileCount += candidate.deleteTargets.size
-                    if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
-                        candidates += candidate
-                    }
+                    candidates += candidate
                 }
             }
         }
