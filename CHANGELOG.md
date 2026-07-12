@@ -48,6 +48,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Lazy-list scrollbars now keep exact track-end drags at the final item instead of snapping upward when item heights differ.
 - Scan completion now reports automatic similarity generation as part of the scan task instead of staying on the cache-saving status without progress.
 - Scan command now uses the shared cache database builder so newly added Room migrations are registered consistently.
 - Scan completion now waits for cache persistence and similarity refresh before marking scan tasks complete.

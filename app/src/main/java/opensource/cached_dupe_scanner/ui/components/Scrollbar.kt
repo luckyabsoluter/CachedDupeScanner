@@ -67,6 +67,9 @@ internal fun estimateLazyListScrollTarget(
     if (totalItems <= 0) {
         return LazyListScrollTarget(index = 0, scrollOffsetPx = 0)
     }
+    if (maxThumbOffsetPx > 0f && targetThumbOffsetPx >= maxThumbOffsetPx) {
+        return LazyListScrollTarget(index = totalItems - 1, scrollOffsetPx = 0)
+    }
     val safeTypicalItemSizePx = typicalItemSizePx.coerceAtLeast(1f)
     val scrollFraction = if (maxThumbOffsetPx <= 0f) {
         0f
