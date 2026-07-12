@@ -48,10 +48,11 @@ internal fun ResultsFilterScreen(
         introLines = listOf(
             "Build filter clusters in a dedicated screen so long rule sets stay readable while you edit them.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name, folder, and modified-time rules match if any file inside the duplicate group matches the rule. Same-folder and same-size rules check every file in the group."
+            "File name, folder, and modified-time rules can match any member or require every member. Same-folder and same-size rules check every file in the group."
         ),
         definition = definition,
         supportedTargets = RESULT_FILTER_TARGETS,
+        showMemberMatchMode = true,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -75,6 +76,7 @@ internal fun FileFilterScreen(
         ),
         definition = definition,
         supportedTargets = FILE_FILTER_TARGETS,
+        showMemberMatchMode = false,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -94,10 +96,11 @@ internal fun SimilarityFilterScreen(
         introLines = listOf(
             "Filter stored similarity groups with the same rules available in duplicate results.",
             "Enabled clusters are combined together. Inside each cluster, choose whether every rule must match or any rule can match.",
-            "File name, folder, and modified-time rules match any member. Same-folder, same-size, and average-duration rules check every member in the group."
+            "File name, folder, and modified-time rules can match any member or require every member. Same-folder, same-size, and average-duration rules check every member in the group."
         ),
         definition = definition,
         supportedTargets = SIMILARITY_FILTER_TARGETS,
+        showMemberMatchMode = true,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -111,6 +114,7 @@ private fun FilterEditorScreen(
     introLines: List<String>,
     definition: ResultsFilterDefinition,
     supportedTargets: Set<ResultsFilterTarget>,
+    showMemberMatchMode: Boolean,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
     onBack: () -> Unit,
     onApply: () -> Unit
@@ -177,6 +181,7 @@ private fun FilterEditorScreen(
                             cluster = cluster,
                             canRemove = definition.clusters.size > 1,
                             supportedTargets = supportedTargets,
+                            showMemberMatchMode = showMemberMatchMode,
                             onClusterChange = { updatedCluster ->
                                 onDefinitionChange(
                                     definition.updateCluster(
@@ -275,6 +280,7 @@ private fun ResultsFilterClusterEditor(
     cluster: ResultsFilterCluster,
     canRemove: Boolean,
     supportedTargets: Set<ResultsFilterTarget>,
+    showMemberMatchMode: Boolean,
     onClusterChange: (ResultsFilterCluster) -> Unit,
     onAddRule: () -> Unit,
     onRemoveRule: (String) -> Unit,
@@ -336,6 +342,7 @@ private fun ResultsFilterClusterEditor(
                         rule = rule,
                         canRemove = cluster.rules.size > 1,
                         supportedTargets = supportedTargets,
+                        showMemberMatchMode = showMemberMatchMode,
                         onRuleChange = { updatedRule ->
                             onClusterChange(
                                 cluster.copy(
@@ -363,6 +370,7 @@ private fun ResultsFilterRuleEditor(
     rule: ResultsFilterRule,
     canRemove: Boolean,
     supportedTargets: Set<ResultsFilterTarget>,
+    showMemberMatchMode: Boolean,
     onRuleChange: (ResultsFilterRule) -> Unit,
     onRemove: () -> Unit
 ) {
@@ -413,6 +421,18 @@ private fun ResultsFilterRuleEditor(
                     )
                 }
             )
+
+            if (showMemberMatchMode && rule.target.supportsMemberMatchMode()) {
+                Text("Member match")
+                OptionButtonGrid(
+                    options = ResultsFilterMemberMatchMode.entries,
+                    selected = rule.memberMatchMode,
+                    label = { mode -> mode.label },
+                    onSelect = { mode ->
+                        onRuleChange(rule.copy(memberMatchMode = mode))
+                    }
+                )
+            }
 
             if (rule.target == ResultsFilterTarget.GroupItemCount) {
                 Text("Operator")

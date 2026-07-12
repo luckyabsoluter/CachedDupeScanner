@@ -29,6 +29,11 @@ internal enum class ResultsFilterClusterMode(val label: String) {
     Any("Match any")
 }
 
+internal enum class ResultsFilterMemberMatchMode(val label: String) {
+    Any("Any member"),
+    All("All members")
+}
+
 internal enum class ResultsFilterTextOperator(val label: String) {
     StartsWith("Starts with"),
     EndsWith("Ends with"),
@@ -52,6 +57,7 @@ internal data class ResultsFilterRule(
     val id: String,
     val enabled: Boolean = true,
     val target: ResultsFilterTarget = ResultsFilterTarget.FileName,
+    val memberMatchMode: ResultsFilterMemberMatchMode = ResultsFilterMemberMatchMode.Any,
     val textOperator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val countOperator: ResultsFilterCountOperator = ResultsFilterCountOperator.AtLeast,
     val timeOperator: ResultsFilterTimeOperator = ResultsFilterTimeOperator.OnOrAfter,
@@ -86,6 +92,12 @@ internal val RESULT_FILTER_TARGETS: Set<ResultsFilterTarget> =
 
 internal val SIMILARITY_FILTER_TARGETS: Set<ResultsFilterTarget> =
     ResultsFilterTarget.entries.toSet()
+
+internal fun ResultsFilterTarget.supportsMemberMatchMode(): Boolean {
+    return this == ResultsFilterTarget.FileName ||
+        this == ResultsFilterTarget.FolderPath ||
+        this == ResultsFilterTarget.ModifiedTime
+}
 
 private object ResultsFilterIdGenerator {
     private var nextId = 1L
@@ -322,6 +334,7 @@ private class ResultFilterRuleProgress(
     group: DuplicateGroupEntity
 ) {
     private var matched = false
+    private var memberMismatch = false
     private var sawMember = false
     private var firstFolder: String? = null
     private var folderMismatch = false
@@ -347,33 +360,43 @@ private class ResultFilterRuleProgress(
     }
 
     fun consume(page: List<FileMetadata>) {
-        val requiresAllMembers = rule.target == ResultsFilterTarget.SameFolder ||
-            rule.target == ResultsFilterTarget.SameFileSize ||
-            rule.target == ResultsFilterTarget.SameResolution ||
-            rule.target == ResultsFilterTarget.DurationFromAverage
-        if (groupResult != null || matched && !requiresAllMembers) return
+        val memberRuleResolved = if (rule.target.supportsMemberMatchMode()) {
+            when (rule.memberMatchMode) {
+                ResultsFilterMemberMatchMode.Any -> matched
+                ResultsFilterMemberMatchMode.All -> memberMismatch
+            }
+        } else {
+            false
+        }
+        if (groupResult != null || memberRuleResolved) return
         page.forEach { member ->
             when (rule.target) {
                 ResultsFilterTarget.FileName -> {
-                    matched = matched || matchesTextOperator(
-                        source = fileNameFromPath(member.normalizedPath),
-                        expected = rule.value,
-                        operator = rule.textOperator
+                    consumeMemberMatch(
+                        matchesTextOperator(
+                            source = fileNameFromPath(member.normalizedPath),
+                            expected = rule.value,
+                            operator = rule.textOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.FolderPath -> {
-                    matched = matched || matchesTextOperator(
-                        source = folderPathFromPath(member.normalizedPath),
-                        expected = rule.value,
-                        operator = rule.textOperator
+                    consumeMemberMatch(
+                        matchesTextOperator(
+                            source = folderPathFromPath(member.normalizedPath),
+                            expected = rule.value,
+                            operator = rule.textOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.ModifiedTime -> {
                     val timeValue = parseResultsFilterTimeValue(rule.value) ?: return@forEach
-                    matched = matched || matchesTimeOperator(
-                        sourceMillis = member.lastModifiedMillis,
-                        expected = timeValue,
-                        operator = rule.timeOperator
+                    consumeMemberMatch(
+                        matchesTimeOperator(
+                            sourceMillis = member.lastModifiedMillis,
+                            expected = timeValue,
+                            operator = rule.timeOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.SameFolder -> {
@@ -417,16 +440,36 @@ private class ResultFilterRuleProgress(
         }
     }
 
+    private fun consumeMemberMatch(matches: Boolean) {
+        sawMember = true
+        if (matches) {
+            matched = true
+        } else {
+            memberMismatch = true
+        }
+    }
+
+    private fun memberMatchResult(ended: Boolean): Boolean? {
+        return when (rule.memberMatchMode) {
+            ResultsFilterMemberMatchMode.Any -> when {
+                matched -> true
+                ended -> false
+                else -> null
+            }
+            ResultsFilterMemberMatchMode.All -> when {
+                memberMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+        }
+    }
+
     fun result(ended: Boolean): Boolean? {
         groupResult?.let { return it }
         return when (rule.target) {
             ResultsFilterTarget.FileName,
             ResultsFilterTarget.FolderPath,
-            ResultsFilterTarget.ModifiedTime -> when {
-                matched -> true
-                ended -> false
-                else -> null
-            }
+            ResultsFilterTarget.ModifiedTime -> memberMatchResult(ended)
             ResultsFilterTarget.SameFolder -> when {
                 folderMismatch -> false
                 ended -> sawMember
@@ -536,7 +579,7 @@ private fun matchesResultsFilterRule(
             }
         }
         ResultsFilterTarget.FileName -> {
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTextOperator(
                     source = fileNameFromPath(member.normalizedPath),
                     expected = rule.value,
@@ -545,7 +588,7 @@ private fun matchesResultsFilterRule(
             }
         }
         ResultsFilterTarget.FolderPath -> {
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTextOperator(
                     source = folderPathFromPath(member.normalizedPath),
                     expected = rule.value,
@@ -555,7 +598,7 @@ private fun matchesResultsFilterRule(
         }
         ResultsFilterTarget.ModifiedTime -> {
             val timeValue = parseResultsFilterTimeValue(rule.value) ?: return false
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTimeOperator(
                     sourceMillis = member.lastModifiedMillis,
                     expected = timeValue,
@@ -587,6 +630,18 @@ private fun matchesResultsFilterRule(
                 matches(toleranceMillis)
             }
         }
+    }
+}
+
+private inline fun membersMatchRule(
+    members: List<FileMetadata>,
+    mode: ResultsFilterMemberMatchMode,
+    predicate: (FileMetadata) -> Boolean
+): Boolean {
+    if (members.isEmpty()) return false
+    return when (mode) {
+        ResultsFilterMemberMatchMode.Any -> members.any(predicate)
+        ResultsFilterMemberMatchMode.All -> members.all(predicate)
     }
 }
 
@@ -809,7 +864,8 @@ internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition):
                         encodeFilterToken(rule.value),
                         rule.timeOperator.name,
                         encodeFilterToken(rule.durationToleranceSeconds),
-                        encodeFilterToken(rule.durationToleranceMilliseconds)
+                        encodeFilterToken(rule.durationToleranceMilliseconds),
+                        rule.memberMatchMode.name
                     ).joinToString("\t")
                 )
                 append('\n')
@@ -873,7 +929,8 @@ internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefini
                                 value = decodeFilterToken(parts[7]),
                                 timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty()),
                                 durationToleranceSeconds = decodeFilterToken(parts.getOrNull(9).orEmpty()),
-                                durationToleranceMilliseconds = decodeFilterToken(parts.getOrNull(10).orEmpty())
+                                durationToleranceMilliseconds = decodeFilterToken(parts.getOrNull(10).orEmpty()),
+                                memberMatchMode = parseResultsFilterMemberMatchMode(parts.getOrNull(11).orEmpty())
                             )
                         )
                 }
@@ -906,6 +963,11 @@ private fun parseResultsFilterTarget(value: String): ResultsFilterTarget {
 private fun parseResultsFilterClusterMode(value: String): ResultsFilterClusterMode {
     return runCatching { ResultsFilterClusterMode.valueOf(value) }
         .getOrDefault(ResultsFilterClusterMode.All)
+}
+
+private fun parseResultsFilterMemberMatchMode(value: String): ResultsFilterMemberMatchMode {
+    return runCatching { ResultsFilterMemberMatchMode.valueOf(value) }
+        .getOrDefault(ResultsFilterMemberMatchMode.Any)
 }
 
 private fun parseResultsFilterTextOperator(value: String): ResultsFilterTextOperator {

@@ -209,6 +209,7 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithContentDescription("Menu").performClick()
         composeRule.onNodeWithText("Filters (1)").performClick()
         composeRule.onNodeWithText("Similarity filters").fetchSemanticsNode()
+        composeRule.onNodeWithText("Member match").performScrollTo().fetchSemanticsNode()
     }
 
     @Test

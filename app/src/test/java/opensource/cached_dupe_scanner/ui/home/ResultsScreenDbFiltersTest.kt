@@ -94,6 +94,144 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun memberRulesDistinguishAnyAndAllGroupMembers() {
+        data class MemberRuleCase(
+            val rule: ResultsFilterRule,
+            val mixedMembers: List<FileMetadata>,
+            val allMatchingMembers: List<FileMetadata>
+        )
+
+        val cases = listOf(
+            MemberRuleCase(
+                rule = ResultsFilterRule(
+                    id = "rule_name",
+                    target = ResultsFilterTarget.FileName,
+                    textOperator = ResultsFilterTextOperator.Contains,
+                    value = "keep"
+                ),
+                mixedMembers = listOf(
+                    file("/camera/keep-first.jpg"),
+                    file("/camera/remove-second.jpg")
+                ),
+                allMatchingMembers = listOf(
+                    file("/camera/keep-first.jpg"),
+                    file("/download/keep-second.jpg")
+                )
+            ),
+            MemberRuleCase(
+                rule = ResultsFilterRule(
+                    id = "rule_folder",
+                    target = ResultsFilterTarget.FolderPath,
+                    textOperator = ResultsFilterTextOperator.Contains,
+                    value = "camera"
+                ),
+                mixedMembers = listOf(
+                    file("/camera/first.jpg"),
+                    file("/download/second.jpg")
+                ),
+                allMatchingMembers = listOf(
+                    file("/camera/first.jpg"),
+                    file("/camera/sub/second.jpg")
+                )
+            ),
+            MemberRuleCase(
+                rule = ResultsFilterRule(
+                    id = "rule_modified",
+                    target = ResultsFilterTarget.ModifiedTime,
+                    timeOperator = ResultsFilterTimeOperator.OnOrAfter,
+                    value = "100"
+                ),
+                mixedMembers = listOf(
+                    file("/camera/first.jpg", modified = 100L),
+                    file("/camera/second.jpg", modified = 99L)
+                ),
+                allMatchingMembers = listOf(
+                    file("/camera/first.jpg", modified = 100L),
+                    file("/camera/second.jpg", modified = 101L)
+                )
+            )
+        )
+
+        cases.forEach { case ->
+            val anyDefinition = memberRuleDefinition(
+                case.rule.copy(memberMatchMode = ResultsFilterMemberMatchMode.Any)
+            )
+            val allDefinition = memberRuleDefinition(
+                case.rule.copy(memberMatchMode = ResultsFilterMemberMatchMode.All)
+            )
+
+            assertTrue(
+                matchesResultsFilter(
+                    definition = anyDefinition,
+                    group = group(fileCount = case.mixedMembers.size),
+                    members = case.mixedMembers
+                )
+            )
+            assertFalse(
+                matchesResultsFilter(
+                    definition = allDefinition,
+                    group = group(fileCount = case.mixedMembers.size),
+                    members = case.mixedMembers
+                )
+            )
+            assertTrue(
+                matchesResultsFilter(
+                    definition = allDefinition,
+                    group = group(fileCount = case.allMatchingMembers.size),
+                    members = case.allMatchingMembers
+                )
+            )
+        }
+    }
+
+    @Test
+    fun pagedMemberMatchModesResolveAtAnyAndAllBoundaries() {
+        val matching = file("/camera/keep-first.jpg")
+        val nonMatching = file("/camera/remove-second.jpg")
+        val rule = ResultsFilterRule(
+            id = "rule_name",
+            target = ResultsFilterTarget.FileName,
+            textOperator = ResultsFilterTextOperator.Contains,
+            value = "keep"
+        )
+        var anyPages = 0
+        val anyResult = matchesResultsFilterPagedMembers(
+            definition = memberRuleDefinition(
+                rule.copy(memberMatchMode = ResultsFilterMemberMatchMode.Any)
+            ),
+            group = group(fileCount = 2),
+            memberPages = {
+                sequence {
+                    anyPages += 1
+                    yield(listOf(matching))
+                    anyPages += 1
+                    yield(listOf(nonMatching))
+                }
+            }
+        )
+        var allPages = 0
+        val allResult = matchesResultsFilterPagedMembers(
+            definition = memberRuleDefinition(
+                rule.copy(memberMatchMode = ResultsFilterMemberMatchMode.All)
+            ),
+            group = group(fileCount = 2),
+            memberPages = {
+                sequence {
+                    allPages += 1
+                    yield(listOf(matching))
+                    allPages += 1
+                    yield(listOf(nonMatching))
+                }
+            }
+        )
+
+        assertTrue(anyResult)
+        assertEquals(1, anyPages)
+        assertFalse(allResult)
+        assertEquals(2, allPages)
+    }
+
+    @Test
     fun matchesResultsFilterHonorsClusterAnyModeAndSkipsDisabledClusters() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
@@ -789,6 +927,7 @@ class ResultsScreenDbFiltersTest {
                             id = "rule_8",
                             enabled = false,
                             target = ResultsFilterTarget.FileName,
+                            memberMatchMode = ResultsFilterMemberMatchMode.All,
                             textOperator = ResultsFilterTextOperator.EndsWith,
                             value = ".jpg"
                         ),
@@ -822,6 +961,30 @@ class ResultsScreenDbFiltersTest {
         )
 
         assertEquals(definition, restored)
+    }
+
+    @Test
+    fun legacyFilterDefinitionDefaultsMemberRulesToAny() {
+        val current = resultsFilterDefinitionToJson(
+            memberRuleDefinition(
+                ResultsFilterRule(
+                    id = "rule_legacy",
+                    target = ResultsFilterTarget.FileName,
+                    memberMatchMode = ResultsFilterMemberMatchMode.All,
+                    value = "keep"
+                )
+            )
+        )
+        val legacy = current.lineSequence().joinToString("\n") { line ->
+            if (line.startsWith("rule\t")) line.substringBeforeLast('\t') else line
+        }
+
+        val restored = resultsFilterDefinitionFromJson(legacy)
+
+        assertEquals(
+            ResultsFilterMemberMatchMode.Any,
+            restored.clusters.single().rules.single().memberMatchMode
+        )
     }
 
     @Test
@@ -927,6 +1090,18 @@ class ResultsScreenDbFiltersTest {
                             durationToleranceMilliseconds = milliseconds
                         )
                     )
+                )
+            )
+        )
+    }
+
+    private fun memberRuleDefinition(rule: ResultsFilterRule): ResultsFilterDefinition {
+        return ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_members",
+                    name = "Members",
+                    rules = listOf(rule)
                 )
             )
         )
