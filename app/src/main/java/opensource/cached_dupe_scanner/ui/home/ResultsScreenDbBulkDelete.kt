@@ -43,7 +43,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
+import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
@@ -59,6 +61,7 @@ import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
+import java.io.File
 
 internal enum class ResultsBulkDeleteCommandType(
     val title: String,
@@ -71,12 +74,21 @@ internal enum class ResultsBulkDeleteCommandType(
     KeepByModified(
         title = "Keep by modified time",
         description = "In each eligible result group, choose whether to keep the oldest file or the newest file and delete the rest."
+    ),
+    KeepByDuration(
+        title = "Keep by video duration",
+        description = "In each eligible group, keep the shortest or longest video and use modified time to break equal-duration ties."
     )
 }
 
 internal enum class ResultsBulkDeleteModifiedKeepMode(val label: String) {
     Oldest("Keep oldest"),
     Newest("Keep newest")
+}
+
+internal enum class ResultsBulkDeleteDurationKeepMode(val label: String) {
+    Shortest("Keep shortest"),
+    Longest("Keep longest")
 }
 
 internal enum class ResultsBulkDeleteTextTarget(val label: String) {
@@ -88,6 +100,11 @@ internal data class KeepOneNonMatchBulkDeleteCommandConfig(
     val target: ResultsBulkDeleteTextTarget = ResultsBulkDeleteTextTarget.FileName,
     val operator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val phrase: String = ""
+)
+
+internal data class KeepByDurationBulkDeleteCommandConfig(
+    val durationKeepMode: ResultsBulkDeleteDurationKeepMode = ResultsBulkDeleteDurationKeepMode.Shortest,
+    val tieKeepMode: ResultsBulkDeleteModifiedKeepMode = ResultsBulkDeleteModifiedKeepMode.Oldest
 )
 
 internal const val BULK_DELETE_PREVIEW_SAMPLE_LIMIT = 50
@@ -151,6 +168,12 @@ internal interface BulkDeleteOperations {
         onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
     ): ResultsBulkDeletePreview
 
+    suspend fun buildKeepDurationPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview
+
     suspend fun executeKeepOne(
         preview: ResultsBulkDeletePreview,
         filterDefinition: ResultsFilterDefinition,
@@ -167,6 +190,14 @@ internal interface BulkDeleteOperations {
         onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
     ): ResultsBulkDeleteExecutionOutcome
 
+    suspend fun executeKeepDuration(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome
+
     suspend fun hasSnapshotChanged(preview: ResultsBulkDeletePreview): Boolean
 
     suspend fun refreshGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>)
@@ -176,7 +207,8 @@ internal class ResultsDbBulkDeleteOperations(
     private val resultsRepo: ResultsDbRepository,
     private val sortKey: DuplicateGroupSortKey,
     private val snapshotUpdatedAtMillis: Long?,
-    override val totalGroupCount: Int
+    override val totalGroupCount: Int,
+    private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor()
 ) : BulkDeleteOperations {
     override val snapshotAvailable: Boolean
         get() = snapshotUpdatedAtMillis != null
@@ -209,6 +241,23 @@ internal class ResultsDbBulkDeleteOperations(
             totalGroupCount = totalGroupCount,
             filterDefinition = filterDefinition,
             keepNewest = keepNewest,
+            onProgress = onProgress
+        )
+    }
+
+    override suspend fun buildKeepDurationPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview {
+        return buildKeepDurationBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = requireNotNull(snapshotUpdatedAtMillis),
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            config = config,
+            durationExtractor = durationExtractor,
             onProgress = onProgress
         )
     }
@@ -252,6 +301,31 @@ internal class ResultsDbBulkDeleteOperations(
             onProgress = onProgress
         ) { group, members ->
             buildKeepModifiedBulkDeleteCandidate(group, members, keepNewest)
+        }
+    }
+
+    override suspend fun executeKeepDuration(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome {
+        return executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = preview.snapshotUpdatedAtMillis,
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            onDeleteFile = onDeleteFile,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepDurationBulkDeleteCandidate(
+                group = group,
+                members = resolveVideoDurations(members, durationExtractor),
+                config = config
+            )
         }
     }
 
@@ -350,6 +424,64 @@ internal fun buildKeepModifiedBulkDeleteCandidate(
         survivor = survivor,
         deleteTargets = deleteTargets
     )
+}
+
+internal fun buildKeepDurationBulkDeleteCandidate(
+    group: DuplicateGroupEntity,
+    members: List<FileMetadata>,
+    config: KeepByDurationBulkDeleteCommandConfig
+): ResultsBulkDeleteCandidate? {
+    if (members.size <= 1 || members.any { member -> (member.durationMillis ?: -1L) < 0L }) return null
+
+    val targetDuration = when (config.durationKeepMode) {
+        ResultsBulkDeleteDurationKeepMode.Shortest -> members.minOf { member ->
+            requireNotNull(member.durationMillis)
+        }
+        ResultsBulkDeleteDurationKeepMode.Longest -> members.maxOf { member ->
+            requireNotNull(member.durationMillis)
+        }
+    }
+    val tiedMembers = members.filter { member -> member.durationMillis == targetDuration }
+        .sortedWith(
+            compareBy<FileMetadata> { member -> member.lastModifiedMillis }
+                .thenBy { member -> member.normalizedPath }
+        )
+    val survivor = when (config.tieKeepMode) {
+        ResultsBulkDeleteModifiedKeepMode.Oldest -> tiedMembers.first()
+        ResultsBulkDeleteModifiedKeepMode.Newest -> tiedMembers.last()
+    }
+    val deleteTargets = members.filterNot { member ->
+        member.normalizedPath == survivor.normalizedPath
+    }
+    if (deleteTargets.isEmpty()) return null
+
+    return ResultsBulkDeleteCandidate(
+        group = group,
+        survivor = survivor,
+        deleteTargets = deleteTargets
+    )
+}
+
+internal fun resolveVideoDurations(
+    members: List<FileMetadata>,
+    durationExtractor: VideoDurationExtractor
+): List<FileMetadata> {
+    val shouldContinue = { !Thread.currentThread().isInterrupted }
+    return members.map { member ->
+        val storedDuration = member.durationMillis?.takeIf { value -> value >= 0L }
+        if (storedDuration != null || !shouldContinue()) {
+            member.copy(durationMillis = storedDuration)
+        } else {
+            val file = File(member.path.ifBlank { member.normalizedPath })
+            val resolvedDuration = if (file.exists()) {
+                durationExtractor.durationMillis(file, shouldContinue)
+                    ?.takeIf { value -> value >= 0L }
+            } else {
+                null
+            }
+            member.copy(durationMillis = resolvedDuration)
+        }
+    }
 }
 
 internal fun buildKeepOneNonMatchBulkDeleteCandidate(
@@ -474,6 +606,34 @@ internal suspend fun buildKeepModifiedBulkDeletePreview(
     }
 }
 
+internal suspend fun buildKeepDurationBulkDeletePreview(
+    resultsRepo: ResultsDbRepository,
+    sortKey: DuplicateGroupSortKey,
+    snapshotUpdatedAtMillis: Long,
+    totalGroupCount: Int,
+    filterDefinition: ResultsFilterDefinition,
+    config: KeepByDurationBulkDeleteCommandConfig,
+    durationExtractor: VideoDurationExtractor,
+    sourcePageSize: Int = 100,
+    onProgress: (ResultsBulkDeletePreviewProgress) -> Unit = {}
+): ResultsBulkDeletePreview {
+    return buildBulkDeletePreview(
+        resultsRepo = resultsRepo,
+        sortKey = sortKey,
+        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+        totalGroupCount = totalGroupCount,
+        filterDefinition = filterDefinition,
+        sourcePageSize = sourcePageSize,
+        onProgress = onProgress
+    ) { group, members ->
+        buildKeepDurationBulkDeleteCandidate(
+            group = group,
+            members = resolveVideoDurations(members, durationExtractor),
+            config = config
+        )
+    }
+}
+
 private suspend fun buildBulkDeletePreview(
     resultsRepo: ResultsDbRepository,
     sortKey: DuplicateGroupSortKey,
@@ -524,18 +684,19 @@ private suspend fun buildBulkDeletePreview(
                 )
             }
             if (matchesFilter) {
-                val members = withContext(Dispatchers.IO) {
-                    resultsRepo.listAllGroupMembers(
+                val candidate = withContext(Dispatchers.IO) {
+                    val members = resultsRepo.listAllGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex
                     )
+                    buildCandidate(group, members)
                 }
                 filterMatchedGroupCount += 1
-                buildCandidate(group, members)?.let { candidate ->
+                candidate?.let { matchedCandidate ->
                     candidateGroupCount += 1
-                    candidateFileCount += candidate.deleteTargets.size
+                    candidateFileCount += matchedCandidate.deleteTargets.size
                     if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
-                        candidates += candidate
+                        candidates += matchedCandidate
                     }
                 }
             }
@@ -620,18 +781,19 @@ internal suspend fun executeBulkDeleteCommand(
                 )
             }
             if (matchesFilter) {
-                val members = withContext(Dispatchers.IO) {
-                    resultsRepo.listAllGroupMembers(
+                val candidate = withContext(Dispatchers.IO) {
+                    val members = resultsRepo.listAllGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex
                     )
+                    buildCandidate(group, members)
                 }
-                buildCandidate(group, members)?.let { candidate ->
+                candidate?.let { matchedCandidate ->
                     touchedGroups += ResultsBulkDeleteTouchedGroupKey(
-                        sizeBytes = candidate.group.sizeBytes,
-                        hashHex = candidate.group.hashHex
+                        sizeBytes = matchedCandidate.group.sizeBytes,
+                        hashHex = matchedCandidate.group.hashHex
                     )
-                    candidate.deleteTargets.forEach { file ->
+                    matchedCandidate.deleteTargets.forEach { file ->
                         val deleted = runCatching { onDeleteFile(file) }.getOrDefault(false)
                         processed += 1
                         if (deleted) {
@@ -1620,6 +1782,404 @@ internal fun KeepByModifiedBulkDeleteScreen(
 }
 
 @Composable
+internal fun KeepByDurationBulkDeleteScreen(
+    operations: BulkDeleteOperations,
+    appliedFilter: ResultsFilterDefinition,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onBack: () -> Unit,
+    onResultsChanged: (ResultsBulkDeleteExecutionOutcome) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val totalGroupCount = operations.totalGroupCount
+    val config = remember { mutableStateOf(KeepByDurationBulkDeleteCommandConfig()) }
+    val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
+    val progress = remember {
+        mutableStateOf(
+            ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
+        )
+    }
+    val isPreviewLoading = remember { mutableStateOf(false) }
+    val isExecuting = remember { mutableStateOf(false) }
+    val confirmExecute = remember { mutableStateOf(false) }
+    val message = remember { mutableStateOf<String?>(null) }
+
+    fun updateConfig(updated: KeepByDurationBulkDeleteCommandConfig) {
+        config.value = updated
+        preview.value = null
+        progress.value = ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
+        message.value = null
+    }
+
+    val currentPreview = preview.value
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
+    val canBuildPreview = !isPreviewLoading.value &&
+        !isExecuting.value &&
+        operations.snapshotAvailable &&
+        totalGroupCount > 0
+    val canExecute = !isPreviewLoading.value &&
+        !isExecuting.value &&
+        onDeleteFile != null &&
+        currentPreview != null &&
+        currentPreview.candidateFileCount > 0
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .testTag("bulk-delete-keep-duration-list")
+                    .padding(Spacing.screenPadding),
+                contentPadding = PaddingValues(
+                    end = ScrollbarDefaults.ThumbWidth + 8.dp,
+                    bottom = 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    AppTopBar(title = "Keep by video duration", onBack = onBack)
+                }
+                item {
+                    Text(
+                        text = "Scan the current results snapshot, keep the shortest or longest video in each eligible group, and delete the rest.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                if (appliedFilter.hasActiveRules()) {
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Current filter applies", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = summarizeResultsFilter(appliedFilter),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "Groups outside the active result filter are excluded from preview and execution.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Command rule", style = MaterialTheme.typography.titleMedium)
+                            Text("Duration to keep")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteDurationKeepMode.entries,
+                                selected = config.value.durationKeepMode,
+                                label = { mode -> mode.label },
+                                onSelect = { mode ->
+                                    updateConfig(config.value.copy(durationKeepMode = mode))
+                                }
+                            )
+                            Text("Equal-duration fallback")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteModifiedKeepMode.entries,
+                                selected = config.value.tieKeepMode,
+                                label = { mode -> mode.label },
+                                onSelect = { mode ->
+                                    updateConfig(config.value.copy(tieKeepMode = mode))
+                                }
+                            )
+                            Text(
+                                text = durationBulkDeleteRuleSummary(config.value),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "A group is skipped unless every member has a readable video duration.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                if (!operations.snapshotAvailable || totalGroupCount <= 0) {
+                    item {
+                        Text(
+                            text = "No result-group snapshot is available yet.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                message.value = null
+                                preview.value = null
+                                isPreviewLoading.value = true
+                                progress.value = ResultsBulkDeletePreviewProgress(
+                                    totalGroupCount = totalGroupCount.coerceAtLeast(0)
+                                )
+                                scope.launch {
+                                    try {
+                                        val builtPreview = operations.buildKeepDurationPreview(
+                                            filterDefinition = appliedFilter,
+                                            config = config.value,
+                                            onProgress = { updated ->
+                                                progress.value = updated
+                                            }
+                                        )
+                                        preview.value = builtPreview
+                                        message.value = builtPreview.readyMessage()
+                                    } catch (_: Exception) {
+                                        message.value = "Failed to build the bulk delete preview."
+                                    } finally {
+                                        isPreviewLoading.value = false
+                                    }
+                                }
+                            },
+                            enabled = canBuildPreview
+                        ) {
+                            Text(if (isPreviewLoading.value) "Building preview..." else "Build preview")
+                        }
+                        OutlinedButton(onClick = onBack, enabled = !isExecuting.value) {
+                            Text("Back")
+                        }
+                    }
+                }
+                if (isPreviewLoading.value) {
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Scanning", style = MaterialTheme.typography.titleMedium)
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                currentPreview?.let { builtPreview ->
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Preview summary", style = MaterialTheme.typography.titleMedium)
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                message.value?.let { currentMessage ->
+                    item {
+                        Text(
+                            text = currentMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                currentPreview?.let { builtPreview ->
+                    if (builtPreview.candidates.isNotEmpty()) {
+                        item {
+                            Text("Preview list", style = MaterialTheme.typography.titleMedium)
+                        }
+                        items(
+                            items = builtPreview.candidates,
+                            key = { candidate -> "${candidate.group.sizeBytes}:${candidate.group.hashHex}" }
+                        ) { candidate ->
+                            ResultsBulkDeleteCandidateCard(
+                                candidate = candidate,
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = thumbnailSizeScale,
+                                rememberedPreviewCache = rememberedPreviewCache
+                            )
+                        }
+                        item {
+                            Button(
+                                onClick = { confirmExecute.value = true },
+                                enabled = canExecute
+                            ) {
+                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
+                            }
+                            if (builtPreview.hasCappedCandidates()) {
+                                Text(
+                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                if (onDeleteFile == null) {
+                    item {
+                        Text(
+                            text = "Delete action is unavailable in this session.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+            VerticalLazyScrollbar(
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+            )
+        }
+    }
+
+    if (confirmExecute.value && currentPreview != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isExecuting.value) {
+                    confirmExecute.value = false
+                }
+            },
+            title = { Text("Run bulk delete?") },
+            text = {
+                Text(
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                )
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        val handler = onDeleteFile ?: return@OutlinedButton
+                        isExecuting.value = true
+                        message.value = null
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = taskScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            executeDelete = { executionProgress ->
+                                operations.executeKeepDuration(
+                                    preview = currentPreview,
+                                    filterDefinition = appliedFilter,
+                                    config = config.value,
+                                    onDeleteFile = handler,
+                                    onProgress = executionProgress
+                                )
+                            },
+                            onSnapshotChanged = {
+                                operations.hasSnapshotChanged(currentPreview)
+                            },
+                            onRefreshGroups = { touchedGroups ->
+                                operations.refreshGroups(touchedGroups)
+                            },
+                            onSuccess = { outcome ->
+                                preview.value = null
+                                progress.value = ResultsBulkDeletePreviewProgress(
+                                    totalGroupCount = totalGroupCount.coerceAtLeast(0)
+                                )
+                                message.value = outcome.message()
+                                onResultsChanged(outcome)
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
+                                message.value = "Bulk delete failed."
+                            },
+                            onFinished = {
+                                isExecuting.value = false
+                                confirmExecute.value = false
+                            }
+                        )
+                    },
+                    enabled = !isExecuting.value
+                ) {
+                    Text(if (isExecuting.value) "Deleting..." else "Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { confirmExecute.value = false },
+                    enabled = !isExecuting.value
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    BackHandler(onBack = onBack)
+}
+
+internal fun durationBulkDeleteRuleSummary(
+    config: KeepByDurationBulkDeleteCommandConfig
+): String {
+    val duration = when (config.durationKeepMode) {
+        ResultsBulkDeleteDurationKeepMode.Shortest -> "shortest-duration"
+        ResultsBulkDeleteDurationKeepMode.Longest -> "longest-duration"
+    }
+    val modified = when (config.tieKeepMode) {
+        ResultsBulkDeleteModifiedKeepMode.Oldest -> "oldest modified"
+        ResultsBulkDeleteModifiedKeepMode.Newest -> "newest modified"
+    }
+    return "The $duration video survives. Equal durations keep the $modified file."
+}
+
+internal fun bulkDeleteCandidateFileLine(
+    action: String,
+    file: FileMetadata
+): String {
+    val duration = file.durationMillis?.coerceAtLeast(0L)?.let { value ->
+        val seconds = value / 1_000L
+        val millis = value % 1_000L
+        if (millis == 0L) {
+            "${seconds}s"
+        } else {
+            "$seconds.${millis.toString().padStart(3, '0')}s"
+        }
+    }
+    return if (duration == null) {
+        "$action: ${file.normalizedPath}"
+    } else {
+        "$action: $duration | ${file.normalizedPath}"
+    }
+}
+
+@Composable
 private fun ResultsBulkDeleteCandidateCard(
     candidate: ResultsBulkDeleteCandidate,
     imageLoader: ImageLoader,
@@ -1672,12 +2232,12 @@ private fun ResultsBulkDeleteCandidateCard(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = "Keep: ${candidate.survivor.normalizedPath}",
+                    text = bulkDeleteCandidateFileLine("Keep", candidate.survivor),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 candidate.deleteTargets.forEach { target ->
                     Text(
-                        text = "Delete: ${target.normalizedPath}",
+                        text = bulkDeleteCandidateFileLine("Delete", target),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

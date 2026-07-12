@@ -1026,6 +1026,32 @@ fun ResultsScreenDb(
                     }
                 )
             }
+
+            ResultsBulkDeleteCommandType.KeepByDuration -> {
+                KeepByDurationBulkDeleteScreen(
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
+                    appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    thumbnailSizeScale = thumbnailSizeScale,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    taskScope = taskScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
+                    onBack = {
+                        bulkDeleteCommand.value = null
+                    },
+                    onResultsChanged = { _ ->
+                        refresh(reset = true, rebuild = false)
+                    }
+                )
+            }
         }
     }
 }

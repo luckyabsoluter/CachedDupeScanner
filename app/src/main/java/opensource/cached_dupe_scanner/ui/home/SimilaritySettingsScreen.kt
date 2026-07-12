@@ -786,6 +786,25 @@ fun SimilaritySettingResultsScreen(
                         }
                     )
                 }
+
+                ResultsBulkDeleteCommandType.KeepByDuration -> {
+                    KeepByDurationBulkDeleteScreen(
+                        operations = operations,
+                        appliedFilter = bulkDeleteFilter,
+                        imageLoader = imageLoader,
+                        keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                        thumbnailSizeScale = thumbnailSizeScale,
+                        rememberedPreviewCache = rememberedPreviewCache,
+                        taskScope = taskScope,
+                        taskCoordinator = taskCoordinator,
+                        notificationController = notificationController,
+                        onDeleteFile = onBulkDeleteFile,
+                        onBack = { bulkDeleteCommand = null },
+                        onResultsChanged = { outcome ->
+                            memoryDeletedClusterIds = memoryDeletedClusterIds + outcome.touchedSourceIds
+                        }
+                    )
+                }
             }
         }
     }

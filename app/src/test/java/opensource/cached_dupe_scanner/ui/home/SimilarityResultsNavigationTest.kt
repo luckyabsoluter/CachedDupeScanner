@@ -589,9 +589,66 @@ class SimilarityResultsNavigationTest {
         }
     }
 
+    @Test
+    fun durationBulkDeleteScreenAppliesLongestAndNewestSelections() {
+        val fixture = createSimilarityFixture(
+            durationsByName = mapOf(
+                "first.mp4" to 10_000L,
+                "second.mp4" to 20_000L
+            )
+        )
+
+        composeRule.setContent {
+            SimilarityDeleteNavigationHarness(
+                fixture = fixture,
+                settingsStore = AppSettingsStore(context),
+                taskCoordinator = TaskCoordinator(),
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("Menu").performClick()
+        composeRule.onNodeWithText("Bulk delete").performClick()
+        composeRule.onNodeWithTag("bulk-delete-catalog-list")
+            .performScrollToIndex(4)
+        composeRule.onNodeWithText("Keep by video duration").performClick()
+        composeRule.onNodeWithText("Duration to keep").fetchSemanticsNode()
+        composeRule.onNodeWithText("Equal-duration fallback").fetchSemanticsNode()
+
+        composeRule.onNodeWithText("Keep longest").performClick()
+        composeRule.onNodeWithText("Keep newest").performClick()
+
+        composeRule.onNodeWithText(
+            "The longest-duration video survives. Equal durations keep the newest modified file."
+        ).fetchSemanticsNode()
+        composeRule.onNodeWithTag("bulk-delete-keep-duration-list")
+            .performScrollToIndex(3)
+        composeRule.onNodeWithText("Build preview").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Building preview...")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+        composeRule.onNodeWithTag("bulk-delete-keep-duration-list")
+            .performScrollToIndex(7)
+
+        composeRule.onNodeWithText(
+            "Keep: 20s | ${fixture.secondFile.normalizedPathForTest()}"
+        ).fetchSemanticsNode()
+        composeRule.onNodeWithText(
+            "Delete: 10s | ${fixture.firstFile.normalizedPathForTest()}"
+        ).fetchSemanticsNode()
+    }
+
     private fun createSimilarityFixture(
         firstContents: String = "video",
-        secondContents: String = "video"
+        secondContents: String = "video",
+        durationsByName: Map<String, Long> = emptyMap()
     ): SimilarityFixture {
         val first = videoFile("first.mp4", firstContents)
         val second = videoFile("second.mp4", secondContents)
@@ -609,7 +666,7 @@ class SimilarityResultsNavigationTest {
                     second.absolutePath to "same-signature"
                 )
             ),
-            durationExtractor = FakeDurationExtractor()
+            durationExtractor = FakeDurationExtractor(durationsByName)
         )
         val setting = repository.createExactThumbnailSetting(
             mediaScope = SimilarityMediaScope.Video,
@@ -745,12 +802,14 @@ class SimilarityResultsNavigationTest {
         }
     }
 
-    private class FakeDurationExtractor : VideoDurationExtractor {
+    private class FakeDurationExtractor(
+        private val durationsByName: Map<String, Long>
+    ) : VideoDurationExtractor {
         override fun durationMillis(
             file: File,
             shouldContinue: () -> Boolean
         ): Long? {
-            return null
+            return durationsByName[file.name]
         }
     }
 }

@@ -60,6 +60,24 @@ internal class SimilarityBulkDeleteOperations(
         }
     }
 
+    override suspend fun buildKeepDurationPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview {
+        return buildSimilarityBulkDeletePreview(
+            repository = repository,
+            settingId = settingId,
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            sourcePageSize = sourcePageSize,
+            resolveCandidateDurations = true,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepDurationBulkDeleteCandidate(group, members, config)
+        }
+    }
+
     override suspend fun executeKeepOne(
         preview: ResultsBulkDeletePreview,
         filterDefinition: ResultsFilterDefinition,
@@ -100,6 +118,27 @@ internal class SimilarityBulkDeleteOperations(
         }
     }
 
+    override suspend fun executeKeepDuration(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome {
+        return executeSimilarityBulkDeleteCommand(
+            repository = repository,
+            settingId = settingId,
+            filterDefinition = filterDefinition,
+            sourcePageSize = sourcePageSize,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            resolveCandidateDurations = true,
+            onDeleteFile = onDeleteFile,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepDurationBulkDeleteCandidate(group, members, config)
+        }
+    }
+
     override suspend fun hasSnapshotChanged(preview: ResultsBulkDeletePreview): Boolean {
         val currentSnapshotId = withContext(Dispatchers.IO) {
             repository.clusterSnapshotKey(settingId)
@@ -116,6 +155,7 @@ private suspend fun buildSimilarityBulkDeletePreview(
     totalGroupCount: Int,
     filterDefinition: ResultsFilterDefinition,
     sourcePageSize: Int = SIMILARITY_BULK_DELETE_SOURCE_PAGE_SIZE,
+    resolveCandidateDurations: Boolean = false,
     onProgress: (ResultsBulkDeletePreviewProgress) -> Unit,
     buildCandidate: (DuplicateGroupEntity, List<FileMetadata>) -> ResultsBulkDeleteCandidate?
 ): ResultsBulkDeletePreview {
@@ -129,6 +169,7 @@ private suspend fun buildSimilarityBulkDeletePreview(
             totalGroupCount = totalGroupCount,
             filterDefinition = filterDefinition,
             sourcePageSize = sourcePageSize,
+            resolveCandidateDurations = resolveCandidateDurations,
             onProgress = onProgress,
             buildCandidate = buildCandidate
         )
@@ -148,6 +189,7 @@ private suspend fun buildSimilarityBulkDeletePreviewAtSnapshot(
     totalGroupCount: Int,
     filterDefinition: ResultsFilterDefinition,
     sourcePageSize: Int,
+    resolveCandidateDurations: Boolean,
     onProgress: (ResultsBulkDeletePreviewProgress) -> Unit,
     buildCandidate: (DuplicateGroupEntity, List<FileMetadata>) -> ResultsBulkDeleteCandidate?
 ): ResultsBulkDeletePreview {
@@ -176,7 +218,11 @@ private suspend fun buildSimilarityBulkDeletePreviewAtSnapshot(
             val group = cluster.asFilterGroup()
             if (matchesSimilarityBulkDeleteFilter(repository, cluster, group, filterDefinition)) {
                 val members = withContext(Dispatchers.IO) {
-                    repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata }
+                    listSimilarityBulkDeleteMembers(
+                        repository = repository,
+                        clusterId = cluster.clusterId,
+                        resolveDurations = resolveCandidateDurations
+                    )
                 }
                 filterMatchedGroupCount += 1
                 buildCandidate(group, members)?.let { candidate ->
@@ -216,6 +262,7 @@ private suspend fun executeSimilarityBulkDeleteCommand(
     filterDefinition: ResultsFilterDefinition,
     sourcePageSize: Int = SIMILARITY_BULK_DELETE_SOURCE_PAGE_SIZE,
     totalDeleteTargetCount: Int,
+    resolveCandidateDurations: Boolean = false,
     onDeleteFile: suspend (FileMetadata) -> Boolean,
     onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit,
     buildCandidate: (DuplicateGroupEntity, List<FileMetadata>) -> ResultsBulkDeleteCandidate?
@@ -243,7 +290,11 @@ private suspend fun executeSimilarityBulkDeleteCommand(
             val group = cluster.asFilterGroup()
             if (matchesSimilarityBulkDeleteFilter(repository, cluster, group, filterDefinition)) {
                 val members = withContext(Dispatchers.IO) {
-                    repository.listClusterMembers(cluster.clusterId).map { member -> member.metadata }
+                    listSimilarityBulkDeleteMembers(
+                        repository = repository,
+                        clusterId = cluster.clusterId,
+                        resolveDurations = resolveCandidateDurations
+                    )
                 }
                 buildCandidate(group, members)?.let { candidate ->
                     var clusterChanged = false
@@ -279,6 +330,19 @@ private suspend fun executeSimilarityBulkDeleteCommand(
         failedPaths = failedPaths,
         touchedSourceIds = touchedClusterIds
     )
+}
+
+private fun listSimilarityBulkDeleteMembers(
+    repository: SimilaritySettingsRepository,
+    clusterId: Long,
+    resolveDurations: Boolean
+): List<FileMetadata> {
+    return similarityBulkDeleteMemberPages(
+        repository = repository,
+        clusterId = clusterId,
+        resolveDimensions = false,
+        resolveDurations = resolveDurations
+    ).flatten().toList()
 }
 
 private suspend fun matchesSimilarityBulkDeleteFilter(

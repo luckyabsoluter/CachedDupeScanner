@@ -243,7 +243,81 @@ class SimilarityBulkDeleteTest {
         }
     }
 
-    private fun createFixture(): Fixture {
+    @Test
+    fun durationBulkDeleteResolvesDurationsAndUsesNewestTieFallback() = runBlocking {
+        val fixture = createFixture(
+            durationsByName = mapOf(
+                "alpha-older.mp4" to 10_000L,
+                "alpha-newer.mp4" to 10_000L,
+                "gamma-older.mp4" to 20_000L,
+                "gamma-newer.mp4" to 20_000L
+            )
+        )
+        val sameSizeFilter = ResultsFilterDefinition(
+            clusters = listOf(
+                createResultsFilterCluster().copy(
+                    rules = listOf(createResultsFilterRule(ResultsFilterTarget.SameFileSize))
+                )
+            )
+        )
+        val config = KeepByDurationBulkDeleteCommandConfig(
+            durationKeepMode = ResultsBulkDeleteDurationKeepMode.Shortest,
+            tieKeepMode = ResultsBulkDeleteModifiedKeepMode.Newest
+        )
+        val operations = SimilarityBulkDeleteOperations(
+            repository = fixture.repository,
+            settingId = fixture.settingId,
+            totalGroupCount = 3,
+            sourcePageSize = 1
+        )
+
+        val preview = operations.buildKeepDurationPreview(
+            filterDefinition = sameSizeFilter,
+            config = config,
+            onProgress = {}
+        )
+
+        assertEquals(2, preview.candidateGroupCount)
+        assertEquals(2, preview.candidateFileCount)
+        assertEquals(
+            setOf(fixture.alphaNewer.normalizedPath(), fixture.gammaNewer.normalizedPath()),
+            preview.candidates.map { candidate -> candidate.survivor.normalizedPath }.toSet()
+        )
+        listOf(
+            fixture.alphaOlder,
+            fixture.alphaNewer,
+            fixture.gammaOlder,
+            fixture.gammaNewer
+        ).forEach { file ->
+            val stored = requireNotNull(
+                database.similaritySettingsDao().getSettingFile(
+                    settingId = fixture.settingId,
+                    normalizedPath = file.normalizedPath()
+                )
+            )
+            assertTrue(stored.durationChecked)
+        }
+
+        val outcome = operations.executeKeepDuration(
+            preview = preview,
+            filterDefinition = sameSizeFilter,
+            config = config,
+            onDeleteFile = { file ->
+                fixture.trashController.moveToTrash(file.normalizedPath).success
+            },
+            onProgress = {}
+        )
+
+        assertEquals(2, outcome.successCount)
+        assertTrue(fixture.alphaOlder.exists().not())
+        assertTrue(fixture.gammaOlder.exists().not())
+        assertTrue(fixture.alphaNewer.exists())
+        assertTrue(fixture.gammaNewer.exists())
+    }
+
+    private fun createFixture(
+        durationsByName: Map<String, Long> = emptyMap()
+    ): Fixture {
         val alphaOlder = videoFile("alpha-older.mp4", "same", 1_000L)
         val alphaNewer = videoFile("alpha-newer.mp4", "same", 2_000L)
         val differentSmall = videoFile("different-small.mp4", "x", 1_000L)
@@ -276,12 +350,12 @@ class SimilarityBulkDeleteTest {
             gammaNewer.absolutePath to MediaDimensions(1280, 720)
         )
         val durations = mapOf(
-            alphaOlder.absolutePath to 10_000L,
-            alphaNewer.absolutePath to 10_100L,
-            differentSmall.absolutePath to 30_000L,
-            differentLarge.absolutePath to 31_000L,
-            gammaOlder.absolutePath to 20_000L,
-            gammaNewer.absolutePath to 20_100L
+            alphaOlder.absolutePath to (durationsByName[alphaOlder.name] ?: 10_000L),
+            alphaNewer.absolutePath to (durationsByName[alphaNewer.name] ?: 10_100L),
+            differentSmall.absolutePath to (durationsByName[differentSmall.name] ?: 30_000L),
+            differentLarge.absolutePath to (durationsByName[differentLarge.name] ?: 31_000L),
+            gammaOlder.absolutePath to (durationsByName[gammaOlder.name] ?: 20_000L),
+            gammaNewer.absolutePath to (durationsByName[gammaNewer.name] ?: 20_100L)
         )
         val repository = SimilaritySettingsRepository(
             database = database,
