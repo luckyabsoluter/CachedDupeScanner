@@ -101,6 +101,9 @@ class SimilarityResultsNavigationTest {
     @Test
     fun settingDetailOpenResultsInvokesGroupsRoute() {
         val fixture = createSimilarityFixture()
+        val settingName = fixture.repository.listSettings()
+            .single { setting -> setting.settingId == fixture.settingId }
+            .displayName
         var openedSettingId: Long? = null
 
         composeRule.setContent {
@@ -118,6 +121,11 @@ class SimilarityResultsNavigationTest {
             )
         }
 
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(settingName)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
         scrollUntilText("Open results")
         composeRule.onNodeWithText("Open results").performClick()
 
@@ -210,6 +218,9 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithContentDescription("Menu").performClick()
         composeRule.onNodeWithText("Filters (1)").performClick()
         composeRule.onNodeWithText("Similarity filters").fetchSemanticsNode()
+        composeRule.onNodeWithText("Rule 1 - File name")
+            .performScrollTo()
+            .performClick()
         composeRule.onNodeWithText("Member match").performScrollTo().fetchSemanticsNode()
     }
 
@@ -284,7 +295,10 @@ class SimilarityResultsNavigationTest {
             )
         }
 
-        scrollUntilText("All near average duration")
+        scrollUntilText("Rule 1 - All near average duration")
+        composeRule.onNodeWithText("Rule 1 - All near average duration")
+            .performScrollTo()
+            .performClick()
         scrollUntilText("Tolerance")
         composeRule.onNodeWithTag("duration-average-tolerance")
             .performScrollTo()
@@ -453,6 +467,8 @@ class SimilarityResultsNavigationTest {
         assertTrue(fixture.firstFile.exists())
         assertEquals(0, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
 
+        composeRule.onNodeWithTag("bulk-delete-keep-modified-list")
+            .performScrollToIndex(3)
         composeRule.onNodeWithText("Back").performClick()
         val catalogBackNodes = composeRule.onAllNodesWithContentDescription("Back")
         catalogBackNodes[catalogBackNodes.fetchSemanticsNodes().lastIndex].performClick()

@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -31,9 +34,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -294,6 +301,8 @@ private fun ResultsFilterClusterEditor(
     onRemoveRule: (String) -> Unit,
     onRemoveCluster: () -> Unit
 ) {
+    val expandedRuleId = rememberSaveable(cluster.id) { mutableStateOf<String?>(null) }
+
     Card {
         Column(
             modifier = Modifier
@@ -357,6 +366,14 @@ private fun ResultsFilterClusterEditor(
                         canRemove = cluster.rules.size > 1,
                         supportedTargets = supportedTargets,
                         showMemberMatchMode = showMemberMatchMode,
+                        expanded = expandedRuleId.value == rule.id,
+                        onToggleExpanded = {
+                            expandedRuleId.value = if (expandedRuleId.value == rule.id) {
+                                null
+                            } else {
+                                rule.id
+                            }
+                        },
                         onRuleChange = { updatedRule ->
                             onClusterChange(
                                 cluster.copy(
@@ -366,7 +383,12 @@ private fun ResultsFilterClusterEditor(
                                 )
                             )
                         },
-                        onRemove = { onRemoveRule(rule.id) }
+                        onRemove = {
+                            if (expandedRuleId.value == rule.id) {
+                                expandedRuleId.value = null
+                            }
+                            onRemoveRule(rule.id)
+                        }
                     )
                 }
 
@@ -385,6 +407,8 @@ private fun ResultsFilterRuleEditor(
     canRemove: Boolean,
     supportedTargets: Set<ResultsFilterTarget>,
     showMemberMatchMode: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onRuleChange: (ResultsFilterRule) -> Unit,
     onRemove: () -> Unit
 ) {
@@ -401,7 +425,7 @@ private fun ResultsFilterRuleEditor(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("filter-rule:${rule.id}"),
+            .testTag("filter-rule-container:${rule.id}"),
         shape = RoundedCornerShape(4.dp),
         color = containerColor,
         border = BorderStroke(2.dp, visibleAccent.copy(alpha = 0.55f))
@@ -411,16 +435,23 @@ private fun ResultsFilterRuleEditor(
                 .fillMaxWidth()
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        ) ruleContent@{
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("filter-rule:${rule.id}")
+                    .clickable(onClick = onToggleExpanded)
+                    .semantics {
+                        stateDescription = if (expanded) "Expanded" else "Collapsed"
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
                     checked = rule.enabled,
                     onCheckedChange = { enabled ->
                         onRuleChange(rule.copy(enabled = enabled))
-                    }
+                    },
+                    modifier = Modifier.testTag("filter-rule-enabled:${rule.id}")
                 )
                 Text(
                     text = "Rule ${ruleIndex + 1} - ${rule.target.label}",
@@ -434,6 +465,19 @@ private fun ResultsFilterRuleEditor(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Filled.KeyboardArrowUp
+                    } else {
+                        Icons.Filled.KeyboardArrowDown
+                    },
+                    contentDescription = if (expanded) {
+                        "Collapse rule ${ruleIndex + 1}"
+                    } else {
+                        "Expand rule ${ruleIndex + 1}"
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
                 if (canRemove) {
                     IconButton(onClick = onRemove) {
                         Icon(
@@ -443,6 +487,8 @@ private fun ResultsFilterRuleEditor(
                     }
                 }
             }
+
+            if (!expanded) return@ruleContent
 
             HorizontalDivider(color = visibleAccent.copy(alpha = 0.25f))
 
