@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Filter editors now separate rules inside each cluster with numbered target headers, distinct tonal borders, and compact rule removal controls.
 - Source and manifest text assertions are replaced by runtime tests for merged package metadata, app-owned task survival, foreground-service routing, scan completion ordering, serialized similarity maintenance, and Compose detail interactions.
 - Similarity deletion regression coverage now exercises group navigation, detail deletion through Trash, and return-to-list snapshot preservation as one Compose path.
 - Duplicate and similarity detail views now check loaded members against the filesystem and mark missing files explicitly.

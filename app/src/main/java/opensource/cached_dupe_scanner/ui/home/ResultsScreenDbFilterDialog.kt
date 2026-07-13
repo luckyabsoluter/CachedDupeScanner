@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,12 +13,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
@@ -336,6 +344,12 @@ private fun ResultsFilterClusterEditor(
                     onSelect = { mode -> onClusterChange(cluster.copy(mode = mode)) }
                 )
 
+                HorizontalDivider()
+                Text(
+                    text = "Rules (${cluster.rules.size})",
+                    style = MaterialTheme.typography.titleSmall
+                )
+
                 cluster.rules.forEachIndexed { ruleIndex, rule ->
                     ResultsFilterRuleEditor(
                         ruleIndex = ruleIndex,
@@ -374,7 +388,24 @@ private fun ResultsFilterRuleEditor(
     onRuleChange: (ResultsFilterRule) -> Unit,
     onRemove: () -> Unit
 ) {
-    Card {
+    val ruleAccent = when (ruleIndex % 3) {
+        0 -> MaterialTheme.colorScheme.primary
+        1 -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+    val visibleAccent = if (rule.enabled) ruleAccent else MaterialTheme.colorScheme.outline
+    val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+        alpha = if (rule.enabled) 0.55f else 0.25f
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("filter-rule:${rule.id}"),
+        shape = RoundedCornerShape(4.dp),
+        color = containerColor,
+        border = BorderStroke(2.dp, visibleAccent.copy(alpha = 0.55f))
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -383,24 +414,37 @@ private fun ResultsFilterRuleEditor(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = rule.enabled,
-                        onCheckedChange = { enabled ->
-                            onRuleChange(rule.copy(enabled = enabled))
-                        }
-                    )
-                    Text("Rule ${ruleIndex + 1}")
-                }
+                Checkbox(
+                    checked = rule.enabled,
+                    onCheckedChange = { enabled ->
+                        onRuleChange(rule.copy(enabled = enabled))
+                    }
+                )
+                Text(
+                    text = "Rule ${ruleIndex + 1} - ${rule.target.label}",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (rule.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 if (canRemove) {
-                    OutlinedButton(onClick = onRemove) {
-                        Text("Remove")
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            imageVector = Icons.Outlined.Delete,
+                            contentDescription = "Remove rule ${ruleIndex + 1}"
+                        )
                     }
                 }
             }
+
+            HorizontalDivider(color = visibleAccent.copy(alpha = 0.25f))
 
             Text("Target")
             OptionButtonGrid(
