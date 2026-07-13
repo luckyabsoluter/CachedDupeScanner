@@ -67,9 +67,9 @@ internal enum class ResultsBulkDeleteCommandType(
     val title: String,
     val description: String
 ) {
-    KeepOneNonMatch(
-        title = "Delete matches, keep 1 non-match",
-        description = "Find result groups where exactly one file does not match the text rule, then delete the matching files."
+    KeepOneByText(
+        title = "Keep one by text match",
+        description = "Keep exactly one matching or non-matching file in each eligible group, then delete the opposite side."
     ),
     KeepByModified(
         title = "Keep by modified time",
@@ -96,7 +96,13 @@ internal enum class ResultsBulkDeleteTextTarget(val label: String) {
     FullPath("Path")
 }
 
-internal data class KeepOneNonMatchBulkDeleteCommandConfig(
+internal enum class ResultsBulkDeleteTextKeepMode(val label: String) {
+    NonMatch("Keep non-match"),
+    Match("Keep match")
+}
+
+internal data class KeepOneByTextBulkDeleteCommandConfig(
+    val keepMode: ResultsBulkDeleteTextKeepMode = ResultsBulkDeleteTextKeepMode.NonMatch,
     val target: ResultsBulkDeleteTextTarget = ResultsBulkDeleteTextTarget.FileName,
     val operator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val phrase: String = ""
@@ -154,9 +160,9 @@ internal interface BulkDeleteOperations {
     val totalGroupCount: Int
     val snapshotAvailable: Boolean
 
-    suspend fun buildKeepOnePreview(
+    suspend fun buildKeepOneByTextPreview(
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneNonMatchBulkDeleteCommandConfig,
+        config: KeepOneByTextBulkDeleteCommandConfig,
         onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
     ): ResultsBulkDeletePreview
 
@@ -172,10 +178,10 @@ internal interface BulkDeleteOperations {
         onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
     ): ResultsBulkDeletePreview
 
-    suspend fun executeKeepOne(
+    suspend fun executeKeepOneByText(
         preview: ResultsBulkDeletePreview,
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneNonMatchBulkDeleteCommandConfig,
+        config: KeepOneByTextBulkDeleteCommandConfig,
         onDeleteFile: suspend (FileMetadata) -> Boolean,
         onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
     ): ResultsBulkDeleteExecutionOutcome
@@ -211,12 +217,12 @@ internal class ResultsDbBulkDeleteOperations(
     override val snapshotAvailable: Boolean
         get() = snapshotUpdatedAtMillis != null
 
-    override suspend fun buildKeepOnePreview(
+    override suspend fun buildKeepOneByTextPreview(
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneNonMatchBulkDeleteCommandConfig,
+        config: KeepOneByTextBulkDeleteCommandConfig,
         onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
     ): ResultsBulkDeletePreview {
-        return buildKeepOneNonMatchBulkDeletePreview(
+        return buildKeepOneByTextBulkDeletePreview(
             resultsRepo = resultsRepo,
             sortKey = sortKey,
             snapshotUpdatedAtMillis = requireNotNull(snapshotUpdatedAtMillis),
@@ -260,10 +266,10 @@ internal class ResultsDbBulkDeleteOperations(
         )
     }
 
-    override suspend fun executeKeepOne(
+    override suspend fun executeKeepOneByText(
         preview: ResultsBulkDeletePreview,
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneNonMatchBulkDeleteCommandConfig,
+        config: KeepOneByTextBulkDeleteCommandConfig,
         onDeleteFile: suspend (FileMetadata) -> Boolean,
         onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
     ): ResultsBulkDeleteExecutionOutcome {
@@ -277,7 +283,7 @@ internal class ResultsDbBulkDeleteOperations(
             onDeleteFile = onDeleteFile,
             onProgress = onProgress
         ) { group, members ->
-            buildKeepOneNonMatchBulkDeleteCandidate(group, members, config)
+            buildKeepOneByTextBulkDeleteCandidate(group, members, config)
         }
     }
 
@@ -478,10 +484,10 @@ internal fun resolveVideoDurations(
     }
 }
 
-internal fun buildKeepOneNonMatchBulkDeleteCandidate(
+internal fun buildKeepOneByTextBulkDeleteCandidate(
     group: DuplicateGroupEntity,
     members: List<FileMetadata>,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepOneByTextBulkDeleteCommandConfig
 ): ResultsBulkDeleteCandidate? {
     val phrase = config.phrase.trim()
     if (phrase.isEmpty() || members.isEmpty()) return null
@@ -489,28 +495,36 @@ internal fun buildKeepOneNonMatchBulkDeleteCandidate(
     val matching = mutableListOf<FileMetadata>()
     val nonMatching = mutableListOf<FileMetadata>()
     members.forEach { member ->
-        if (matchesKeepOneNonMatchCommand(member, config)) {
+        if (matchesKeepOneByTextCommand(member, config)) {
             matching += member
         } else {
             nonMatching += member
         }
     }
-    if (matching.isEmpty() || nonMatching.size != 1) return null
+    val survivorCandidates = when (config.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> nonMatching
+        ResultsBulkDeleteTextKeepMode.Match -> matching
+    }
+    val deleteTargets = when (config.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> matching
+        ResultsBulkDeleteTextKeepMode.Match -> nonMatching
+    }
+    if (survivorCandidates.size != 1 || deleteTargets.isEmpty()) return null
 
     return ResultsBulkDeleteCandidate(
         group = group,
-        survivor = nonMatching.single(),
-        deleteTargets = matching
+        survivor = survivorCandidates.single(),
+        deleteTargets = deleteTargets
     )
 }
 
-internal fun collectKeepOneNonMatchBulkDeleteCandidates(
+internal fun collectKeepOneByTextBulkDeleteCandidates(
     groupsWithMembers: List<Pair<DuplicateGroupEntity, List<FileMetadata>>>,
     filterDefinition: ResultsFilterDefinition,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepOneByTextBulkDeleteCommandConfig
 ): List<ResultsBulkDeleteCandidate> {
     return collectBulkDeleteCandidates(groupsWithMembers, filterDefinition) { group, members ->
-        buildKeepOneNonMatchBulkDeleteCandidate(
+        buildKeepOneByTextBulkDeleteCandidate(
             group = group,
             members = members,
             config = config
@@ -546,13 +560,13 @@ private fun collectBulkDeleteCandidates(
     }
 }
 
-internal suspend fun buildKeepOneNonMatchBulkDeletePreview(
+internal suspend fun buildKeepOneByTextBulkDeletePreview(
     resultsRepo: ResultsDbRepository,
     sortKey: DuplicateGroupSortKey,
     snapshotUpdatedAtMillis: Long,
     totalGroupCount: Int,
     filterDefinition: ResultsFilterDefinition,
-    config: KeepOneNonMatchBulkDeleteCommandConfig,
+    config: KeepOneByTextBulkDeleteCommandConfig,
     sourcePageSize: Int = 100,
     onProgress: (ResultsBulkDeletePreviewProgress) -> Unit = {}
 ): ResultsBulkDeletePreview {
@@ -565,7 +579,7 @@ internal suspend fun buildKeepOneNonMatchBulkDeletePreview(
         sourcePageSize = sourcePageSize,
         onProgress = onProgress
     ) { group, members ->
-        buildKeepOneNonMatchBulkDeleteCandidate(
+        buildKeepOneByTextBulkDeleteCandidate(
             group = group,
             members = members,
             config = config
@@ -1048,7 +1062,7 @@ internal fun ResultsBulkDeleteCatalogScreen(
 }
 
 @Composable
-internal fun KeepOneNonMatchBulkDeleteScreen(
+internal fun KeepOneByTextBulkDeleteScreen(
     operations: BulkDeleteOperations,
     appliedFilter: ResultsFilterDefinition,
     imageLoader: ImageLoader,
@@ -1065,7 +1079,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val totalGroupCount = operations.totalGroupCount
-    val config = remember { mutableStateOf(KeepOneNonMatchBulkDeleteCommandConfig()) }
+    val config = remember { mutableStateOf(KeepOneByTextBulkDeleteCommandConfig()) }
     val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
     val progress = remember {
         mutableStateOf(
@@ -1077,7 +1091,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     val confirmExecute = remember { mutableStateOf(false) }
     val message = remember { mutableStateOf<String?>(null) }
 
-    fun updateConfig(updated: KeepOneNonMatchBulkDeleteCommandConfig) {
+    fun updateConfig(updated: KeepOneByTextBulkDeleteCommandConfig) {
         config.value = updated
         preview.value = null
         progress.value = ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
@@ -1086,6 +1100,10 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
 
     val currentPreview = preview.value
     val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
+    val deletedPartitionLabel = when (config.value.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> "matching"
+        ResultsBulkDeleteTextKeepMode.Match -> "non-matching"
+    }
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         config.value.phrase.trim().isNotEmpty() &&
@@ -1114,11 +1132,11 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    AppTopBar(title = "Delete matches, keep 1 non-match", onBack = onBack)
+                    AppTopBar(title = "Keep one by text match", onBack = onBack)
                 }
                 item {
                     Text(
-                        text = "Scan the current results snapshot, keep the one file that does not match your rule, and delete the matching files from eligible result groups.",
+                        text = "Scan the current results snapshot, choose whether the single file to keep must match the text rule, and delete the other files from eligible groups.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -1154,8 +1172,22 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text("Command rule", style = MaterialTheme.typography.titleMedium)
+                            Text("File to keep")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteTextKeepMode.entries,
+                                selected = config.value.keepMode,
+                                label = { it.label },
+                                onSelect = { keepMode ->
+                                    updateConfig(config.value.copy(keepMode = keepMode))
+                                }
+                            )
                             Text(
-                                text = "Matching files are deleted only when exactly one non-matching file remains in the group.",
+                                text = when (config.value.keepMode) {
+                                    ResultsBulkDeleteTextKeepMode.NonMatch ->
+                                        "Exactly one non-matching file must remain. Matching files are deleted."
+                                    ResultsBulkDeleteTextKeepMode.Match ->
+                                        "Exactly one matching file must remain. Non-matching files are deleted."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1182,7 +1214,9 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 onValueChange = { phrase ->
                                     updateConfig(config.value.copy(phrase = phrase))
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("bulk-delete-text-phrase"),
                                 label = { Text("Text") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(
@@ -1212,7 +1246,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 )
                                 scope.launch {
                                     try {
-                                        val builtPreview = operations.buildKeepOnePreview(
+                                        val builtPreview = operations.buildKeepOneByTextPreview(
                                             filterDefinition = appliedFilter,
                                             config = config.value,
                                             onProgress = { updated ->
@@ -1308,7 +1342,13 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 onClick = { confirmExecute.value = true },
                                 enabled = canExecute
                             ) {
-                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
+                                Text(
+                                    if (isExecuting.value) {
+                                        "Deleting..."
+                                    } else {
+                                        "Delete $deletedPartitionLabel files"
+                                    }
+                                )
                             }
                         }
                     }
@@ -1343,7 +1383,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount $deletedPartitionLabel files will be deleted."
                 )
             },
             confirmButton = {
@@ -1358,7 +1398,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             taskCoordinator = taskCoordinator,
                             notificationController = notificationController,
                             executeDelete = { executionProgress ->
-                                operations.executeKeepOne(
+                                operations.executeKeepOneByText(
                                     preview = currentPreview,
                                     filterDefinition = appliedFilter,
                                     config = config.value,
@@ -2220,9 +2260,9 @@ private fun ResultsBulkDeleteCandidateCard(
     }
 }
 
-private fun matchesKeepOneNonMatchCommand(
+private fun matchesKeepOneByTextCommand(
     file: FileMetadata,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepOneByTextBulkDeleteCommandConfig
 ): Boolean {
     val source = when (config.target) {
         ResultsBulkDeleteTextTarget.FileName -> fileNameFromPath(file.normalizedPath)

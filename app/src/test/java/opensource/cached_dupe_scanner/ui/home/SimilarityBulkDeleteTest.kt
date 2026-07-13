@@ -114,6 +114,57 @@ class SimilarityBulkDeleteTest {
     }
 
     @Test
+    fun keepMatchExecutionMovesEveryNonMatchingSimilarityMemberToTrash() = runBlocking {
+        val fixture = createFixture()
+        val config = KeepOneByTextBulkDeleteCommandConfig(
+            keepMode = ResultsBulkDeleteTextKeepMode.Match,
+            target = ResultsBulkDeleteTextTarget.FileName,
+            operator = ResultsFilterTextOperator.Contains,
+            phrase = "alpha-newer"
+        )
+        val operations = SimilarityBulkDeleteOperations(
+            repository = fixture.repository,
+            settingId = fixture.settingId,
+            totalGroupCount = 3,
+            sourcePageSize = 1
+        )
+
+        val preview = operations.buildKeepOneByTextPreview(
+            filterDefinition = ResultsFilterDefinition(),
+            config = config,
+            onProgress = {}
+        )
+
+        assertEquals(1, preview.candidateGroupCount)
+        assertEquals(1, preview.candidateFileCount)
+        assertEquals(
+            fixture.alphaNewer.normalizedPath(),
+            preview.candidates.single().survivor.normalizedPath
+        )
+        assertEquals(
+            listOf(fixture.alphaOlder.normalizedPath()),
+            preview.candidates.single().deleteTargets.map { member -> member.normalizedPath }
+        )
+
+        val outcome = operations.executeKeepOneByText(
+            preview = preview,
+            filterDefinition = ResultsFilterDefinition(),
+            config = config,
+            onDeleteFile = { file ->
+                fixture.trashController.moveToTrash(file.normalizedPath).success
+            },
+            onProgress = {}
+        )
+
+        assertEquals(1, outcome.successCount)
+        assertTrue(outcome.failedPaths.isEmpty())
+        assertTrue(fixture.alphaOlder.exists().not())
+        assertTrue(fixture.alphaNewer.exists())
+        assertTrue(fixture.gammaOlder.exists())
+        assertTrue(fixture.gammaNewer.exists())
+    }
+
+    @Test
     fun similarityBulkDeletePreviewReturnsEveryCandidateGroup() = runBlocking {
         val groupCount = 52
         val signatures = linkedMapOf<String, String>()

@@ -646,6 +646,49 @@ class SimilarityResultsNavigationTest {
         ).fetchSemanticsNode()
     }
 
+    @Test
+    fun textBulkDeleteScreenBuildsKeepMatchPreview() {
+        val fixture = createSimilarityFixture()
+
+        composeRule.setContent {
+            SimilarityDeleteNavigationHarness(
+                fixture = fixture,
+                settingsStore = AppSettingsStore(context),
+                taskCoordinator = TaskCoordinator(),
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("similarity-cluster:${fixture.clusterId}")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("Menu").performClick()
+        composeRule.onNodeWithText("Bulk delete").performClick()
+        composeRule.onNodeWithText("Keep one by text match").performClick()
+        composeRule.onNodeWithText("Keep match").performClick()
+        composeRule.onNodeWithTag("bulk-delete-text-phrase")
+            .performTextInput("first")
+        composeRule.onNodeWithTag("bulk-delete-keep-one-list")
+            .performScrollToIndex(3)
+        composeRule.onNodeWithText("Build preview").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText("Building preview...")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+        composeRule.onNodeWithTag("bulk-delete-keep-one-list")
+            .performScrollToIndex(7)
+
+        composeRule.onNodeWithText(
+            "Keep: ${fixture.firstFile.normalizedPathForTest()}"
+        ).fetchSemanticsNode()
+        composeRule.onNodeWithText(
+            "Delete: ${fixture.secondFile.normalizedPathForTest()}"
+        ).fetchSemanticsNode()
+    }
+
     private fun createSimilarityFixture(
         firstContents: String = "video",
         secondContents: String = "video",
