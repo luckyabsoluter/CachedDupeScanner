@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
@@ -647,7 +648,7 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
-    fun textBulkDeleteScreenBuildsKeepMatchPreview() {
+    fun textBulkDeleteScreenBuildsExactKeepCountPreview() {
         val fixture = createSimilarityFixture()
 
         composeRule.setContent {
@@ -666,11 +667,14 @@ class SimilarityResultsNavigationTest {
         }
         composeRule.onNodeWithContentDescription("Menu").performClick()
         composeRule.onNodeWithText("Bulk delete").performClick()
-        composeRule.onNodeWithText("Keep one by text match").performClick()
+        composeRule.onNodeWithText("Keep by text match").performClick()
         composeRule.onNodeWithText("Keep match").performClick()
+        composeRule.onNodeWithText("Keep N").performClick()
+        composeRule.onNodeWithTag("bulk-delete-text-keep-count")
+            .performTextReplacement("1")
         composeRule.onNodeWithTag("bulk-delete-text-phrase")
             .performTextInput("first")
-        composeRule.onNodeWithTag("bulk-delete-keep-one-list")
+        composeRule.onNodeWithTag("bulk-delete-keep-text-list")
             .performScrollToIndex(3)
         composeRule.onNodeWithText("Build preview").performClick()
         composeRule.waitUntil(5_000) {
@@ -678,7 +682,7 @@ class SimilarityResultsNavigationTest {
                 .fetchSemanticsNodes()
                 .isEmpty()
         }
-        composeRule.onNodeWithTag("bulk-delete-keep-one-list")
+        composeRule.onNodeWithTag("bulk-delete-keep-text-list")
             .performScrollToIndex(7)
 
         composeRule.onNodeWithText(

@@ -975,8 +975,8 @@ fun ResultsScreenDb(
 
     bulkDeleteCommand.value?.let { command ->
         when (command) {
-            ResultsBulkDeleteCommandType.KeepOneByText -> {
-                KeepOneByTextBulkDeleteScreen(
+            ResultsBulkDeleteCommandType.KeepByText -> {
+                KeepByTextBulkDeleteScreen(
                     operations = ResultsDbBulkDeleteOperations(
                         resultsRepo = resultsRepo,
                         sortKey = mapSort(sortKey.value, sortDirection.value),

@@ -26,9 +26,9 @@ internal class SimilarityBulkDeleteOperations(
     override val snapshotAvailable: Boolean
         get() = totalGroupCount > 0
 
-    override suspend fun buildKeepOneByTextPreview(
+    override suspend fun buildKeepByTextPreview(
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneByTextBulkDeleteCommandConfig,
+        config: KeepByTextBulkDeleteCommandConfig,
         onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
     ): ResultsBulkDeletePreview {
         return buildSimilarityBulkDeletePreview(
@@ -39,7 +39,7 @@ internal class SimilarityBulkDeleteOperations(
             sourcePageSize = sourcePageSize,
             onProgress = onProgress
         ) { group, members ->
-            buildKeepOneByTextBulkDeleteCandidate(group, members, config)
+            buildKeepByTextBulkDeleteCandidate(group, members, config)
         }
     }
 
@@ -78,10 +78,10 @@ internal class SimilarityBulkDeleteOperations(
         }
     }
 
-    override suspend fun executeKeepOneByText(
+    override suspend fun executeKeepByText(
         preview: ResultsBulkDeletePreview,
         filterDefinition: ResultsFilterDefinition,
-        config: KeepOneByTextBulkDeleteCommandConfig,
+        config: KeepByTextBulkDeleteCommandConfig,
         onDeleteFile: suspend (FileMetadata) -> Boolean,
         onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
     ): ResultsBulkDeleteExecutionOutcome {
@@ -94,7 +94,7 @@ internal class SimilarityBulkDeleteOperations(
             onDeleteFile = onDeleteFile,
             onProgress = onProgress
         ) { group, members ->
-            buildKeepOneByTextBulkDeleteCandidate(group, members, config)
+            buildKeepByTextBulkDeleteCandidate(group, members, config)
         }
     }
 

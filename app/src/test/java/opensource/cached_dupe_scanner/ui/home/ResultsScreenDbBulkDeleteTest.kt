@@ -57,7 +57,7 @@ class ResultsScreenDbBulkDeleteTest {
             candidates = listOf(
                 ResultsBulkDeleteCandidate(
                     group = group(size = 10L, hash = "a", count = 3),
-                    survivor = file("/keep/original.mkv"),
+                    survivors = listOf(file("/keep/original.mkv")),
                     deleteTargets = listOf(
                         file("/delete/first.mkv"),
                         file("/delete/second.mkv")
@@ -79,7 +79,7 @@ class ResultsScreenDbBulkDeleteTest {
             candidates = listOf(
                 ResultsBulkDeleteCandidate(
                     group = group(size = 10L, hash = "a", count = 3),
-                    survivor = file("/keep/original.mkv"),
+                    survivors = listOf(file("/keep/original.mkv")),
                     deleteTargets = listOf(file("/delete/sample.mkv"))
                 )
             ),
@@ -128,7 +128,7 @@ class ResultsScreenDbBulkDeleteTest {
             candidates = listOf(
                 ResultsBulkDeleteCandidate(
                     group = group(size = 10L, hash = "a", count = 3),
-                    survivor = file("/keep/original.mkv"),
+                    survivors = listOf(file("/keep/original.mkv")),
                     deleteTargets = listOf(
                         file("/delete/first.mkv"),
                         file("/delete/second.mkv")
@@ -234,7 +234,10 @@ class ResultsScreenDbBulkDeleteTest {
 
             assertEquals(1, preview.candidateGroupCount)
             assertEquals(2, preview.candidateFileCount)
-            assertEquals(shortNew.absolutePath, preview.candidates.single().survivor.normalizedPath)
+            assertEquals(
+                shortNew.absolutePath,
+                preview.candidates.single().survivors.single().normalizedPath
+            )
 
             val deletedPaths = mutableSetOf<String>()
             val outcome = operations.executeKeepDuration(
@@ -437,15 +440,15 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepOneByTextBulkDeleteCandidateDeletesMatchingFileNames() {
-        val candidate = buildKeepOneByTextBulkDeleteCandidate(
+    fun buildKeepByTextBulkDeleteCandidateDeletesMatchingFileNames() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
             group = group(size = 10L, hash = "a", count = 3),
             members = listOf(
                 file("/library/keep/final-cut.mkv"),
                 file("/library/tmp/sample-1.mkv"),
                 file("/library/tmp/sample-2.mkv")
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 target = ResultsBulkDeleteTextTarget.FileName,
                 operator = ResultsFilterTextOperator.Contains,
                 phrase = "sample"
@@ -453,7 +456,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/library/keep/final-cut.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/library/keep/final-cut.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             listOf("/library/tmp/sample-1.mkv", "/library/tmp/sample-2.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }
@@ -461,15 +464,15 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepOneByTextBulkDeleteCandidateKeepsSingleMatchWhenConfigured() {
-        val candidate = buildKeepOneByTextBulkDeleteCandidate(
+    fun buildKeepByTextBulkDeleteCandidateKeepsSingleMatchWhenConfigured() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
             group = group(size = 10L, hash = "a", count = 3),
             members = listOf(
                 file("/library/keep/final-cut.mkv"),
                 file("/library/tmp/sample-1.mkv"),
                 file("/library/tmp/sample-2.mkv")
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 keepMode = ResultsBulkDeleteTextKeepMode.Match,
                 target = ResultsBulkDeleteTextTarget.FileName,
                 operator = ResultsFilterTextOperator.Contains,
@@ -478,7 +481,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/library/keep/final-cut.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/library/keep/final-cut.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             listOf("/library/tmp/sample-1.mkv", "/library/tmp/sample-2.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }
@@ -486,15 +489,15 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepOneByTextBulkDeleteCandidateRejectsMultipleMatchesWhenKeepingMatch() {
-        val candidate = buildKeepOneByTextBulkDeleteCandidate(
+    fun buildKeepByTextBulkDeleteCandidateRejectsMultipleMatchesWhenKeepingMatch() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
             group = group(size = 10L, hash = "a", count = 3),
             members = listOf(
                 file("/library/keep/final-cut.mkv"),
                 file("/library/keep/final-backup.mkv"),
                 file("/library/tmp/sample.mkv")
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 keepMode = ResultsBulkDeleteTextKeepMode.Match,
                 target = ResultsBulkDeleteTextTarget.FileName,
                 operator = ResultsFilterTextOperator.Contains,
@@ -506,15 +509,103 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepOneByTextBulkDeleteCandidateReturnsNullWhenTwoSurvivorsRemain() {
-        val candidate = buildKeepOneByTextBulkDeleteCandidate(
+    fun buildKeepByTextBulkDeleteCandidateKeepsEveryMatchWithOneOrMoreMode() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 3),
+            members = listOf(
+                file("/library/keep/final-cut.mkv"),
+                file("/library/keep/final-backup.mkv"),
+                file("/library/tmp/sample.mkv")
+            ),
+            config = KeepByTextBulkDeleteCommandConfig(
+                keepMode = ResultsBulkDeleteTextKeepMode.Match,
+                keepCountMode = ResultsBulkDeleteTextKeepCountMode.OneOrMore,
+                target = ResultsBulkDeleteTextTarget.FileName,
+                operator = ResultsFilterTextOperator.Contains,
+                phrase = "final"
+            )
+        )
+
+        requireNotNull(candidate)
+        assertEquals(
+            listOf(
+                "/library/keep/final-cut.mkv",
+                "/library/keep/final-backup.mkv"
+            ),
+            candidate.survivors.map { it.normalizedPath }
+        )
+        assertEquals(
+            listOf("/library/tmp/sample.mkv"),
+            candidate.deleteTargets.map { it.normalizedPath }
+        )
+    }
+
+    @Test
+    fun buildKeepByTextBulkDeleteCandidateRejectsZeroMatchesWithOneOrMoreMode() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 2),
+            members = listOf(
+                file("/library/tmp/sample-1.mkv"),
+                file("/library/tmp/sample-2.mkv")
+            ),
+            config = KeepByTextBulkDeleteCommandConfig(
+                keepMode = ResultsBulkDeleteTextKeepMode.Match,
+                keepCountMode = ResultsBulkDeleteTextKeepCountMode.OneOrMore,
+                target = ResultsBulkDeleteTextTarget.FileName,
+                operator = ResultsFilterTextOperator.Contains,
+                phrase = "final"
+            )
+        )
+
+        assertNull(candidate)
+    }
+
+    @Test
+    fun buildKeepByTextBulkDeleteCandidateRequiresExactCustomCount() {
+        val config = KeepByTextBulkDeleteCommandConfig(
+            keepMode = ResultsBulkDeleteTextKeepMode.Match,
+            keepCountMode = ResultsBulkDeleteTextKeepCountMode.ExactCount,
+            keepCount = "2",
+            target = ResultsBulkDeleteTextTarget.FileName,
+            operator = ResultsFilterTextOperator.Contains,
+            phrase = "final"
+        )
+        val members = listOf(
+            file("/library/keep/final-cut.mkv"),
+            file("/library/keep/final-backup.mkv"),
+            file("/library/tmp/sample.mkv")
+        )
+
+        val candidate = buildKeepByTextBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 3),
+            members = members,
+            config = config
+        )
+        val rejected = buildKeepByTextBulkDeleteCandidate(
+            group = group(size = 10L, hash = "a", count = 3),
+            members = members,
+            config = config.copy(keepCount = "3")
+        )
+
+        requireNotNull(candidate)
+        assertEquals(2, candidate.survivors.size)
+        assertEquals(
+            listOf("/library/tmp/sample.mkv"),
+            candidate.deleteTargets.map { it.normalizedPath }
+        )
+        assertNull(rejected)
+    }
+
+    @Test
+    fun buildKeepByTextBulkDeleteCandidateReturnsNullWhenTwoSurvivorsRemain() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
             group = group(size = 10L, hash = "a", count = 3),
             members = listOf(
                 file("/library/keep/final-cut.mkv"),
                 file("/library/keep/backup.mkv"),
                 file("/library/tmp/sample-1.mkv")
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 target = ResultsBulkDeleteTextTarget.FileName,
                 operator = ResultsFilterTextOperator.Contains,
                 phrase = "sample"
@@ -525,15 +616,15 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun buildKeepOneByTextBulkDeleteCandidateMatchesFullPathStartsWith() {
-        val candidate = buildKeepOneByTextBulkDeleteCandidate(
+    fun buildKeepByTextBulkDeleteCandidateMatchesFullPathStartsWith() {
+        val candidate = buildKeepByTextBulkDeleteCandidate(
             group = group(size = 10L, hash = "a", count = 3),
             members = listOf(
                 file("/keep/final-cut.mkv"),
                 file("/trash/sample-1.mkv"),
                 file("/trash/sample-2.mkv")
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 target = ResultsBulkDeleteTextTarget.FullPath,
                 operator = ResultsFilterTextOperator.StartsWith,
                 phrase = "/trash/"
@@ -541,7 +632,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/keep/final-cut.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/keep/final-cut.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             listOf("/trash/sample-1.mkv", "/trash/sample-2.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }
@@ -561,7 +652,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/keep/oldest.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/keep/oldest.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             listOf("/keep/middle.mkv", "/keep/newest.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }
@@ -581,7 +672,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/keep/newest.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/keep/newest.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             listOf("/keep/oldest.mkv", "/keep/middle.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }
@@ -604,7 +695,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/keep/short-old.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/keep/short-old.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             setOf("/keep/short-new.mkv", "/keep/long.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }.toSet()
@@ -627,7 +718,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         requireNotNull(candidate)
-        assertEquals("/keep/long-new.mkv", candidate.survivor.normalizedPath)
+        assertEquals("/keep/long-new.mkv", candidate.survivors.single().normalizedPath)
         assertEquals(
             setOf("/keep/long-old.mkv", "/keep/short.mkv"),
             candidate.deleteTargets.map { it.normalizedPath }.toSet()
@@ -649,8 +740,8 @@ class ResultsScreenDbBulkDeleteTest {
     }
 
     @Test
-    fun collectKeepOneByTextBulkDeleteCandidatesHonorsCurrentResultsFilter() {
-        val candidates = collectKeepOneByTextBulkDeleteCandidates(
+    fun collectKeepByTextBulkDeleteCandidatesHonorsCurrentResultsFilter() {
+        val candidates = collectKeepByTextBulkDeleteCandidates(
             groupsWithMembers = listOf(
                 group(size = 10L, hash = "a", count = 3) to listOf(
                     file("/show/episode-final.mkv"),
@@ -679,7 +770,7 @@ class ResultsScreenDbBulkDeleteTest {
                     )
                 )
             ),
-            config = KeepOneByTextBulkDeleteCommandConfig(
+            config = KeepByTextBulkDeleteCommandConfig(
                 target = ResultsBulkDeleteTextTarget.FileName,
                 operator = ResultsFilterTextOperator.Contains,
                 phrase = "sample"
@@ -725,7 +816,7 @@ class ResultsScreenDbBulkDeleteTest {
         )
 
         assertEquals(1, candidates.size)
-        assertEquals("/show/episode-new.mkv", candidates.single().survivor.normalizedPath)
+        assertEquals("/show/episode-new.mkv", candidates.single().survivors.single().normalizedPath)
     }
 
     @Test
@@ -737,7 +828,7 @@ class ResultsScreenDbBulkDeleteTest {
             candidates = listOf(
                 ResultsBulkDeleteCandidate(
                     group = group(size = 10L, hash = "a", count = 3),
-                    survivor = file("/keep/original.mkv"),
+                    survivors = listOf(file("/keep/original.mkv")),
                     deleteTargets = listOf(
                         file("/delete/first.mkv"),
                         file("/delete/second.mkv")
@@ -788,7 +879,7 @@ class ResultsScreenDbBulkDeleteTest {
             candidates = listOf(
                 ResultsBulkDeleteCandidate(
                     group = group(size = 10L, hash = "a", count = 3),
-                    survivor = file("/keep/original.mkv"),
+                    survivors = listOf(file("/keep/original.mkv")),
                     deleteTargets = listOf(file("/delete/first.mkv"))
                 )
             )

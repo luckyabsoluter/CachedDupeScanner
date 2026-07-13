@@ -749,8 +749,8 @@ fun SimilaritySettingResultsScreen(
                 totalGroupCount = bulkDeleteTotalGroupCount
             )
             when (command) {
-                ResultsBulkDeleteCommandType.KeepOneByText -> {
-                    KeepOneByTextBulkDeleteScreen(
+                ResultsBulkDeleteCommandType.KeepByText -> {
+                    KeepByTextBulkDeleteScreen(
                         operations = operations,
                         appliedFilter = bulkDeleteFilter,
                         imageLoader = imageLoader,

@@ -116,8 +116,9 @@ class SimilarityBulkDeleteTest {
     @Test
     fun keepMatchExecutionMovesEveryNonMatchingSimilarityMemberToTrash() = runBlocking {
         val fixture = createFixture()
-        val config = KeepOneByTextBulkDeleteCommandConfig(
+        val config = KeepByTextBulkDeleteCommandConfig(
             keepMode = ResultsBulkDeleteTextKeepMode.Match,
+            keepCountMode = ResultsBulkDeleteTextKeepCountMode.OneOrMore,
             target = ResultsBulkDeleteTextTarget.FileName,
             operator = ResultsFilterTextOperator.Contains,
             phrase = "alpha-newer"
@@ -129,7 +130,7 @@ class SimilarityBulkDeleteTest {
             sourcePageSize = 1
         )
 
-        val preview = operations.buildKeepOneByTextPreview(
+        val preview = operations.buildKeepByTextPreview(
             filterDefinition = ResultsFilterDefinition(),
             config = config,
             onProgress = {}
@@ -139,14 +140,14 @@ class SimilarityBulkDeleteTest {
         assertEquals(1, preview.candidateFileCount)
         assertEquals(
             fixture.alphaNewer.normalizedPath(),
-            preview.candidates.single().survivor.normalizedPath
+            preview.candidates.single().survivors.single().normalizedPath
         )
         assertEquals(
             listOf(fixture.alphaOlder.normalizedPath()),
             preview.candidates.single().deleteTargets.map { member -> member.normalizedPath }
         )
 
-        val outcome = operations.executeKeepOneByText(
+        val outcome = operations.executeKeepByText(
             preview = preview,
             filterDefinition = ResultsFilterDefinition(),
             config = config,
@@ -390,7 +391,7 @@ class SimilarityBulkDeleteTest {
         assertEquals(2, preview.candidateFileCount)
         assertEquals(
             setOf(fixture.alphaNewer.normalizedPath(), fixture.gammaNewer.normalizedPath()),
-            preview.candidates.map { candidate -> candidate.survivor.normalizedPath }.toSet()
+            preview.candidates.map { candidate -> candidate.survivors.single().normalizedPath }.toSet()
         )
         listOf(
             fixture.alphaOlder,

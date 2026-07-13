@@ -21,7 +21,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity filters now support matching groups where every video duration stays within a single-value `s` or `ms` tolerance of the exact group average, resolving and caching missing durations in bounded pages when the rule is applied.
 - Similarity filters can now match only groups whose media members all have the same width and height, resolving and caching missing dimensions in bounded pages when the rule is applied.
 - Results and Similarity bulk delete can now keep the shortest or longest video in each eligible group, using oldest or newest modified time to break equal-duration ties and skipping groups with unreadable durations.
-- Results and Similarity text-rule bulk delete can now keep either the single matching file or the single non-matching file and delete the opposite set.
+- Results and Similarity text-rule bulk delete can now keep the matching or non-matching side with an exact-one, one-or-more, or exact custom-count requirement before deleting the opposite set.
 - Results and Similarity file-name, folder, and modified-time rules now branch to `Any member` or `All members` inside each rule, with existing saved rules retaining `Any member` behavior.
 
 ### Changed
