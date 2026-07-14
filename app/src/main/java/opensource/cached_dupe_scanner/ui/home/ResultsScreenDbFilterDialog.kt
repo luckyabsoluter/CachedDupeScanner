@@ -19,12 +19,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -493,10 +496,10 @@ private fun ResultsFilterRuleEditor(
             HorizontalDivider(color = visibleAccent.copy(alpha = 0.25f))
 
             Text("Target")
-            OptionButtonGrid(
+            ResultsFilterTargetSelector(
+                ruleId = rule.id,
                 options = supportedTargets.toList(),
                 selected = rule.target,
-                label = { it.label },
                 onSelect = { target ->
                     onRuleChange(
                         rule.copy(
@@ -631,6 +634,75 @@ private fun ResultsFilterRuleEditor(
                         )
                     },
                     singleLine = true
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultsFilterTargetSelector(
+    ruleId: String,
+    options: List<ResultsFilterTarget>,
+    selected: ResultsFilterTarget,
+    onSelect: (ResultsFilterTarget) -> Unit
+) {
+    val expanded = rememberSaveable(ruleId) { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded.value = !expanded.value },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("filter-target-selector:$ruleId")
+                .semantics {
+                    stateDescription = if (expanded.value) "Expanded" else "Collapsed"
+                }
+        ) {
+            Text(
+                text = selected.label,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Icon(
+                imageVector = if (expanded.value) {
+                    Icons.Filled.KeyboardArrowUp
+                } else {
+                    Icons.Filled.KeyboardArrowDown
+                },
+                contentDescription = if (expanded.value) {
+                    "Hide target choices"
+                } else {
+                    "Show target choices"
+                }
+            )
+        }
+        DropdownMenu(
+            expanded = expanded.value,
+            onDismissRequest = { expanded.value = false },
+            modifier = Modifier.testTag("filter-target-menu:$ruleId")
+        ) {
+            options.forEach { target ->
+                DropdownMenuItem(
+                    text = { Text(target.label) },
+                    onClick = {
+                        expanded.value = false
+                        if (target != selected) {
+                            onSelect(target)
+                        }
+                    },
+                    leadingIcon = if (target == selected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = "Selected"
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.testTag("filter-target-option:$ruleId:${target.name}")
                 )
             }
         }

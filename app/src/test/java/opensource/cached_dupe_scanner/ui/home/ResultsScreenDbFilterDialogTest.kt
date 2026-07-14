@@ -70,6 +70,55 @@ class ResultsScreenDbFilterDialogTest {
 
     @Test
     @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
+    fun targetChoicesOpenOnlyAfterClickingCurrentTarget() {
+        val initial = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Target menu",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            value = "sample"
+                        )
+                    )
+                )
+            )
+        )
+        var updated = initial
+        composeRule.setContent {
+            val definition = remember { mutableStateOf(initial) }
+            ResultsFilterScreen(
+                definition = definition.value,
+                onDefinitionChange = { value ->
+                    definition.value = value
+                    updated = value
+                },
+                onBack = {},
+                onApply = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("filter-rule:rule_1")
+            .performScrollTo()
+            .performClick()
+        assertTrue(composeRule.onAllNodesWithText("Group count").fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithText("File name").performClick()
+        composeRule.onNodeWithText("Group count").performClick()
+
+        composeRule.runOnIdle {
+            val rule = updated.clusters.single().rules.single()
+            assertEquals(ResultsFilterTarget.GroupItemCount, rule.target)
+            assertEquals("", rule.value)
+        }
+        composeRule.onNodeWithText("Item count").fetchSemanticsNode()
+        assertTrue(composeRule.onAllNodesWithText("File name").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
     fun clusterRulesRenderAsSeparateLabeledSections() {
         val initial = ResultsFilterDefinition(
             clusters = listOf(
