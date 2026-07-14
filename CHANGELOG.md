@@ -63,7 +63,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity result lists and result details now use the shared lazy load indicator container.
 - Similarity group browsing keeps its loaded parent list and detail-member snapshots in memory across detail back navigation and same-screen re-entry, with deletion changing only the active snapshot colors.
 - Trash deletion and DB maintenance now propagate canonical scan-cache mutations to persisted similarity members and groups while the active in-memory result snapshot remains stable.
-- Restoring files from Trash now clears their session deleted state before refreshing similarity groups.
+- Restoring files from Trash now waits for the restored path to rejoin every generated similarity entry, including paused entries, before refreshing cached screens.
 - Settings and cancellation tests now isolate persisted preferences and avoid sleep-loop task bodies.
 - Similarity group pages now remove or refresh stored group rows when cached files are deleted or changed.
 - Similarity group sort changes now rerun after any in-flight page load instead of leaving stale ordering.
@@ -101,6 +101,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity group detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
 - Similarity group detail screens now load members page-by-page instead of materializing entire large groups at once.
 - Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
+- Trash restore now recalculates only the restored path instead of scanning every cached file for enabled similarities.
 
 ## [1.4.0] - 2026-04-30
 

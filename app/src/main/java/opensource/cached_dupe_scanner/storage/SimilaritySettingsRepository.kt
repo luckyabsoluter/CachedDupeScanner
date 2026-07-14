@@ -451,6 +451,54 @@ class SimilaritySettingsRepository(
         }
     }
 
+    fun refreshRestoredFileResults(
+        normalizedPath: String,
+        shouldContinue: () -> Boolean
+    ): Int {
+        return synchronized(maintenanceLock) {
+            val entity = fileDao.getByNormalizedPath(normalizedPath) ?: return@synchronized 0
+            var refreshedSettingCount = 0
+            for (setting in similarityDao.listRestoreEligibleSettings()) {
+                if (!shouldContinue()) break
+                val mediaScope = runCatching { SimilarityMediaScope.valueOf(setting.mediaScope) }
+                    .getOrDefault(SimilarityMediaScope.Video)
+                if (entity.sizeBytes < setting.minSizeBytes || !mediaScope.accepts(entity.normalizedPath)) {
+                    continue
+                }
+
+                val feature = calculateFeature(setting, mediaScope, entity, shouldContinue)
+                if (!shouldContinue()) break
+                val dimensions = if (feature == null) {
+                    null
+                } else {
+                    extractDimensions(mediaScope, entity, shouldContinue)
+                }
+                if (!shouldContinue()) break
+                val restoredFile = prepareSettingFile(
+                    setting = setting,
+                    mediaScope = mediaScope,
+                    entity = entity,
+                    feature = feature,
+                    dimensions = dimensions,
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+                database.runInTransaction {
+                    similarityDao.upsertSettingFiles(listOf(restoredFile.settingFile))
+                    restoredFile.exactFeature?.let { exactFeature ->
+                        similarityDao.upsertExactThumbnailFeatures(listOf(exactFeature))
+                    }
+                    restoredFile.durationFeature?.let { durationFeature ->
+                        similarityDao.upsertDurationFeatures(listOf(durationFeature))
+                    }
+                }
+
+                replaceClusters(setting.settingId, buildClusters(setting))
+                refreshedSettingCount += 1
+            }
+            refreshedSettingCount
+        }
+    }
+
     fun runSettingMaintenance(
         settingId: Long,
         rebuild: Boolean,
@@ -633,19 +681,11 @@ class SimilaritySettingsRepository(
                 }
 
                 val feature = calculateFeature(setting, mediaScope, entity, shouldContinue)
-                if (feature == null) {
+                val dimensions = if (feature == null) {
                     skipped += 1
-                    settingFiles += settingFile(
-                        setting = setting,
-                        entity = entity,
-                        status = SIMILARITY_FILE_STATUS_SKIPPED,
-                        dimensions = null,
-                        dimensionsChecked = false,
-                        durationChecked = false,
-                        updatedAtMillis = now
-                    )
+                    null
                 } else {
-                    val dimensions = extractDimensions(mediaScope, entity, shouldContinue)
+                    val extracted = extractDimensions(mediaScope, entity, shouldContinue)
                     if (!shouldContinue()) {
                         return finishSingleSummary(
                             setting = setting,
@@ -656,29 +696,19 @@ class SimilaritySettingsRepository(
                             cancelled = true
                         )
                     }
-                    settingFiles += settingFile(
-                        setting = setting,
-                        entity = entity,
-                        status = SIMILARITY_FILE_STATUS_READY,
-                        dimensions = dimensions,
-                        dimensionsChecked = true,
-                        durationChecked = mediaScope == SimilarityMediaScope.Image ||
-                            feature is CalculatedFeature.Duration,
-                        updatedAtMillis = now
-                    )
-                    when (feature) {
-                        is CalculatedFeature.ExactThumbnail -> exactFeatures += SimilarityExactThumbnailFeatureEntity(
-                            settingId = setting.settingId,
-                            normalizedPath = entity.normalizedPath,
-                            thumbnailSignature = feature.signature
-                        )
-                        is CalculatedFeature.Duration -> durationFeatures += SimilarityDurationFeatureEntity(
-                            settingId = setting.settingId,
-                            normalizedPath = entity.normalizedPath,
-                            durationMillis = feature.durationMillis
-                        )
-                    }
+                    extracted
                 }
+                val preparedFile = prepareSettingFile(
+                    setting = setting,
+                    mediaScope = mediaScope,
+                    entity = entity,
+                    feature = feature,
+                    dimensions = dimensions,
+                    updatedAtMillis = now
+                )
+                settingFiles += preparedFile.settingFile
+                preparedFile.exactFeature?.let(exactFeatures::add)
+                preparedFile.durationFeature?.let(durationFeatures::add)
                 processed += 1
                 afterPath = entity.normalizedPath
                 onProgress(
@@ -1078,6 +1108,44 @@ class SimilaritySettingsRepository(
         )
     }
 
+    private fun prepareSettingFile(
+        setting: SimilaritySettingEntity,
+        mediaScope: SimilarityMediaScope,
+        entity: CachedFileEntity,
+        feature: CalculatedFeature?,
+        dimensions: MediaDimensions?,
+        updatedAtMillis: Long
+    ): PreparedSettingFile {
+        val ready = feature != null
+        return PreparedSettingFile(
+            settingFile = settingFile(
+                setting = setting,
+                entity = entity,
+                status = if (ready) SIMILARITY_FILE_STATUS_READY else SIMILARITY_FILE_STATUS_SKIPPED,
+                dimensions = dimensions,
+                dimensionsChecked = ready,
+                durationChecked = ready && (
+                    mediaScope == SimilarityMediaScope.Image || feature is CalculatedFeature.Duration
+                ),
+                updatedAtMillis = updatedAtMillis
+            ),
+            exactFeature = (feature as? CalculatedFeature.ExactThumbnail)?.let { exact ->
+                SimilarityExactThumbnailFeatureEntity(
+                    settingId = setting.settingId,
+                    normalizedPath = entity.normalizedPath,
+                    thumbnailSignature = exact.signature
+                )
+            },
+            durationFeature = (feature as? CalculatedFeature.Duration)?.let { duration ->
+                SimilarityDurationFeatureEntity(
+                    settingId = setting.settingId,
+                    normalizedPath = entity.normalizedPath,
+                    durationMillis = duration.durationMillis
+                )
+            }
+        )
+    }
+
     private fun extractDimensions(
         mediaScope: SimilarityMediaScope,
         entity: CachedFileEntity,
@@ -1253,6 +1321,12 @@ private sealed interface CalculatedFeature {
     data class ExactThumbnail(val signature: String) : CalculatedFeature
     data class Duration(val durationMillis: Long) : CalculatedFeature
 }
+
+private data class PreparedSettingFile(
+    val settingFile: SimilaritySettingFileEntity,
+    val exactFeature: SimilarityExactThumbnailFeatureEntity?,
+    val durationFeature: SimilarityDurationFeatureEntity?
+)
 
 private data class ClusterDraft(
     val clusterKey: String,

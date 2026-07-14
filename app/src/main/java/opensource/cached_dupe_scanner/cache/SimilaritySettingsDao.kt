@@ -37,6 +37,21 @@ interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_settings WHERE enabled = 1 ORDER BY updatedAtMillis DESC, settingId DESC")
     fun listEnabledSettings(): List<SimilaritySettingEntity>
 
+    @Query(
+        """
+        SELECT setting.*
+        FROM similarity_settings AS setting
+        WHERE setting.enabled = 1
+           OR EXISTS (
+               SELECT 1
+               FROM similarity_maintenance_runs AS maintenance
+               WHERE maintenance.settingId = setting.settingId
+           )
+        ORDER BY setting.updatedAtMillis DESC, setting.settingId DESC
+        """
+    )
+    fun listRestoreEligibleSettings(): List<SimilaritySettingEntity>
+
     @Query("SELECT COUNT(*) FROM similarity_settings WHERE enabled = 1")
     fun countEnabledSettings(): Int
 

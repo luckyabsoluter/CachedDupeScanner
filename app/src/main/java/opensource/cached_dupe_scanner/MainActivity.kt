@@ -631,11 +631,16 @@ class MainActivity : ComponentActivity() {
                                 onTrashChanged = { restoredOriginalPath ->
                                     if (restoredOriginalPath != null) {
                                         deletedPaths.value = deletedPaths.value - restoredOriginalPath
+                                        withContext(Dispatchers.IO) {
+                                            similarityRepo.refreshRestoredFileResults(
+                                                normalizedPath = restoredOriginalPath,
+                                                shouldContinue = { true }
+                                            )
+                                        }
                                     }
-                                    refreshSimilarityFromCache {
-                                        filesRefreshVersion.value += 1
-                                        resultsRefreshVersion.value += 1
-                                    }
+                                    similarityRefreshVersion.value += 1
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
                                 },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier
