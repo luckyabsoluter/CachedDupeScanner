@@ -11,9 +11,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -156,22 +158,35 @@ private fun taskProgressErrorButtonColors(): ButtonColors {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun TaskProgressIndicator(task: TaskSnapshot) {
     if (task.indeterminate) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     } else {
         LinearProgressIndicator(
             progress = { task.progressFraction() },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            gapSize = ProgressIndicatorDefaults.LinearIndicatorTrackGapSize,
+            drawStopIndicator = {}
         )
     }
 }
 
 internal fun TaskSnapshot.progressFraction(): Float {
+    return boundedProgressFraction(processed = processed, total = total)
+}
+
+internal fun boundedProgressFraction(processed: Int?, total: Int?): Float {
+    val processedValue = processed ?: 0
     val totalValue = total ?: 0
-    return if (totalValue > 0) {
-        ((processed ?: 0).toFloat() / totalValue.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
+    return when {
+        totalValue <= 0 || processedValue <= 0 -> 0f
+        processedValue >= totalValue -> 1f
+        else -> {
+            val fraction = (processedValue.toDouble() / totalValue.toDouble()).toFloat()
+            minOf(fraction, MAX_INCOMPLETE_PROGRESS)
+        }
     }
 }
+
+private val MAX_INCOMPLETE_PROGRESS = Math.nextDown(1f)
