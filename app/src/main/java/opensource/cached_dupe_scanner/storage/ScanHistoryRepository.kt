@@ -384,8 +384,8 @@ class ScanHistoryRepository(
             if (batch.isEmpty()) break
             val paths = batch.map { it.normalizedPath }
             runInConsistencyTransaction {
-                dao.deleteByNormalizedPaths(paths)
                 cacheMutationObserver?.onCachedFilesChanged(paths)
+                dao.deleteByNormalizedPaths(paths)
             }
             clearedFiles += batch.size
             processed += batch.size
@@ -445,11 +445,11 @@ class ScanHistoryRepository(
     fun deleteByNormalizedPath(normalizedPath: String) {
         runInConsistencyTransaction {
             val before = dao.getByNormalizedPath(normalizedPath)
-            dao.deleteByNormalizedPath(normalizedPath)
-            refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
             if (before != null) {
                 cacheMutationObserver?.onCachedFilesChanged(listOf(normalizedPath))
             }
+            dao.deleteByNormalizedPath(normalizedPath)
+            refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
         }
     }
 
@@ -466,9 +466,9 @@ class ScanHistoryRepository(
 
     private fun deleteEntityAndRefreshGroup(entity: CachedFileEntity) {
         runInConsistencyTransaction {
+            cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
             dao.deleteByNormalizedPath(entity.normalizedPath)
             refreshGroupsLocked(touchedGroupKeys(before = entity, after = null))
-            cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
         }
     }
 

@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Scan-cache files and similarity sidecar rows now share stable integer file identities, with an indexed v21-to-v22 migration that preserves valid generated data and removes orphaned relationships.
 - Filter editors now present rules inside each cluster as target-labeled accordion rows with distinct tonal borders, expanding one editor at a time while keeping enable and removal controls available.
 - Filter rule editors now show only the current target until its selector is opened, with the available targets presented in a dropdown menu.
 - Source and manifest text assertions are replaced by runtime tests for merged package metadata, app-owned task survival, foreground-service routing, scan completion ordering, serialized similarity maintenance, and Compose detail interactions.
@@ -101,6 +102,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Similarity feature, member, repair, and result queries now join through integer file IDs instead of normalized path strings, while cache updates preserve IDs through batched inserts and updates.
 - Size-collision hash candidates now run through a bounded worker pool while progress collection and cache writes remain serialized.
 - Similarity generation now extracts media signatures, durations, and dimensions through a bounded worker pool while progress collection, database batches, and cluster rebuilding remain serialized.
 - Similarity group page queries now use setting-aware sort indexes for file-count and total-size ordering.

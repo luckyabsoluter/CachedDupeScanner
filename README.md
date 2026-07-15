@@ -21,7 +21,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 
 - **Incremental scans**: unchanged files are not re-hashed; cache is reused.
 - **Deferred hashing**: SHA-256 is computed only when size collisions exist.
-- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite).
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities shared by derived similarity data.
 - **Target management**: save multiple scan targets; run per-target or batch scans.
 - **Duplicate grouping**: database-backed result browsing with infinite scrolling for large datasets.
 - **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete. default exclusion avoids re-scanning the bin.
@@ -35,7 +35,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Smart filters**: Saved filters, per-rule any/all member matching, same-folder and same-size group rules, similarity same-resolution and average-duration rules, and modified-time rules that persist across sessions.
 - **Advanced bulk delete**: Full-candidate previews support keeping exactly one, at least one, or an exact custom count of matching or non-matching files by text rule, or keeping the oldest, newest, shortest-duration, or longest-duration file, with modified-time fallback for equal video durations.
 - **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to detected duplicate groups. Actionable via notification-backed execution.
-- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; new entries start enabled and include persistent sort options plus progress-tracked Update/Rebuild actions with bounded parallel media feature extraction.
+- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; numeric file-ID joins, bounded parallel media feature extraction, persistent sort options, and progress-tracked Update/Rebuild actions keep large result sets practical.
 
 ## How scanning works
 

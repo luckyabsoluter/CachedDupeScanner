@@ -707,7 +707,7 @@ class SimilaritySettingsRepository(
                     )
                 }
                 currentPath = entity.path.ifBlank { entity.normalizedPath }
-                val existing = similarityDao.getSettingFile(setting.settingId, entity.normalizedPath)
+                val existing = similarityDao.getSettingFile(setting.settingId, entity.fileId)
                 val featureIsFresh = !rebuild &&
                     existing?.status == SIMILARITY_FILE_STATUS_READY &&
                     existing.sizeBytes == entity.sizeBytes &&
@@ -1048,7 +1048,7 @@ class SimilaritySettingsRepository(
                             clusterKey = signature,
                             members = rows.map { row ->
                                 ClusterMemberDraft(
-                                    normalizedPath = row.normalizedPath,
+                                    fileId = row.fileId,
                                     sizeBytes = row.sizeBytes
                                 )
                             }
@@ -1137,7 +1137,7 @@ class SimilaritySettingsRepository(
             clusterKey = key,
             members = rows.map { row ->
                 ClusterMemberDraft(
-                    normalizedPath = row.normalizedPath,
+                    fileId = row.fileId,
                     sizeBytes = row.sizeBytes
                 )
             }
@@ -1155,7 +1155,7 @@ class SimilaritySettingsRepository(
             clusterKey = key,
             members = rows.map { row ->
                 ClusterMemberDraft(
-                    normalizedPath = row.normalizedPath,
+                    fileId = row.fileId,
                     sizeBytes = row.sizeBytes
                 )
             }
@@ -1207,7 +1207,7 @@ class SimilaritySettingsRepository(
                     draft.members.mapIndexed { index, member ->
                         SimilarityClusterMemberEntity(
                             clusterId = clusterId,
-                            normalizedPath = member.normalizedPath,
+                            fileId = member.fileId,
                             position = index
                         )
                     }
@@ -1328,16 +1328,16 @@ class SimilaritySettingsRepository(
         publish(SimilarityClearPhase.Preparing)
         while (!stopRequested()) {
             val clusterId = similarityDao.firstClusterIdWithMembersForClear(settingId) ?: break
-            val paths = similarityDao.listClusterMemberPathsForClear(
+            val fileIds = similarityDao.listClusterMemberIdsForClear(
                 clusterId = clusterId,
                 limit = SIMILARITY_CLEAR_BATCH_SIZE
             )
-            if (paths.isEmpty()) break
+            if (fileIds.isEmpty()) break
             var clearedRows = 0
             database.runInTransaction {
                 val cluster = similarityDao.getClusterForClear(clusterId)
-                val clearedBytes = similarityDao.sumClusterMemberBytesForClear(clusterId, paths)
-                val clearedMembers = similarityDao.deleteClusterMemberPathsForClear(clusterId, paths)
+                val clearedBytes = similarityDao.sumClusterMemberBytesForClear(clusterId, fileIds)
+                val clearedMembers = similarityDao.deleteClusterMemberIdsForClear(clusterId, fileIds)
                 clearedRows += clearedMembers
                 val remainingFileCount = (cluster?.fileCount ?: 0) - clearedMembers
                 val remainingTotalBytes = ((cluster?.totalBytes ?: 0L) - clearedBytes).coerceAtLeast(0L)
@@ -1375,16 +1375,16 @@ class SimilaritySettingsRepository(
         if (cancellationRequested) return finish()
 
         while (!stopRequested()) {
-            val paths = similarityDao.listSettingFilePathsForClear(
+            val fileIds = similarityDao.listSettingFileIdsForClear(
                 settingId = settingId,
                 limit = SIMILARITY_CLEAR_BATCH_SIZE
             )
-            if (paths.isEmpty()) break
+            if (fileIds.isEmpty()) break
             var clearedRows = 0
             database.runInTransaction {
-                clearedRows += similarityDao.deleteExactThumbnailFeaturesForSettingByPaths(settingId, paths)
-                clearedRows += similarityDao.deleteDurationFeaturesForSettingByPaths(settingId, paths)
-                clearedRows += similarityDao.deleteSettingFilesForSettingByPaths(settingId, paths)
+                clearedRows += similarityDao.deleteExactThumbnailFeaturesForSettingByIds(settingId, fileIds)
+                clearedRows += similarityDao.deleteDurationFeaturesForSettingByIds(settingId, fileIds)
+                clearedRows += similarityDao.deleteSettingFilesForSettingByIds(settingId, fileIds)
             }
             processed += clearedRows
             publish(SimilarityClearPhase.FilesAndFeatures)
@@ -1392,26 +1392,26 @@ class SimilaritySettingsRepository(
         if (cancellationRequested) return finish()
 
         while (!stopRequested()) {
-            val paths = similarityDao.listExactThumbnailFeaturePathsForClear(
+            val fileIds = similarityDao.listExactThumbnailFeatureIdsForClear(
                 settingId = settingId,
                 limit = SIMILARITY_CLEAR_BATCH_SIZE
             )
-            if (paths.isEmpty()) break
+            if (fileIds.isEmpty()) break
             processed += database.runInTransaction<Int> {
-                similarityDao.deleteExactThumbnailFeaturesForSettingByPaths(settingId, paths)
+                similarityDao.deleteExactThumbnailFeaturesForSettingByIds(settingId, fileIds)
             }
             publish(SimilarityClearPhase.OrphanFeatures)
         }
         if (cancellationRequested) return finish()
 
         while (!stopRequested()) {
-            val paths = similarityDao.listDurationFeaturePathsForClear(
+            val fileIds = similarityDao.listDurationFeatureIdsForClear(
                 settingId = settingId,
                 limit = SIMILARITY_CLEAR_BATCH_SIZE
             )
-            if (paths.isEmpty()) break
+            if (fileIds.isEmpty()) break
             processed += database.runInTransaction<Int> {
-                similarityDao.deleteDurationFeaturesForSettingByPaths(settingId, paths)
+                similarityDao.deleteDurationFeaturesForSettingByIds(settingId, fileIds)
             }
             publish(SimilarityClearPhase.OrphanFeatures)
         }
@@ -1507,7 +1507,7 @@ class SimilaritySettingsRepository(
     ): SimilaritySettingFileEntity {
         return SimilaritySettingFileEntity(
             settingId = setting.settingId,
-            normalizedPath = entity.normalizedPath,
+            fileId = entity.fileId,
             sizeBytes = entity.sizeBytes,
             lastModifiedMillis = entity.lastModifiedMillis,
             status = status,
@@ -1543,14 +1543,14 @@ class SimilaritySettingsRepository(
             exactFeature = (feature as? CalculatedFeature.ExactThumbnail)?.let { exact ->
                 SimilarityExactThumbnailFeatureEntity(
                     settingId = setting.settingId,
-                    normalizedPath = entity.normalizedPath,
+                    fileId = entity.fileId,
                     thumbnailSignature = exact.signature
                 )
             },
             durationFeature = (feature as? CalculatedFeature.Duration)?.let { duration ->
                 SimilarityDurationFeatureEntity(
                     settingId = setting.settingId,
-                    normalizedPath = entity.normalizedPath,
+                    fileId = entity.fileId,
                     durationMillis = duration.durationMillis
                 )
             }
@@ -1599,7 +1599,7 @@ class SimilaritySettingsRepository(
         }
         if (resolved.isEmpty()) return rows
 
-        val updatedRows = linkedMapOf<String, SimilarityClusterMemberFileRow>()
+        val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
             resolved.forEach { pending ->
@@ -1607,7 +1607,7 @@ class SimilaritySettingsRepository(
                 val dimensions = pending.dimensions
                 val updated = similarityDao.updateSettingFileDimensionsIfCurrent(
                     settingId = row.settingId,
-                    normalizedPath = row.normalizedPath,
+                    fileId = row.fileId,
                     sizeBytes = row.sizeBytes,
                     lastModifiedMillis = row.lastModifiedMillis,
                     widthPixels = dimensions?.widthPixels,
@@ -1617,10 +1617,10 @@ class SimilaritySettingsRepository(
                 val current = if (updated > 0) {
                     null
                 } else {
-                    similarityDao.getSettingFile(row.settingId, row.normalizedPath)
+                    similarityDao.getSettingFile(row.settingId, row.fileId)
                 }
                 when {
-                    updated > 0 -> updatedRows[row.normalizedPath] = row.copy(
+                    updated > 0 -> updatedRows[row.fileId] = row.copy(
                         widthPixels = dimensions?.widthPixels,
                         heightPixels = dimensions?.heightPixels,
                         dimensionsChecked = true
@@ -1628,7 +1628,7 @@ class SimilaritySettingsRepository(
                     current?.dimensionsChecked == true &&
                         current.sizeBytes == row.sizeBytes &&
                         current.lastModifiedMillis == row.lastModifiedMillis -> {
-                        updatedRows[row.normalizedPath] = row.copy(
+                        updatedRows[row.fileId] = row.copy(
                             widthPixels = current.widthPixels,
                             heightPixels = current.heightPixels,
                             dimensionsChecked = true
@@ -1637,7 +1637,7 @@ class SimilaritySettingsRepository(
                 }
             }
         }
-        return rows.map { row -> updatedRows[row.normalizedPath] ?: row }
+        return rows.map { row -> updatedRows[row.fileId] ?: row }
     }
 
     private fun resolveUncheckedDurations(
@@ -1666,7 +1666,7 @@ class SimilaritySettingsRepository(
         }
         if (resolved.isEmpty()) return rows
 
-        val updatedRows = linkedMapOf<String, SimilarityClusterMemberFileRow>()
+        val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
         val acceptedDurations = mutableListOf<SimilarityDurationFeatureEntity>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
@@ -1675,33 +1675,33 @@ class SimilaritySettingsRepository(
                 val durationMillis = pending.durationMillis
                 val updated = similarityDao.updateSettingFileDurationIfCurrent(
                     settingId = row.settingId,
-                    normalizedPath = row.normalizedPath,
+                    fileId = row.fileId,
                     sizeBytes = row.sizeBytes,
                     lastModifiedMillis = row.lastModifiedMillis,
                     updatedAtMillis = updatedAtMillis
                 )
                 if (updated > 0) {
-                    similarityDao.deleteDurationFeature(row.settingId, row.normalizedPath)
+                    similarityDao.deleteDurationFeature(row.settingId, row.fileId)
                     if (durationMillis != null) {
                         acceptedDurations += SimilarityDurationFeatureEntity(
                             settingId = row.settingId,
-                            normalizedPath = row.normalizedPath,
+                            fileId = row.fileId,
                             durationMillis = durationMillis
                         )
                     }
-                    updatedRows[row.normalizedPath] = row.copy(
+                    updatedRows[row.fileId] = row.copy(
                         durationMillis = durationMillis,
                         durationChecked = true
                     )
                 } else {
-                    val current = similarityDao.getSettingFile(row.settingId, row.normalizedPath)
+                    val current = similarityDao.getSettingFile(row.settingId, row.fileId)
                     if (current?.durationChecked == true &&
                         current.sizeBytes == row.sizeBytes &&
                         current.lastModifiedMillis == row.lastModifiedMillis
                     ) {
-                        updatedRows[row.normalizedPath] = row.copy(
+                        updatedRows[row.fileId] = row.copy(
                             durationMillis = similarityDao
-                                .getDurationFeature(row.settingId, row.normalizedPath)
+                                .getDurationFeature(row.settingId, row.fileId)
                                 ?.durationMillis,
                             durationChecked = true
                         )
@@ -1712,7 +1712,7 @@ class SimilaritySettingsRepository(
                 similarityDao.upsertDurationFeatures(acceptedDurations)
             }
         }
-        return rows.map { row -> updatedRows[row.normalizedPath] ?: row }
+        return rows.map { row -> updatedRows[row.fileId] ?: row }
     }
 
     private fun emptySummary(cancelled: Boolean): SimilarityMaintenanceSummary {
@@ -1758,7 +1758,7 @@ private data class ClusterDraft(
 )
 
 private data class ClusterMemberDraft(
-    val normalizedPath: String,
+    val fileId: Long,
     val sizeBytes: Long
 )
 

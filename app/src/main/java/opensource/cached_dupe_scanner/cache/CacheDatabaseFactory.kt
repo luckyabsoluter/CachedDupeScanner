@@ -26,7 +26,8 @@ val CACHE_DATABASE_MIGRATIONS: Array<Migration> = arrayOf(
     CacheMigrations.MIGRATION_17_18,
     CacheMigrations.MIGRATION_18_19,
     CacheMigrations.MIGRATION_19_20,
-    CacheMigrations.MIGRATION_20_21
+    CacheMigrations.MIGRATION_20_21,
+    CacheMigrations.MIGRATION_21_22
 )
 
 fun buildCacheDatabase(context: Context): CacheDatabase {

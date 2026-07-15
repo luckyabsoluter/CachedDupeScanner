@@ -257,7 +257,7 @@ class SimilarityBulkDeleteTest {
             val stored = requireNotNull(
                 database.similaritySettingsDao().getSettingFile(
                     settingId = fixture.settingId,
-                    normalizedPath = file.normalizedPath()
+                    fileId = fileId(file)
                 )
             )
             database.similaritySettingsDao().upsertSettingFiles(
@@ -298,7 +298,7 @@ class SimilarityBulkDeleteTest {
             val stored = requireNotNull(
                 database.similaritySettingsDao().getSettingFile(
                     settingId = fixture.settingId,
-                    normalizedPath = file.normalizedPath()
+                    fileId = fileId(file)
                 )
             )
             assertTrue(stored.dimensionsChecked)
@@ -346,7 +346,7 @@ class SimilarityBulkDeleteTest {
             val stored = requireNotNull(
                 database.similaritySettingsDao().getSettingFile(
                     settingId = fixture.settingId,
-                    normalizedPath = file.normalizedPath()
+                    fileId = fileId(file)
                 )
             )
             assertTrue(stored.durationChecked)
@@ -402,7 +402,7 @@ class SimilarityBulkDeleteTest {
             val stored = requireNotNull(
                 database.similaritySettingsDao().getSettingFile(
                     settingId = fixture.settingId,
-                    normalizedPath = file.normalizedPath()
+                    fileId = fileId(file)
                 )
             )
             assertTrue(stored.durationChecked)
@@ -548,6 +548,10 @@ class SimilarityBulkDeleteTest {
 
     private fun File.normalizedPath(): String {
         return PathNormalizer.normalize(absolutePath)
+    }
+
+    private fun fileId(file: File): Long {
+        return requireNotNull(database.fileCacheDao().getByNormalizedPath(file.normalizedPath())).fileId
     }
 
     private data class Fixture(

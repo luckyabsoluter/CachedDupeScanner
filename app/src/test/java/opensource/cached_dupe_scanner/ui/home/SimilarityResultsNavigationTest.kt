@@ -155,7 +155,6 @@ class SimilarityResultsNavigationTest {
             )
         }
 
-        scrollUntilText("Incremental clear")
         composeRule.onNodeWithTag("similarity-incremental-clear")
             .performScrollTo()
             .performClick()

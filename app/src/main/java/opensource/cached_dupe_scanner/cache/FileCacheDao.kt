@@ -2,8 +2,9 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Dao
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 
 /**
  * DAO for `cached_files`.
@@ -324,11 +325,42 @@ interface FileCacheDao {
     )
     fun countBySizeAndHash(sizeBytes: Long, hashHex: String): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsert(entity: CachedFileEntity)
+    @Query("SELECT fileId, normalizedPath FROM cached_files WHERE normalizedPath IN (:normalizedPaths)")
+    fun findFileIdsByPaths(normalizedPaths: List<String>): List<CachedFileIdRow>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertAll(entities: List<CachedFileEntity>)
+    @Insert
+    fun insertAll(entities: List<CachedFileEntity>)
+
+    @Update
+    fun updateAll(entities: List<CachedFileEntity>)
+
+    @Transaction
+    fun upsert(entity: CachedFileEntity) {
+        upsertAll(listOf(entity))
+    }
+
+    @Transaction
+    fun upsertAll(entities: List<CachedFileEntity>) {
+        if (entities.isEmpty()) return
+        val latestByPath = linkedMapOf<String, CachedFileEntity>()
+        entities.forEach { entity -> latestByPath[entity.normalizedPath] = entity }
+        val existingIdsByPath = latestByPath.keys
+            .chunked(FILE_ID_LOOKUP_BIND_LIMIT)
+            .flatMap(::findFileIdsByPaths)
+            .associate { row -> row.normalizedPath to row.fileId }
+        val inserts = mutableListOf<CachedFileEntity>()
+        val updates = mutableListOf<CachedFileEntity>()
+        latestByPath.values.forEach { entity ->
+            val existingId = existingIdsByPath[entity.normalizedPath]
+            if (existingId == null) {
+                inserts += entity.copy(fileId = 0L)
+            } else {
+                updates += entity.copy(fileId = existingId)
+            }
+        }
+        if (inserts.isNotEmpty()) insertAll(inserts)
+        if (updates.isNotEmpty()) updateAll(updates)
+    }
 
     @Query("DELETE FROM cached_files WHERE normalizedPath = :normalizedPath")
     fun deleteByNormalizedPath(normalizedPath: String)
@@ -379,3 +411,10 @@ data class DuplicateGroupKeyRow(
     val sizeBytes: Long,
     val hashHex: String
 )
+
+data class CachedFileIdRow(
+    val fileId: Long,
+    val normalizedPath: String
+)
+
+private const val FILE_ID_LOOKUP_BIND_LIMIT = 900

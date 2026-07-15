@@ -711,7 +711,7 @@ class SimilaritySettingsRepositoryTest {
                 requireNotNull(
                     database.similaritySettingsDao().getSettingFile(
                         settingId = setting.settingId,
-                        normalizedPath = file.normalizedPath()
+                        fileId = fileId(file)
                     )
                 ).durationChecked
             )
@@ -836,7 +836,7 @@ class SimilaritySettingsRepositoryTest {
         )
         val similarityDao = database.similaritySettingsDao()
         listOf(first, second).forEach { file ->
-            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, fileId(file)))
             similarityDao.upsertSettingFiles(
                 listOf(
                     stored.copy(
@@ -882,7 +882,7 @@ class SimilaritySettingsRepositoryTest {
 
         assertEquals(1, filtered.clusters.size)
         listOf(first, second).forEach { file ->
-            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, fileId(file)))
             assertEquals(1920, stored.widthPixels)
             assertEquals(1080, stored.heightPixels)
             assertTrue(stored.dimensionsChecked)
@@ -914,7 +914,7 @@ class SimilaritySettingsRepositoryTest {
         )
         val similarityDao = database.similaritySettingsDao()
         listOf(first, second).forEach { file ->
-            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, fileId(file)))
             similarityDao.upsertSettingFiles(
                 listOf(
                     stored.copy(
@@ -947,7 +947,7 @@ class SimilaritySettingsRepositoryTest {
                 .map { member -> member.metadata.widthPixels to member.metadata.heightPixels }
         )
         listOf(first, second).forEach { file ->
-            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, file.normalizedPath()))
+            val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, fileId(file)))
             assertEquals("ready", stored.status)
             assertTrue(stored.dimensionsChecked)
         }
@@ -1030,11 +1030,26 @@ class SimilaritySettingsRepositoryTest {
         )
         val dao = database.similaritySettingsDao()
         val paths = (0 until 205).map { index -> "/virtual/clear-$index.mp4" }
+        val orphanDurationPath = "/virtual/orphan-duration.mp4"
+        (paths + orphanDurationPath).forEach { path ->
+            database.fileCacheDao().upsert(
+                CachedFileEntity(
+                    normalizedPath = path,
+                    path = path,
+                    sizeBytes = 10L,
+                    lastModifiedMillis = 1L,
+                    hashHex = null
+                )
+            )
+        }
+        val fileIdsByPath = (paths + orphanDurationPath).associateWith { path ->
+            requireNotNull(database.fileCacheDao().getByNormalizedPath(path)).fileId
+        }
         dao.upsertSettingFiles(
             paths.map { path ->
                 SimilaritySettingFileEntity(
                     settingId = setting.settingId,
-                    normalizedPath = path,
+                    fileId = requireNotNull(fileIdsByPath[path]),
                     sizeBytes = 10L,
                     lastModifiedMillis = 1L,
                     status = "ready",
@@ -1050,7 +1065,7 @@ class SimilaritySettingsRepositoryTest {
             paths.map { path ->
                 SimilarityExactThumbnailFeatureEntity(
                     settingId = setting.settingId,
-                    normalizedPath = path,
+                    fileId = requireNotNull(fileIdsByPath[path]),
                     thumbnailSignature = "same"
                 )
             }
@@ -1059,7 +1074,7 @@ class SimilaritySettingsRepositoryTest {
             listOf(
                 SimilarityDurationFeatureEntity(
                     settingId = setting.settingId,
-                    normalizedPath = "/virtual/orphan-duration.mp4",
+                    fileId = requireNotNull(fileIdsByPath[orphanDurationPath]),
                     durationMillis = 1_000L
                 )
             )
@@ -1077,7 +1092,7 @@ class SimilaritySettingsRepositoryTest {
             paths.mapIndexed { index, path ->
                 SimilarityClusterMemberEntity(
                     clusterId = clusterId,
-                    normalizedPath = path,
+                    fileId = requireNotNull(fileIdsByPath[path]),
                     position = index
                 )
             }
@@ -1114,7 +1129,10 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(100, cancelled.processed)
         assertEquals(100, firstProgress.last().processed)
         assertEquals(105, dao.countClusterMembersForSetting(setting.settingId))
-        assertEquals(paths.drop(100), dao.listClusterMemberPathsForClear(clusterId, limit = paths.size))
+        assertEquals(
+            paths.drop(100).map { path -> requireNotNull(fileIdsByPath[path]) },
+            dao.listClusterMemberIdsForClear(clusterId, limit = paths.size)
+        )
         val remainingCluster = requireNotNull(repository.getCluster(setting.settingId, clusterId))
         assertEquals(105, remainingCluster.fileCount)
         assertEquals(1_050L, remainingCluster.totalBytes)
@@ -1396,6 +1414,10 @@ class SimilaritySettingsRepositoryTest {
 
     private fun File.normalizedPath(): String {
         return absolutePath.replace('\\', '/').lowercase()
+    }
+
+    private fun fileId(file: File): Long {
+        return requireNotNull(database.fileCacheDao().getByNormalizedPath(file.normalizedPath())).fileId
     }
 
     private fun exactStep(width: Int, height: Int): ExactThumbnailHashStep {

@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.cache
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -741,6 +742,235 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration21to22UsesStableFileIdsForSimilarityRelations() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-21-22-${UUID.randomUUID()}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(21) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion21FileIdMigrationTables(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_21_22.migrate(db)
+
+            assertEquals("INTEGER", columnType(db, "cached_files", "fileId"))
+            assertEquals(1, columnPrimaryKeyPosition(db, "cached_files", "fileId"))
+            assertTrue(hasIndex(db, "cached_files", "index_cached_files_normalizedPath"))
+            assertTrue(indexIsUnique(db, "cached_files", "index_cached_files_normalizedPath"))
+            assertTrue(hasColumn(db, "similarity_setting_files", "fileId"))
+            assertFalse(hasColumn(db, "similarity_setting_files", "normalizedPath"))
+            assertTrue(hasColumn(db, "similarity_exact_thumbnail_features", "fileId"))
+            assertTrue(hasColumn(db, "similarity_duration_features", "fileId"))
+            assertTrue(hasColumn(db, "similarity_cluster_members", "fileId"))
+            listOf(
+                "similarity_setting_files",
+                "similarity_exact_thumbnail_features",
+                "similarity_duration_features",
+                "similarity_cluster_members"
+            ).forEach { table ->
+                assertTrue(hasCascadeFileIdForeignKey(db, table))
+            }
+            assertTrue(
+                hasIndex(db, "similarity_setting_files", "index_similarity_setting_files_fileId")
+            )
+            assertTrue(
+                hasIndex(
+                    db,
+                    "similarity_exact_thumbnail_features",
+                    "index_similarity_exact_thumbnail_features_fileId"
+                )
+            )
+            assertTrue(
+                hasIndex(
+                    db,
+                    "similarity_duration_features",
+                    "index_similarity_duration_features_fileId"
+                )
+            )
+            assertTrue(
+                hasIndex(db, "similarity_cluster_members", "index_similarity_cluster_members_fileId")
+            )
+
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM cached_files"))
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM similarity_setting_files"))
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM similarity_exact_thumbnail_features"))
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM similarity_duration_features"))
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM similarity_cluster_members"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM similarity_clusters"))
+            assertEquals(2, firstInt(db, "SELECT fileCount FROM similarity_clusters WHERE clusterId = 1"))
+            assertEquals(30L, firstLong(db, "SELECT totalBytes FROM similarity_clusters WHERE clusterId = 1"))
+            assertEquals(
+                listOf("/video/a.mp4", "/video/b.mp4"),
+                stringList(
+                    db,
+                    """
+                    SELECT file.normalizedPath
+                    FROM similarity_cluster_members AS member
+                    INNER JOIN cached_files AS file ON file.fileId = member.fileId
+                    WHERE member.clusterId = 1
+                    ORDER BY member.position ASC
+                    """.trimIndent()
+                )
+            )
+
+            val queryPlan = stringList(
+                db,
+                """
+                EXPLAIN QUERY PLAN
+                SELECT file.normalizedPath
+                FROM similarity_cluster_members AS member
+                INNER JOIN cached_files AS file ON file.fileId = member.fileId
+                WHERE member.clusterId = 1
+                """.trimIndent(),
+                columnIndex = 3
+            )
+            assertTrue(queryPlan.any { detail -> detail.contains("INTEGER PRIMARY KEY") })
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun migration21to22PassesRoomSchemaValidation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "sim-21-22-room-${UUID.randomUUID()}.db"
+        val current = Room.databaseBuilder(context, CacheDatabase::class.java, name)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            downgradeFileRelationsToVersion21(current.openHelper.writableDatabase)
+        } finally {
+            current.close()
+        }
+
+        val migrated = Room.databaseBuilder(context, CacheDatabase::class.java, name)
+            .addMigrations(*CACHE_DATABASE_MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals(0, migrated.fileCacheDao().countAll())
+            assertTrue(
+                hasCascadeFileIdForeignKey(
+                    migrated.openHelper.writableDatabase,
+                    "similarity_setting_files"
+                )
+            )
+        } finally {
+            migrated.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    private fun downgradeFileRelationsToVersion21(db: SupportSQLiteDatabase) {
+        db.execSQL("PRAGMA foreign_keys = OFF")
+        db.execSQL("DROP TABLE similarity_setting_files")
+        db.execSQL("DROP TABLE similarity_exact_thumbnail_features")
+        db.execSQL("DROP TABLE similarity_duration_features")
+        db.execSQL("DROP TABLE similarity_cluster_members")
+        db.execSQL("DROP TABLE similarity_clusters")
+        db.execSQL("DROP TABLE cached_files")
+        createVersion21FileIdMigrationTables(db, seedData = false)
+        db.execSQL("PRAGMA user_version = 21")
+    }
+
+    private fun createVersion21FileIdMigrationTables(
+        db: SupportSQLiteDatabase,
+        seedData: Boolean = true
+    ) {
+        db.execSQL(
+            """
+            CREATE TABLE cached_files (
+                normalizedPath TEXT NOT NULL PRIMARY KEY,
+                path TEXT NOT NULL,
+                sizeBytes INTEGER NOT NULL,
+                lastModifiedMillis INTEGER NOT NULL,
+                hashHex TEXT
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX index_cached_files_sizeBytes ON cached_files(sizeBytes)")
+        db.execSQL("CREATE INDEX index_cached_files_hashHex ON cached_files(hashHex)")
+        db.execSQL(
+            "CREATE INDEX index_cached_files_sizeBytes_hashHex " +
+                "ON cached_files(sizeBytes, hashHex)"
+        )
+        db.execSQL(
+            "CREATE INDEX index_cached_files_sizeBytes_normalizedPath " +
+                "ON cached_files(sizeBytes, normalizedPath)"
+        )
+        db.execSQL(
+            "CREATE INDEX index_cached_files_lastModifiedMillis_normalizedPath " +
+                "ON cached_files(lastModifiedMillis, normalizedPath)"
+        )
+        createVersion17SimilarityTables(db)
+        CacheMigrations.MIGRATION_17_18.migrate(db)
+        CacheMigrations.MIGRATION_18_19.migrate(db)
+        CacheMigrations.MIGRATION_19_20.migrate(db)
+        CacheMigrations.MIGRATION_20_21.migrate(db)
+        if (!seedData) return
+
+        db.execSQL(
+            """
+            INSERT INTO cached_files VALUES
+                ('/video/a.mp4', '/video/a.mp4', 10, 100, 'a'),
+                ('/video/b.mp4', '/video/b.mp4', 20, 200, 'b')
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_setting_files VALUES
+                (1, '/video/a.mp4', 10, 100, 'ready', 1920, 1080, 1, 1, 300),
+                (1, '/video/b.mp4', 20, 200, 'ready', 1920, 1080, 1, 1, 300),
+                (1, '/missing.mp4', 40, 400, 'ready', 1920, 1080, 1, 1, 300)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_exact_thumbnail_features VALUES
+                (1, '/video/a.mp4', 'same'),
+                (1, '/video/b.mp4', 'same'),
+                (1, '/missing.mp4', 'same')
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_duration_features VALUES
+                (1, '/video/a.mp4', 1000),
+                (1, '/video/b.mp4', 1000),
+                (1, '/missing.mp4', 1000)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_clusters VALUES
+                (1, 1, 'kept', 3, 70, 500),
+                (2, 1, 'orphaned', 2, 50, 500)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_cluster_members VALUES
+                (1, '/video/a.mp4', 0),
+                (1, '/video/b.mp4', 1),
+                (1, '/missing.mp4', 2),
+                (2, '/video/a.mp4', 0),
+                (2, '/missing.mp4', 1)
+            """.trimIndent()
+        )
+    }
+
     private fun createVersion13SimilarityTables(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
@@ -934,6 +1164,89 @@ class CacheMigrationsIndexTest {
                 if (nameIdx >= 0 && cursor.getString(nameIdx) == columnName) return true
             }
             return false
+        }
+    }
+
+    private fun columnType(db: SupportSQLiteDatabase, tableName: String, columnName: String): String? {
+        db.query("PRAGMA table_info('$tableName')").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIdx) == columnName) return cursor.getString(typeIdx)
+            }
+            return null
+        }
+    }
+
+    private fun columnPrimaryKeyPosition(
+        db: SupportSQLiteDatabase,
+        tableName: String,
+        columnName: String
+    ): Int? {
+        db.query("PRAGMA table_info('$tableName')").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val primaryKeyIdx = cursor.getColumnIndexOrThrow("pk")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIdx) == columnName) return cursor.getInt(primaryKeyIdx)
+            }
+            return null
+        }
+    }
+
+    private fun indexIsUnique(db: SupportSQLiteDatabase, tableName: String, indexName: String): Boolean {
+        db.query("PRAGMA index_list('$tableName')").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val uniqueIdx = cursor.getColumnIndexOrThrow("unique")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIdx) == indexName) return cursor.getInt(uniqueIdx) == 1
+            }
+            return false
+        }
+    }
+
+    private fun hasCascadeFileIdForeignKey(db: SupportSQLiteDatabase, tableName: String): Boolean {
+        db.query("PRAGMA foreign_key_list('$tableName')").use { cursor ->
+            val tableIdx = cursor.getColumnIndexOrThrow("table")
+            val fromIdx = cursor.getColumnIndexOrThrow("from")
+            val toIdx = cursor.getColumnIndexOrThrow("to")
+            val onDeleteIdx = cursor.getColumnIndexOrThrow("on_delete")
+            while (cursor.moveToNext()) {
+                if (
+                    cursor.getString(tableIdx) == "cached_files" &&
+                    cursor.getString(fromIdx) == "fileId" &&
+                    cursor.getString(toIdx) == "fileId" &&
+                    cursor.getString(onDeleteIdx) == "CASCADE"
+                ) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    private fun firstInt(db: SupportSQLiteDatabase, query: String): Int {
+        db.query(query).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            return cursor.getInt(0)
+        }
+    }
+
+    private fun firstLong(db: SupportSQLiteDatabase, query: String): Long {
+        db.query(query).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            return cursor.getLong(0)
+        }
+    }
+
+    private fun stringList(
+        db: SupportSQLiteDatabase,
+        query: String,
+        columnIndex: Int = 0
+    ): List<String> {
+        db.query(query).use { cursor ->
+            val values = mutableListOf<String>()
+            while (cursor.moveToNext()) values += cursor.getString(columnIndex)
+            return values
         }
     }
 

@@ -632,6 +632,287 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_21_22 = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE cached_files RENAME TO cached_files_path_key")
+            db.execSQL(
+                """
+                CREATE TABLE cached_files (
+                    fileId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    normalizedPath TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    sizeBytes INTEGER NOT NULL,
+                    lastModifiedMillis INTEGER NOT NULL,
+                    hashHex TEXT
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO cached_files (
+                    fileId,
+                    normalizedPath,
+                    path,
+                    sizeBytes,
+                    lastModifiedMillis,
+                    hashHex
+                )
+                SELECT
+                    rowid,
+                    normalizedPath,
+                    path,
+                    sizeBytes,
+                    lastModifiedMillis,
+                    hashHex
+                FROM cached_files_path_key
+                ORDER BY rowid ASC
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX index_cached_files_normalizedPath " +
+                    "ON cached_files(normalizedPath)"
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE similarity_setting_files_file_id (
+                    settingId INTEGER NOT NULL,
+                    fileId INTEGER NOT NULL,
+                    sizeBytes INTEGER NOT NULL,
+                    lastModifiedMillis INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    widthPixels INTEGER,
+                    heightPixels INTEGER,
+                    dimensionsChecked INTEGER NOT NULL DEFAULT 0,
+                    durationChecked INTEGER NOT NULL DEFAULT 0,
+                    updatedAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(settingId, fileId),
+                    FOREIGN KEY(fileId) REFERENCES cached_files(fileId) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO similarity_setting_files_file_id (
+                    settingId,
+                    fileId,
+                    sizeBytes,
+                    lastModifiedMillis,
+                    status,
+                    widthPixels,
+                    heightPixels,
+                    dimensionsChecked,
+                    durationChecked,
+                    updatedAtMillis
+                )
+                SELECT
+                    setting_file.settingId,
+                    file.fileId,
+                    setting_file.sizeBytes,
+                    setting_file.lastModifiedMillis,
+                    setting_file.status,
+                    setting_file.widthPixels,
+                    setting_file.heightPixels,
+                    setting_file.dimensionsChecked,
+                    setting_file.durationChecked,
+                    setting_file.updatedAtMillis
+                FROM similarity_setting_files AS setting_file
+                INNER JOIN cached_files AS file
+                    ON file.normalizedPath = setting_file.normalizedPath
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE similarity_exact_thumbnail_features_file_id (
+                    settingId INTEGER NOT NULL,
+                    fileId INTEGER NOT NULL,
+                    thumbnailSignature TEXT NOT NULL,
+                    PRIMARY KEY(settingId, fileId),
+                    FOREIGN KEY(fileId) REFERENCES cached_files(fileId) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO similarity_exact_thumbnail_features_file_id (
+                    settingId,
+                    fileId,
+                    thumbnailSignature
+                )
+                SELECT
+                    feature.settingId,
+                    file.fileId,
+                    feature.thumbnailSignature
+                FROM similarity_exact_thumbnail_features AS feature
+                INNER JOIN cached_files AS file
+                    ON file.normalizedPath = feature.normalizedPath
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE similarity_duration_features_file_id (
+                    settingId INTEGER NOT NULL,
+                    fileId INTEGER NOT NULL,
+                    durationMillis INTEGER NOT NULL,
+                    PRIMARY KEY(settingId, fileId),
+                    FOREIGN KEY(fileId) REFERENCES cached_files(fileId) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO similarity_duration_features_file_id (
+                    settingId,
+                    fileId,
+                    durationMillis
+                )
+                SELECT
+                    feature.settingId,
+                    file.fileId,
+                    feature.durationMillis
+                FROM similarity_duration_features AS feature
+                INNER JOIN cached_files AS file
+                    ON file.normalizedPath = feature.normalizedPath
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE similarity_cluster_members_file_id (
+                    clusterId INTEGER NOT NULL,
+                    fileId INTEGER NOT NULL,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY(clusterId, fileId),
+                    FOREIGN KEY(fileId) REFERENCES cached_files(fileId) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO similarity_cluster_members_file_id (
+                    clusterId,
+                    fileId,
+                    position
+                )
+                SELECT
+                    member.clusterId,
+                    file.fileId,
+                    member.position
+                FROM similarity_cluster_members AS member
+                INNER JOIN cached_files AS file
+                    ON file.normalizedPath = member.normalizedPath
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_cluster_members_file_id_migration_clusterId
+                ON similarity_cluster_members_file_id(clusterId)
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                UPDATE similarity_clusters
+                SET fileCount = (
+                        SELECT COUNT(*)
+                        FROM similarity_cluster_members_file_id AS member
+                        WHERE member.clusterId = similarity_clusters.clusterId
+                    ),
+                    totalBytes = (
+                        SELECT COALESCE(SUM(file.sizeBytes), 0)
+                        FROM similarity_cluster_members_file_id AS member
+                        INNER JOIN cached_files AS file
+                            ON file.fileId = member.fileId
+                        WHERE member.clusterId = similarity_clusters.clusterId
+                    )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                DELETE FROM similarity_cluster_members_file_id
+                WHERE clusterId IN (
+                    SELECT clusterId
+                    FROM similarity_clusters
+                    WHERE fileCount <= 1
+                )
+                """.trimIndent()
+            )
+            db.execSQL("DELETE FROM similarity_clusters WHERE fileCount <= 1")
+
+            db.execSQL("DROP TABLE similarity_setting_files")
+            db.execSQL("DROP TABLE similarity_exact_thumbnail_features")
+            db.execSQL("DROP TABLE similarity_duration_features")
+            db.execSQL("DROP TABLE similarity_cluster_members")
+            db.execSQL("ALTER TABLE similarity_setting_files_file_id RENAME TO similarity_setting_files")
+            db.execSQL(
+                "ALTER TABLE similarity_exact_thumbnail_features_file_id " +
+                    "RENAME TO similarity_exact_thumbnail_features"
+            )
+            db.execSQL(
+                "ALTER TABLE similarity_duration_features_file_id " +
+                    "RENAME TO similarity_duration_features"
+            )
+            db.execSQL("ALTER TABLE similarity_cluster_members_file_id RENAME TO similarity_cluster_members")
+            db.execSQL("DROP TABLE cached_files_path_key")
+
+            db.execSQL("CREATE INDEX index_cached_files_sizeBytes ON cached_files(sizeBytes)")
+            db.execSQL("CREATE INDEX index_cached_files_hashHex ON cached_files(hashHex)")
+            db.execSQL(
+                "CREATE INDEX index_cached_files_sizeBytes_hashHex " +
+                    "ON cached_files(sizeBytes, hashHex)"
+            )
+            db.execSQL(
+                "CREATE INDEX index_cached_files_sizeBytes_normalizedPath " +
+                    "ON cached_files(sizeBytes, normalizedPath)"
+            )
+            db.execSQL(
+                "CREATE INDEX index_cached_files_lastModifiedMillis_normalizedPath " +
+                    "ON cached_files(lastModifiedMillis, normalizedPath)"
+            )
+            db.execSQL(
+                "CREATE INDEX index_similarity_setting_files_fileId " +
+                    "ON similarity_setting_files(fileId)"
+            )
+            db.execSQL(
+                "CREATE INDEX index_similarity_setting_files_settingId_status " +
+                    "ON similarity_setting_files(settingId, status)"
+            )
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_exact_thumbnail_features_signature
+                ON similarity_exact_thumbnail_features(settingId, thumbnailSignature, fileId)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX index_similarity_exact_thumbnail_features_fileId " +
+                    "ON similarity_exact_thumbnail_features(fileId)"
+            )
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_duration_features_duration
+                ON similarity_duration_features(settingId, durationMillis, fileId)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX index_similarity_duration_features_fileId " +
+                    "ON similarity_duration_features(fileId)"
+            )
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_cluster_members_clusterId_position
+                ON similarity_cluster_members(clusterId, position)
+                """.trimIndent()
+            )
+            db.execSQL("DROP INDEX index_similarity_cluster_members_file_id_migration_clusterId")
+            db.execSQL(
+                "CREATE INDEX index_similarity_cluster_members_fileId " +
+                    "ON similarity_cluster_members(fileId)"
+            )
+        }
+    }
+
 }
 
 private data class MigrationSimilarityClusterMember(

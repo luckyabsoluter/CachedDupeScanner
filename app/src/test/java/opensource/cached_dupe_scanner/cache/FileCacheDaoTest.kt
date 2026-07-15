@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,6 +17,42 @@ class FileCacheDaoTest {
         return Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+    }
+
+    @Test
+    fun upsertPreservesGeneratedFileIdForExistingPath() {
+        val db = newDb()
+        try {
+            val dao = db.fileCacheDao()
+            val original = CachedFileEntity(
+                normalizedPath = "/stable-id.mp4",
+                path = "/stable-id.mp4",
+                sizeBytes = 10L,
+                lastModifiedMillis = 20L,
+                hashHex = null
+            )
+
+            dao.upsert(original)
+            val inserted = requireNotNull(dao.getByNormalizedPath(original.normalizedPath))
+            dao.upsert(
+                original.copy(
+                    sizeBytes = 30L,
+                    lastModifiedMillis = 40L,
+                    hashHex = "updated"
+                )
+            )
+            val updated = requireNotNull(dao.getByNormalizedPath(original.normalizedPath))
+            dao.upsert(original.copy(normalizedPath = "/second.mp4", path = "/second.mp4"))
+            val second = requireNotNull(dao.getByNormalizedPath("/second.mp4"))
+
+            assertTrue(inserted.fileId > 0L)
+            assertEquals(inserted.fileId, updated.fileId)
+            assertEquals(30L, updated.sizeBytes)
+            assertEquals("updated", updated.hashHex)
+            assertNotEquals(inserted.fileId, second.fileId)
+        } finally {
+            db.close()
+        }
     }
 
     @Test
