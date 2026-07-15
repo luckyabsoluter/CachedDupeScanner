@@ -2,12 +2,15 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
+import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 
 internal const val DEFAULT_PREVIEW_SIZE_PERCENT = 100
 
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
     val skipTrashBinContentsInScan: Boolean,
+    val scanWorkerCount: Int,
     val hideZeroSizeInResults: Boolean,
     val showMemoryOverlay: Boolean,
     val keepLoadedThumbnailsInMemory: Boolean,
@@ -46,6 +49,10 @@ class AppSettingsStore(context: Context) {
 
     fun setSkipTrashBinContentsInScan(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, enabled).apply()
+    }
+
+    fun setScanWorkerCount(value: Int) {
+        prefs.edit().putInt(KEY_SCAN_WORKER_COUNT, sanitizeScanWorkerCount(value)).apply()
     }
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
@@ -168,6 +175,9 @@ class AppSettingsStore(context: Context) {
                 KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
                 DEFAULT_SETTINGS.skipTrashBinContentsInScan
             ),
+            scanWorkerCount = sanitizeScanWorkerCount(
+                prefs.getInt(KEY_SCAN_WORKER_COUNT, DEFAULT_SETTINGS.scanWorkerCount)
+            ),
             hideZeroSizeInResults = prefs.getBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -256,6 +266,9 @@ class AppSettingsStore(context: Context) {
                 KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
                 DEFAULT_SETTINGS.skipTrashBinContentsInScan
             ),
+            scanWorkerCount = sanitizeScanWorkerCount(
+                obj.optInt(KEY_SCAN_WORKER_COUNT, DEFAULT_SETTINGS.scanWorkerCount)
+            ),
             hideZeroSizeInResults = obj.optBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -337,6 +350,7 @@ class AppSettingsStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
+            .putInt(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -370,6 +384,7 @@ class AppSettingsStore(context: Context) {
         return org.json.JSONObject()
             .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
+            .put(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -407,6 +422,7 @@ class AppSettingsStore(context: Context) {
         private val DEFAULT_SETTINGS = AppSettings(
             skipZeroSizeInDb = true,
             skipTrashBinContentsInScan = true,
+            scanWorkerCount = defaultScanWorkerCount(),
             hideZeroSizeInResults = false,
             showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
@@ -434,6 +450,7 @@ class AppSettingsStore(context: Context) {
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
+        private const val KEY_SCAN_WORKER_COUNT = "scan_worker_count"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"

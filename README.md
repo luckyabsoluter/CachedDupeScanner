@@ -30,7 +30,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Export**: JSON/CSV utilities for results.
 - **System-wide task monitoring**: floating banners and draggable bubble UI to track long-running operations (scans, DB, trash) across screens.
 - **Background reliability**: Uses partial WakeLocks to ensure tasks run smoothly without interruption.
-- **Performance controls**: optional memory usage overlay, shared RAM thumbnail retention, and configurable thumbnail/timeline preview sizing for heavy workloads.
+- **Performance controls**: configurable 1-32 scan hashing workers, optional memory usage overlay, shared RAM thumbnail retention, and configurable thumbnail/timeline preview sizing for heavy workloads.
 - **Rich media previews**: Timeline video preview mode with a dedicated RAM cache policy, width snapping, and multi-line frame rows.
 - **Smart filters**: Saved filters, per-rule any/all member matching, same-folder and same-size group rules, similarity same-resolution and average-duration rules, and modified-time rules that persist across sessions.
 - **Advanced bulk delete**: Full-candidate previews support keeping exactly one, at least one, or an exact custom count of matching or non-matching files by text rule, or keeping the oldest, newest, shortest-duration, or longest-duration file, with modified-time fallback for equal video durations.
@@ -42,7 +42,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 1. **Collect files**: `FileWalker` gathers file metadata.
 2. **Select candidates**: only size-collision files become hash candidates.
 3. **Cache lookup**: `CacheStore` checks FRESH/STALE/MISS state.
-4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates.
+4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates through the configured bounded worker pool.
 5. **Group results**: duplicates are grouped by hash and persisted.
 
 ## Cache policy (current)

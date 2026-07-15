@@ -6,12 +6,19 @@ import opensource.cached_dupe_scanner.core.DuplicateGroup
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanCacheSnapshot
 import opensource.cached_dupe_scanner.core.ScanResult
+import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 import java.io.File
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class IncrementalScanner(
     private val cacheStore: CacheStore,
     private val fileHasher: FileHasher = Sha256FileHasher(),
-    private val fileWalker: FileWalker = FileWalker()
+    private val fileWalker: FileWalker = FileWalker(),
+    private val workerCountProvider: () -> Int = { 1 }
 ) {
     fun scan(
         root: File,
@@ -21,6 +28,7 @@ class IncrementalScanner(
         shouldContinue: () -> Boolean = { true }
     ): ScanResult {
         val scannedAtMillis = System.currentTimeMillis()
+        val workerCount = sanitizeScanWorkerCount(workerCountProvider())
         val files = mutableListOf<FileMetadata>()
 
         val scanned = mutableListOf<FileMetadata>()
@@ -111,14 +119,29 @@ class IncrementalScanner(
             )
         }
         val candidatePaths = candidates.map { it.normalizedPath }.toSet()
-        val hashTargets = candidates.filter {
+        val scannedHashTargets = candidates.filter {
             val cached = lookupByPath[it.normalizedPath]
             cached == null ||
                 cached.status != CacheStatus.FRESH ||
                 cached.cached?.hashHex == null
-        }.toSet() + missingCachedCandidates
-        val totalHash = hashTargets.size
-        var hashCount = 0
+        }
+        val hashWorkItems = scannedHashTargets.map { metadata ->
+            HashWorkItem(metadata = metadata, repairCachedEntry = false)
+        } + missingCachedCandidates.map { metadata ->
+            HashWorkItem(metadata = metadata, repairCachedEntry = true)
+        }
+        val hashBatch = hashFiles(
+            workItems = hashWorkItems,
+            workerCount = workerCount,
+            shouldContinue = shouldContinue,
+            onCompleted = { processed, total, current ->
+                onProgress(processed, total, current, ScanPhase.Hashing)
+            }
+        ) ?: return ScanResult(
+            scannedAtMillis = scannedAtMillis,
+            files = emptyList(),
+            duplicateGroups = emptyList()
+        )
 
         uniqueScanned.forEach { current ->
             if (!shouldContinue()) {
@@ -134,19 +157,12 @@ class IncrementalScanner(
                     cached?.status == CacheStatus.FRESH && cached.cached?.hashHex != null -> {
                         cached.cached.hashHex
                     }
-                    else -> {
-                        val computed = fileHasher.hash(File(current.path), shouldContinue)
-                        if (computed == null) {
-                            return ScanResult(
-                                scannedAtMillis = scannedAtMillis,
-                                files = files,
-                                duplicateGroups = emptyList()
-                            )
-                        }
-                        hashCount += 1
-                        onProgress(hashCount, totalHash, current, ScanPhase.Hashing)
-                        computed
-                    }
+                    else -> hashBatch.hashesByPath[current.normalizedPath]
+                        ?: return ScanResult(
+                            scannedAtMillis = scannedAtMillis,
+                            files = emptyList(),
+                            duplicateGroups = emptyList()
+                        )
                 }
                 current.copy(hashHex = hashHex)
             } else {
@@ -157,39 +173,7 @@ class IncrementalScanner(
             pending.add(finalMetadata)
             // progress for hashing is reported only when actual hashing occurs
         }
-
-        missingCachedCandidates.forEach { cachedCandidate ->
-            if (!shouldContinue()) {
-                return ScanResult(
-                    scannedAtMillis = scannedAtMillis,
-                    files = files,
-                    duplicateGroups = emptyList()
-                )
-            }
-            val file = File(cachedCandidate.path)
-            if (!file.exists()) return@forEach
-            val computed = runCatching {
-                fileHasher.hash(file, shouldContinue)
-            }.getOrNull()
-            if (computed == null) {
-                if (!shouldContinue()) {
-                    return ScanResult(
-                        scannedAtMillis = scannedAtMillis,
-                        files = files,
-                        duplicateGroups = emptyList()
-                    )
-                }
-                return@forEach
-            }
-            hashCount += 1
-            val repaired = cachedCandidate.copy(
-                sizeBytes = file.length(),
-                lastModifiedMillis = file.lastModified(),
-                hashHex = computed
-            )
-            pending.add(repaired)
-            onProgress(hashCount, totalHash, repaired, ScanPhase.Hashing)
-        }
+        pending.addAll(hashBatch.repairedCandidates)
 
         if (!shouldContinue()) {
             return ScanResult(
@@ -237,4 +221,153 @@ class IncrementalScanner(
             cacheSnapshots = cacheSnapshots.values.toList()
         )
     }
+
+    private fun hashFiles(
+        workItems: List<HashWorkItem>,
+        workerCount: Int,
+        shouldContinue: () -> Boolean,
+        onCompleted: (processed: Int, total: Int, current: FileMetadata) -> Unit
+    ): HashBatchResult? {
+        if (workItems.isEmpty()) return HashBatchResult(emptyMap(), emptyList())
+        val concurrency = workerCount.coerceAtMost(workItems.size)
+        val threadIndex = AtomicInteger(0)
+        val executor = Executors.newFixedThreadPool(concurrency) { runnable ->
+            Thread(
+                runnable,
+                "CachedDupeScanner-Hash-${threadIndex.incrementAndGet()}"
+            ).apply {
+                isDaemon = true
+            }
+        }
+        val completionService = ExecutorCompletionService<HashWorkResult>(executor)
+        val hashesByPath = linkedMapOf<String, String>()
+        val repairedCandidates = mutableListOf<FileMetadata>()
+        var nextIndex = 0
+        var inFlight = 0
+        var processed = 0
+
+        fun submitNext() {
+            val workItem = workItems[nextIndex]
+            nextIndex += 1
+            inFlight += 1
+            completionService.submit(
+                Callable {
+                    hashWorkItem(
+                        workItem = workItem,
+                        shouldContinue = shouldContinue
+                    )
+                }
+            )
+        }
+
+        repeat(concurrency) { submitNext() }
+        try {
+            while (inFlight > 0) {
+                if (!shouldContinue()) return null
+                val completedFuture = try {
+                    completionService.poll(HASH_COMPLETION_POLL_MILLIS, TimeUnit.MILLISECONDS)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                } ?: continue
+                inFlight -= 1
+                val result = completedFuture.get()
+                result.failure?.let { failure -> throw failure }
+                if (result.skipped) {
+                    if (nextIndex < workItems.size) {
+                        if (!shouldContinue()) return null
+                        submitNext()
+                    }
+                    continue
+                }
+                if (!shouldContinue()) return null
+                val hashHex = result.hashHex ?: return null
+                val metadata = result.metadata ?: return null
+                if (result.workItem.repairCachedEntry) {
+                    repairedCandidates += metadata
+                } else {
+                    hashesByPath[result.workItem.metadata.normalizedPath] = hashHex
+                }
+                processed += 1
+                onCompleted(processed, workItems.size, metadata)
+                if (nextIndex < workItems.size) {
+                    if (!shouldContinue()) return null
+                    submitNext()
+                }
+            }
+        } finally {
+            executor.shutdownNow()
+            try {
+                executor.awaitTermination(HASH_EXECUTOR_SHUTDOWN_SECONDS, TimeUnit.SECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        return HashBatchResult(
+            hashesByPath = hashesByPath,
+            repairedCandidates = repairedCandidates
+        )
+    }
+
+    private fun hashWorkItem(
+        workItem: HashWorkItem,
+        shouldContinue: () -> Boolean
+    ): HashWorkResult {
+        if (!shouldContinue()) return HashWorkResult(workItem = workItem)
+        val file = File(workItem.metadata.path)
+        if (workItem.repairCachedEntry && !file.exists()) {
+            return HashWorkResult(workItem = workItem, skipped = true)
+        }
+        return try {
+            val hashHex = fileHasher.hash(file, shouldContinue)
+            if (hashHex == null) {
+                HashWorkResult(
+                    workItem = workItem,
+                    skipped = workItem.repairCachedEntry && shouldContinue()
+                )
+            } else {
+                val metadata = if (workItem.repairCachedEntry) {
+                    workItem.metadata.copy(
+                        sizeBytes = file.length(),
+                        lastModifiedMillis = file.lastModified(),
+                        hashHex = hashHex
+                    )
+                } else {
+                    workItem.metadata.copy(hashHex = hashHex)
+                }
+                HashWorkResult(
+                    workItem = workItem,
+                    hashHex = hashHex,
+                    metadata = metadata
+                )
+            }
+        } catch (error: Exception) {
+            if (workItem.repairCachedEntry) {
+                HashWorkResult(workItem = workItem, skipped = true)
+            } else {
+                HashWorkResult(workItem = workItem, failure = error)
+            }
+        }
+    }
 }
+
+private data class HashWorkItem(
+    val metadata: FileMetadata,
+    val repairCachedEntry: Boolean
+)
+
+private data class HashWorkResult(
+    val workItem: HashWorkItem,
+    val hashHex: String? = null,
+    val metadata: FileMetadata? = null,
+    val skipped: Boolean = false,
+    val failure: Exception? = null
+)
+
+private data class HashBatchResult(
+    val hashesByPath: Map<String, String>,
+    val repairedCandidates: List<FileMetadata>
+)
+
+private const val HASH_COMPLETION_POLL_MILLIS = 100L
+private const val HASH_EXECUTOR_SHUTDOWN_SECONDS = 5L

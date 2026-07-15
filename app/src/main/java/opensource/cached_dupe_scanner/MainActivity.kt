@@ -137,7 +137,12 @@ class MainActivity : ComponentActivity() {
                 }
                 val database = remember { buildCacheDatabase(context) }
                 val scanCacheStore = remember { CacheStore(database.fileCacheDao()) }
-                val scanner = remember { IncrementalScanner(scanCacheStore) }
+                val scanner = remember {
+                    IncrementalScanner(
+                        cacheStore = scanCacheStore,
+                        workerCountProvider = { settingsStore.load().scanWorkerCount }
+                    )
+                }
                 val similarityRepo = remember {
                     SimilaritySettingsRepository(
                         database = database,

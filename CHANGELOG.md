@@ -24,6 +24,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Results and Similarity text-rule bulk delete can now keep the matching or non-matching side with an exact-one, one-or-more, or exact custom-count requirement before deleting the opposite set.
 - Results and Similarity file-name, folder, and modified-time rules now branch to `Any member` or `All members` inside each rule, with existing saved rules retaining `Any member` behavior.
 - Similarity result clearing now publishes shared task progress and failure or cancellation outcomes, with a separate resumable incremental clear for recovering large or interrupted result sets in bounded commits.
+- Settings now provides a 1-32 scan worker control that persists through preference export and import, bounds concurrent SHA-256 hashing, and applies when each scan starts.
 
 ### Changed
 
@@ -99,6 +100,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Size-collision hash candidates now run through a bounded worker pool while progress collection and cache writes remain serialized.
 - Similarity group page queries now use setting-aware sort indexes for file-count and total-size ordering.
 - Similarity group browsing now loads stored group rows by page and uses aggregate summaries instead of materializing every group.
 - Similarity group detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.

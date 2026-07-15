@@ -28,9 +28,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import opensource.cached_dupe_scanner.core.MAX_SCAN_WORKER_COUNT
+import opensource.cached_dupe_scanner.core.MIN_SCAN_WORKER_COUNT
 import opensource.cached_dupe_scanner.storage.AppSettings
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.ScanTargetStore
@@ -50,6 +53,7 @@ fun SettingsScreen(
     val targetStore = remember { ScanTargetStore(context) }
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
+    val scanWorkerSection = scanWorkerSettingsSection()
     val trashScanSection = trashScanSettingsSection(settings.value)
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
@@ -109,6 +113,17 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AppTopBar(title = "Settings", onBack = onBack)
+
+            SettingsSectionCard(section = scanWorkerSection) {
+                ScanWorkerCountSettingControl(
+                    selectedCount = settings.value.scanWorkerCount,
+                    onCountSelected = { count ->
+                        settingsStore.setScanWorkerCount(count)
+                        settings.value = settings.value.copy(scanWorkerCount = count)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
 
             SettingsSectionCard(section = zeroSizeSection) {
                 zeroSizeSection.toggles.forEachIndexed { index, toggle ->
@@ -445,6 +460,37 @@ private fun PreviewLineCountSettingControl(
 }
 
 @Composable
+private fun ScanWorkerCountSettingControl(
+    selectedCount: Int,
+    onCountSelected: (Int) -> Unit
+) {
+    val inputValue = remember(selectedCount) { mutableStateOf(selectedCount.toString()) }
+
+    DraftNumberSettingControl(
+        currentValue = selectedCount,
+        currentText = "$selectedCount threads",
+        inputValue = inputValue.value,
+        inputLabel = "Worker threads",
+        stepLabels = listOf("-4" to -4, "-1" to -1, "+1" to 1, "+4" to 4),
+        minValue = MIN_SCAN_WORKER_COUNT,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedCount,
+                delta = delta,
+                minValue = MIN_SCAN_WORKER_COUNT,
+                maxValue = MAX_SCAN_WORKER_COUNT
+            )
+        },
+        onApply = onCountSelected,
+        maxValue = MAX_SCAN_WORKER_COUNT,
+        inputTestTag = "scan-worker-count-input",
+        applyTestTag = "scan-worker-count-apply"
+    )
+}
+
+@Composable
 private fun DraftNumberSettingControl(
     currentValue: Int,
     currentText: String,
@@ -454,12 +500,16 @@ private fun DraftNumberSettingControl(
     minValue: Int,
     onInputValueChange: (String) -> Unit,
     onStep: (Int) -> Unit,
-    onApply: (Int) -> Unit
+    onApply: (Int) -> Unit,
+    maxValue: Int? = null,
+    inputTestTag: String? = null,
+    applyTestTag: String? = null
 ) {
     val draftValue = normalizedDraftValue(
         input = inputValue,
         fallback = currentValue,
-        minValue = minValue
+        minValue = minValue,
+        maxValue = maxValue
     )
     val canApply = inputValue.isNotBlank() && draftValue != currentValue
 
@@ -478,7 +528,11 @@ private fun DraftNumberSettingControl(
             OutlinedTextField(
                 value = inputValue,
                 onValueChange = onInputValueChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .let { inputModifier ->
+                        if (inputTestTag == null) inputModifier else inputModifier.testTag(inputTestTag)
+                    },
                 label = { Text(inputLabel) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -486,7 +540,11 @@ private fun DraftNumberSettingControl(
             Button(
                 onClick = { onApply(draftValue) },
                 enabled = canApply,
-                modifier = Modifier.widthIn(min = 88.dp)
+                modifier = Modifier
+                    .widthIn(min = 88.dp)
+                    .let { applyModifier ->
+                        if (applyTestTag == null) applyModifier else applyModifier.testTag(applyTestTag)
+                    }
             ) {
                 Text("Apply")
             }
@@ -517,17 +575,31 @@ internal fun sanitizeNumberDraftInput(raw: String): String {
     return raw.filter { it.isDigit() }
 }
 
-internal fun normalizedDraftValue(input: String, fallback: Int, minValue: Int): Int {
-    return (input.toIntOrNull() ?: fallback).coerceAtLeast(minValue)
+internal fun normalizedDraftValue(
+    input: String,
+    fallback: Int,
+    minValue: Int,
+    maxValue: Int? = null
+): Int {
+    val upperBound = maxValue?.coerceAtLeast(minValue) ?: Int.MAX_VALUE
+    return (input.toIntOrNull() ?: fallback).coerceIn(minValue, upperBound)
 }
 
-internal fun adjustedDraftInput(input: String, fallback: Int, delta: Int, minValue: Int): String {
+internal fun adjustedDraftInput(
+    input: String,
+    fallback: Int,
+    delta: Int,
+    minValue: Int,
+    maxValue: Int? = null
+): String {
+    val upperBound = maxValue?.coerceAtLeast(minValue) ?: Int.MAX_VALUE
     val next = normalizedDraftValue(
         input = input,
         fallback = fallback,
-        minValue = minValue
-    ) + delta
-    return next.coerceAtLeast(minValue).toString()
+        minValue = minValue,
+        maxValue = maxValue
+    ).toLong() + delta
+    return next.coerceIn(minValue.toLong(), upperBound.toLong()).toString()
 }
 
 internal data class SettingsSectionModel(
@@ -551,6 +623,13 @@ internal enum class ToggleSettingId {
     KeepLoadedThumbnailsInMemory,
     KeepLoadedVideoPreviewsInMemory,
     SnapVideoPreviewFramesToWidth
+}
+
+internal fun scanWorkerSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "Scan worker threads",
+        description = "Choose 1 to 32 concurrent SHA-256 hashing workers. One thread is sequential; changes apply to the next scan."
+    )
 }
 
 internal fun zeroSizeSettingsSection(settings: AppSettings): SettingsSectionModel {

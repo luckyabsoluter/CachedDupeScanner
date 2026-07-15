@@ -2,6 +2,9 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import opensource.cached_dupe_scanner.core.MAX_SCAN_WORKER_COUNT
+import opensource.cached_dupe_scanner.core.MIN_SCAN_WORKER_COUNT
+import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +40,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
         assertFalse(settings.snapVideoPreviewFramesToWidth)
+        assertEquals(defaultScanWorkerCount(), settings.scanWorkerCount)
         assertEquals(1, settings.videoPreviewLineCount)
         assertEquals(100, settings.thumbnailSizePercent)
         assertEquals(100, settings.videoPreviewSizePercent)
@@ -82,6 +86,9 @@ class AppSettingsStoreTest {
 
         store.setSnapVideoPreviewFramesToWidth(true)
         assertTrue(store.load().snapVideoPreviewFramesToWidth)
+
+        store.setScanWorkerCount(6)
+        assertEquals(6, store.load().scanWorkerCount)
 
         store.setVideoPreviewLineCount(3)
         assertEquals(3, store.load().videoPreviewLineCount)
@@ -157,6 +164,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
         assertFalse(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(defaultScanWorkerCount(), imported.scanWorkerCount)
         assertEquals(1, imported.videoPreviewLineCount)
         assertEquals(100, imported.thumbnailSizePercent)
         assertEquals(100, imported.videoPreviewSizePercent)
@@ -184,6 +192,7 @@ class AppSettingsStoreTest {
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setKeepLoadedVideoPreviewsInMemory(false)
         store.setSnapVideoPreviewFramesToWidth(true)
+        store.setScanWorkerCount(7)
         store.setVideoPreviewLineCount(4)
         store.setThumbnailSizePercent(125)
         store.setVideoPreviewSizePercent(80)
@@ -215,6 +224,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
         assertTrue(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(7, imported.scanWorkerCount)
         assertEquals(4, imported.videoPreviewLineCount)
         assertEquals(125, imported.thumbnailSizePercent)
         assertEquals(80, imported.videoPreviewSizePercent)
@@ -264,6 +274,24 @@ class AppSettingsStoreTest {
 
         store.setVideoPreviewLineCount(-9)
         assertEquals(1, store.load().videoPreviewLineCount)
+    }
+
+    @Test
+    fun scanWorkerCountIsBoundedWhenStoredOrImported() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setScanWorkerCount(0)
+        assertEquals(MIN_SCAN_WORKER_COUNT, store.load().scanWorkerCount)
+
+        store.setScanWorkerCount(Int.MAX_VALUE)
+        assertEquals(MAX_SCAN_WORKER_COUNT, store.load().scanWorkerCount)
+
+        val importedLow = store.importFromJson("{\"scan_worker_count\":0}")
+        assertEquals(MIN_SCAN_WORKER_COUNT, importedLow.scanWorkerCount)
+
+        val importedHigh = store.importFromJson("{\"scan_worker_count\":999}")
+        assertEquals(MAX_SCAN_WORKER_COUNT, importedHigh.scanWorkerCount)
     }
 
     private fun clearSettings() {
