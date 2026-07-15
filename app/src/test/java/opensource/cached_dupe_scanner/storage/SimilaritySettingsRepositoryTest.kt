@@ -10,6 +10,12 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
+import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureEntity
+import opensource.cached_dupe_scanner.cache.SimilarityExactThumbnailFeatureEntity
+import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
+import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
@@ -880,10 +886,153 @@ class SimilaritySettingsRepositoryTest {
         )
         repository.runSettingMaintenance(setting.settingId, rebuild = true, shouldContinue = { true }, onProgress = {})
 
-        repository.clearSettingResults(setting.settingId)
+        val progressUpdates = mutableListOf<SimilarityClearProgress>()
+        val summary = repository.clearSettingResults(
+            settingId = setting.settingId,
+            mode = SimilarityClearMode.Standard,
+            shouldContinue = { true },
+            onProgress = progressUpdates::add
+        )
 
         assertTrue(repository.listClusters(setting.settingId).isEmpty())
         assertEquals(setting.settingId, repository.listSettings().first { it.settingId == setting.settingId }.settingId)
+        assertFalse(summary.cancelled)
+        assertEquals(summary.total, summary.processed)
+        assertEquals(0, summary.remaining)
+        assertEquals(
+            listOf(
+                SimilarityClearPhase.Preparing,
+                SimilarityClearPhase.Clusters,
+                SimilarityClearPhase.FilesAndFeatures,
+                SimilarityClearPhase.History
+            ),
+            progressUpdates.map { progress -> progress.phase }
+        )
+        assertTrue(progressUpdates.zipWithNext().all { (firstProgress, secondProgress) ->
+            secondProgress.processed >= firstProgress.processed
+        })
+        assertEquals(0, similarityRowsForSetting(setting.settingId))
+    }
+
+    @Test
+    fun incrementalClearCommitsBoundedClusterMemberBatchesAndResumesRemainingRows() {
+        val repository = repository()
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        val dao = database.similaritySettingsDao()
+        val paths = (0 until 205).map { index -> "/virtual/clear-$index.mp4" }
+        dao.upsertSettingFiles(
+            paths.map { path ->
+                SimilaritySettingFileEntity(
+                    settingId = setting.settingId,
+                    normalizedPath = path,
+                    sizeBytes = 10L,
+                    lastModifiedMillis = 1L,
+                    status = "ready",
+                    widthPixels = null,
+                    heightPixels = null,
+                    dimensionsChecked = false,
+                    durationChecked = false,
+                    updatedAtMillis = 1L
+                )
+            }
+        )
+        dao.upsertExactThumbnailFeatures(
+            paths.map { path ->
+                SimilarityExactThumbnailFeatureEntity(
+                    settingId = setting.settingId,
+                    normalizedPath = path,
+                    thumbnailSignature = "same"
+                )
+            }
+        )
+        dao.upsertDurationFeatures(
+            listOf(
+                SimilarityDurationFeatureEntity(
+                    settingId = setting.settingId,
+                    normalizedPath = "/virtual/orphan-duration.mp4",
+                    durationMillis = 1_000L
+                )
+            )
+        )
+        val clusterId = dao.insertCluster(
+            SimilarityClusterEntity(
+                settingId = setting.settingId,
+                clusterKey = "large-cluster",
+                fileCount = paths.size,
+                totalBytes = paths.size * 10L,
+                updatedAtMillis = 1L
+            )
+        )
+        dao.upsertClusterMembers(
+            paths.mapIndexed { index, path ->
+                SimilarityClusterMemberEntity(
+                    clusterId = clusterId,
+                    normalizedPath = path,
+                    position = index
+                )
+            }
+        )
+        dao.insertMaintenanceRun(
+            SimilarityMaintenanceRunEntity(
+                settingId = setting.settingId,
+                startedAtMillis = 1L,
+                finishedAtMillis = 2L,
+                candidateCount = paths.size,
+                processedCount = paths.size,
+                skippedCount = 0,
+                clusterCount = 1,
+                duplicateFileCount = paths.size,
+                cancelled = false
+            )
+        )
+        var keepRunning = true
+        val firstProgress = mutableListOf<SimilarityClearProgress>()
+
+        val cancelled = repository.clearSettingResults(
+            settingId = setting.settingId,
+            mode = SimilarityClearMode.Incremental,
+            shouldContinue = { keepRunning },
+            onProgress = { progress ->
+                firstProgress += progress
+                if (progress.phase == SimilarityClearPhase.ClusterMembers && progress.processed > 0) {
+                    keepRunning = false
+                }
+            }
+        )
+
+        assertTrue(cancelled.cancelled)
+        assertEquals(100, cancelled.processed)
+        assertEquals(100, firstProgress.last().processed)
+        assertEquals(105, dao.countClusterMembersForSetting(setting.settingId))
+        assertEquals(paths.drop(100), dao.listClusterMemberPathsForClear(clusterId, limit = paths.size))
+        val remainingCluster = requireNotNull(repository.getCluster(setting.settingId, clusterId))
+        assertEquals(105, remainingCluster.fileCount)
+        assertEquals(1_050L, remainingCluster.totalBytes)
+        assertTrue(cancelled.remaining > 0)
+
+        val resumedProgress = mutableListOf<SimilarityClearProgress>()
+        val completed = repository.clearSettingResults(
+            settingId = setting.settingId,
+            mode = SimilarityClearMode.Incremental,
+            shouldContinue = { true },
+            onProgress = resumedProgress::add
+        )
+
+        assertFalse(completed.cancelled)
+        assertEquals(completed.total, completed.processed)
+        assertEquals(0, completed.remaining)
+        assertEquals(0, similarityRowsForSetting(setting.settingId))
+        assertTrue(repository.listSettings().any { candidate -> candidate.settingId == setting.settingId })
+        assertEquals(
+            3,
+            resumedProgress.count { progress -> progress.phase == SimilarityClearPhase.FilesAndFeatures }
+        )
+        assertTrue(resumedProgress.any { progress -> progress.phase == SimilarityClearPhase.OrphanFeatures })
     }
 
     @Test
@@ -1112,6 +1261,16 @@ class SimilaritySettingsRepositoryTest {
             durationExtractor = FakeDurationExtractor(durations),
             mediaDimensionsExtractor = FakeMediaDimensionsExtractor(dimensions)
         )
+    }
+
+    private fun similarityRowsForSetting(settingId: Long): Int {
+        val dao = database.similaritySettingsDao()
+        return dao.countSettingFiles(settingId) +
+            dao.countExactThumbnailFeatures(settingId) +
+            dao.countDurationFeatures(settingId) +
+            dao.countClustersForSetting(settingId) +
+            dao.countClusterMembersForSetting(settingId) +
+            dao.countMaintenanceRunsForSetting(settingId)
     }
 
     private fun videoFile(name: String): File {

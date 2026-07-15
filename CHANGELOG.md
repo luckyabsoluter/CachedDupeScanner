@@ -23,6 +23,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Results and Similarity bulk delete can now keep the shortest or longest video in each eligible group, using oldest or newest modified time to break equal-duration ties and skipping groups with unreadable durations.
 - Results and Similarity text-rule bulk delete can now keep the matching or non-matching side with an exact-one, one-or-more, or exact custom-count requirement before deleting the opposite set.
 - Results and Similarity file-name, folder, and modified-time rules now branch to `Any member` or `All members` inside each rule, with existing saved rules retaining `Any member` behavior.
+- Similarity result clearing now publishes shared task progress and failure or cancellation outcomes, with a separate resumable incremental clear for recovering large or interrupted result sets in bounded commits.
 
 ### Changed
 

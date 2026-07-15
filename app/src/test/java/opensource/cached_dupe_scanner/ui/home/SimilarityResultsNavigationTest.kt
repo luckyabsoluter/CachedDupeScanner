@@ -52,6 +52,7 @@ import opensource.cached_dupe_scanner.storage.TrashController
 import opensource.cached_dupe_scanner.storage.TrashRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
 import opensource.cached_dupe_scanner.tasks.TaskStatus
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -131,6 +132,44 @@ class SimilarityResultsNavigationTest {
 
         composeRule.runOnIdle {
             assertEquals(fixture.settingId, openedSettingId)
+        }
+    }
+
+    @Test
+    fun settingDetailIncrementalClearRunsTrackedTaskAndKeepsSetting() {
+        val fixture = createSimilarityFixture()
+        val taskCoordinator = TaskCoordinator()
+
+        composeRule.setContent {
+            SimilaritySettingDetailScreen(
+                repository = fixture.repository,
+                appScope = appScope,
+                taskCoordinator = taskCoordinator,
+                notificationController = TaskNotificationController(context),
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                onChanged = {},
+                onBack = {},
+                onOpenGroups = {},
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        scrollUntilText("Incremental clear")
+        composeRule.onNodeWithTag("similarity-incremental-clear")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("Incrementally clear these results?").assertExists()
+        composeRule.onNodeWithText("Clear incrementally").performClick()
+
+        composeRule.waitUntil(5_000) {
+            taskCoordinator.terminalSummary(TaskArea.Similarity)?.status == TaskStatus.Completed
+        }
+        composeRule.runOnIdle {
+            val terminal = requireNotNull(taskCoordinator.terminalSummary(TaskArea.Similarity))
+            assertEquals(TaskKind.SimilarityClear, terminal.kind)
+            assertEquals(0, fixture.repository.getClusterSummary(fixture.settingId).clusterCount)
+            assertTrue(fixture.repository.listSettings().any { setting -> setting.settingId == fixture.settingId })
         }
     }
 

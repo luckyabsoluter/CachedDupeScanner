@@ -168,23 +168,92 @@ interface SimilaritySettingsDao {
     )
     fun deleteDurationFeature(settingId: Long, normalizedPath: String)
 
+    @Query("SELECT COUNT(*) FROM similarity_setting_files WHERE settingId = :settingId")
+    fun countSettingFiles(settingId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
+    fun countExactThumbnailFeatures(settingId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM similarity_duration_features WHERE settingId = :settingId")
+    fun countDurationFeatures(settingId: Long): Int
+
     @Query("DELETE FROM similarity_setting_files WHERE settingId = :settingId")
-    fun deleteSettingFiles(settingId: Long)
+    fun deleteSettingFiles(settingId: Long): Int
 
     @Query("DELETE FROM similarity_setting_files")
     fun deleteAllSettingFiles()
 
     @Query("DELETE FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
-    fun deleteExactThumbnailFeatures(settingId: Long)
+    fun deleteExactThumbnailFeatures(settingId: Long): Int
 
     @Query("DELETE FROM similarity_exact_thumbnail_features")
     fun deleteAllExactThumbnailFeatures()
 
     @Query("DELETE FROM similarity_duration_features WHERE settingId = :settingId")
-    fun deleteDurationFeatures(settingId: Long)
+    fun deleteDurationFeatures(settingId: Long): Int
 
     @Query("DELETE FROM similarity_duration_features")
     fun deleteAllDurationFeatures()
+
+    @Query(
+        """
+        SELECT normalizedPath
+        FROM similarity_setting_files
+        WHERE settingId = :settingId
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listSettingFilePathsForClear(settingId: Long, limit: Int): List<String>
+
+    @Query(
+        """
+        DELETE FROM similarity_setting_files
+        WHERE settingId = :settingId
+          AND normalizedPath IN (:normalizedPaths)
+        """
+    )
+    fun deleteSettingFilesForSettingByPaths(settingId: Long, normalizedPaths: List<String>): Int
+
+    @Query(
+        """
+        SELECT normalizedPath
+        FROM similarity_exact_thumbnail_features
+        WHERE settingId = :settingId
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listExactThumbnailFeaturePathsForClear(settingId: Long, limit: Int): List<String>
+
+    @Query(
+        """
+        DELETE FROM similarity_exact_thumbnail_features
+        WHERE settingId = :settingId
+          AND normalizedPath IN (:normalizedPaths)
+        """
+    )
+    fun deleteExactThumbnailFeaturesForSettingByPaths(settingId: Long, normalizedPaths: List<String>): Int
+
+    @Query(
+        """
+        SELECT normalizedPath
+        FROM similarity_duration_features
+        WHERE settingId = :settingId
+        ORDER BY normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listDurationFeaturePathsForClear(settingId: Long, limit: Int): List<String>
+
+    @Query(
+        """
+        DELETE FROM similarity_duration_features
+        WHERE settingId = :settingId
+          AND normalizedPath IN (:normalizedPaths)
+        """
+    )
+    fun deleteDurationFeaturesForSettingByPaths(settingId: Long, normalizedPaths: List<String>): Int
 
     @Query("DELETE FROM similarity_setting_files WHERE normalizedPath IN (:normalizedPaths)")
     fun deleteSettingFilesByPaths(normalizedPaths: List<String>)
@@ -338,13 +407,13 @@ interface SimilaritySettingsDao {
     fun upsertClusterMembers(members: List<SimilarityClusterMemberEntity>)
 
     @Query("DELETE FROM similarity_cluster_members WHERE clusterId IN (:clusterIds)")
-    fun deleteClusterMembersByIds(clusterIds: List<Long>)
+    fun deleteClusterMembersByIds(clusterIds: List<Long>): Int
 
     @Query("DELETE FROM similarity_cluster_members")
     fun deleteAllClusterMembers()
 
     @Query("DELETE FROM similarity_clusters WHERE clusterId IN (:clusterIds)")
-    fun deleteClustersByIds(clusterIds: List<Long>)
+    fun deleteClustersByIds(clusterIds: List<Long>): Int
 
     @Query("DELETE FROM similarity_clusters")
     fun deleteAllClusters()
@@ -357,13 +426,109 @@ interface SimilaritySettingsDao {
         )
         """
     )
-    fun deleteClusterMembersForSetting(settingId: Long)
+    fun deleteClusterMembersForSetting(settingId: Long): Int
 
     @Query("DELETE FROM similarity_clusters WHERE settingId = :settingId")
-    fun deleteClustersForSetting(settingId: Long)
+    fun deleteClustersForSetting(settingId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM similarity_clusters WHERE settingId = :settingId")
+    fun countClustersForSetting(settingId: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM similarity_cluster_members
+        WHERE clusterId IN (
+            SELECT clusterId FROM similarity_clusters WHERE settingId = :settingId
+        )
+        """
+    )
+    fun countClusterMembersForSetting(settingId: Long): Int
+
+    @Query(
+        """
+        SELECT cluster.clusterId
+        FROM similarity_clusters AS cluster
+        WHERE cluster.settingId = :settingId
+          AND EXISTS (
+              SELECT 1
+              FROM similarity_cluster_members AS member
+              WHERE member.clusterId = cluster.clusterId
+          )
+        ORDER BY cluster.clusterId ASC
+        LIMIT 1
+        """
+    )
+    fun firstClusterIdWithMembersForClear(settingId: Long): Long?
+
+    @Query(
+        """
+        SELECT normalizedPath
+        FROM similarity_cluster_members
+        WHERE clusterId = :clusterId
+        ORDER BY position ASC, normalizedPath ASC
+        LIMIT :limit
+        """
+    )
+    fun listClusterMemberPathsForClear(clusterId: Long, limit: Int): List<String>
+
+    @Query(
+        """
+        DELETE FROM similarity_cluster_members
+        WHERE clusterId = :clusterId
+          AND normalizedPath IN (:normalizedPaths)
+        """
+    )
+    fun deleteClusterMemberPathsForClear(clusterId: Long, normalizedPaths: List<String>): Int
+
+    @Query("SELECT * FROM similarity_clusters WHERE clusterId = :clusterId LIMIT 1")
+    fun getClusterForClear(clusterId: Long): SimilarityClusterEntity?
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(setting_file.sizeBytes), 0)
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.normalizedPath = member.normalizedPath
+        WHERE member.clusterId = :clusterId
+          AND member.normalizedPath IN (:normalizedPaths)
+        """
+    )
+    fun sumClusterMemberBytesForClear(clusterId: Long, normalizedPaths: List<String>): Long
+
+    @Query(
+        """
+        SELECT clusterId
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+        ORDER BY clusterId ASC
+        LIMIT :limit
+        """
+    )
+    fun listClusterIdsForClear(settingId: Long, limit: Int): List<Long>
 
     @Query("DELETE FROM similarity_maintenance_runs WHERE settingId = :settingId")
-    fun deleteMaintenanceRunsForSetting(settingId: Long)
+    fun deleteMaintenanceRunsForSetting(settingId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM similarity_maintenance_runs WHERE settingId = :settingId")
+    fun countMaintenanceRunsForSetting(settingId: Long): Int
+
+    @Query(
+        """
+        SELECT runId
+        FROM similarity_maintenance_runs
+        WHERE settingId = :settingId
+        ORDER BY runId ASC
+        LIMIT :limit
+        """
+    )
+    fun listMaintenanceRunIdsForClear(settingId: Long, limit: Int): List<Long>
+
+    @Query("DELETE FROM similarity_maintenance_runs WHERE runId IN (:runIds)")
+    fun deleteMaintenanceRunsByIds(runIds: List<Long>): Int
 
     @Query("DELETE FROM similarity_maintenance_runs")
     fun deleteAllMaintenanceRuns()

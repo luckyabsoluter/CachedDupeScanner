@@ -95,6 +95,7 @@ import opensource.cached_dupe_scanner.storage.AppSettingsStore
 import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSortColumn
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSummary
+import opensource.cached_dupe_scanner.storage.SimilarityClearMode
 import opensource.cached_dupe_scanner.storage.SimilarityMemberSortColumn
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
@@ -115,6 +116,7 @@ import opensource.cached_dupe_scanner.ui.home.similarity.parsedFrameSeconds
 import opensource.cached_dupe_scanner.ui.home.similarity.parsedMinSizeBytes
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeFrameSecondsInput
 import opensource.cached_dupe_scanner.ui.home.similarity.sanitizeNumberDraftInput
+import opensource.cached_dupe_scanner.ui.home.similarity.startSimilaritySettingClearTask
 import opensource.cached_dupe_scanner.ui.home.similarity.startSimilaritySettingGenerationTask
 
 private const val SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT = 10
@@ -451,11 +453,11 @@ fun SimilaritySettingDetailScreen(
     var clusterSummary by remember(settingId) { mutableStateOf(SimilarityClusterSummary()) }
     var statusText by remember { mutableStateOf("Scans generate enabled similarity entries; use Update or Rebuild to run this similarity now.") }
     val activeSimilarityTask = taskCoordinator.activeTask(TaskArea.Similarity)
-    val generationRunning = activeSimilarityTask != null
+    val similarityTaskRunning = activeSimilarityTask != null
     val displayedStatusText = activeSimilarityTask?.detail ?: statusText
     var displayNameInput by remember(settingId) { mutableStateOf("") }
     var lastLoadedDisplayName by remember(settingId) { mutableStateOf<String?>(null) }
-    var confirmClearSetting by remember { mutableStateOf(false) }
+    var pendingClearMode by remember { mutableStateOf<SimilarityClearMode?>(null) }
     var confirmDeleteSetting by remember { mutableStateOf(false) }
     fun refresh() {
         scope.launch {
@@ -484,15 +486,23 @@ fun SimilaritySettingDetailScreen(
             refresh()
         }
     }
-    fun clearSettingResults() {
-        confirmClearSetting = false
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                repository.clearSettingResults(settingId)
+    fun clearSettingResults(mode: SimilarityClearMode) {
+        pendingClearMode = null
+        val started = startSimilaritySettingClearTask(
+            repository = repository,
+            settingId = settingId,
+            mode = mode,
+            scope = appScope,
+            taskCoordinator = taskCoordinator,
+            notificationController = notificationController,
+            onStatusText = { status -> statusText = status },
+            onFinished = {
+                onChanged()
+                refresh()
             }
-            statusText = "Generated similarity data was cleared for this similarity."
-            onChanged()
-            refresh()
+        )
+        if (!started) {
+            statusText = "Another similarity task is already running."
         }
     }
     fun runSettingGeneration(rebuild: Boolean) {
@@ -558,7 +568,7 @@ fun SimilaritySettingDetailScreen(
                     onSaveName = ::saveSettingName,
                     nameSaveEnabled = displayNameInput.trim().isNotEmpty() &&
                         displayNameInput.trim() != selectedSetting.displayName,
-                    generationRunning = generationRunning,
+                    similarityTaskRunning = similarityTaskRunning,
                     onToggle = { enabled ->
                         scope.launch {
                             statusText = if (enabled) {
@@ -580,7 +590,8 @@ fun SimilaritySettingDetailScreen(
                     },
                     onUpdate = { runSettingGeneration(rebuild = false) },
                     onRebuild = { runSettingGeneration(rebuild = true) },
-                    onClear = { confirmClearSetting = true },
+                    onClear = { pendingClearMode = SimilarityClearMode.Standard },
+                    onIncrementalClear = { pendingClearMode = SimilarityClearMode.Incremental },
                     onDelete = { confirmDeleteSetting = true }
                 )
             }
@@ -593,13 +604,21 @@ fun SimilaritySettingDetailScreen(
             }
         }
     }
-    if (confirmClearSetting) {
+    pendingClearMode?.let { clearMode ->
         ConfirmationDialog(
-            title = "Clear this similarity's results?",
-            text = "Generated groups and member links for this similarity will be removed. The similarity configuration remains.",
-            confirmText = "Clear",
-            onConfirm = ::clearSettingResults,
-            onDismissRequest = { confirmClearSetting = false },
+            title = if (clearMode == SimilarityClearMode.Incremental) {
+                "Incrementally clear these results?"
+            } else {
+                "Clear this similarity's results?"
+            },
+            text = if (clearMode == SimilarityClearMode.Incremental) {
+                "Generated data will be removed in small committed batches. The operation can be stopped and resumed from the remaining data. The similarity configuration remains."
+            } else {
+                "Generated groups, member links, method features, and maintenance history will be removed in consistent stages. The similarity configuration remains."
+            },
+            confirmText = if (clearMode == SimilarityClearMode.Incremental) "Clear incrementally" else "Clear",
+            onConfirm = { clearSettingResults(clearMode) },
+            onDismissRequest = { pendingClearMode = null },
             confirmStyle = ConfirmationDialogButtonStyle.Outlined
         )
     }
@@ -2149,11 +2168,12 @@ private fun SimilaritySettingDetailCard(
     onDisplayNameInputChange: (String) -> Unit,
     onSaveName: () -> Unit,
     nameSaveEnabled: Boolean,
-    generationRunning: Boolean,
+    similarityTaskRunning: Boolean,
     onToggle: (Boolean) -> Unit,
     onUpdate: () -> Unit,
     onRebuild: () -> Unit,
     onClear: () -> Unit,
+    onIncrementalClear: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -2173,7 +2193,7 @@ private fun SimilaritySettingDetailCard(
                 Switch(
                     checked = setting.enabled,
                     onCheckedChange = onToggle,
-                    enabled = !generationRunning
+                    enabled = !similarityTaskRunning
                 )
             }
             Row(
@@ -2190,7 +2210,7 @@ private fun SimilaritySettingDetailCard(
                 )
                 OutlinedButton(
                     onClick = onSaveName,
-                    enabled = nameSaveEnabled && !generationRunning
+                    enabled = nameSaveEnabled && !similarityTaskRunning
                 ) {
                     Text("Save name")
                 }
@@ -2208,25 +2228,32 @@ private fun SimilaritySettingDetailCard(
             ) {
                 Button(
                     onClick = onUpdate,
-                    enabled = !generationRunning
+                    enabled = !similarityTaskRunning
                 ) {
                     Text("Update")
                 }
                 OutlinedButton(
                     onClick = onRebuild,
-                    enabled = !generationRunning
+                    enabled = !similarityTaskRunning
                 ) {
                     Text("Rebuild")
                 }
                 OutlinedButton(
                     onClick = onClear,
-                    enabled = !generationRunning
+                    enabled = !similarityTaskRunning
                 ) {
                     Text("Clear")
                 }
                 OutlinedButton(
+                    onClick = onIncrementalClear,
+                    enabled = !similarityTaskRunning,
+                    modifier = Modifier.testTag("similarity-incremental-clear")
+                ) {
+                    Text("Incremental clear")
+                }
+                OutlinedButton(
                     onClick = onDelete,
-                    enabled = !generationRunning
+                    enabled = !similarityTaskRunning
                 ) {
                     Text("Delete similarity")
                 }

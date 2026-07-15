@@ -65,6 +65,34 @@ data class SimilarityMaintenanceSummary(
     val cancelled: Boolean
 )
 
+enum class SimilarityClearMode {
+    Standard,
+    Incremental
+}
+
+enum class SimilarityClearPhase {
+    Preparing,
+    ClusterMembers,
+    Clusters,
+    FilesAndFeatures,
+    OrphanFeatures,
+    History
+}
+
+data class SimilarityClearProgress(
+    val total: Int,
+    val processed: Int,
+    val remaining: Int,
+    val phase: SimilarityClearPhase
+)
+
+data class SimilarityClearSummary(
+    val total: Int,
+    val processed: Int,
+    val remaining: Int,
+    val cancelled: Boolean
+)
+
 data class SimilarityClusterMember(
     val metadata: FileMetadata,
     val durationMillis: Long? = null
@@ -232,10 +260,34 @@ class SimilaritySettingsRepository(
         }
     }
 
-    fun clearSettingResults(settingId: Long) {
-        database.runInTransaction {
-            clearSettingDataLocked(settingId)
-            similarityDao.deleteMaintenanceRunsForSetting(settingId)
+    fun clearSettingResults(settingId: Long): SimilarityClearSummary {
+        return clearSettingResults(
+            settingId = settingId,
+            mode = SimilarityClearMode.Standard,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+    }
+
+    fun clearSettingResults(
+        settingId: Long,
+        mode: SimilarityClearMode,
+        shouldContinue: () -> Boolean,
+        onProgress: (SimilarityClearProgress) -> Unit
+    ): SimilarityClearSummary {
+        return synchronized(maintenanceLock) {
+            when (mode) {
+                SimilarityClearMode.Standard -> clearSettingResultsByStage(
+                    settingId = settingId,
+                    shouldContinue = shouldContinue,
+                    onProgress = onProgress
+                )
+                SimilarityClearMode.Incremental -> clearSettingResultsIncrementally(
+                    settingId = settingId,
+                    shouldContinue = shouldContinue,
+                    onProgress = onProgress
+                )
+            }
         }
     }
 
@@ -1048,12 +1100,236 @@ class SimilaritySettingsRepository(
         }
     }
 
+    private fun clearSettingResultsByStage(
+        settingId: Long,
+        shouldContinue: () -> Boolean,
+        onProgress: (SimilarityClearProgress) -> Unit
+    ): SimilarityClearSummary {
+        val total = countSettingResultRows(settingId)
+        var processed = 0
+        var cancellationRequested = false
+        fun publish(phase: SimilarityClearPhase) {
+            onProgress(
+                SimilarityClearProgress(
+                    total = total,
+                    processed = processed.coerceAtMost(total),
+                    remaining = (total - processed).coerceAtLeast(0),
+                    phase = phase
+                )
+            )
+        }
+        fun stopRequested(): Boolean {
+            if (shouldContinue()) return false
+            cancellationRequested = true
+            return true
+        }
+
+        publish(SimilarityClearPhase.Preparing)
+        if (!stopRequested()) {
+            var clearedRows = 0
+            database.runInTransaction {
+                clearedRows += similarityDao.deleteClusterMembersForSetting(settingId)
+                clearedRows += similarityDao.deleteClustersForSetting(settingId)
+            }
+            processed += clearedRows
+            publish(SimilarityClearPhase.Clusters)
+        }
+        if (!cancellationRequested && !stopRequested()) {
+            var clearedRows = 0
+            database.runInTransaction {
+                clearedRows += similarityDao.deleteExactThumbnailFeatures(settingId)
+                clearedRows += similarityDao.deleteDurationFeatures(settingId)
+                clearedRows += similarityDao.deleteSettingFiles(settingId)
+            }
+            processed += clearedRows
+            publish(SimilarityClearPhase.FilesAndFeatures)
+        }
+        if (!cancellationRequested && !stopRequested()) {
+            processed += database.runInTransaction<Int> {
+                similarityDao.deleteMaintenanceRunsForSetting(settingId)
+            }
+            publish(SimilarityClearPhase.History)
+        }
+        return finishSettingClear(
+            settingId = settingId,
+            total = total,
+            processed = processed,
+            cancellationRequested = cancellationRequested
+        )
+    }
+
+    private fun clearSettingResultsIncrementally(
+        settingId: Long,
+        shouldContinue: () -> Boolean,
+        onProgress: (SimilarityClearProgress) -> Unit
+    ): SimilarityClearSummary {
+        val total = countSettingResultRows(settingId)
+        var processed = 0
+        var cancellationRequested = false
+        fun publish(phase: SimilarityClearPhase) {
+            onProgress(
+                SimilarityClearProgress(
+                    total = total,
+                    processed = processed.coerceAtMost(total),
+                    remaining = (total - processed).coerceAtLeast(0),
+                    phase = phase
+                )
+            )
+        }
+        fun stopRequested(): Boolean {
+            if (shouldContinue()) return false
+            cancellationRequested = true
+            return true
+        }
+        fun finish(): SimilarityClearSummary {
+            return finishSettingClear(
+                settingId = settingId,
+                total = total,
+                processed = processed,
+                cancellationRequested = cancellationRequested
+            )
+        }
+
+        publish(SimilarityClearPhase.Preparing)
+        while (!stopRequested()) {
+            val clusterId = similarityDao.firstClusterIdWithMembersForClear(settingId) ?: break
+            val paths = similarityDao.listClusterMemberPathsForClear(
+                clusterId = clusterId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (paths.isEmpty()) break
+            var clearedRows = 0
+            database.runInTransaction {
+                val cluster = similarityDao.getClusterForClear(clusterId)
+                val clearedBytes = similarityDao.sumClusterMemberBytesForClear(clusterId, paths)
+                val clearedMembers = similarityDao.deleteClusterMemberPathsForClear(clusterId, paths)
+                clearedRows += clearedMembers
+                val remainingFileCount = (cluster?.fileCount ?: 0) - clearedMembers
+                val remainingTotalBytes = ((cluster?.totalBytes ?: 0L) - clearedBytes).coerceAtLeast(0L)
+                if (cluster == null || remainingFileCount <= 1) {
+                    clearedRows += similarityDao.deleteClusterMembersByIds(listOf(clusterId))
+                    clearedRows += similarityDao.deleteClustersByIds(listOf(clusterId))
+                } else {
+                    similarityDao.updateCluster(
+                        clusterId = clusterId,
+                        fileCount = remainingFileCount,
+                        totalBytes = remainingTotalBytes,
+                        updatedAtMillis = System.currentTimeMillis()
+                    )
+                }
+            }
+            processed += clearedRows
+            publish(SimilarityClearPhase.ClusterMembers)
+        }
+        if (cancellationRequested) return finish()
+
+        while (!stopRequested()) {
+            val clusterIds = similarityDao.listClusterIdsForClear(
+                settingId = settingId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (clusterIds.isEmpty()) break
+            var clearedRows = 0
+            database.runInTransaction {
+                clearedRows += similarityDao.deleteClusterMembersByIds(clusterIds)
+                clearedRows += similarityDao.deleteClustersByIds(clusterIds)
+            }
+            processed += clearedRows
+            publish(SimilarityClearPhase.Clusters)
+        }
+        if (cancellationRequested) return finish()
+
+        while (!stopRequested()) {
+            val paths = similarityDao.listSettingFilePathsForClear(
+                settingId = settingId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (paths.isEmpty()) break
+            var clearedRows = 0
+            database.runInTransaction {
+                clearedRows += similarityDao.deleteExactThumbnailFeaturesForSettingByPaths(settingId, paths)
+                clearedRows += similarityDao.deleteDurationFeaturesForSettingByPaths(settingId, paths)
+                clearedRows += similarityDao.deleteSettingFilesForSettingByPaths(settingId, paths)
+            }
+            processed += clearedRows
+            publish(SimilarityClearPhase.FilesAndFeatures)
+        }
+        if (cancellationRequested) return finish()
+
+        while (!stopRequested()) {
+            val paths = similarityDao.listExactThumbnailFeaturePathsForClear(
+                settingId = settingId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (paths.isEmpty()) break
+            processed += database.runInTransaction<Int> {
+                similarityDao.deleteExactThumbnailFeaturesForSettingByPaths(settingId, paths)
+            }
+            publish(SimilarityClearPhase.OrphanFeatures)
+        }
+        if (cancellationRequested) return finish()
+
+        while (!stopRequested()) {
+            val paths = similarityDao.listDurationFeaturePathsForClear(
+                settingId = settingId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (paths.isEmpty()) break
+            processed += database.runInTransaction<Int> {
+                similarityDao.deleteDurationFeaturesForSettingByPaths(settingId, paths)
+            }
+            publish(SimilarityClearPhase.OrphanFeatures)
+        }
+        if (cancellationRequested) return finish()
+
+        while (!stopRequested()) {
+            val runIds = similarityDao.listMaintenanceRunIdsForClear(
+                settingId = settingId,
+                limit = SIMILARITY_CLEAR_BATCH_SIZE
+            )
+            if (runIds.isEmpty()) break
+            processed += database.runInTransaction<Int> {
+                similarityDao.deleteMaintenanceRunsByIds(runIds)
+            }
+            publish(SimilarityClearPhase.History)
+        }
+        return finish()
+    }
+
+    private fun finishSettingClear(
+        settingId: Long,
+        total: Int,
+        processed: Int,
+        cancellationRequested: Boolean
+    ): SimilarityClearSummary {
+        val remaining = countSettingResultRows(settingId)
+        check(cancellationRequested || remaining == 0) {
+            "Similarity clear finished with $remaining generated rows remaining."
+        }
+        val completedProcessed = if (remaining == 0) total else processed.coerceAtMost(total)
+        return SimilarityClearSummary(
+            total = total,
+            processed = completedProcessed,
+            remaining = remaining,
+            cancelled = cancellationRequested && remaining > 0
+        )
+    }
+
+    private fun countSettingResultRows(settingId: Long): Int {
+        return similarityDao.countSettingFiles(settingId) +
+            similarityDao.countExactThumbnailFeatures(settingId) +
+            similarityDao.countDurationFeatures(settingId) +
+            similarityDao.countClusterMembersForSetting(settingId) +
+            similarityDao.countClustersForSetting(settingId) +
+            similarityDao.countMaintenanceRunsForSetting(settingId)
+    }
+
     private fun clearSettingDataLocked(settingId: Long) {
-        similarityDao.deleteSettingFiles(settingId)
-        similarityDao.deleteExactThumbnailFeatures(settingId)
-        similarityDao.deleteDurationFeatures(settingId)
         similarityDao.deleteClusterMembersForSetting(settingId)
         similarityDao.deleteClustersForSetting(settingId)
+        similarityDao.deleteExactThumbnailFeatures(settingId)
+        similarityDao.deleteDurationFeatures(settingId)
+        similarityDao.deleteSettingFiles(settingId)
     }
 
     private fun MessageDigest.updateLong(value: Long) {
@@ -1370,5 +1646,6 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
+private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_FILE_STATUS_READY = "ready"
 private const val SIMILARITY_FILE_STATUS_SKIPPED = "skipped"
