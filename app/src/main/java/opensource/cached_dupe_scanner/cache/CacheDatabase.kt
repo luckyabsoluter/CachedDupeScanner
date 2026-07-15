@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
 /**
  * Room database for scan cache, duplicate-group snapshot, reports, and trash metadata.
@@ -28,9 +29,10 @@ import androidx.room.RoomDatabase
         SimilarityClusterMemberEntity::class,
         SimilarityMaintenanceRunEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
+@TypeConverters(StoredHashConverters::class)
 abstract class CacheDatabase : RoomDatabase() {
     abstract fun fileCacheDao(): FileCacheDao
     abstract fun scanReportDao(): ScanReportDao

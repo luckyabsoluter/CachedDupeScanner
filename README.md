@@ -21,7 +21,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 
 - **Incremental scans**: unchanged files are not re-hashed; cache is reused.
 - **Deferred hashing**: SHA-256 is computed only when size collisions exist.
-- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities shared by derived similarity data.
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities and indexed 32-byte SHA-256 storage shared by derived data.
 - **Target management**: save multiple scan targets; run per-target or batch scans.
 - **Duplicate grouping**: database-backed result browsing with infinite scrolling for large datasets.
 - **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete. default exclusion avoids re-scanning the bin.

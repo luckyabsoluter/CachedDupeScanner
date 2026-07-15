@@ -3,6 +3,7 @@ package opensource.cached_dupe_scanner.storage
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.StoredHash
 import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.Hashing
@@ -181,7 +182,7 @@ class ResultsDbRepository(
                     entity.copy(
                         sizeBytes = file.length(),
                         lastModifiedMillis = file.lastModified(),
-                        hashHex = hash
+                        hashBytes = StoredHash.fromExternalString(hash)
                     )
                 )
                 processed += 1

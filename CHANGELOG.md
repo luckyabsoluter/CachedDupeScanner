@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Cached files and materialized duplicate groups now store SHA-256 values as 32-byte blobs, with a v22-to-v23 migration that preserves file identities and similarity relationships while rebuilding derived groups.
 - Scan-cache files and similarity sidecar rows now share stable integer file identities, with an indexed v21-to-v22 migration that preserves valid generated data and removes orphaned relationships.
 - Filter editors now present rules inside each cluster as target-labeled accordion rows with distinct tonal borders, expanding one editor at a time while keeping enable and removal controls available.
 - Filter rule editors now show only the current target until its selector is opened, with the available targets presented in a dropdown menu.
@@ -102,6 +103,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Duplicate detection, grouping, member lookup, and group paging now compare indexed 32-byte hash blobs instead of 64-character hexadecimal text.
 - Similarity feature, member, repair, and result queries now join through integer file IDs instead of normalized path strings, while cache updates preserve IDs through batched inserts and updates.
 - Size-collision hash candidates now run through a bounded worker pool while progress collection and cache writes remain serialized.
 - Similarity generation now extracts media signatures, durations, and dimensions through a bounded worker pool while progress collection, database batches, and cluster rebuilding remain serialized.

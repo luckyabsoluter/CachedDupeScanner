@@ -843,7 +843,7 @@ class CacheMigrationsIndexTest {
     }
 
     @Test
-    fun migration21to22PassesRoomSchemaValidation() {
+    fun migration21ToCurrentPassesRoomSchemaValidation() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "sim-21-22-room-${UUID.randomUUID()}.db"
         val current = Room.databaseBuilder(context, CacheDatabase::class.java, name)
@@ -873,6 +873,139 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration22to23CompactsHashesAndPreservesDuplicateGroups() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "hash-22-23-${UUID.randomUUID()}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(22) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion22HashTextTables(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_22_23.migrate(db)
+
+            assertFalse(hasColumn(db, "cached_files", "hashHex"))
+            assertEquals("BLOB", columnType(db, "cached_files", "hashBytes"))
+            assertEquals("BLOB", columnType(db, "dupe_groups", "hashBytes"))
+            assertEquals(2, firstInt(db, "SELECT COUNT(*) FROM cached_files"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM dupe_groups"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM similarity_setting_files"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM similarity_exact_thumbnail_features"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM similarity_duration_features"))
+            assertEquals(1, firstInt(db, "SELECT COUNT(*) FROM similarity_cluster_members"))
+            assertEquals(32, firstInt(db, "SELECT length(hashBytes) FROM cached_files LIMIT 1"))
+            assertEquals(
+                MIGRATION_SHA_256_HEX.uppercase(),
+                firstString(db, "SELECT hex(hashBytes) FROM cached_files LIMIT 1")
+            )
+            assertEquals(
+                listOf(1L, 2L),
+                longList(db, "SELECT fileId FROM cached_files ORDER BY fileId ASC")
+            )
+            val plan = stringList(
+                db,
+                """
+                EXPLAIN QUERY PLAN
+                SELECT fileId
+                FROM cached_files
+                WHERE sizeBytes = 10
+                  AND hashBytes = X'$MIGRATION_SHA_256_HEX'
+                """.trimIndent(),
+                columnIndex = 3
+            )
+            assertTrue(
+                plan.any { detail -> detail.contains("index_cached_files_sizeBytes_hashBytes") }
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    private fun createVersion22HashTextTables(db: SupportSQLiteDatabase) {
+        createVersion21FileIdMigrationTables(db, seedData = false)
+        CacheMigrations.MIGRATION_21_22.migrate(db)
+        createTextHashDuplicateGroups(db)
+        db.execSQL(
+            """
+            INSERT INTO cached_files (
+                fileId,
+                normalizedPath,
+                path,
+                sizeBytes,
+                lastModifiedMillis,
+                hashHex
+            ) VALUES
+                (1, '/video/a.mp4', '/video/a.mp4', 10, 100, '$MIGRATION_SHA_256_HEX'),
+                (2, '/video/b.mp4', '/video/b.mp4', 10, 200, '$MIGRATION_SHA_256_HEX')
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO dupe_groups VALUES
+                (10, '$MIGRATION_SHA_256_HEX', 2, 20, 300)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_setting_files VALUES
+                (1, 1, 10, 100, 'ready', 1920, 1080, 1, 1, 300)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_exact_thumbnail_features VALUES
+                (1, 1, 'same')
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_duration_features VALUES
+                (1, 1, 1000)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_clusters VALUES
+                (1, 1, 'same', 1, 10, 300)
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            INSERT INTO similarity_cluster_members VALUES
+                (1, 1, 0)
+            """.trimIndent()
+        )
+    }
+
+    private fun createTextHashDuplicateGroups(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE dupe_groups (
+                sizeBytes INTEGER NOT NULL,
+                hashHex TEXT NOT NULL,
+                fileCount INTEGER NOT NULL,
+                totalBytes INTEGER NOT NULL,
+                updatedAtMillis INTEGER NOT NULL,
+                PRIMARY KEY(sizeBytes, hashHex)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX index_dupe_groups_fileCount ON dupe_groups(fileCount)")
+        db.execSQL("CREATE INDEX index_dupe_groups_totalBytes ON dupe_groups(totalBytes)")
+    }
+
     private fun downgradeFileRelationsToVersion21(db: SupportSQLiteDatabase) {
         db.execSQL("PRAGMA foreign_keys = OFF")
         db.execSQL("DROP TABLE similarity_setting_files")
@@ -880,8 +1013,10 @@ class CacheMigrationsIndexTest {
         db.execSQL("DROP TABLE similarity_duration_features")
         db.execSQL("DROP TABLE similarity_cluster_members")
         db.execSQL("DROP TABLE similarity_clusters")
+        db.execSQL("DROP TABLE dupe_groups")
         db.execSQL("DROP TABLE cached_files")
         createVersion21FileIdMigrationTables(db, seedData = false)
+        createTextHashDuplicateGroups(db)
         db.execSQL("PRAGMA user_version = 21")
     }
 
@@ -1250,9 +1385,20 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    private fun longList(db: SupportSQLiteDatabase, query: String): List<Long> {
+        db.query(query).use { cursor ->
+            val values = mutableListOf<Long>()
+            while (cursor.moveToNext()) values += cursor.getLong(0)
+            return values
+        }
+    }
+
     private fun firstString(db: SupportSQLiteDatabase, query: String): String? {
         db.query(query).use { cursor ->
             return if (cursor.moveToFirst()) cursor.getString(0) else null
         }
     }
 }
+
+private const val MIGRATION_SHA_256_HEX =
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"

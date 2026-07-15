@@ -38,7 +38,7 @@ class FileCacheDaoTest {
                 original.copy(
                     sizeBytes = 30L,
                     lastModifiedMillis = 40L,
-                    hashHex = "updated"
+                    hashBytes = StoredHash.fromExternalString("updated")
                 )
             )
             val updated = requireNotNull(dao.getByNormalizedPath(original.normalizedPath))
@@ -89,6 +89,59 @@ class FileCacheDaoTest {
         }
     }
 
+    @Test
+    fun hashesUseIndexed32ByteBlobStorage() {
+        val db = newDb()
+        try {
+            val dao = db.fileCacheDao()
+            repeat(2) { index ->
+                val path = "/blob-hash-$index.mp4"
+                dao.upsert(
+                    CachedFileEntity(
+                        normalizedPath = path,
+                        path = path,
+                        sizeBytes = 10L,
+                        lastModifiedMillis = 1L,
+                        hashHex = SHA_256_TEST_HEX
+                    )
+                )
+            }
+            db.duplicateGroupDao().rebuildFromCache(updatedAtMillis = 1L)
+            val sql = db.openHelper.writableDatabase
+
+            sql.query("SELECT typeof(hashBytes), length(hashBytes) FROM cached_files LIMIT 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("blob", cursor.getString(0))
+                assertEquals(32, cursor.getInt(1))
+            }
+            sql.query("SELECT typeof(hashBytes), length(hashBytes) FROM dupe_groups LIMIT 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("blob", cursor.getString(0))
+                assertEquals(32, cursor.getInt(1))
+            }
+            val planDetails = mutableListOf<String>()
+            sql.query(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT fileId
+                FROM cached_files
+                WHERE sizeBytes = 10
+                  AND hashBytes = X'${SHA_256_TEST_HEX}'
+                """.trimIndent()
+            ).use { cursor ->
+                while (cursor.moveToNext()) planDetails += cursor.getString(3)
+            }
+            assertTrue(
+                planDetails.any { detail ->
+                    detail.contains("index_cached_files_sizeBytes_hashBytes")
+                }
+            )
+            assertEquals(SHA_256_TEST_HEX, dao.getByNormalizedPath("/blob-hash-0.mp4")?.hashHex)
+        } finally {
+            db.close()
+        }
+    }
+
     private fun insertGroup(
         dao: FileCacheDao,
         sizeBytes: Long,
@@ -109,3 +162,6 @@ class FileCacheDaoTest {
         }
     }
 }
+
+private const val SHA_256_TEST_HEX =
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"

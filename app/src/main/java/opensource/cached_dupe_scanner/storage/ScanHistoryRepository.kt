@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.StoredHash
 import opensource.cached_dupe_scanner.cache.toCachedFileEntity
 import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -114,7 +115,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
@@ -137,7 +138,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
@@ -155,7 +156,7 @@ class ScanHistoryRepository(
             val file = File(path)
             if (!file.exists()) return@forEach
             val hash = requireNotNull(hashFile(file) { true })
-            val updatedEntity = entity.copy(hashHex = hash)
+            val updatedEntity = entity.copy(hashBytes = StoredHash.fromExternalString(hash))
             upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
             updated += 1
         }
@@ -241,7 +242,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 if (shouldRehashStale) {

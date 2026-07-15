@@ -4,5 +4,8 @@ package opensource.cached_dupe_scanner.cache
 data class PathGroupKey(
     val normalizedPath: String,
     val sizeBytes: Long,
+    val hashBytes: StoredHash?
+) {
     val hashHex: String?
-)
+        get() = hashBytes?.toExternalString()
+}
