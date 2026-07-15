@@ -7,7 +7,9 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
@@ -390,6 +392,109 @@ class SimilaritySettingsRepositoryTest {
         assertFalse(firstRun.isAlive)
         assertFalse(secondRun.isAlive)
         assertEquals(1, extractor.maxConcurrentExtractions.get())
+    }
+
+    @Test
+    fun configuredWorkersBoundConcurrentFeatureExtractionAndPersistResults() {
+        val files = (0 until 6).map { index -> videoFile("parallel-similarity-$index.mp4") }
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val extractor = BlockingParallelSignatureExtractor(expectedConcurrent = 3)
+        val providerCalls = AtomicInteger(0)
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = extractor,
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap()),
+            workerCountProvider = {
+                providerCalls.incrementAndGet()
+                3
+            }
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        val summary = AtomicReference<SimilarityMaintenanceSummary?>()
+        val failure = AtomicReference<Throwable?>()
+        val progressThreads = mutableListOf<Thread>()
+        val maintenanceThread = Thread {
+            runCatching {
+                repository.runSettingMaintenance(
+                    settingId = setting.settingId,
+                    rebuild = true,
+                    shouldContinue = { true },
+                    onProgress = { progressThreads += Thread.currentThread() }
+                )
+            }.onSuccess(summary::set).onFailure(failure::set)
+        }
+
+        maintenanceThread.start()
+        val reachedConfiguredConcurrency = extractor.expectedWorkersEntered.await(5, TimeUnit.SECONDS)
+        extractor.releaseWorkers.countDown()
+        maintenanceThread.join(10_000L)
+
+        assertTrue(reachedConfiguredConcurrency)
+        assertFalse(maintenanceThread.isAlive)
+        failure.get()?.let { error -> throw AssertionError(error) }
+        assertEquals(1, providerCalls.get())
+        assertEquals(3, extractor.maxConcurrentExtractions.get())
+        assertEquals(files.size, extractor.extractionCalls.get())
+        assertEquals(files.size, summary.get()?.processedCount)
+        assertEquals(1, summary.get()?.clusterCount)
+        assertEquals(files.size, database.similaritySettingsDao().countSettingFiles(setting.settingId))
+        assertTrue(progressThreads.isNotEmpty())
+        assertTrue(progressThreads.all { progressThread -> progressThread === maintenanceThread })
+    }
+
+    @Test
+    fun parallelFeatureCancellationDoesNotPersistIncompleteBatch() {
+        val files = (0 until 4).map { index -> videoFile("cancel-parallel-similarity-$index.mp4") }
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val allow = AtomicBoolean(true)
+        val extractor = BlockingCancellationSignatureExtractor()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = extractor,
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap()),
+            workerCountProvider = { 3 }
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        val summary = AtomicReference<SimilarityMaintenanceSummary?>()
+        val maintenanceThread = Thread {
+            summary.set(
+                repository.runSettingMaintenance(
+                    settingId = setting.settingId,
+                    rebuild = true,
+                    shouldContinue = allow::get,
+                    onProgress = {}
+                )
+            )
+        }
+
+        maintenanceThread.start()
+        val workerEntered = extractor.workerEntered.await(5, TimeUnit.SECONDS)
+        allow.set(false)
+        extractor.releaseWorkers.countDown()
+        maintenanceThread.join(10_000L)
+
+        assertTrue(workerEntered)
+        assertFalse(maintenanceThread.isAlive)
+        assertTrue(summary.get()?.cancelled == true)
+        assertEquals(0, summary.get()?.processedCount)
+        assertEquals(0, database.similaritySettingsDao().countSettingFiles(setting.settingId))
+        assertEquals(0, database.similaritySettingsDao().countExactThumbnailFeatures(setting.settingId))
     }
 
     @Test
@@ -1368,5 +1473,47 @@ private class BlockingConcurrencySignatureExtractor : VideoFrameSignatureExtract
         } finally {
             activeExtractions.decrementAndGet()
         }
+    }
+}
+
+private class BlockingParallelSignatureExtractor(expectedConcurrent: Int) : VideoFrameSignatureExtractor {
+    val expectedWorkersEntered = CountDownLatch(expectedConcurrent)
+    val releaseWorkers = CountDownLatch(1)
+    val maxConcurrentExtractions = AtomicInteger(0)
+    val extractionCalls = AtomicInteger(0)
+    private val activeExtractions = AtomicInteger(0)
+
+    override fun signature(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): String? {
+        extractionCalls.incrementAndGet()
+        val active = activeExtractions.incrementAndGet()
+        maxConcurrentExtractions.updateAndGet { previous -> maxOf(previous, active) }
+        expectedWorkersEntered.countDown()
+        return try {
+            releaseWorkers.await(5, TimeUnit.SECONDS)
+            if (shouldContinue()) "same" else null
+        } finally {
+            activeExtractions.decrementAndGet()
+        }
+    }
+}
+
+private class BlockingCancellationSignatureExtractor : VideoFrameSignatureExtractor {
+    val workerEntered = CountDownLatch(1)
+    val releaseWorkers = CountDownLatch(1)
+
+    override fun signature(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): String? {
+        workerEntered.countDown()
+        releaseWorkers.await(5, TimeUnit.SECONDS)
+        return if (shouldContinue()) "same" else null
     }
 }

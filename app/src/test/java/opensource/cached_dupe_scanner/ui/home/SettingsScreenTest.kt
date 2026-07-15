@@ -47,7 +47,7 @@ class SettingsScreenTest {
     @Test
     fun dedicatedControlSectionsDoNotExposeToggleBindings() {
         val sections = listOf(
-            scanWorkerSettingsSection(),
+            workerSettingsSection(),
             thumbnailSizeSettingsSection(),
             videoPreviewSizeSettingsSection(),
             videoPreviewLineCountSettingsSection(),
@@ -114,6 +114,7 @@ class SettingsScreenTest {
             keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
             snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
             scanWorkerCount = 4,
+            similarityWorkerCount = 4,
             videoPreviewLineCount = 1,
             thumbnailSizePercent = 100,
             videoPreviewSizePercent = 100,

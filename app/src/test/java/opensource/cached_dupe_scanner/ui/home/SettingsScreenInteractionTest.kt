@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -60,6 +61,32 @@ class SettingsScreenInteractionTest {
 
         composeRule.runOnIdle {
             assertEquals(target, store.load().scanWorkerCount)
+            assertEquals(1, settingsChanged)
+        }
+    }
+
+    @Test
+    fun similarityWorkerInputPersistsAppliedCount() {
+        val store = AppSettingsStore(context)
+        val current = store.load().similarityWorkerCount
+        val target = if (current < MAX_SCAN_WORKER_COUNT) current + 1 else current - 1
+        var settingsChanged = 0
+        composeRule.setContent {
+            SettingsScreen(
+                settingsStore = store,
+                onBack = {},
+                onSettingsChanged = { settingsChanged += 1 },
+                modifier = Modifier.height(1_000.dp)
+            )
+        }
+
+        composeRule.onNodeWithTag("similarity-worker-count-input")
+            .performScrollTo()
+            .performTextReplacement(target.toString())
+        composeRule.onNodeWithTag("similarity-worker-count-apply").performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(target, store.load().similarityWorkerCount)
             assertEquals(1, settingsChanged)
         }
     }

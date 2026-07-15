@@ -147,7 +147,8 @@ class MainActivity : ComponentActivity() {
                     SimilaritySettingsRepository(
                         database = database,
                         fileDao = database.fileCacheDao(),
-                        similarityDao = database.similaritySettingsDao()
+                        similarityDao = database.similaritySettingsDao(),
+                        workerCountProvider = { settingsStore.load().similarityWorkerCount }
                     )
                 }
                 val historyRepo = remember {

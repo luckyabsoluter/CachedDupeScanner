@@ -40,10 +40,16 @@ import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
 import opensource.cached_dupe_scanner.core.normalizedSimilaritySettingDisplayName
+import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 data class SimilarityMaintenanceProgress(
@@ -120,7 +126,8 @@ class SimilaritySettingsRepository(
     private val similarityDao: SimilaritySettingsDao,
     private val frameSignatureExtractor: VideoFrameSignatureExtractor = AndroidVideoFrameSignatureExtractor(),
     private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor(),
-    private val mediaDimensionsExtractor: MediaDimensionsExtractor = AndroidMediaDimensionsExtractor()
+    private val mediaDimensionsExtractor: MediaDimensionsExtractor = AndroidMediaDimensionsExtractor(),
+    private val workerCountProvider: () -> Int = { 1 }
 ) : CacheMutationObserver {
     private val maintenanceLock = Any()
 
@@ -599,6 +606,7 @@ class SimilaritySettingsRepository(
         var skippedCount = 0
         var clusterCount = 0
         var duplicateFileCount = 0
+        val workerCount = sanitizeScanWorkerCount(workerCountProvider())
 
         settings.forEach { setting ->
             if (!shouldContinue()) {
@@ -615,6 +623,7 @@ class SimilaritySettingsRepository(
             val summary = runSingleSettingMaintenance(
                 setting = setting,
                 rebuild = rebuild,
+                workerCount = workerCount,
                 shouldContinue = shouldContinue
             ) { progress ->
                 onProgress(
@@ -657,6 +666,7 @@ class SimilaritySettingsRepository(
     private fun runSingleSettingMaintenance(
         setting: SimilaritySettingEntity,
         rebuild: Boolean,
+        workerCount: Int,
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
     ): SimilarityMaintenanceSummary {
@@ -681,9 +691,8 @@ class SimilaritySettingsRepository(
             )
             if (batch.isEmpty()) break
 
-            val settingFiles = mutableListOf<SimilaritySettingFileEntity>()
-            val exactFeatures = mutableListOf<SimilarityExactThumbnailFeatureEntity>()
-            val durationFeatures = mutableListOf<SimilarityDurationFeatureEntity>()
+            val preparedFiles = mutableListOf<PreparedSettingFile>()
+            val workItems = mutableListOf<SimilarityFeatureWorkItem>()
             val now = System.currentTimeMillis()
 
             for (entity in batch) {
@@ -705,64 +714,39 @@ class SimilaritySettingsRepository(
                     existing.lastModifiedMillis == entity.lastModifiedMillis
                 if (featureIsFresh && existing?.dimensionsChecked == true) {
                     processed += 1
-                    afterPath = entity.normalizedPath
-                    continue
-                }
-
-                if (featureIsFresh) {
-                    val dimensions = extractDimensions(mediaScope, entity, shouldContinue)
-                    if (!shouldContinue()) {
-                        return finishSingleSummary(
-                            setting = setting,
-                            startedAt = startedAt,
-                            candidateCount = total,
+                    onProgress(
+                        SimilarityMaintenanceProgress(
+                            total = total,
                             processed = processed,
                             skipped = skipped,
-                            cancelled = true
+                            clusterCandidates = 0,
+                            currentPath = currentPath,
+                            settingName = setting.displayName
                         )
-                    }
-                    settingFiles += existing.copy(
-                        widthPixels = dimensions?.widthPixels,
-                        heightPixels = dimensions?.heightPixels,
-                        dimensionsChecked = true,
-                        updatedAtMillis = now
                     )
-                    processed += 1
-                    afterPath = entity.normalizedPath
                     continue
                 }
-
-                val feature = calculateFeature(setting, mediaScope, entity, shouldContinue)
-                val dimensions = if (feature == null) {
-                    skipped += 1
-                    null
-                } else {
-                    val extracted = extractDimensions(mediaScope, entity, shouldContinue)
-                    if (!shouldContinue()) {
-                        return finishSingleSummary(
-                            setting = setting,
-                            startedAt = startedAt,
-                            candidateCount = total,
-                            processed = processed,
-                            skipped = skipped,
-                            cancelled = true
-                        )
-                    }
-                    extracted
-                }
-                val preparedFile = prepareSettingFile(
-                    setting = setting,
-                    mediaScope = mediaScope,
+                workItems += SimilarityFeatureWorkItem(
                     entity = entity,
-                    feature = feature,
-                    dimensions = dimensions,
-                    updatedAtMillis = now
+                    freshSettingFile = existing.takeIf { featureIsFresh }
                 )
-                settingFiles += preparedFile.settingFile
-                preparedFile.exactFeature?.let(exactFeatures::add)
-                preparedFile.durationFeature?.let(durationFeatures::add)
+            }
+
+            val cancelled = calculateFeatureWorkBatch(
+                setting = setting,
+                mediaScope = mediaScope,
+                workItems = workItems,
+                updatedAtMillis = now,
+                workerCount = workerCount,
+                shouldContinue = shouldContinue
+            ) { result ->
+                val preparedFile = requireNotNull(result.preparedFile)
+                preparedFiles += preparedFile
+                if (result.skipped) skipped += 1
                 processed += 1
-                afterPath = entity.normalizedPath
+                currentPath = result.workItem.entity.path.ifBlank {
+                    result.workItem.entity.normalizedPath
+                }
                 onProgress(
                     SimilarityMaintenanceProgress(
                         total = total,
@@ -775,12 +759,28 @@ class SimilaritySettingsRepository(
                 )
             }
 
-            database.runInTransaction {
-                similarityDao.upsertSettingFiles(settingFiles)
-                if (exactFeatures.isNotEmpty()) similarityDao.upsertExactThumbnailFeatures(exactFeatures)
-                if (durationFeatures.isNotEmpty()) similarityDao.upsertDurationFeatures(durationFeatures)
+            if (preparedFiles.isNotEmpty()) {
+                database.runInTransaction {
+                    similarityDao.upsertSettingFiles(preparedFiles.map { prepared -> prepared.settingFile })
+                    val exactFeatures = preparedFiles.mapNotNull { prepared -> prepared.exactFeature }
+                    val durationFeatures = preparedFiles.mapNotNull { prepared -> prepared.durationFeature }
+                    if (exactFeatures.isNotEmpty()) similarityDao.upsertExactThumbnailFeatures(exactFeatures)
+                    if (durationFeatures.isNotEmpty()) similarityDao.upsertDurationFeatures(durationFeatures)
+                }
             }
 
+            if (cancelled) {
+                return finishSingleSummary(
+                    setting = setting,
+                    startedAt = startedAt,
+                    candidateCount = total,
+                    processed = processed,
+                    skipped = skipped,
+                    cancelled = true
+                )
+            }
+
+            afterPath = batch.last().normalizedPath
             if (batch.size < SIMILARITY_MAINTENANCE_BATCH_SIZE) break
         }
 
@@ -899,6 +899,141 @@ class SimilaritySettingsRepository(
                 )?.let(CalculatedFeature::Duration)
             }
             else -> null
+        }
+    }
+
+    private fun calculateFeatureWorkBatch(
+        setting: SimilaritySettingEntity,
+        mediaScope: SimilarityMediaScope,
+        workItems: List<SimilarityFeatureWorkItem>,
+        updatedAtMillis: Long,
+        workerCount: Int,
+        shouldContinue: () -> Boolean,
+        onCompleted: (SimilarityFeatureWorkResult) -> Unit
+    ): Boolean {
+        if (workItems.isEmpty()) return !shouldContinue()
+        val concurrency = workerCount.coerceAtMost(workItems.size)
+        val threadIndex = AtomicInteger(0)
+        val executor = Executors.newFixedThreadPool(concurrency) { runnable ->
+            Thread(
+                runnable,
+                "CachedDupeScanner-Similarity-${threadIndex.incrementAndGet()}"
+            ).apply {
+                isDaemon = true
+            }
+        }
+        val completionService = ExecutorCompletionService<SimilarityFeatureWorkResult>(executor)
+        workItems.forEach { workItem ->
+            completionService.submit(
+                Callable {
+                    calculateFeatureWorkItem(
+                        setting = setting,
+                        mediaScope = mediaScope,
+                        workItem = workItem,
+                        updatedAtMillis = updatedAtMillis,
+                        shouldContinue = shouldContinue
+                    )
+                }
+            )
+        }
+
+        var remaining = workItems.size
+        try {
+            while (remaining > 0) {
+                if (!shouldContinue()) return true
+                val completedFuture = try {
+                    completionService.poll(
+                        SIMILARITY_WORK_COMPLETION_POLL_MILLIS,
+                        TimeUnit.MILLISECONDS
+                    )
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return true
+                } ?: continue
+                remaining -= 1
+                val result = completedFuture.get()
+                result.failure?.let { failure -> throw failure }
+                if (result.cancelled || !shouldContinue()) return true
+                onCompleted(result)
+            }
+        } finally {
+            executor.shutdownNow()
+            try {
+                executor.awaitTermination(
+                    SIMILARITY_WORK_EXECUTOR_SHUTDOWN_SECONDS,
+                    TimeUnit.SECONDS
+                )
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        return false
+    }
+
+    private fun calculateFeatureWorkItem(
+        setting: SimilaritySettingEntity,
+        mediaScope: SimilarityMediaScope,
+        workItem: SimilarityFeatureWorkItem,
+        updatedAtMillis: Long,
+        shouldContinue: () -> Boolean
+    ): SimilarityFeatureWorkResult {
+        if (!shouldContinue()) return SimilarityFeatureWorkResult(workItem = workItem, cancelled = true)
+        return try {
+            val freshSettingFile = workItem.freshSettingFile
+            if (freshSettingFile != null) {
+                val dimensions = extractDimensions(mediaScope, workItem.entity, shouldContinue)
+                if (!shouldContinue()) {
+                    SimilarityFeatureWorkResult(workItem = workItem, cancelled = true)
+                } else {
+                    SimilarityFeatureWorkResult(
+                        workItem = workItem,
+                        preparedFile = PreparedSettingFile(
+                            settingFile = freshSettingFile.copy(
+                                widthPixels = dimensions?.widthPixels,
+                                heightPixels = dimensions?.heightPixels,
+                                dimensionsChecked = true,
+                                updatedAtMillis = updatedAtMillis
+                            ),
+                            exactFeature = null,
+                            durationFeature = null
+                        )
+                    )
+                }
+            } else {
+                val feature = calculateFeature(
+                    setting = setting,
+                    mediaScope = mediaScope,
+                    entity = workItem.entity,
+                    shouldContinue = shouldContinue
+                )
+                if (!shouldContinue()) {
+                    SimilarityFeatureWorkResult(workItem = workItem, cancelled = true)
+                } else {
+                    val dimensions = if (feature == null) {
+                        null
+                    } else {
+                        extractDimensions(mediaScope, workItem.entity, shouldContinue)
+                    }
+                    if (!shouldContinue()) {
+                        SimilarityFeatureWorkResult(workItem = workItem, cancelled = true)
+                    } else {
+                        SimilarityFeatureWorkResult(
+                            workItem = workItem,
+                            preparedFile = prepareSettingFile(
+                                setting = setting,
+                                mediaScope = mediaScope,
+                                entity = workItem.entity,
+                                feature = feature,
+                                dimensions = dimensions,
+                                updatedAtMillis = updatedAtMillis
+                            ),
+                            skipped = feature == null
+                        )
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            SimilarityFeatureWorkResult(workItem = workItem, failure = error)
         }
     }
 
@@ -1604,6 +1739,19 @@ private data class PreparedSettingFile(
     val durationFeature: SimilarityDurationFeatureEntity?
 )
 
+private data class SimilarityFeatureWorkItem(
+    val entity: CachedFileEntity,
+    val freshSettingFile: SimilaritySettingFileEntity?
+)
+
+private data class SimilarityFeatureWorkResult(
+    val workItem: SimilarityFeatureWorkItem,
+    val preparedFile: PreparedSettingFile? = null,
+    val skipped: Boolean = false,
+    val cancelled: Boolean = false,
+    val failure: Exception? = null
+)
+
 private data class ClusterDraft(
     val clusterKey: String,
     val members: List<ClusterMemberDraft>
@@ -1647,5 +1795,7 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
+private const val SIMILARITY_WORK_COMPLETION_POLL_MILLIS = 100L
+private const val SIMILARITY_WORK_EXECUTOR_SHUTDOWN_SECONDS = 5L
 private const val SIMILARITY_FILE_STATUS_READY = "ready"
 private const val SIMILARITY_FILE_STATUS_SKIPPED = "skipped"

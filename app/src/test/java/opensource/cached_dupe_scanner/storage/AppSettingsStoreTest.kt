@@ -41,6 +41,7 @@ class AppSettingsStoreTest {
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
         assertFalse(settings.snapVideoPreviewFramesToWidth)
         assertEquals(defaultScanWorkerCount(), settings.scanWorkerCount)
+        assertEquals(defaultScanWorkerCount(), settings.similarityWorkerCount)
         assertEquals(1, settings.videoPreviewLineCount)
         assertEquals(100, settings.thumbnailSizePercent)
         assertEquals(100, settings.videoPreviewSizePercent)
@@ -89,6 +90,9 @@ class AppSettingsStoreTest {
 
         store.setScanWorkerCount(6)
         assertEquals(6, store.load().scanWorkerCount)
+
+        store.setSimilarityWorkerCount(5)
+        assertEquals(5, store.load().similarityWorkerCount)
 
         store.setVideoPreviewLineCount(3)
         assertEquals(3, store.load().videoPreviewLineCount)
@@ -165,6 +169,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
         assertFalse(imported.snapVideoPreviewFramesToWidth)
         assertEquals(defaultScanWorkerCount(), imported.scanWorkerCount)
+        assertEquals(defaultScanWorkerCount(), imported.similarityWorkerCount)
         assertEquals(1, imported.videoPreviewLineCount)
         assertEquals(100, imported.thumbnailSizePercent)
         assertEquals(100, imported.videoPreviewSizePercent)
@@ -193,6 +198,7 @@ class AppSettingsStoreTest {
         store.setKeepLoadedVideoPreviewsInMemory(false)
         store.setSnapVideoPreviewFramesToWidth(true)
         store.setScanWorkerCount(7)
+        store.setSimilarityWorkerCount(8)
         store.setVideoPreviewLineCount(4)
         store.setThumbnailSizePercent(125)
         store.setVideoPreviewSizePercent(80)
@@ -225,6 +231,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
         assertTrue(imported.snapVideoPreviewFramesToWidth)
         assertEquals(7, imported.scanWorkerCount)
+        assertEquals(8, imported.similarityWorkerCount)
         assertEquals(4, imported.videoPreviewLineCount)
         assertEquals(125, imported.thumbnailSizePercent)
         assertEquals(80, imported.videoPreviewSizePercent)
@@ -292,6 +299,12 @@ class AppSettingsStoreTest {
 
         val importedHigh = store.importFromJson("{\"scan_worker_count\":999}")
         assertEquals(MAX_SCAN_WORKER_COUNT, importedHigh.scanWorkerCount)
+
+        store.setSimilarityWorkerCount(0)
+        assertEquals(MIN_SCAN_WORKER_COUNT, store.load().similarityWorkerCount)
+
+        val importedSimilarityHigh = store.importFromJson("{\"similarity_worker_count\":999}")
+        assertEquals(MAX_SCAN_WORKER_COUNT, importedSimilarityHigh.similarityWorkerCount)
     }
 
     private fun clearSettings() {

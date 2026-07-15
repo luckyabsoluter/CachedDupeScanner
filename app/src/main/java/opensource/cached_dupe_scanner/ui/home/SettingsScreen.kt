@@ -53,7 +53,7 @@ fun SettingsScreen(
     val targetStore = remember { ScanTargetStore(context) }
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
-    val scanWorkerSection = scanWorkerSettingsSection()
+    val workerSection = workerSettingsSection()
     val trashScanSection = trashScanSettingsSection(settings.value)
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
@@ -114,12 +114,27 @@ fun SettingsScreen(
         ) {
             AppTopBar(title = "Settings", onBack = onBack)
 
-            SettingsSectionCard(section = scanWorkerSection) {
-                ScanWorkerCountSettingControl(
+            SettingsSectionCard(section = workerSection) {
+                WorkerCountSettingControl(
+                    title = "Scan hashing",
                     selectedCount = settings.value.scanWorkerCount,
+                    inputLabel = "Scan workers",
+                    testTagPrefix = "scan-worker-count",
                     onCountSelected = { count ->
                         settingsStore.setScanWorkerCount(count)
                         settings.value = settings.value.copy(scanWorkerCount = count)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+                HorizontalDivider()
+                WorkerCountSettingControl(
+                    title = "Similarity calculation",
+                    selectedCount = settings.value.similarityWorkerCount,
+                    inputLabel = "Similarity workers",
+                    testTagPrefix = "similarity-worker-count",
+                    onCountSelected = { count ->
+                        settingsStore.setSimilarityWorkerCount(count)
+                        settings.value = settings.value.copy(similarityWorkerCount = count)
                         onSettingsChanged?.invoke()
                     }
                 )
@@ -460,17 +475,21 @@ private fun PreviewLineCountSettingControl(
 }
 
 @Composable
-private fun ScanWorkerCountSettingControl(
+private fun WorkerCountSettingControl(
+    title: String,
     selectedCount: Int,
+    inputLabel: String,
+    testTagPrefix: String,
     onCountSelected: (Int) -> Unit
 ) {
     val inputValue = remember(selectedCount) { mutableStateOf(selectedCount.toString()) }
 
+    Text(text = title, style = MaterialTheme.typography.labelLarge)
     DraftNumberSettingControl(
         currentValue = selectedCount,
         currentText = "$selectedCount threads",
         inputValue = inputValue.value,
-        inputLabel = "Worker threads",
+        inputLabel = inputLabel,
         stepLabels = listOf("-4" to -4, "-1" to -1, "+1" to 1, "+4" to 4),
         minValue = MIN_SCAN_WORKER_COUNT,
         onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
@@ -485,8 +504,8 @@ private fun ScanWorkerCountSettingControl(
         },
         onApply = onCountSelected,
         maxValue = MAX_SCAN_WORKER_COUNT,
-        inputTestTag = "scan-worker-count-input",
-        applyTestTag = "scan-worker-count-apply"
+        inputTestTag = "$testTagPrefix-input",
+        applyTestTag = "$testTagPrefix-apply"
     )
 }
 
@@ -625,10 +644,10 @@ internal enum class ToggleSettingId {
     SnapVideoPreviewFramesToWidth
 }
 
-internal fun scanWorkerSettingsSection(): SettingsSectionModel {
+internal fun workerSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
-        title = "Scan worker threads",
-        description = "Choose 1 to 32 concurrent SHA-256 hashing workers. One thread is sequential; changes apply to the next scan."
+        title = "Worker threads",
+        description = "Set separate 1 to 32 worker limits for SHA-256 scan hashing and similarity feature calculation. Changes apply when the next task starts."
     )
 }
 
