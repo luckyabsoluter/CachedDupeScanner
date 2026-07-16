@@ -56,7 +56,6 @@ internal fun <T : Any> cacheDatabaseStartupGate(
     onClose: () -> Unit
 ): T? {
     var plan by remember { mutableStateOf<CacheDatabaseStartupPlan?>(null) }
-    var checking by remember { mutableStateOf(true) }
     var opening by remember { mutableStateOf(false) }
     var database by remember { mutableStateOf<T?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
@@ -72,7 +71,6 @@ internal fun <T : Any> cacheDatabaseStartupGate(
         try {
             val inspected = withContext(Dispatchers.IO) { inspect() }
             plan = inspected
-            checking = false
             when (inspected) {
                 is CacheDatabaseStartupPlan.OpenCurrent -> openRequest += 1
                 is CacheDatabaseStartupPlan.UpgradeRequired -> Unit
@@ -81,7 +79,6 @@ internal fun <T : Any> cacheDatabaseStartupGate(
                 }
             }
         } catch (_: Exception) {
-            checking = false
             failure = "The database could not be checked."
         }
     }
@@ -120,30 +117,36 @@ internal fun <T : Any> cacheDatabaseStartupGate(
 
     database?.let { return it }
     BackHandler(enabled = true) {}
-    CacheDatabaseStartupScreen(
-        plan = plan,
-        checking = checking,
-        opening = opening,
-        progress = progressSnapshot,
-        progressMetricsText = formatProgressMetrics(
-            calculateProgressMetrics(
-                processed = progressSnapshot.processed,
-                total = progressSnapshot.total,
-                startedAtMillis = openingStartedAt,
-                nowMillis = nowMillis
-            )
-        ),
-        failure = failure,
-        onUpgrade = { openRequest += 1 },
-        onClose = onClose
-    )
+    if (plan is CacheDatabaseStartupPlan.UpgradeRequired || failure != null) {
+        CacheDatabaseStartupScreen(
+            plan = plan,
+            opening = opening,
+            progress = progressSnapshot,
+            progressMetricsText = formatProgressMetrics(
+                calculateProgressMetrics(
+                    processed = progressSnapshot.processed,
+                    total = progressSnapshot.total,
+                    startedAtMillis = openingStartedAt,
+                    nowMillis = nowMillis
+                )
+            ),
+            failure = failure,
+            onUpgrade = { openRequest += 1 },
+            onClose = onClose
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        )
+    }
     return null
 }
 
 @Composable
 private fun CacheDatabaseStartupScreen(
     plan: CacheDatabaseStartupPlan?,
-    checking: Boolean,
     opening: Boolean,
     progress: CacheDatabaseStartupProgress,
     progressMetricsText: String,
@@ -166,11 +169,11 @@ private fun CacheDatabaseStartupScreen(
         ) {
             val upgrade = plan as? CacheDatabaseStartupPlan.UpgradeRequired
             val title = when {
-                failure != null -> "Database upgrade failed"
-                checking -> "Checking database"
+                failure != null && upgrade != null -> "Database upgrade failed"
+                failure != null -> "Database startup failed"
                 opening -> "Upgrading database"
                 upgrade != null -> "Database upgrade required"
-                else -> "Opening database"
+                else -> "Database startup unavailable"
             }
             Text(
                 text = title,
@@ -189,7 +192,6 @@ private fun CacheDatabaseStartupScreen(
                     text = failure,
                     color = MaterialTheme.colorScheme.error
                 )
-                checking -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 opening -> {
                     CacheDatabaseStartupProgressIndicator(progress)
                     Text(

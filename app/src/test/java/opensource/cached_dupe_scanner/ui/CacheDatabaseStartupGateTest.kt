@@ -33,6 +33,68 @@ class CacheDatabaseStartupGateTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun currentDatabaseOpensWithoutRenderingDatabaseStartupScreen() {
+        val inspectResult = CompletableDeferred<CacheDatabaseStartupPlan>()
+        val openStarted = CompletableDeferred<Unit>()
+        val releaseOpen = CompletableDeferred<Unit>()
+        composeRule.setContent {
+            val database = cacheDatabaseStartupGate(
+                inspect = { inspectResult.await() },
+                openDatabase = { _, _ ->
+                    openStarted.complete(Unit)
+                    releaseOpen.await()
+                    "database"
+                },
+                onClose = {}
+            )
+            if (database != null) Text("Main content")
+        }
+
+        composeRule.onNodeWithText("Checking database").assertDoesNotExist()
+        composeRule.onNodeWithText("Database upgrade required").assertDoesNotExist()
+
+        inspectResult.complete(CacheDatabaseStartupPlan.OpenCurrent(existingVersion = 24))
+        composeRule.waitUntil(timeoutMillis = 5_000) { openStarted.isCompleted }
+
+        composeRule.onNodeWithText("Opening database").assertDoesNotExist()
+        composeRule.onNodeWithText("Upgrading database").assertDoesNotExist()
+        composeRule.onNodeWithText("Database upgrade required").assertDoesNotExist()
+        composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertDoesNotExist()
+
+        releaseOpen.complete(Unit)
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Main content", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+
+        composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun currentDatabaseOpenFailureIsNotReportedAsUpgradeFailure() {
+        composeRule.setContent {
+            cacheDatabaseStartupGate(
+                inspect = {
+                    CacheDatabaseStartupPlan.OpenCurrent(existingVersion = 24)
+                },
+                openDatabase = { _, _ -> error("Cannot open current database") },
+                onClose = {}
+            )
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Database startup failed")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        composeRule.onNodeWithText("Database startup failed").assertExists()
+        composeRule.onNodeWithText("The database could not be opened.").assertExists()
+        composeRule.onNodeWithText("Database upgrade failed").assertDoesNotExist()
+        composeRule.onNodeWithText("Retry").assertExists()
+    }
+
+    @Test
     fun upgradeRequiresUserActionAndBlocksMainContentUntilCompletion() {
         val openCalls = AtomicInteger(0)
         val releaseUpgrade = CompletableDeferred<Unit>()

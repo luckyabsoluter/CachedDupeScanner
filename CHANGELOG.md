@@ -63,6 +63,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Current databases now remain on the neutral launch background while they are checked and opened, so the blocking upgrade screen appears only when an upgrade is actually required.
 - The Android launch splash and blocking database upgrade screen now follow system dark mode with matching opaque backgrounds and readable foreground colors.
 - Task progress bars no longer draw a primary-color stop marker at the right edge while incomplete, and very large incomplete counts remain below 100 percent.
 - Scrollbars now map each drag from the current pointer position instead of accumulated deltas, keeping variable-height lazy lists pinned to the final item when thumb estimates change.
