@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui
 
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.util.concurrent.atomic.AtomicInteger
@@ -67,7 +68,11 @@ class CacheDatabaseStartupGateTest {
         composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertDoesNotExist()
 
         releaseUpgrade.complete(Unit)
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Main content", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
 
         composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertExists()
         assertEquals(1, openCalls.get())
