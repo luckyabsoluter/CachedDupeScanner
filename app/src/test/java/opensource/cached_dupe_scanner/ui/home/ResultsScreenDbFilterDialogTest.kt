@@ -3,7 +3,9 @@ package opensource.cached_dupe_scanner.ui.home
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,6 +23,59 @@ import org.robolectric.annotation.Config
 class ResultsScreenDbFilterDialogTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
+    fun clusterCanCollapseAndRestoreItsExpandedRule() {
+        val initial = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Paths",
+                    mode = ResultsFilterClusterMode.All,
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            value = "sample"
+                        )
+                    )
+                )
+            )
+        )
+        composeRule.setContent {
+            ResultsFilterScreen(
+                definition = initial,
+                onDefinitionChange = {},
+                onBack = {},
+                onApply = {}
+            )
+        }
+
+        composeRule.onNodeWithContentDescription("Collapse cluster 1").assertExists()
+        composeRule.onNodeWithText("Cluster 1 - Paths").assertExists()
+        composeRule.onNodeWithText("1 rule | Match all").assertExists()
+        composeRule.onNodeWithTag("filter-cluster-enabled:cluster_1").performClick()
+        composeRule.onNodeWithContentDescription("Collapse cluster 1").assertExists()
+        composeRule.onNodeWithTag("filter-rule:rule_1").performClick()
+        composeRule.onNodeWithText("File name text").assertExists()
+
+        composeRule.onNodeWithTag("filter-cluster:cluster_1").performClick()
+
+        composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
+        assertTrue(
+            composeRule.onAllNodesWithTag("filter-rule:rule_1")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+        assertTrue(composeRule.onAllNodesWithText("File name text").fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithTag("filter-cluster:cluster_1").performClick()
+
+        composeRule.onNodeWithContentDescription("Collapse cluster 1").assertExists()
+        composeRule.onNodeWithTag("filter-rule:rule_1").assertExists()
+        composeRule.onNodeWithText("File name text").assertExists()
+    }
 
     @Test
     fun resultMemberRuleBranchesToAnyOrAllMembers() {

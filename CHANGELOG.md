@@ -35,6 +35,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Database upgrades now require explicit confirmation on a blocking startup screen, keep the main app unavailable until completion, and report the active migration stage.
 - Version 21 cache upgrades now build and verify a side-by-side v24 database, preserve readable scan and similarity results when oversized legacy derived tables are corrupt, reconstruct exact-thumbnail features from cluster identities, and replace the original only after integrity and relationship checks pass.
 - Scan-cache files and similarity sidecar rows now share stable integer file identities, with an indexed v21-to-v22 migration that preserves valid generated data and removes orphaned relationships.
+- Filter editor clusters now provide saveable collapsible headers that retain cluster identity, rule count, logic, enablement, removal, and any open rule editor state.
 - Filter editors now present rules inside each cluster as target-labeled accordion rows with distinct tonal borders, expanding one editor at a time while keeping enable and removal controls available.
 - Filter rule editors now show only the current target until its selector is opened, with the available targets presented in a dropdown menu.
 - Source and manifest text assertions are replaced by runtime tests for merged package metadata, app-owned task survival, foreground-service routing, scan completion ordering, serialized similarity maintenance, and Compose detail interactions.

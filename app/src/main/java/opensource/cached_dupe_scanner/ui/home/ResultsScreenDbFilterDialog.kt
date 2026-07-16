@@ -304,6 +304,7 @@ private fun ResultsFilterClusterEditor(
     onRemoveRule: (String) -> Unit,
     onRemoveCluster: () -> Unit
 ) {
+    val expanded = rememberSaveable(cluster.id) { mutableStateOf(true) }
     val expandedRuleId = rememberSaveable(cluster.id) { mutableStateOf<String?>(null) }
 
     Card {
@@ -316,27 +317,64 @@ private fun ResultsFilterClusterEditor(
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            ) clusterContent@{
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("filter-cluster:${cluster.id}")
+                        .clickable { expanded.value = !expanded.value }
+                        .semantics {
+                            stateDescription = if (expanded.value) "Expanded" else "Collapsed"
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = cluster.enabled,
-                            onCheckedChange = { enabled ->
-                                onClusterChange(cluster.copy(enabled = enabled))
-                            }
+                    Checkbox(
+                        checked = cluster.enabled,
+                        onCheckedChange = { enabled ->
+                            onClusterChange(cluster.copy(enabled = enabled))
+                        },
+                        modifier = Modifier.testTag("filter-cluster-enabled:${cluster.id}")
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Cluster ${clusterIndex + 1}" + cluster.name
+                                .trim()
+                                .takeIf { name -> name.isNotEmpty() }
+                                ?.let { name -> " - $name" }
+                                .orEmpty(),
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Text("Cluster ${clusterIndex + 1}")
+                        Text(
+                            text = "${cluster.rules.size} " +
+                                "${if (cluster.rules.size == 1) "rule" else "rules"} | " +
+                                cluster.mode.label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
+                    Icon(
+                        imageVector = if (expanded.value) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded.value) {
+                            "Collapse cluster ${clusterIndex + 1}"
+                        } else {
+                            "Expand cluster ${clusterIndex + 1}"
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
                     if (canRemove) {
                         OutlinedButton(onClick = onRemoveCluster) {
                             Text("Remove")
                         }
                     }
                 }
+
+                if (!expanded.value) return@clusterContent
 
                 OutlinedTextField(
                     value = cluster.name,
