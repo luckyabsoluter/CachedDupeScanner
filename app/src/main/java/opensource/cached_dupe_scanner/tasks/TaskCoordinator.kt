@@ -22,7 +22,8 @@ enum class TaskKind {
     EmptyTrash,
     BulkDelete,
     SimilarityGeneration,
-    SimilarityClear
+    SimilarityClear,
+    SimilarityFilter
 }
 
 enum class TaskStatus {

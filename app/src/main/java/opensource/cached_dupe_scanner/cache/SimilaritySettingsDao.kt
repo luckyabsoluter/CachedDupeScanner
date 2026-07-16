@@ -173,6 +173,38 @@ interface SimilaritySettingsDao {
     @Query("SELECT COUNT(*) FROM similarity_setting_files WHERE settingId = :settingId")
     fun countSettingFiles(settingId: Long): Int
 
+    @Query(
+        """
+        SELECT COUNT(DISTINCT member.fileId)
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        WHERE member.clusterId IN (:clusterIds)
+          AND cluster.settingId = :settingId
+          AND setting_file.dimensionsChecked = 0
+        """
+    )
+    fun countUncheckedDimensionsForClusters(settingId: Long, clusterIds: List<Long>): Int
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT member.fileId)
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        WHERE member.clusterId IN (:clusterIds)
+          AND cluster.settingId = :settingId
+          AND setting_file.durationChecked = 0
+        """
+    )
+    fun countUncheckedDurationsForClusters(settingId: Long, clusterIds: List<Long>): Int
+
     @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
     fun countExactThumbnailFeatures(settingId: Long): Int
 

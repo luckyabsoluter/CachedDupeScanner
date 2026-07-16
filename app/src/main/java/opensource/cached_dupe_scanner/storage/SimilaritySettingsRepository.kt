@@ -123,6 +123,17 @@ enum class SimilarityMemberSortColumn {
     Modified
 }
 
+enum class SimilarityMemberResolutionKind {
+    Dimensions,
+    Duration
+}
+
+data class SimilarityMemberResolutionEvent(
+    val kind: SimilarityMemberResolutionKind,
+    val path: String,
+    val completed: Boolean
+)
+
 class SimilaritySettingsRepository(
     private val database: CacheDatabase,
     private val fileDao: FileCacheDao,
@@ -439,7 +450,8 @@ class SimilaritySettingsRepository(
         sortColumn: SimilarityMemberSortColumn = SimilarityMemberSortColumn.Position,
         direction: SortDirection = SortDirection.Asc,
         resolveDimensions: Boolean = false,
-        resolveDurations: Boolean = false
+        resolveDurations: Boolean = false,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = {}
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
@@ -491,11 +503,33 @@ class SimilaritySettingsRepository(
             }
         }
         var resolvedRows = rows
-        if (resolveDimensions) resolvedRows = resolveUncheckedDimensions(resolvedRows)
-        if (resolveDurations) resolvedRows = resolveUncheckedDurations(resolvedRows)
+        if (resolveDimensions) {
+            resolvedRows = resolveUncheckedDimensions(resolvedRows, onResolutionEvent)
+        }
+        if (resolveDurations) {
+            resolvedRows = resolveUncheckedDurations(resolvedRows, onResolutionEvent)
+        }
         return resolvedRows.map { row ->
             row.toClusterMember()
         }
+    }
+
+    internal fun countFilterResolutionWorkForClusters(
+        settingId: Long,
+        clusterIds: List<Long>,
+        resolveDimensions: Boolean,
+        resolveDurations: Boolean
+    ): Int {
+        val distinctClusterIds = clusterIds.distinct()
+        if (distinctClusterIds.isEmpty()) return 0
+        var count = 0L
+        if (resolveDimensions) {
+            count += similarityDao.countUncheckedDimensionsForClusters(settingId, distinctClusterIds)
+        }
+        if (resolveDurations) {
+            count += similarityDao.countUncheckedDurationsForClusters(settingId, distinctClusterIds)
+        }
+        return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     fun generateEnabledResults(
@@ -1595,7 +1629,8 @@ class SimilaritySettingsRepository(
     }
 
     private fun resolveUncheckedDimensions(
-        rows: List<SimilarityClusterMemberFileRow>
+        rows: List<SimilarityClusterMemberFileRow>,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
     ): List<SimilarityClusterMemberFileRow> {
         val uncheckedRows = rows.filterNot { row -> row.dimensionsChecked }
         if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
@@ -1607,6 +1642,13 @@ class SimilaritySettingsRepository(
         val shouldContinue = { !Thread.currentThread().isInterrupted }
         val resolved = uncheckedRows.mapNotNull { row ->
             if (!shouldContinue()) return@mapNotNull null
+            onResolutionEvent(
+                SimilarityMemberResolutionEvent(
+                    kind = SimilarityMemberResolutionKind.Dimensions,
+                    path = row.path,
+                    completed = false
+                )
+            )
             val file = File(row.path)
             val dimensions = if (file.exists()) {
                 mediaDimensionsExtractor.dimensions(
@@ -1617,7 +1659,18 @@ class SimilaritySettingsRepository(
             } else {
                 null
             }
-            if (!shouldContinue()) null else PendingDimensionResolution(row, dimensions)
+            if (!shouldContinue()) {
+                null
+            } else {
+                onResolutionEvent(
+                    SimilarityMemberResolutionEvent(
+                        kind = SimilarityMemberResolutionKind.Dimensions,
+                        path = row.path,
+                        completed = true
+                    )
+                )
+                PendingDimensionResolution(row, dimensions)
+            }
         }
         if (resolved.isEmpty()) return rows
 
@@ -1663,7 +1716,8 @@ class SimilaritySettingsRepository(
     }
 
     private fun resolveUncheckedDurations(
-        rows: List<SimilarityClusterMemberFileRow>
+        rows: List<SimilarityClusterMemberFileRow>,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
     ): List<SimilarityClusterMemberFileRow> {
         val uncheckedRows = rows.filterNot { row -> row.durationChecked }
         if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
@@ -1675,6 +1729,13 @@ class SimilaritySettingsRepository(
         val shouldContinue = { !Thread.currentThread().isInterrupted }
         val resolved = uncheckedRows.mapNotNull { row ->
             if (!shouldContinue()) return@mapNotNull null
+            onResolutionEvent(
+                SimilarityMemberResolutionEvent(
+                    kind = SimilarityMemberResolutionKind.Duration,
+                    path = row.path,
+                    completed = false
+                )
+            )
             val file = File(row.path)
             val durationMillis = if (mediaScope == SimilarityMediaScope.Video && file.exists()) {
                 durationExtractor.durationMillis(
@@ -1684,7 +1745,18 @@ class SimilaritySettingsRepository(
             } else {
                 null
             }
-            if (!shouldContinue()) null else PendingDurationResolution(row, durationMillis)
+            if (!shouldContinue()) {
+                null
+            } else {
+                onResolutionEvent(
+                    SimilarityMemberResolutionEvent(
+                        kind = SimilarityMemberResolutionKind.Duration,
+                        path = row.path,
+                        completed = true
+                    )
+                )
+                PendingDurationResolution(row, durationMillis)
+            }
         }
         if (resolved.isEmpty()) return rows
 

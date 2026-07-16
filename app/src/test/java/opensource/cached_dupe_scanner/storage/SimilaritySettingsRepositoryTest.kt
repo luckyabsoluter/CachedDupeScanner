@@ -32,6 +32,7 @@ import opensource.cached_dupe_scanner.ui.home.ResultsFilterCluster
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterDefinition
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterRule
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterTarget
+import opensource.cached_dupe_scanner.ui.home.SimilarityFilterResolutionProgress
 import opensource.cached_dupe_scanner.ui.home.loadFilteredSimilarityClustersPage
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -699,7 +700,7 @@ class SimilaritySettingsRepositoryTest {
                 )
             )
         )
-
+        val progress = mutableListOf<SimilarityFilterResolutionProgress>()
         val filtered = loadFilteredSimilarityClustersPage(
             repository = repository,
             settingId = setting.settingId,
@@ -709,10 +710,17 @@ class SimilaritySettingsRepositoryTest {
             startOffset = 0,
             minMatches = 10,
             sourcePageSize = 1,
-            memberPageSize = 1
+            memberPageSize = 1,
+            onResolutionProgress = progress::add
         )
 
         assertEquals(1, filtered.clusters.size)
+        assertEquals(0, progress.first().processed)
+        assertEquals(3, progress.first().total)
+        assertEquals(3, progress.last().processed)
+        assertEquals(3, progress.last().total)
+        assertEquals(SimilarityMemberResolutionKind.Duration, progress.last().kind)
+        assertEquals(files.last().absolutePath, progress.last().currentPath)
         assertEquals(
             listOf(10_000L, 10_100L, 10_200L),
             repository.listClusterMembers(filtered.clusters.single().clusterId)
@@ -729,6 +737,7 @@ class SimilaritySettingsRepositoryTest {
             )
         }
 
+        val cachedProgress = mutableListOf<SimilarityFilterResolutionProgress>()
         val cached = loadFilteredSimilarityClustersPage(
             repository = repository(),
             settingId = setting.settingId,
@@ -738,10 +747,12 @@ class SimilaritySettingsRepositoryTest {
             startOffset = 0,
             minMatches = 10,
             sourcePageSize = 1,
-            memberPageSize = 1
+            memberPageSize = 1,
+            onResolutionProgress = cachedProgress::add
         )
 
         assertEquals(1, cached.clusters.size)
+        assertTrue(cachedProgress.isEmpty())
     }
 
     @Test
@@ -879,6 +890,7 @@ class SimilaritySettingsRepositoryTest {
                 )
             )
         )
+        val progress = mutableListOf<SimilarityFilterResolutionProgress>()
 
         val filtered = loadFilteredSimilarityClustersPage(
             repository = filteringRepository,
@@ -889,10 +901,17 @@ class SimilaritySettingsRepositoryTest {
             startOffset = 0,
             minMatches = 10,
             sourcePageSize = 1,
-            memberPageSize = 1
+            memberPageSize = 1,
+            onResolutionProgress = progress::add
         )
 
         assertEquals(1, filtered.clusters.size)
+        assertEquals(0, progress.first().processed)
+        assertEquals(2, progress.first().total)
+        assertEquals(2, progress.last().processed)
+        assertEquals(2, progress.last().total)
+        assertEquals(SimilarityMemberResolutionKind.Dimensions, progress.last().kind)
+        assertEquals(second.absolutePath, progress.last().currentPath)
         listOf(first, second).forEach { file ->
             val stored = requireNotNull(similarityDao.getSettingFile(setting.settingId, fileId(file)))
             assertEquals(1920, stored.widthPixels)

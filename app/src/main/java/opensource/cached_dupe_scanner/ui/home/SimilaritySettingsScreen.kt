@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -96,15 +97,20 @@ import opensource.cached_dupe_scanner.storage.SimilarityClusterMember
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSortColumn
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSummary
 import opensource.cached_dupe_scanner.storage.SimilarityClearMode
+import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilarityMemberSortColumn
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 import opensource.cached_dupe_scanner.tasks.TaskArea
 import opensource.cached_dupe_scanner.tasks.TaskCoordinator
+import opensource.cached_dupe_scanner.tasks.TaskKind
+import opensource.cached_dupe_scanner.tasks.TaskSnapshot
+import opensource.cached_dupe_scanner.tasks.TaskStatus
 import opensource.cached_dupe_scanner.ui.components.AppTopBar
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialog
 import opensource.cached_dupe_scanner.ui.components.ConfirmationDialogButtonStyle
 import opensource.cached_dupe_scanner.ui.components.RadioOptionRow
 import opensource.cached_dupe_scanner.ui.components.ScreenScrollColumn
+import opensource.cached_dupe_scanner.ui.components.TaskProgressCard
 import opensource.cached_dupe_scanner.ui.components.formatFilteredLoadProgressText
 import opensource.cached_dupe_scanner.ui.components.formatLoadProgressText
 import opensource.cached_dupe_scanner.ui.home.similarity.SimilaritySizeUnit
@@ -876,6 +882,7 @@ fun SimilaritySettingGroupsScreen(
     val groupListState = rememberLazyListState()
     var groupsLoaded by remember(settingId) { mutableStateOf(false) }
     var clusterLoading by remember(settingId) { mutableStateOf(false) }
+    var filterResolutionTask by remember(settingId) { mutableStateOf<TaskSnapshot?>(null) }
     var groupsLoadError by remember(settingId) { mutableStateOf<String?>(null) }
     var pendingClusterResetIndex by remember(settingId) { mutableStateOf<Int?>(null) }
     var pendingClusterScrollIndex by remember(settingId) { mutableStateOf<Int?>(null) }
@@ -902,6 +909,8 @@ fun SimilaritySettingGroupsScreen(
             return
         }
         clusterLoading = true
+        filterResolutionTask = null
+        val filterResolutionStartedAt = System.currentTimeMillis()
         if (reset) {
             pendingClusterResetIndex = null
             groupsLoaded = false
@@ -941,7 +950,15 @@ fun SimilaritySettingGroupsScreen(
                             definition = appliedFilter,
                             startOffset = pageOffset,
                             minMatches = pageLimit,
-                            sourcePageSize = SIMILARITY_CLUSTER_GROUP_PAGE_SIZE
+                            sourcePageSize = SIMILARITY_CLUSTER_GROUP_PAGE_SIZE,
+                            onResolutionProgress = { progress ->
+                                val task = progress.toFilterResolutionTask(
+                                    startedAt = filterResolutionStartedAt
+                                )
+                                Snapshot.withMutableSnapshot {
+                                    filterResolutionTask = task
+                                }
+                            }
                         )
                     } else {
                         val loadedClusters = repository.listClustersPage(
@@ -987,6 +1004,7 @@ fun SimilaritySettingGroupsScreen(
                 }
             } finally {
                 clusterLoading = false
+                filterResolutionTask = null
                 pendingClusterResetIndex?.let { pendingIndex ->
                     pendingClusterResetIndex = null
                     loadClusterPage(reset = true, restoredFirstVisibleIndex = pendingIndex)
@@ -1062,7 +1080,12 @@ fun SimilaritySettingGroupsScreen(
                 title = setting?.displayName ?: "Similarity results",
                 onBack = onBack
             )
-            Text(text = "Loading similarity results...", style = MaterialTheme.typography.bodySmall)
+            val activeFilterResolutionTask = filterResolutionTask
+            if (activeFilterResolutionTask == null) {
+                Text(text = "Loading similarity results...", style = MaterialTheme.typography.bodySmall)
+            } else {
+                SimilarityFilterResolutionProgressCard(activeFilterResolutionTask)
+            }
         }
     } else {
         ScreenScrollColumn(
@@ -1115,6 +1138,11 @@ fun SimilaritySettingGroupsScreen(
                         }
                     }
                 )
+            }
+            filterResolutionTask?.let { task ->
+                item(key = "filter_resolution_progress") {
+                    SimilarityFilterResolutionProgressCard(task)
+                }
             }
             val selectedSetting = setting
             val loadError = groupsLoadError
@@ -1204,6 +1232,39 @@ fun SimilaritySettingGroupsScreen(
             }
         )
     }
+}
+
+private fun SimilarityFilterResolutionProgress.toFilterResolutionTask(
+    startedAt: Long
+): TaskSnapshot {
+    val progressDetail = when (kind) {
+        SimilarityMemberResolutionKind.Dimensions -> "Media dimensions"
+        SimilarityMemberResolutionKind.Duration -> "Video durations"
+        null -> "Preparing metadata"
+    }
+    return TaskSnapshot(
+        area = TaskArea.Similarity,
+        kind = TaskKind.SimilarityFilter,
+        title = "Recalculating filter metadata",
+        detail = "$progressDetail: $processed/$total",
+        currentPath = currentPath,
+        processed = processed,
+        total = total,
+        indeterminate = total <= 0,
+        startedAt = startedAt,
+        isCancellable = false,
+        status = TaskStatus.Running
+    )
+}
+
+@Composable
+private fun SimilarityFilterResolutionProgressCard(task: TaskSnapshot) {
+    TaskProgressCard(
+        task = task,
+        onCancel = {},
+        modifier = Modifier.testTag("similarity-filter-resolution-progress"),
+        showCancelWhenDisabled = false
+    )
 }
 
 @Composable

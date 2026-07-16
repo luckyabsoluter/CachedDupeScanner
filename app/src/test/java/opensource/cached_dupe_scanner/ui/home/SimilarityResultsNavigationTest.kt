@@ -30,6 +30,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +40,8 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
+import opensource.cached_dupe_scanner.core.MediaDimensions
+import opensource.cached_dupe_scanner.core.MediaDimensionsExtractor
 import opensource.cached_dupe_scanner.core.PathNormalizer
 import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
@@ -155,6 +159,11 @@ class SimilarityResultsNavigationTest {
             )
         }
 
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithTag("similarity-incremental-clear")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
         composeRule.onNodeWithTag("similarity-incremental-clear")
             .performScrollTo()
             .performClick()
@@ -302,6 +311,87 @@ class SimilarityResultsNavigationTest {
                 .fetchSemanticsNodes()
                 .isEmpty()
         )
+    }
+
+    @Test
+    fun groupsScreenShowsProgressWhileFilterMetadataIsRecalculated() {
+        val fixture = createSimilarityFixture()
+        val similarityDao = database.similaritySettingsDao()
+        listOf(fixture.firstFile, fixture.secondFile).forEach { file ->
+            val fileId = requireNotNull(
+                database.fileCacheDao().getByNormalizedPath(file.normalizedPathForTest())
+            ).fileId
+            val stored = requireNotNull(similarityDao.getSettingFile(fixture.settingId, fileId))
+            similarityDao.upsertSettingFiles(
+                listOf(
+                    stored.copy(
+                        widthPixels = null,
+                        heightPixels = null,
+                        dimensionsChecked = false
+                    )
+                )
+            )
+        }
+        val dimensionsExtractor = BlockingMediaDimensionsExtractor()
+        val filteringRepository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = similarityDao,
+            frameSignatureExtractor = FakeSignatureExtractor(emptyMap()),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = dimensionsExtractor
+        )
+        val settingsStore = AppSettingsStore(context)
+        settingsStore.setSimilarityFilterDefinitionJson(
+            resultsFilterDefinitionToJson(
+                ResultsFilterDefinition(
+                    clusters = listOf(
+                        createResultsFilterCluster().copy(
+                            rules = listOf(createResultsFilterRule(ResultsFilterTarget.SameResolution))
+                        )
+                    )
+                )
+            )
+        )
+
+        composeRule.setContent {
+            SimilaritySettingGroupsScreen(
+                repository = filteringRepository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                thumbnailSizeScale = 1f,
+                rememberedPreviewCache = mutableStateMapOf(),
+                showFullPaths = false,
+                deletedPaths = emptySet(),
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                onBack = {},
+                onOpenCluster = { _, _ -> },
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        try {
+            composeRule.waitUntil(5_000) {
+                dimensionsExtractor.firstExtractionEntered.count == 0L
+            }
+            composeRule.onNodeWithTag("similarity-filter-resolution-progress").assertExists()
+            composeRule.onNodeWithText("Recalculating filter metadata").assertExists()
+            composeRule.onNodeWithText("Media dimensions: 0/2").assertExists()
+            composeRule.onNodeWithText("Speed:", substring = true).assertExists()
+            composeRule.onNodeWithText("Elapsed:", substring = true).assertExists()
+            composeRule.onNodeWithText("Remaining:", substring = true).assertExists()
+            composeRule.onNodeWithText(fixture.firstFile.absolutePath).assertExists()
+        } finally {
+            dimensionsExtractor.releaseFirstExtraction.countDown()
+        }
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("similarity-filter-resolution-progress")
+                .fetchSemanticsNodes()
+                .isEmpty()
+        }
+        composeRule.onNodeWithTag("similarity-cluster:${fixture.clusterId}").assertExists()
     }
 
     @Test
@@ -912,6 +1002,21 @@ class SimilarityResultsNavigationTest {
             shouldContinue: () -> Boolean
         ): Long? {
             return durationsByName[file.name]
+        }
+    }
+
+    private class BlockingMediaDimensionsExtractor : MediaDimensionsExtractor {
+        val firstExtractionEntered = CountDownLatch(1)
+        val releaseFirstExtraction = CountDownLatch(1)
+
+        override fun dimensions(
+            file: File,
+            mediaScope: SimilarityMediaScope,
+            shouldContinue: () -> Boolean
+        ): MediaDimensions? {
+            firstExtractionEntered.countDown()
+            check(releaseFirstExtraction.await(5, TimeUnit.SECONDS))
+            return MediaDimensions(widthPixels = 1920, heightPixels = 1080)
         }
     }
 }
