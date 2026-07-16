@@ -32,8 +32,11 @@ val CACHE_DATABASE_MIGRATIONS: Array<Migration> = arrayOf(
     CacheMigrations.MIGRATION_23_24
 )
 
-fun buildCacheDatabase(context: Context): CacheDatabase {
-    return Room.databaseBuilder(context, CacheDatabase::class.java, CACHE_DATABASE_NAME)
+fun buildCacheDatabase(
+    context: Context,
+    databaseName: String = CACHE_DATABASE_NAME
+): CacheDatabase {
+    return Room.databaseBuilder(context, CacheDatabase::class.java, databaseName)
         .addMigrations(*CACHE_DATABASE_MIGRATIONS)
         .build()
 }

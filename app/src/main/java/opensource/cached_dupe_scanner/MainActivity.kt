@@ -41,7 +41,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
-import opensource.cached_dupe_scanner.cache.buildCacheDatabase
+import opensource.cached_dupe_scanner.cache.inspectCacheDatabaseStartup
+import opensource.cached_dupe_scanner.cache.openCacheDatabaseForStartup
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
@@ -81,6 +82,7 @@ import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.home.similarity.runScanIntegratedSimilarityGeneration
+import opensource.cached_dupe_scanner.ui.cacheDatabaseStartupGate
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
@@ -90,6 +92,18 @@ class MainActivity : ComponentActivity() {
         updateSystemBars()
         setContent {
             CachedDupeScannerTheme {
+                val context = LocalContext.current
+                val database = cacheDatabaseStartupGate(
+                    inspect = { inspectCacheDatabaseStartup(context) },
+                    openDatabase = { plan, onProgress ->
+                        openCacheDatabaseForStartup(
+                            context = context,
+                            plan = plan,
+                            onProgress = onProgress
+                        )
+                    },
+                    onClose = ::finish
+                ) ?: return@CachedDupeScannerTheme
                 val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                 val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                 val displayResult = remember { mutableStateOf<ScanResult?>(null) }
@@ -105,7 +119,6 @@ class MainActivity : ComponentActivity() {
                 val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
-                val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
                 val rememberedThumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
@@ -135,7 +148,6 @@ class MainActivity : ComponentActivity() {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                val database = remember { buildCacheDatabase(context) }
                 val scanCacheStore = remember { CacheStore(database.fileCacheDao()) }
                 val scanner = remember {
                     IncrementalScanner(

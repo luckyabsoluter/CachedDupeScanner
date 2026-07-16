@@ -21,7 +21,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 
 - **Incremental scans**: unchanged files are not re-hashed; cache is reused.
 - **Deferred hashing**: SHA-256 is computed only when size collisions exist.
-- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities and indexed 32-byte SHA-256 storage shared by derived data.
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities, indexed 32-byte SHA-256 storage shared by derived data, and user-approved blocking upgrades before the app opens its data screens.
 - **Target management**: save multiple scan targets; run per-target or batch scans.
 - **Duplicate grouping**: database-backed result browsing with infinite scrolling for large datasets.
 - **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete. default exclusion avoids re-scanning the bin.
@@ -36,6 +36,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Advanced bulk delete**: Full-candidate previews support keeping exactly one, at least one, or an exact custom count of matching or non-matching files by text rule, or keeping the oldest, newest, shortest-duration, or longest-duration file, with modified-time fallback for equal video durations.
 - **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to detected duplicate groups. Actionable via notification-backed execution.
 - **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; exact reduced thumbnails are grouped by indexed 32-byte SHA-256 values, while numeric file-ID joins, bounded parallel media feature extraction, persistent sort options, and progress-tracked Update/Rebuild actions keep large result sets practical.
+- **Legacy similarity recovery**: version 21 cache upgrades build and verify a compact replacement database while preserving readable settings, clusters, members, durations, reports, and cache rows; exact features are reconstructed from stored cluster identities without reading oversized legacy payload tables.
 
 ## How scanning works
 
