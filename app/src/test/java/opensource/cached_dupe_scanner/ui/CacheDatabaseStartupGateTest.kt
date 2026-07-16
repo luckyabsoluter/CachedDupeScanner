@@ -7,6 +7,7 @@ import androidx.compose.ui.test.performClick
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupPlan
+import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupProgress
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -34,7 +35,13 @@ class CacheDatabaseStartupGateTest {
                 inspect = { plan },
                 openDatabase = { _, onProgress ->
                     openCalls.incrementAndGet()
-                    onProgress("Preserving similarity results")
+                    onProgress(
+                        CacheDatabaseStartupProgress(
+                            stage = "Preserving similarity results",
+                            processed = 20L,
+                            total = 100L
+                        )
+                    )
                     releaseUpgrade.await()
                     "database"
                 },
@@ -53,6 +60,9 @@ class CacheDatabaseStartupGateTest {
 
         composeRule.onNodeWithText("Upgrading database").assertExists()
         composeRule.onNodeWithText("Preserving similarity results").assertExists()
+        composeRule.onNodeWithText("Speed:", substring = true).assertExists()
+        composeRule.onNodeWithText("Elapsed:", substring = true).assertExists()
+        composeRule.onNodeWithText("Remaining:", substring = true).assertExists()
         composeRule.onNodeWithText("Upgrade database").assertDoesNotExist()
         composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertDoesNotExist()
 

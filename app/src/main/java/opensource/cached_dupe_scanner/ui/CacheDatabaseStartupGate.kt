@@ -16,9 +16,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,14 +36,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupPlan
+import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupProgress
+import opensource.cached_dupe_scanner.tasks.calculateProgressMetrics
+import opensource.cached_dupe_scanner.tasks.formatProgressMetrics
+import opensource.cached_dupe_scanner.ui.components.boundedProgressFraction
 
 @Composable
 internal fun <T : Any> cacheDatabaseStartupGate(
     inspect: suspend () -> CacheDatabaseStartupPlan,
-    openDatabase: suspend (CacheDatabaseStartupPlan, (String) -> Unit) -> T,
+    openDatabase: suspend (
+        CacheDatabaseStartupPlan,
+        (CacheDatabaseStartupProgress) -> Unit
+    ) -> T,
     onClose: () -> Unit
 ): T? {
     var plan by remember { mutableStateOf<CacheDatabaseStartupPlan?>(null) }
@@ -49,8 +60,12 @@ internal fun <T : Any> cacheDatabaseStartupGate(
     var database by remember { mutableStateOf<T?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var openRequest by remember { mutableIntStateOf(0) }
-    val progress = remember { MutableStateFlow("Preparing database") }
-    val progressText by progress.collectAsState()
+    var openingStartedAt by remember { mutableLongStateOf(0L) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val progress = remember {
+        MutableStateFlow(CacheDatabaseStartupProgress(stage = "Preparing database"))
+    }
+    val progressSnapshot by progress.collectAsState()
 
     LaunchedEffect(Unit) {
         try {
@@ -73,6 +88,9 @@ internal fun <T : Any> cacheDatabaseStartupGate(
     LaunchedEffect(openRequest) {
         if (openRequest == 0) return@LaunchedEffect
         val currentPlan = plan ?: return@LaunchedEffect
+        openingStartedAt = System.currentTimeMillis()
+        nowMillis = openingStartedAt
+        progress.value = CacheDatabaseStartupProgress(stage = "Preparing database")
         opening = true
         failure = null
         try {
@@ -92,13 +110,28 @@ internal fun <T : Any> cacheDatabaseStartupGate(
         }
     }
 
+    LaunchedEffect(opening, openingStartedAt) {
+        while (opening) {
+            delay(PROGRESS_METRICS_REFRESH_MILLIS)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+
     database?.let { return it }
     BackHandler(enabled = true) {}
     CacheDatabaseStartupScreen(
         plan = plan,
         checking = checking,
         opening = opening,
-        progressText = progressText,
+        progress = progressSnapshot,
+        progressMetricsText = formatProgressMetrics(
+            calculateProgressMetrics(
+                processed = progressSnapshot.processed,
+                total = progressSnapshot.total,
+                startedAtMillis = openingStartedAt,
+                nowMillis = nowMillis
+            )
+        ),
         failure = failure,
         onUpgrade = { openRequest += 1 },
         onClose = onClose
@@ -111,7 +144,8 @@ private fun CacheDatabaseStartupScreen(
     plan: CacheDatabaseStartupPlan?,
     checking: Boolean,
     opening: Boolean,
-    progressText: String,
+    progress: CacheDatabaseStartupProgress,
+    progressMetricsText: String,
     failure: String?,
     onUpgrade: () -> Unit,
     onClose: () -> Unit
@@ -150,9 +184,14 @@ private fun CacheDatabaseStartupScreen(
                 )
                 checking -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 opening -> {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    CacheDatabaseStartupProgressIndicator(progress)
                     Text(
-                        text = progressText,
+                        text = progress.stage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = progressMetricsText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -191,3 +230,22 @@ private fun CacheDatabaseStartupScreen(
         }
     }
 }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CacheDatabaseStartupProgressIndicator(progress: CacheDatabaseStartupProgress) {
+    val processed = progress.processed
+    val total = progress.total
+    if (processed == null || total == null || total <= 0L) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        return
+    }
+    LinearProgressIndicator(
+        progress = { boundedProgressFraction(processed = processed, total = total) },
+        modifier = Modifier.fillMaxWidth(),
+        gapSize = ProgressIndicatorDefaults.LinearIndicatorTrackGapSize,
+        drawStopIndicator = {}
+    )
+}
+
+private const val PROGRESS_METRICS_REFRESH_MILLIS = 1_000L

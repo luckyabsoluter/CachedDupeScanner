@@ -145,6 +145,7 @@ internal fun buildTaskProgressNotification(
         .setOnlyAlertOnce(true)
         .setContentTitle(title)
         .setContentText(text)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(text))
         .setSubText(subText)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .setProgress(

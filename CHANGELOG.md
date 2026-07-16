@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Active task cards, banners, notifications, and blocking database upgrades now show processing speed, elapsed time, and estimated remaining time, with database recovery counts advancing after each committed copy batch.
 - Cached files and materialized duplicate groups now store SHA-256 values as 32-byte blobs, with a v22-to-v23 migration that preserves file identities and similarity relationships while rebuilding derived groups.
 - Exact-thumbnail similarity features now store canonical reduced-thumbnail SHA-256 values as 32-byte blobs, with a v23-to-v24 migration that hashes existing payloads and replaces raw-pixel cluster keys.
 - Database upgrades now require explicit confirmation on a blocking startup screen, keep the main app unavailable until completion, and report the active migration stage.

@@ -68,6 +68,16 @@ class TaskProgressCardTest {
     }
 
     @Test
+    fun incompleteLongProgressDoesNotRoundUpToComplete() {
+        val fraction = boundedProgressFraction(
+            processed = Long.MAX_VALUE - 1L,
+            total = Long.MAX_VALUE
+        )
+
+        assertTrue(fraction < 1f)
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun progressEndpointsUseExpectedRightEdgeColors() {
         val activeColor = Color.Red
@@ -138,6 +148,9 @@ class TaskProgressCardTest {
         composeRule.onNodeWithText("Scanning").assertExists()
         composeRule.onNodeWithText("Hashing files").assertExists()
         composeRule.onNodeWithText("Stop scan").assertExists()
+        composeRule.onNodeWithText("Speed:", substring = true).assertExists()
+        composeRule.onNodeWithText("Elapsed:", substring = true).assertExists()
+        composeRule.onNodeWithText("Remaining:", substring = true).assertExists()
     }
 
     @Test

@@ -21,14 +21,19 @@ class TaskNotificationContentTest {
                 processed = 4,
                 total = 10,
                 indeterminate = false,
-                startedAt = 1L,
+                startedAt = 1_000L,
                 isCancellable = true,
                 status = TaskStatus.Running
-            )
+            ),
+            nowMillis = 11_000L
         )
 
         assertEquals("Scanning files", content.title)
-        assertEquals("Hashing • 4/10 • DCIM", content.text)
+        assertEquals(
+            "Hashing • 4/10 • DCIM | " +
+                "Speed: 0.40 items/s | Elapsed: 10s | Remaining: 15s",
+            content.text
+        )
         assertEquals("IMG_0001.jpg", content.subText)
     }
 

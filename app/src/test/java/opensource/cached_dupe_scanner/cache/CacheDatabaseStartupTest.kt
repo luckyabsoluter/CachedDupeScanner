@@ -40,12 +40,12 @@ class CacheDatabaseStartupTest {
         )
         assertEquals(21, readDatabaseVersion(sourceFile.absolutePath))
 
-        val stages = mutableListOf<String>()
+        val progressUpdates = mutableListOf<CacheDatabaseStartupProgress>()
         val database = openCacheDatabaseForStartup(
             context = context,
             databaseName = databaseName,
             plan = plan,
-            onProgress = stages::add
+            onProgress = progressUpdates::add
         )
         try {
             val db = database.openHelper.writableDatabase
@@ -93,8 +93,17 @@ class CacheDatabaseStartupTest {
             context.deleteDatabase(databaseName)
         }
 
-        assertTrue(stages.contains("Recovering cached files"))
-        assertTrue(stages.contains("Preserving similarity results"))
+        assertTrue(progressUpdates.any { it.stage == "Recovering cached files" })
+        assertTrue(progressUpdates.any { it.stage == "Preserving similarity results" })
+        val countedUpdates = progressUpdates.filter { it.total != null }
+        assertTrue(countedUpdates.isNotEmpty())
+        assertEquals(6L, countedUpdates.last().total)
+        assertEquals(6L, countedUpdates.last().processed)
+        assertTrue(
+            countedUpdates.zipWithNext().all { (previous, current) ->
+                current.processed!! >= previous.processed!!
+            }
+        )
         assertFalse(context.getDatabasePath("$databaseName.upgrade-v24").exists())
         assertFalse(context.getDatabasePath("$databaseName.pre-v24").exists())
     }

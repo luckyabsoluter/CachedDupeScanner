@@ -22,6 +22,12 @@ sealed interface CacheDatabaseStartupPlan {
     data class UnsupportedVersion(val version: Int) : CacheDatabaseStartupPlan
 }
 
+data class CacheDatabaseStartupProgress(
+    val stage: String,
+    val processed: Long? = null,
+    val total: Long? = null
+)
+
 fun inspectCacheDatabaseStartup(
     context: Context,
     databaseName: String = CACHE_DATABASE_NAME
@@ -48,7 +54,7 @@ fun openCacheDatabaseForStartup(
     context: Context,
     databaseName: String = CACHE_DATABASE_NAME,
     plan: CacheDatabaseStartupPlan,
-    onProgress: (String) -> Unit = {}
+    onProgress: (CacheDatabaseStartupProgress) -> Unit = {}
 ): CacheDatabase {
     return when (plan) {
         is CacheDatabaseStartupPlan.OpenCurrent -> openRoomDatabase(
@@ -80,9 +86,9 @@ fun openCacheDatabaseForStartup(
 private fun openRoomDatabase(
     context: Context,
     databaseName: String,
-    onProgress: (String) -> Unit
+    onProgress: (CacheDatabaseStartupProgress) -> Unit
 ): CacheDatabase {
-    onProgress("Opening database")
+    onProgress(CacheDatabaseStartupProgress(stage = "Opening database"))
     val database = buildCacheDatabase(context, databaseName)
     return try {
         database.openHelper.writableDatabase
@@ -96,7 +102,7 @@ private fun openRoomDatabase(
 private fun recoverVersion21Database(
     context: Context,
     databaseName: String,
-    onProgress: (String) -> Unit
+    onProgress: (CacheDatabaseStartupProgress) -> Unit
 ): CacheDatabase {
     val sourceFile = context.getDatabasePath(databaseName)
     val upgradeName = "$databaseName$UPGRADE_DATABASE_SUFFIX"
@@ -116,11 +122,17 @@ private fun recoverVersion21Database(
     val targetDatabase = buildCacheDatabase(context, upgradeName)
     try {
         val target = targetDatabase.openHelper.writableDatabase
-        onProgress("Recovering cached files")
-        copyVersion21CoreTables(source, target)
-        onProgress("Preserving similarity results")
-        copyVersion21SimilarityTables(source, target)
-        onProgress("Checking upgraded database")
+        onProgress(CacheDatabaseStartupProgress(stage = "Counting database rows"))
+        val progress = RecoveryProgressTracker(
+            total = source.recoveryCopyRowCount(),
+            onProgress = onProgress
+        )
+        progress.changeStage("Recovering cached files")
+        copyVersion21CoreTables(source, target, progress::rowsCopied)
+        progress.changeStage("Preserving similarity results")
+        copyVersion21SimilarityTables(source, target, progress::rowsCopied)
+        progress.completeCopy()
+        progress.changeStage("Checking upgraded database")
         checkRecoveredDatabase(source, target)
         target.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor -> cursor.moveToFirst() }
     } catch (error: Exception) {
@@ -132,7 +144,7 @@ private fun recoverVersion21Database(
     targetDatabase.close()
     source.close()
 
-    onProgress("Replacing database")
+    onProgress(CacheDatabaseStartupProgress(stage = "Replacing database"))
     replaceDatabaseFiles(
         context = context,
         databaseName = databaseName,
@@ -153,7 +165,8 @@ private fun recoverVersion21Database(
 
 private fun copyVersion21CoreTables(
     source: SQLiteDatabase,
-    target: SupportSQLiteDatabase
+    target: SupportSQLiteDatabase,
+    onRowsCopied: (Int) -> Unit
 ) {
     copyRowsIfTableExists(
         source = source,
@@ -173,7 +186,8 @@ private fun copyVersion21CoreTables(
                 lastModifiedMillis,
                 hashBytes
             ) VALUES (?, ?, ?, ?, ?, ?)
-        """.trimIndent()
+        """.trimIndent(),
+        onRowsCopied = onRowsCopied
     ) { cursor ->
         listOf(
             cursor.getLong(0),
@@ -211,7 +225,8 @@ private fun copyVersion21CoreTables(
         """.trimIndent(),
         insertSql = """
             INSERT INTO scan_reports VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimIndent()
+        """.trimIndent(),
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(13) }
     copyRowsIfTableExists(
         source = source,
@@ -230,7 +245,8 @@ private fun copyVersion21CoreTables(
             FROM trash_entries
             ORDER BY deletedAtMillis ASC, id ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO trash_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        insertSql = "INSERT INTO trash_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(8) }
 
     val updatedAtMillis = if (source.hasTable("dupe_groups")) {
@@ -265,7 +281,8 @@ private fun copyVersion21CoreTables(
 
 private fun copyVersion21SimilarityTables(
     source: SQLiteDatabase,
-    target: SupportSQLiteDatabase
+    target: SupportSQLiteDatabase,
+    onRowsCopied: (Int) -> Unit
 ) {
     // Legacy raw-feature tables can be unreadable; visible results are rebuilt from clusters.
     copyRowsIfTableExists(
@@ -287,7 +304,8 @@ private fun copyVersion21SimilarityTables(
             FROM similarity_settings
             ORDER BY settingId ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO similarity_settings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        insertSql = "INSERT INTO similarity_settings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(10) }
     copyRowsIfTableExists(
         source = source,
@@ -298,7 +316,8 @@ private fun copyVersion21SimilarityTables(
             FROM similarity_clusters
             ORDER BY clusterId ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO similarity_clusters VALUES (?, ?, ?, ?, ?, ?)"
+        insertSql = "INSERT INTO similarity_clusters VALUES (?, ?, ?, ?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor ->
         val legacyKey = cursor.getString(2)
         listOf(
@@ -321,7 +340,8 @@ private fun copyVersion21SimilarityTables(
                 ON file.normalizedPath = member.normalizedPath
             ORDER BY member.clusterId ASC, member.position ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO similarity_cluster_members VALUES (?, ?, ?)"
+        insertSql = "INSERT INTO similarity_cluster_members VALUES (?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(3) }
     copyRowsIfTableExists(
         source = source,
@@ -334,7 +354,8 @@ private fun copyVersion21SimilarityTables(
                 ON file.normalizedPath = feature.normalizedPath
             ORDER BY feature.settingId ASC, file.rowid ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO similarity_duration_features VALUES (?, ?, ?)"
+        insertSql = "INSERT INTO similarity_duration_features VALUES (?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(3) }
     copyRowsIfTableExists(
         source = source,
@@ -355,7 +376,8 @@ private fun copyVersion21SimilarityTables(
             FROM similarity_maintenance_runs
             ORDER BY runId ASC
         """.trimIndent(),
-        insertSql = "INSERT INTO similarity_maintenance_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        insertSql = "INSERT INTO similarity_maintenance_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        onRowsCopied = onRowsCopied
     ) { cursor -> cursor.values(10) }
 
     target.execSQL(
@@ -497,6 +519,7 @@ private fun copyRowsIfTableExists(
     tableName: String,
     query: String,
     insertSql: String,
+    onRowsCopied: (Int) -> Unit,
     rowValues: (Cursor) -> List<Any?>
 ): Int {
     if (!source.hasTable(tableName)) return 0
@@ -508,11 +531,17 @@ private fun copyRowsIfTableExists(
             while (cursor.moveToNext()) {
                 batch += rowValues(cursor)
                 if (batch.size == RECOVERY_COPY_BATCH_SIZE) {
-                    copied += insertBatch(target, statement, batch)
+                    val batchCopied = insertBatch(target, statement, batch)
+                    copied += batchCopied
+                    onRowsCopied(batchCopied)
                     batch.clear()
                 }
             }
-            if (batch.isNotEmpty()) copied += insertBatch(target, statement, batch)
+            if (batch.isNotEmpty()) {
+                val batchCopied = insertBatch(target, statement, batch)
+                copied += batchCopied
+                onRowsCopied(batchCopied)
+            }
         }
     } finally {
         statement.close()
@@ -573,6 +602,51 @@ private fun SQLiteDatabase.hasTable(tableName: String): Boolean {
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
         arrayOf(tableName)
     ).use(Cursor::moveToFirst)
+}
+
+private fun SQLiteDatabase.recoveryCopyRowCount(): Long {
+    return RECOVERY_COPY_TABLES.sumOf { tableName ->
+        if (!hasTable(tableName)) {
+            0L
+        } else {
+            rawQuery("SELECT COUNT(*) FROM $tableName", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            }
+        }
+    }
+}
+
+private class RecoveryProgressTracker(
+    private val total: Long,
+    private val onProgress: (CacheDatabaseStartupProgress) -> Unit
+) {
+    private var stage = "Preparing database recovery"
+    private var processed = 0L
+
+    fun changeStage(value: String) {
+        stage = value
+        publish()
+    }
+
+    fun rowsCopied(count: Int) {
+        processed = (processed + count).coerceAtMost(total)
+        publish()
+    }
+
+    fun completeCopy() {
+        processed = total
+        publish()
+    }
+
+    private fun publish() {
+        onProgress(
+            CacheDatabaseStartupProgress(
+                stage = stage,
+                processed = processed,
+                total = total
+            )
+        )
+    }
 }
 
 private fun readDatabaseVersion(file: File): Int {
@@ -638,5 +712,15 @@ private const val LEGACY_RECOVERY_DATABASE_VERSION = 21
 private const val RECOVERY_COPY_BATCH_SIZE = 500
 private const val UPGRADE_DATABASE_SUFFIX = ".upgrade-v24"
 private const val BACKUP_DATABASE_SUFFIX = ".pre-v24"
+private val RECOVERY_COPY_TABLES = listOf(
+    "cached_files",
+    "scan_reports",
+    "trash_entries",
+    "similarity_settings",
+    "similarity_clusters",
+    "similarity_cluster_members",
+    "similarity_duration_features",
+    "similarity_maintenance_runs"
+)
 private val DATABASE_FILE_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
 private val PRESERVE_CORRUPT_DATABASE_HANDLER = DatabaseErrorHandler { }
