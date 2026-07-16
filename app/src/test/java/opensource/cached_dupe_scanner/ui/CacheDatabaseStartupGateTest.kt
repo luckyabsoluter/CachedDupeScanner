@@ -1,20 +1,30 @@
 package opensource.cached_dupe_scanner.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupPlan
 import opensource.cached_dupe_scanner.cache.CacheDatabaseStartupProgress
+import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -76,5 +86,40 @@ class CacheDatabaseStartupGateTest {
 
         composeRule.onNodeWithText("Main content", useUnmergedTree = true).assertExists()
         assertEquals(1, openCalls.get())
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun databaseUpgradeGatePaintsDarkThemeBackground() {
+        val plan = CacheDatabaseStartupPlan.UpgradeRequired(
+            fromVersion = 21,
+            toVersion = 24,
+            recoveryRequired = true
+        )
+        composeRule.setContent {
+            CachedDupeScannerTheme(darkTheme = true, dynamicColor = false) {
+                cacheDatabaseStartupGate(
+                    inspect = { plan },
+                    openDatabase = { _, _ -> error("Upgrade must wait for user action") },
+                    onClose = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("Database upgrade required").assertExists()
+
+        lateinit var bitmap: Bitmap
+        composeRule.runOnIdle {
+            val activity = ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(Stage.RESUMED)
+                .single()
+            val content = activity.findViewById<View>(android.R.id.content)
+            bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
+            content.draw(Canvas(bitmap))
+        }
+        val background = Color(bitmap.getPixel(1, 1))
+        bitmap.recycle()
+
+        assertEquals(1f, background.alpha, 0.001f)
+        assertTrue(background.luminance() < 0.2f)
     }
 }

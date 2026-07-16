@@ -1,6 +1,7 @@
 package opensource.cached_dupe_scanner.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -153,6 +154,7 @@ private fun CacheDatabaseStartupScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -170,11 +172,16 @@ private fun CacheDatabaseStartupScreen(
                 upgrade != null -> "Database upgrade required"
                 else -> "Opening database"
             }
-            Text(text = title, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             upgrade?.let { required ->
                 Text(
                     text = "Version ${required.fromVersion} to ${required.toVersion}",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             }
             when {

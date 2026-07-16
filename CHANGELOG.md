@@ -62,6 +62,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- The Android launch splash and blocking database upgrade screen now follow system dark mode with matching opaque backgrounds and readable foreground colors.
 - Task progress bars no longer draw a primary-color stop marker at the right edge while incomplete, and very large incomplete counts remain below 100 percent.
 - Scrollbars now map each drag from the current pointer position instead of accumulated deltas, keeping variable-height lazy lists pinned to the final item when thumb estimates change.
 - Scan completion now reports automatic similarity generation as part of the scan task instead of staying on the cache-saving status without progress.
