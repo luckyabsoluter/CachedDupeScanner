@@ -64,6 +64,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Android back handling now opts into `OnBackInvokedCallback` dispatch, preventing repeated platform warnings while retaining the existing AndroidX back navigation flow.
 - Current databases now remain on the neutral launch background while they are checked and opened, so the blocking upgrade screen appears only when an upgrade is actually required.
 - The Android launch splash and blocking database upgrade screen now follow system dark mode with matching opaque backgrounds and readable foreground colors.
 - Task progress bars no longer draw a primary-color stop marker at the right edge while incomplete, and very large incomplete counts remain below 100 percent.
