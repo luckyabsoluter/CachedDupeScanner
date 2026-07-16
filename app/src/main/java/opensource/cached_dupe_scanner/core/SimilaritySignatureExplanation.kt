@@ -6,12 +6,15 @@ internal data class ExactThumbnailClusterExplanation(
     val resize: String,
     val quantization: String,
     val frameSeconds: List<String>,
-    val sampleSignatures: List<String>
+    val sampleSignatures: List<String>,
+    val thumbnailHashHex: String? = null
 )
 
 internal fun exactThumbnailClusterExplanation(signature: String): ExactThumbnailClusterExplanation? {
     val parts = signature.split(":", limit = 7)
-    if (parts.size != 7 || parts[0] != "thumb-v1") return null
+    if (parts.size != 7 || parts[0] !in setOf("thumb-v1", THUMBNAIL_HASH_CLUSTER_KEY_PREFIX)) {
+        return null
+    }
     val mediaScope = parts[1].takeIf { it.isNotBlank() } ?: return null
     val colorMode = parts[2].takeIf { it == "gray" || it == "color" } ?: return null
     val resize = parts[3].takeIf { it.contains("x") } ?: return null
@@ -20,10 +23,19 @@ internal fun exactThumbnailClusterExplanation(signature: String): ExactThumbnail
         .split(',')
         .map { frame -> frame.trim() }
         .filter { frame -> frame.isNotEmpty() }
-    val sampleSignatures = parts[6]
-        .split('|')
-        .map { sample -> sample.trim() }
-        .filter { sample -> sample.isNotEmpty() }
+    val thumbnailHashHex = if (parts[0] == THUMBNAIL_HASH_CLUSTER_KEY_PREFIX) {
+        parts[6].takeIf(::isSha256HashHex)?.lowercase() ?: return null
+    } else {
+        null
+    }
+    val sampleSignatures = if (thumbnailHashHex == null) {
+        parts[6]
+            .split('|')
+            .map { sample -> sample.trim() }
+            .filter { sample -> sample.isNotEmpty() }
+    } else {
+        emptyList()
+    }
 
     return ExactThumbnailClusterExplanation(
         mediaScope = mediaScope,
@@ -31,7 +43,8 @@ internal fun exactThumbnailClusterExplanation(signature: String): ExactThumbnail
         resize = resize,
         quantization = quantization,
         frameSeconds = frameSeconds,
-        sampleSignatures = sampleSignatures
+        sampleSignatures = sampleSignatures,
+        thumbnailHashHex = thumbnailHashHex
     )
 }
 

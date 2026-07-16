@@ -18,6 +18,7 @@ import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureEntity
 import opensource.cached_dupe_scanner.cache.SimilarityExactThumbnailFeatureEntity
 import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
+import opensource.cached_dupe_scanner.cache.StoredHash
 import opensource.cached_dupe_scanner.core.DurationNeighborListStep
 import opensource.cached_dupe_scanner.core.DurationToleranceStep
 import opensource.cached_dupe_scanner.core.ExactThumbnailHashStep
@@ -68,7 +69,7 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
-    fun exactThumbnailMaintenancePersistsClustersForOneSetting() {
+    fun exactThumbnailMaintenancePersistsHashedBlobClustersForOneSetting() {
         val first = videoFile("a.mp4")
         val second = videoFile("b.mp4")
         val unique = videoFile("c.mp4")
@@ -77,9 +78,9 @@ class SimilaritySettingsRepositoryTest {
         database.fileCacheDao().upsert(entity(unique))
         val repository = repository(
             signatures = mapOf(
-                first.absolutePath to "same",
-                second.absolutePath to "same",
-                unique.absolutePath to "unique"
+                first.absolutePath to THUMBNAIL_TEST_HASH,
+                second.absolutePath to THUMBNAIL_TEST_HASH,
+                unique.absolutePath to THUMBNAIL_UNIQUE_TEST_HASH
             )
         )
         val setting = repository.createExactThumbnailSetting(
@@ -100,7 +101,18 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(1, summary.clusterCount)
         assertEquals(2, summary.duplicateFileCount)
         val cluster = repository.listClusters(setting.settingId).single()
-        assertEquals("same", cluster.clusterKey)
+        assertEquals(
+            "thumb-v2:video:color:2x2:q16:0:$THUMBNAIL_TEST_HASH",
+            cluster.clusterKey
+        )
+        database.openHelper.writableDatabase.query(
+            "SELECT typeof(thumbnailHash), length(thumbnailHash) " +
+                "FROM similarity_exact_thumbnail_features LIMIT 1"
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("blob", cursor.getString(0))
+            assertEquals(32, cursor.getInt(1))
+        }
         assertEquals(
             listOf(first, second).map { it.normalizedPath() },
             repository.listClusterMembers(cluster.clusterId).map { it.metadata.normalizedPath }
@@ -1066,7 +1078,7 @@ class SimilaritySettingsRepositoryTest {
                 SimilarityExactThumbnailFeatureEntity(
                     settingId = setting.settingId,
                     fileId = requireNotNull(fileIdsByPath[path]),
-                    thumbnailSignature = "same"
+                    thumbnailHash = StoredHash.fromExternalString("same")
                 )
             }
         )
@@ -1539,3 +1551,8 @@ private class BlockingCancellationSignatureExtractor : VideoFrameSignatureExtrac
         return if (shouldContinue()) "same" else null
     }
 }
+
+private const val THUMBNAIL_TEST_HASH =
+    "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744"
+private const val THUMBNAIL_UNIQUE_TEST_HASH =
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"

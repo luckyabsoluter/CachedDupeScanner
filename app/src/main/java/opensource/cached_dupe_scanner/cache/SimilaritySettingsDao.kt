@@ -9,7 +9,7 @@ import androidx.room.Update
 data class SimilarityExactThumbnailFeatureRow(
     val fileId: Long,
     val normalizedPath: String,
-    val thumbnailSignature: String,
+    val thumbnailHash: StoredHash,
     val sizeBytes: Long
 )
 
@@ -855,13 +855,13 @@ interface SimilaritySettingsDao {
         SELECT
             feature.fileId AS fileId,
             file.normalizedPath AS normalizedPath,
-            feature.thumbnailSignature AS thumbnailSignature,
+            feature.thumbnailHash AS thumbnailHash,
             file.sizeBytes AS sizeBytes
         FROM similarity_exact_thumbnail_features AS feature
         INNER JOIN cached_files AS file
             ON file.fileId = feature.fileId
         WHERE feature.settingId = :settingId
-        ORDER BY feature.thumbnailSignature ASC, feature.fileId ASC
+        ORDER BY feature.thumbnailHash ASC, feature.fileId ASC
         """
     )
     fun listActiveExactThumbnailFeatures(settingId: Long): List<SimilarityExactThumbnailFeatureRow>

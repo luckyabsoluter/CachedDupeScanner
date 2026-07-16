@@ -933,6 +933,76 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration23to24HashesThumbnailPayloadsAndIndexesBlobValues() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "thumbnail-hash-23-24-${UUID.randomUUID()}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(23) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion22HashTextTables(db)
+                        CacheMigrations.MIGRATION_22_23.migrate(db)
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_23_24.migrate(db)
+
+            assertFalse(hasColumn(db, "similarity_exact_thumbnail_features", "thumbnailSignature"))
+            assertEquals(
+                "BLOB",
+                columnType(db, "similarity_exact_thumbnail_features", "thumbnailHash")
+            )
+            assertEquals(
+                32,
+                firstInt(
+                    db,
+                    "SELECT length(thumbnailHash) FROM similarity_exact_thumbnail_features LIMIT 1"
+                )
+            )
+            assertEquals(
+                MIGRATION_THUMBNAIL_SHA_256_HEX.uppercase(),
+                firstString(
+                    db,
+                    "SELECT hex(thumbnailHash) FROM similarity_exact_thumbnail_features LIMIT 1"
+                )
+            )
+            assertEquals(
+                MIGRATION_THUMBNAIL_CLUSTER_KEY_V2,
+                firstString(db, "SELECT clusterKey FROM similarity_clusters WHERE clusterId = 1")
+            )
+            assertTrue(hasCascadeFileIdForeignKey(db, "similarity_exact_thumbnail_features"))
+            val plan = stringList(
+                db,
+                """
+                EXPLAIN QUERY PLAN
+                SELECT fileId
+                FROM similarity_exact_thumbnail_features
+                WHERE settingId = 1
+                  AND thumbnailHash = X'$MIGRATION_THUMBNAIL_SHA_256_HEX'
+                ORDER BY fileId ASC
+                """.trimIndent(),
+                columnIndex = 3
+            )
+            assertTrue(
+                plan.any { detail ->
+                    detail.contains("index_similarity_exact_thumbnail_features_hash")
+                }
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion22HashTextTables(db: SupportSQLiteDatabase) {
         createVersion21FileIdMigrationTables(db, seedData = false)
         CacheMigrations.MIGRATION_21_22.migrate(db)
@@ -966,7 +1036,7 @@ class CacheMigrationsIndexTest {
         db.execSQL(
             """
             INSERT INTO similarity_exact_thumbnail_features VALUES
-                (1, 1, 'same')
+                (1, 1, '$MIGRATION_THUMBNAIL_PAYLOAD_V1')
             """.trimIndent()
         )
         db.execSQL(
@@ -978,7 +1048,7 @@ class CacheMigrationsIndexTest {
         db.execSQL(
             """
             INSERT INTO similarity_clusters VALUES
-                (1, 1, 'same', 1, 10, 300)
+                (1, 1, '$MIGRATION_THUMBNAIL_PAYLOAD_V1', 1, 10, 300)
             """.trimIndent()
         )
         db.execSQL(
@@ -1402,3 +1472,9 @@ class CacheMigrationsIndexTest {
 
 private const val MIGRATION_SHA_256_HEX =
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+private const val MIGRATION_THUMBNAIL_PAYLOAD_V1 =
+    "thumb-v1:video:color:2x1:q16:0,1:0f0f0f,000000|ffffff,101010"
+private const val MIGRATION_THUMBNAIL_SHA_256_HEX =
+    "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744"
+private const val MIGRATION_THUMBNAIL_CLUSTER_KEY_V2 =
+    "thumb-v2:video:color:2x1:q16:0,1:$MIGRATION_THUMBNAIL_SHA_256_HEX"

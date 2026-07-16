@@ -3189,7 +3189,9 @@ private fun similarityClusterDetailSummaryLines(
 }
 
 internal fun exactHashClusterSummary(explanation: ExactThumbnailClusterExplanation): String {
-    return "Matched thumbnail signature: ${sampleSignaturesLabel(explanation.sampleSignatures)}"
+    return explanation.thumbnailHashHex
+        ?.let { hashHex -> "Matched thumbnail SHA-256: $hashHex" }
+        ?: "Matched thumbnail signature: ${sampleSignaturesLabel(explanation.sampleSignatures)}"
 }
 
 private fun durationClusterSummary(explanation: DurationClusterExplanation): String {

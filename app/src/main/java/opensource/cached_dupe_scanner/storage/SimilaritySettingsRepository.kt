@@ -12,6 +12,7 @@ import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingsDao
+import opensource.cached_dupe_scanner.cache.StoredHash
 import opensource.cached_dupe_scanner.core.AndroidMediaDimensionsExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.AndroidVideoFrameSignatureExtractor
@@ -31,6 +32,7 @@ import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.buildDurationNeighborListSignature
 import opensource.cached_dupe_scanner.core.buildDurationToleranceSignature
+import opensource.cached_dupe_scanner.core.buildThumbnailHashClusterKey
 import opensource.cached_dupe_scanner.core.durationNeighborListSettingDraft
 import opensource.cached_dupe_scanner.core.durationNeighborListStepFromParams
 import opensource.cached_dupe_scanner.core.durationNeighborToleranceMillis
@@ -39,6 +41,7 @@ import opensource.cached_dupe_scanner.core.durationToleranceSettingDraft
 import opensource.cached_dupe_scanner.core.durationToleranceStepFromParams
 import opensource.cached_dupe_scanner.core.exactThumbnailSettingDraft
 import opensource.cached_dupe_scanner.core.exactThumbnailStepFromParams
+import opensource.cached_dupe_scanner.core.isSha256HashHex
 import opensource.cached_dupe_scanner.core.normalizedSimilaritySettingDisplayName
 import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 import java.io.File
@@ -1041,11 +1044,11 @@ class SimilaritySettingsRepository(
         return when (setting.methodId) {
             SIMILARITY_METHOD_EXACT_THUMBNAIL -> {
                 similarityDao.listActiveExactThumbnailFeatures(setting.settingId)
-                    .groupBy { row -> row.thumbnailSignature }
+                    .groupBy { row -> row.thumbnailHash }
                     .filterValues { rows -> rows.size > 1 }
-                    .map { (signature, rows) ->
+                    .map { (thumbnailHash, rows) ->
                         ClusterDraft(
-                            clusterKey = signature,
+                            clusterKey = exactThumbnailClusterKey(setting, thumbnailHash),
                             members = rows.map { row ->
                                 ClusterMemberDraft(
                                     fileId = row.fileId,
@@ -1544,7 +1547,7 @@ class SimilaritySettingsRepository(
                 SimilarityExactThumbnailFeatureEntity(
                     settingId = setting.settingId,
                     fileId = entity.fileId,
-                    thumbnailSignature = exact.signature
+                    thumbnailHash = StoredHash.fromExternalString(exact.signature)
                 )
             },
             durationFeature = (feature as? CalculatedFeature.Duration)?.let { duration ->
@@ -1554,6 +1557,25 @@ class SimilaritySettingsRepository(
                     durationMillis = duration.durationMillis
                 )
             }
+        )
+    }
+
+    private fun exactThumbnailClusterKey(
+        setting: SimilaritySettingEntity,
+        thumbnailHash: StoredHash
+    ): String {
+        val hashHex = thumbnailHash.toExternalString()
+        if (!isSha256HashHex(hashHex)) return hashHex
+        val mediaScope = runCatching { SimilarityMediaScope.valueOf(setting.mediaScope) }
+            .getOrNull()
+            ?: return hashHex
+        val step = runCatching { exactThumbnailStepFromParams(setting.paramsJson) }
+            .getOrNull()
+            ?: return hashHex
+        return buildThumbnailHashClusterKey(
+            mediaScope = mediaScope,
+            step = step,
+            thumbnailHashHex = hashHex
         )
     }
 

@@ -35,7 +35,7 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 - **Smart filters**: Saved filters, per-rule any/all member matching, same-folder and same-size group rules, similarity same-resolution and average-duration rules, and modified-time rules that persist across sessions.
 - **Advanced bulk delete**: Full-candidate previews support keeping exactly one, at least one, or an exact custom count of matching or non-matching files by text rule, or keeping the oldest, newest, shortest-duration, or longest-duration file, with modified-time fallback for equal video durations.
 - **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to detected duplicate groups. Actionable via notification-backed execution.
-- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; numeric file-ID joins, bounded parallel media feature extraction, persistent sort options, and progress-tracked Update/Rebuild actions keep large result sets practical.
+- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; exact reduced thumbnails are grouped by indexed 32-byte SHA-256 values, while numeric file-ID joins, bounded parallel media feature extraction, persistent sort options, and progress-tracked Update/Rebuild actions keep large result sets practical.
 
 ## How scanning works
 
@@ -78,7 +78,7 @@ Room database (scan-cache.db) core tables:
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
 - **dupe_groups**: materialized snapshot of duplicate groups for fast paginated browsing
-- **similarity_settings / similarity_setting_files / method-specific feature tables / similarity_clusters / similarity_cluster_members**: configured similarity methods, file state, separated feature storage, and sidecar member links for similarity-based duplicate candidates
+- **similarity_settings / similarity_setting_files / method-specific feature tables / similarity_clusters / similarity_cluster_members**: configured similarity methods, file state, compact method-specific feature storage including binary thumbnail hashes, and sidecar member links for similarity-based duplicate candidates
 
 
 ## Module map

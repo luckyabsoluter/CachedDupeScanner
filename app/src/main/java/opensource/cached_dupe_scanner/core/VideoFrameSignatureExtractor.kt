@@ -44,7 +44,7 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
                 ) ?: return null
                 thumbnailSignature(bitmap, step)
             }
-            buildThumbnailSignature(SimilarityMediaScope.Video, step, frameSignatures)
+            buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures)
         } catch (e: RuntimeException) {
             null
         } finally {
@@ -60,7 +60,7 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
         if (!shouldContinue()) return null
         return try {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
-            buildThumbnailSignature(
+            buildThumbnailHash(
                 mediaScope = SimilarityMediaScope.Image,
                 step = step,
                 frameSignatures = listOf(thumbnailSignature(bitmap, step))
@@ -75,7 +75,7 @@ fun buildVideoFrameSignature(
     step: ExactThumbnailHashStep,
     frameSignatures: List<String>
 ): String {
-    return buildThumbnailSignature(SimilarityMediaScope.Video, step, frameSignatures)
+    return buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures)
 }
 
 fun buildThumbnailSignature(
@@ -83,17 +83,7 @@ fun buildThumbnailSignature(
     step: ExactThumbnailHashStep,
     frameSignatures: List<String>
 ): String {
-    val mode = if (step.grayscale) "gray" else "color"
-    val quantization = step.quantizationLevels?.let { "q$it" } ?: "raw"
-    return listOf(
-        "thumb-v1",
-        mediaScope.name.lowercase(),
-        mode,
-        "${step.resizeWidthPx}x${step.resizeHeightPx}",
-        quantization,
-        step.frameSeconds.joinToString(","),
-        frameSignatures.joinToString("|")
-    ).joinToString(":")
+    return buildThumbnailHash(mediaScope, step, frameSignatures)
 }
 
 fun quantizeChannel(value: Int, levels: Int): Int {

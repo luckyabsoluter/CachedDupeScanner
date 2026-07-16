@@ -17,8 +17,8 @@ import androidx.room.Index
     ],
     indices = [
         Index(
-            value = ["settingId", "thumbnailSignature", "fileId"],
-            name = "index_similarity_exact_thumbnail_features_signature"
+            value = ["settingId", "thumbnailHash", "fileId"],
+            name = "index_similarity_exact_thumbnail_features_hash"
         ),
         Index(value = ["fileId"], name = "index_similarity_exact_thumbnail_features_fileId")
     ]
@@ -26,5 +26,5 @@ import androidx.room.Index
 data class SimilarityExactThumbnailFeatureEntity(
     val settingId: Long,
     val fileId: Long,
-    val thumbnailSignature: String
+    val thumbnailHash: StoredHash
 )

@@ -8,10 +8,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity management for named video/image duplicate candidates, including exact-thumbnail grouping, duration-only video grouping, duration-neighbor video lists, and update, rebuild, and clear controls.
+- Similarity management for named video/image duplicate candidates, including SHA-256 exact-thumbnail grouping, duration-only video grouping, duration-neighbor video lists, and update, rebuild, and clear controls.
 - Similarity now provides separate flows for type selection, custom creation controls, management, and similarity group member browsing.
 - Similarity identity now treats different method parameters as separate entries, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
-- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, group list sort options, lazy result browsing, and task progress notifications.
+- Similarity result previews with exact-thumbnail SHA-256 summaries, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, group list sort options, lazy result browsing, and task progress notifications.
 - Similarity group detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
 - Video timeline preview menus now provide optional duration and resolution labels in Files and similarity group details without forcing timeline frames on.
 - Duplicate group detail views now support long-press member selection and selected-file deletion.
@@ -30,6 +30,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Changed
 
 - Cached files and materialized duplicate groups now store SHA-256 values as 32-byte blobs, with a v22-to-v23 migration that preserves file identities and similarity relationships while rebuilding derived groups.
+- Exact-thumbnail similarity features now store canonical reduced-thumbnail SHA-256 values as 32-byte blobs, with a v23-to-v24 migration that hashes existing payloads and replaces raw-pixel cluster keys.
 - Scan-cache files and similarity sidecar rows now share stable integer file identities, with an indexed v21-to-v22 migration that preserves valid generated data and removes orphaned relationships.
 - Filter editors now present rules inside each cluster as target-labeled accordion rows with distinct tonal borders, expanding one editor at a time while keeping enable and removal controls available.
 - Filter rule editors now show only the current target until its selector is opened, with the available targets presented in a dropdown menu.
@@ -105,6 +106,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Duplicate detection, grouping, member lookup, and group paging now compare indexed 32-byte hash blobs instead of 64-character hexadecimal text.
 - Similarity feature, member, repair, and result queries now join through integer file IDs instead of normalized path strings, while cache updates preserve IDs through batched inserts and updates.
+- Exact-thumbnail grouping now compares indexed 32-byte SHA-256 blobs instead of serialized reduced-pixel text.
 - Size-collision hash candidates now run through a bounded worker pool while progress collection and cache writes remain serialized.
 - Similarity generation now extracts media signatures, durations, and dimensions through a bounded worker pool while progress collection, database batches, and cluster rebuilding remain serialized.
 - Similarity group page queries now use setting-aware sort indexes for file-count and total-size ordering.

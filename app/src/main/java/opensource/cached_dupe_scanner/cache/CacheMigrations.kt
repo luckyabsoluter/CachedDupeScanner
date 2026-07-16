@@ -2,6 +2,10 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import opensource.cached_dupe_scanner.core.isSha256HashHex
+import opensource.cached_dupe_scanner.core.thumbnailHashClusterKeyFromLegacyPayload
 
 object CacheMigrations {
     val MIGRATION_1_3 = object : Migration(1, 3) {
@@ -1155,6 +1159,39 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_23_24 = object : Migration(23, 24) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE similarity_exact_thumbnail_features_hash_v24 (
+                    settingId INTEGER NOT NULL,
+                    fileId INTEGER NOT NULL,
+                    thumbnailHash BLOB NOT NULL,
+                    PRIMARY KEY(settingId, fileId),
+                    FOREIGN KEY(fileId) REFERENCES cached_files(fileId) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            copyThumbnailFeatureHashesToBlob(db)
+            db.execSQL("DROP TABLE similarity_exact_thumbnail_features")
+            db.execSQL(
+                "ALTER TABLE similarity_exact_thumbnail_features_hash_v24 " +
+                    "RENAME TO similarity_exact_thumbnail_features"
+            )
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_exact_thumbnail_features_hash
+                ON similarity_exact_thumbnail_features(settingId, thumbnailHash, fileId)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX index_similarity_exact_thumbnail_features_fileId " +
+                    "ON similarity_exact_thumbnail_features(fileId)"
+            )
+            migrateThumbnailClusterKeysToHash(db)
+        }
+    }
+
 }
 
 private fun copyCachedFileHashesToBlob(db: SupportSQLiteDatabase) {
@@ -1179,6 +1216,77 @@ private fun copyCachedFileHashesToBlob(db: SupportSQLiteDatabase) {
         }
     } finally {
         statement.close()
+    }
+}
+
+private fun copyThumbnailFeatureHashesToBlob(db: SupportSQLiteDatabase) {
+    val insert = db.compileStatement(
+        """
+        INSERT INTO similarity_exact_thumbnail_features_hash_v24 (
+            settingId,
+            fileId,
+            thumbnailHash
+        ) VALUES (?, ?, ?)
+        """.trimIndent()
+    )
+    val digest = MessageDigest.getInstance("SHA-256")
+    try {
+        db.query(
+            """
+            SELECT settingId, fileId, thumbnailSignature
+            FROM similarity_exact_thumbnail_features
+            ORDER BY settingId ASC, fileId ASC
+            """.trimIndent()
+        ).use { cursor ->
+            val settingIdIndex = cursor.getColumnIndexOrThrow("settingId")
+            val fileIdIndex = cursor.getColumnIndexOrThrow("fileId")
+            val signatureIndex = cursor.getColumnIndexOrThrow("thumbnailSignature")
+            while (cursor.moveToNext()) {
+                val signature = cursor.getString(signatureIndex)
+                val hashBytes = if (isSha256HashHex(signature)) {
+                    StoredHash.fromExternalString(signature).toStorageBytes()
+                } else {
+                    digest.digest(signature.toByteArray(StandardCharsets.UTF_8))
+                }
+                insert.clearBindings()
+                insert.bindLong(1, cursor.getLong(settingIdIndex))
+                insert.bindLong(2, cursor.getLong(fileIdIndex))
+                insert.bindBlob(3, hashBytes)
+                insert.executeInsert()
+            }
+        }
+    } finally {
+        insert.close()
+    }
+}
+
+private fun migrateThumbnailClusterKeysToHash(db: SupportSQLiteDatabase) {
+    val update = db.compileStatement(
+        "UPDATE similarity_clusters SET clusterKey = ? WHERE clusterId = ?"
+    )
+    try {
+        db.query(
+            """
+            SELECT clusterId, clusterKey
+            FROM similarity_clusters
+            WHERE clusterKey LIKE 'thumb-v1:%'
+            ORDER BY clusterId ASC
+            """.trimIndent()
+        ).use { cursor ->
+            val clusterIdIndex = cursor.getColumnIndexOrThrow("clusterId")
+            val clusterKeyIndex = cursor.getColumnIndexOrThrow("clusterKey")
+            while (cursor.moveToNext()) {
+                val clusterKey = thumbnailHashClusterKeyFromLegacyPayload(
+                    cursor.getString(clusterKeyIndex)
+                ) ?: continue
+                update.clearBindings()
+                update.bindString(1, clusterKey)
+                update.bindLong(2, cursor.getLong(clusterIdIndex))
+                update.executeUpdateDelete()
+            }
+        }
+    } finally {
+        update.close()
     }
 }
 
