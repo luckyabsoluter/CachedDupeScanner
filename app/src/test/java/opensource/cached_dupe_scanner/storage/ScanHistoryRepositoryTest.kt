@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
+import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
 import opensource.cached_dupe_scanner.core.Hashing
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ScanCacheSnapshot
@@ -564,7 +567,7 @@ class ScanHistoryRepositoryTest {
                 deleteMissing = true,
                 rehashStale = false,
                 rehashMissing = false,
-                onlyDuplicateDetected = true,
+                scope = DbMaintenanceScope.DuplicateResultGroups,
                 shouldContinue = { true }
             ) { }
 
@@ -632,7 +635,7 @@ class ScanHistoryRepositoryTest {
                 deleteMissing = true,
                 rehashStale = false,
                 rehashMissing = false,
-                onlyDuplicateDetected = true,
+                scope = DbMaintenanceScope.DuplicateResultGroups,
                 shouldContinue = { true }
             ) { progress ->
                 lastProgress = progress
@@ -713,7 +716,7 @@ class ScanHistoryRepositoryTest {
                 deleteMissing = false,
                 rehashStale = true,
                 rehashMissing = false,
-                onlyDuplicateDetected = true,
+                scope = DbMaintenanceScope.DuplicateResultGroups,
                 shouldContinue = { true }
             ) { }
 
@@ -727,6 +730,115 @@ class ScanHistoryRepositoryTest {
             duplicateA.delete()
             duplicateB.delete()
             singleFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun runMaintenanceWithSimilarityGroupsDeletesOnlyDistinctGroupedEntries() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val groupedExisting = File.createTempFile("cached", ".similar-existing")
+        val groupedMissing = File.createTempFile("cached", ".similar-missing")
+        val outsideMissing = File.createTempFile("cached", ".outside-missing")
+        try {
+            groupedExisting.writeText("existing")
+            groupedMissing.writeText("missing")
+            outsideMissing.writeText("outside")
+            val similarityRepository = SimilaritySettingsRepository(
+                database = database,
+                fileDao = database.fileCacheDao(),
+                similarityDao = database.similaritySettingsDao()
+            )
+            val repository = ScanHistoryRepository(
+                dao = database.fileCacheDao(),
+                settingsStore = AppSettingsStore(context),
+                groupDao = database.duplicateGroupDao(),
+                database = database,
+                cacheMutationObserver = similarityRepository
+            )
+            repository.recordScan(
+                ScanResult(
+                    scannedAtMillis = 1L,
+                    files = listOf(groupedExisting, groupedMissing, outsideMissing).map { file ->
+                        FileMetadata(
+                            path = file.absolutePath,
+                            normalizedPath = file.absolutePath,
+                            sizeBytes = file.length(),
+                            lastModifiedMillis = file.lastModified(),
+                            hashHex = null
+                        )
+                    },
+                    duplicateGroups = emptyList()
+                )
+            )
+            val fileDao = database.fileCacheDao()
+            val similarityDao = database.similaritySettingsDao()
+            val existingEntity = requireNotNull(fileDao.getByNormalizedPath(groupedExisting.absolutePath))
+            val missingEntity = requireNotNull(fileDao.getByNormalizedPath(groupedMissing.absolutePath))
+
+            fun insertSetting(name: String): Long {
+                return similarityDao.insertSetting(
+                    SimilaritySettingEntity(
+                        methodId = "duration-tolerance",
+                        mediaScope = "video",
+                        minSizeBytes = 0L,
+                        paramsJson = "{\"name\":\"$name\"}",
+                        paramsHash = name,
+                        displayName = name,
+                        enabled = true,
+                        createdAtMillis = 1L,
+                        updatedAtMillis = 1L
+                    )
+                )
+            }
+
+            val settingIds = listOf(insertSetting("first"), insertSetting("second"))
+            val clusterIds = settingIds.mapIndexed { index, settingId ->
+                similarityDao.insertCluster(
+                    SimilarityClusterEntity(
+                        settingId = settingId,
+                        clusterKey = "cluster-$index",
+                        fileCount = 2,
+                        totalBytes = existingEntity.sizeBytes + missingEntity.sizeBytes,
+                        updatedAtMillis = 1L
+                    )
+                )
+            }
+            similarityDao.upsertClusterMembers(
+                clusterIds.flatMap { clusterId ->
+                    listOf(
+                        SimilarityClusterMemberEntity(clusterId, existingEntity.fileId, 0),
+                        SimilarityClusterMemberEntity(clusterId, missingEntity.fileId, 1)
+                    )
+                }
+            )
+            assertTrue(groupedMissing.delete())
+            assertTrue(outsideMissing.delete())
+
+            val summary = repository.runMaintenance(
+                deleteMissing = true,
+                rehashStale = false,
+                rehashMissing = false,
+                scope = DbMaintenanceScope.SimilarityGroups,
+                shouldContinue = { true },
+                onProgress = {}
+            )
+
+            assertEquals(2, summary.total)
+            assertEquals(2, summary.processed)
+            assertEquals(1, summary.deleted)
+            assertNull(fileDao.getByNormalizedPath(groupedMissing.absolutePath))
+            assertNotNull(fileDao.getByNormalizedPath(outsideMissing.absolutePath))
+            settingIds.forEach { settingId ->
+                assertTrue(similarityDao.listStoredClusters(settingId).isEmpty())
+            }
+        } finally {
+            groupedExisting.delete()
+            groupedMissing.delete()
+            outsideMissing.delete()
             database.close()
         }
     }

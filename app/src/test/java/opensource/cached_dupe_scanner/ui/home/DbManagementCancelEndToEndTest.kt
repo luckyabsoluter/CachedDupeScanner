@@ -3,10 +3,14 @@ package opensource.cached_dupe_scanner.ui.home
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
@@ -149,6 +153,42 @@ class DbManagementCancelEndToEndTest {
         assertTrue(
             composeRule.onAllNodesWithText("Idle").fetchSemanticsNodes().isNotEmpty()
         )
+    }
+
+    @Test
+    fun maintenanceScopesAreMutuallyExclusive() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        composeRule.setContent {
+            DbManagementHarness(
+                historyRepo = ScanHistoryRepository(
+                    dao = database.fileCacheDao(),
+                    settingsStore = AppSettingsStore(context),
+                    groupDao = database.duplicateGroupDao(),
+                    database = database
+                ),
+                resultsRepo = ResultsDbRepository(
+                    database.fileCacheDao(),
+                    database.duplicateGroupDao()
+                ),
+                uiState = DbManagementUiState(),
+                appScope = appScope,
+                taskCoordinator = TaskCoordinator(),
+                notificationController = TaskNotificationController(context)
+            )
+        }
+
+        val allFiles = composeRule.onNodeWithTag("db-maintenance-scope:AllCachedFiles")
+        val resultGroups = composeRule.onNodeWithTag("db-maintenance-scope:DuplicateResultGroups")
+        val similarityGroups = composeRule.onNodeWithTag("db-maintenance-scope:SimilarityGroups")
+        allFiles.assertIsSelected()
+
+        similarityGroups.performScrollTo().performClick().assertIsSelected()
+        allFiles.assertIsNotSelected()
+        resultGroups.assertIsNotSelected()
+
+        resultGroups.performClick().assertIsSelected()
+        allFiles.assertIsNotSelected()
+        similarityGroups.assertIsNotSelected()
     }
 
     @Test

@@ -167,14 +167,14 @@ class ScanHistoryRepository(
         deleteMissing: Boolean,
         rehashStale: Boolean,
         rehashMissing: Boolean,
-        onlyDuplicateDetected: Boolean = false,
+        scope: DbMaintenanceScope = DbMaintenanceScope.AllCachedFiles,
         shouldContinue: () -> Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
     ): DbMaintenanceSummary {
-        val total = if (onlyDuplicateDetected) {
-            dao.countDuplicateMembersFromCache()
-        } else {
-            dao.countAll()
+        val total = when (scope) {
+            DbMaintenanceScope.AllCachedFiles -> dao.countAll()
+            DbMaintenanceScope.DuplicateResultGroups -> dao.countDuplicateMembersFromCache()
+            DbMaintenanceScope.SimilarityGroups -> dao.countSimilarityGroupMembersFromCache()
         }
         var processed = 0
         var deleted = 0
@@ -267,7 +267,7 @@ class ScanHistoryRepository(
             return null
         }
 
-        if (onlyDuplicateDetected) {
+        if (scope == DbMaintenanceScope.DuplicateResultGroups) {
             var groupKeyPage = dao.listDuplicateGroupKeysFromCachePage(limit = batchSize)
             while (groupKeyPage.isNotEmpty()) {
                 for (groupKey in groupKeyPage) {
@@ -326,6 +326,45 @@ class ScanHistoryRepository(
                     afterHashHex = lastGroupKey.hashHex,
                     limit = batchSize
                 )
+            }
+
+            return DbMaintenanceSummary(
+                total = total,
+                processed = processed,
+                deleted = deleted,
+                rehashed = rehashed,
+                missingHashed = missingHashed,
+                cancelled = false,
+                currentPath = currentPath
+            )
+        }
+
+        if (scope == DbMaintenanceScope.SimilarityGroups) {
+            var afterFileId = 0L
+            while (true) {
+                if (!shouldContinue()) {
+                    return DbMaintenanceSummary(
+                        total = total,
+                        processed = processed,
+                        deleted = deleted,
+                        rehashed = rehashed,
+                        missingHashed = missingHashed,
+                        cancelled = true,
+                        currentPath = currentPath
+                    )
+                }
+                val batch = dao.listSimilarityGroupMembersAfterFileId(
+                    afterFileId = afterFileId,
+                    limit = batchSize
+                )
+                if (batch.isEmpty()) break
+                for (entity in batch) {
+                    val cancelledSummary = applyMaintenanceToEntity(entity)
+                    if (cancelledSummary != null) {
+                        return cancelledSummary
+                    }
+                    afterFileId = entity.fileId
+                }
             }
 
             return DbMaintenanceSummary(

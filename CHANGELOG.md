@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity result clearing now publishes shared task progress and failure or cancellation outcomes, with a separate resumable incremental clear for recovering large or interrupted result sets in bounded commits.
 - Settings now provides a 1-32 scan worker control that persists through preference export and import, bounds concurrent SHA-256 hashing, and applies when each scan starts.
 - Settings now provides a separate 1-32 similarity worker control that persists through preference export and import and applies when the next similarity generation starts.
+- DB maintenance now provides separate all-cache, duplicate-result-group, and similarity-group scopes, deduplicating similarity members by numeric file identity before bounded processing.
 
 ### Changed
 

@@ -13,6 +13,7 @@ import androidx.room.Update
  * - Point lookups and counts (`getByNormalizedPath`, `countAll`).
  * - Cursor paging for file manager and maintenance (`getPageAfter`, `getPageBy*`).
  * - Duplicate-member listing by (`sizeBytes`, `hashBytes`).
+ * - Similarity-group maintenance paging by numeric file identity.
  * - Mutations (`upsert`, `upsertAll`, `deleteByNormalizedPath`, `clear`).
  * - Projection helpers used by scanner/group synchronization (`countBySizes`, `findSizesByPaths`, `findGroupKeysByPaths`).
  */
@@ -358,6 +359,38 @@ interface FileCacheDao {
         """
     )
     fun countDuplicateMembersFromCache(): Int
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT file.fileId)
+        FROM cached_files AS file
+        INNER JOIN similarity_cluster_members AS member
+            ON member.fileId = file.fileId
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        WHERE cluster.fileCount > 1
+        """
+    )
+    fun countSimilarityGroupMembersFromCache(): Int
+
+    @Query(
+        """
+        SELECT DISTINCT file.*
+        FROM cached_files AS file
+        INNER JOIN similarity_cluster_members AS member
+            ON member.fileId = file.fileId
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        WHERE cluster.fileCount > 1
+          AND file.fileId > :afterFileId
+        ORDER BY file.fileId ASC
+        LIMIT :limit
+        """
+    )
+    fun listSimilarityGroupMembersAfterFileId(
+        afterFileId: Long,
+        limit: Int
+    ): List<CachedFileEntity>
 
     @Query(
         """
