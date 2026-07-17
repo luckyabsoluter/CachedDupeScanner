@@ -159,11 +159,7 @@ class SimilarityResultsNavigationTest {
             )
         }
 
-        composeRule.waitUntil(10_000) {
-            composeRule.onAllNodesWithTag("similarity-incremental-clear")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        scrollUntilTag("similarity-incremental-clear")
         composeRule.onNodeWithTag("similarity-incremental-clear")
             .performScrollTo()
             .performClick()
@@ -522,7 +518,8 @@ class SimilarityResultsNavigationTest {
         )
 
         returnFromSimilarityDetail(fixture.clusterId)
-        composeRule.onNodeWithContentDescription("Back").performClick()
+        val resultsBackNodes = composeRule.onAllNodesWithContentDescription("Back")
+        resultsBackNodes[resultsBackNodes.fetchSemanticsNodes().lastIndex].performClick()
 
         val maintenance = fixture.historyRepository.runMaintenance(
             deleteMissing = true,
@@ -609,7 +606,8 @@ class SimilarityResultsNavigationTest {
                 "Contains deleted files"
         }
 
-        composeRule.onNodeWithContentDescription("Back").performClick()
+        val resultsBackNodes = composeRule.onAllNodesWithContentDescription("Back")
+        resultsBackNodes[resultsBackNodes.fetchSemanticsNodes().lastIndex].performClick()
         composeRule.onNodeWithText("Reopen similarity results").performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("No similarity groups found", substring = true)
@@ -938,7 +936,7 @@ class SimilarityResultsNavigationTest {
     }
 
     private fun scrollUntilText(text: String, substring: Boolean = false) {
-        repeat(8) {
+        repeat(16) {
             composeRule.waitForIdle()
             if (
                 composeRule.onAllNodesWithText(text, substring = substring)
@@ -949,10 +947,23 @@ class SimilarityResultsNavigationTest {
             }
             composeRule.onRoot().performTouchInput { swipeUp() }
         }
-        composeRule.waitUntil(1_000) {
+        composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText(text, substring = substring)
                 .fetchSemanticsNodes()
                 .isNotEmpty()
+        }
+    }
+
+    private fun scrollUntilTag(tag: String) {
+        repeat(16) {
+            composeRule.waitForIdle()
+            if (composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) {
+                return
+            }
+            composeRule.onRoot().performTouchInput { swipeUp() }
+        }
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
