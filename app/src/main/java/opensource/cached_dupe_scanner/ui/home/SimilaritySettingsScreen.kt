@@ -546,6 +546,7 @@ fun SimilaritySettingDetailScreen(
 
     ScreenScrollColumn(
         modifier = modifier,
+        listModifier = Modifier.testTag("similarity-setting-detail-list"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "top_bar") {

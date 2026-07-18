@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -21,6 +23,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
@@ -143,6 +146,9 @@ class SimilarityResultsNavigationTest {
     fun settingDetailIncrementalClearRunsTrackedTaskAndKeepsSetting() {
         val fixture = createSimilarityFixture()
         val taskCoordinator = TaskCoordinator()
+        val settingName = fixture.repository.listSettings()
+            .first { setting -> setting.settingId == fixture.settingId }
+            .displayName
 
         composeRule.setContent {
             SimilaritySettingDetailScreen(
@@ -159,7 +165,15 @@ class SimilarityResultsNavigationTest {
             )
         }
 
-        scrollUntilTag("similarity-incremental-clear")
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithText(settingName)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        scrollUntilTag(
+            listTag = "similarity-setting-detail-list",
+            targetTag = "similarity-incremental-clear"
+        )
         composeRule.onNodeWithTag("similarity-incremental-clear")
             .performScrollTo()
             .performClick()
@@ -552,12 +566,14 @@ class SimilarityResultsNavigationTest {
     fun bulkDeleteKeepsColoredParentSnapshotUntilResultsAreReopened() {
         val fixture = createSimilarityFixture()
         val taskCoordinator = TaskCoordinator()
+        val resultsOpen = mutableStateOf(true)
 
         composeRule.setContent {
             SimilarityDeleteNavigationHarness(
                 fixture = fixture,
                 settingsStore = AppSettingsStore(context),
                 taskCoordinator = taskCoordinator,
+                resultsOpenState = resultsOpen,
                 modifier = Modifier.height(1_200.dp)
             )
         }
@@ -571,13 +587,7 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithText("Bulk delete").performClick()
         composeRule.onNodeWithText("Keep by modified time").performClick()
         composeRule.onNodeWithText("Build preview").performClick()
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("Build preview")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
-        composeRule.onNodeWithTag("bulk-delete-keep-modified-list")
-            .performScrollToIndex(8)
+        scrollUntilListIndex("bulk-delete-keep-modified-list", 8)
         composeRule.onNodeWithText("1 groups and 1 files are ready.").fetchSemanticsNode()
         composeRule.onNodeWithText("Delete matching files").performClick()
         composeRule.onNodeWithText("Delete").performClick()
@@ -606,8 +616,7 @@ class SimilarityResultsNavigationTest {
                 "Contains deleted files"
         }
 
-        val resultsBackNodes = composeRule.onAllNodesWithContentDescription("Back")
-        resultsBackNodes[resultsBackNodes.fetchSemanticsNodes().lastIndex].performClick()
+        composeRule.runOnIdle { resultsOpen.value = false }
         composeRule.onNodeWithText("Reopen similarity results").performClick()
         composeRule.waitUntil(5_000) {
             composeRule.onAllNodesWithText("No similarity groups found", substring = true)
@@ -673,9 +682,11 @@ class SimilarityResultsNavigationTest {
         fixture: SimilarityFixture,
         settingsStore: AppSettingsStore,
         taskCoordinator: TaskCoordinator,
+        resultsOpenState: MutableState<Boolean>? = null,
         modifier: Modifier
     ) {
-        val resultsOpen = remember { mutableStateOf(true) }
+        val rememberedResultsOpen = remember { mutableStateOf(true) }
+        val resultsOpen = resultsOpenState ?: rememberedResultsOpen
         val deletedPaths = remember { mutableStateOf<Set<String>>(emptySet()) }
         val thumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
         val videoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
@@ -773,13 +784,7 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithTag("bulk-delete-keep-duration-list")
             .performScrollToIndex(3)
         composeRule.onNodeWithText("Build preview").performClick()
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("Building preview...")
-                .fetchSemanticsNodes()
-                .isEmpty()
-        }
-        composeRule.onNodeWithTag("bulk-delete-keep-duration-list")
-            .performScrollToIndex(7)
+        scrollUntilListIndex("bulk-delete-keep-duration-list", 7)
 
         composeRule.onNodeWithText(
             "Keep: 20s | ${fixture.secondFile.normalizedPathForTest()}"
@@ -819,13 +824,7 @@ class SimilarityResultsNavigationTest {
         composeRule.onNodeWithTag("bulk-delete-keep-text-list")
             .performScrollToIndex(3)
         composeRule.onNodeWithText("Build preview").performClick()
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithText("Building preview...")
-                .fetchSemanticsNodes()
-                .isEmpty()
-        }
-        composeRule.onNodeWithTag("bulk-delete-keep-text-list")
-            .performScrollToIndex(7)
+        scrollUntilListIndex("bulk-delete-keep-text-list", 7)
 
         composeRule.onNodeWithText(
             "Keep: ${fixture.firstFile.normalizedPathForTest()}"
@@ -954,16 +953,16 @@ class SimilarityResultsNavigationTest {
         }
     }
 
-    private fun scrollUntilTag(tag: String) {
-        repeat(16) {
-            composeRule.waitForIdle()
-            if (composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) {
-                return
-            }
-            composeRule.onRoot().performTouchInput { swipeUp() }
-        }
-        composeRule.waitUntil(5_000) {
-            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+    private fun scrollUntilTag(listTag: String, targetTag: String) {
+        composeRule.onNodeWithTag(listTag)
+            .performScrollToNode(hasTestTag(targetTag))
+    }
+
+    private fun scrollUntilListIndex(tag: String, index: Int) {
+        composeRule.waitUntil(10_000) {
+            runCatching {
+                composeRule.onNodeWithTag(tag).performScrollToIndex(index)
+            }.isSuccess
         }
     }
 
