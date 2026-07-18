@@ -65,6 +65,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster replacement now detects cache files removed after draft construction and retries from current feature rows instead of reinserting stale file IDs and crashing on a foreign-key constraint.
 - Exact-thumbnail similarity now bounds configured sample timestamps to each video's duration and avoids repeatedly decoding unchanged videos that the platform cannot read.
 - Android back handling now opts into `OnBackInvokedCallback` dispatch, preventing repeated platform warnings while retaining the existing AndroidX back navigation flow.
 - Current databases now remain on the neutral launch background while they are checked and opened, so the blocking upgrade screen appears only when an upgrade is actually required.

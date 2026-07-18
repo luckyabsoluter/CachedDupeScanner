@@ -99,6 +99,12 @@ interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_setting_files WHERE settingId = :settingId AND fileId = :fileId LIMIT 1")
     fun getSettingFile(settingId: Long, fileId: Long): SimilaritySettingFileEntity?
 
+    @Query(
+        "SELECT fileId FROM similarity_setting_files " +
+            "WHERE settingId = :settingId AND fileId IN (:fileIds)"
+    )
+    fun listExistingSettingFileIds(settingId: Long, fileIds: List<Long>): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertSettingFiles(files: List<SimilaritySettingFileEntity>)
 

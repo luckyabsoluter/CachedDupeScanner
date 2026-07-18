@@ -588,7 +588,7 @@ class SimilaritySettingsRepository(
                     }
                 }
 
-                replaceClusters(setting.settingId, buildClusters(setting))
+                replaceClusters(setting, buildClusters(setting))
                 refreshedSettingCount += 1
             }
             refreshedSettingCount
@@ -850,7 +850,7 @@ class SimilaritySettingsRepository(
                 cancelled = true
             )
         }
-        replaceClusters(setting.settingId, clusterDrafts)
+        replaceClusters(setting, clusterDrafts)
         val clusterSummary = similarityDao.listActiveClusters(setting.settingId)
         val duplicateFiles = clusterSummary.sumOf { cluster -> cluster.fileCount }
         val finishedAt = System.currentTimeMillis()
@@ -1207,9 +1207,36 @@ class SimilaritySettingsRepository(
         )
     }
 
-    private fun replaceClusters(settingId: Long, drafts: List<ClusterDraft>) {
+    private fun replaceClusters(
+        setting: SimilaritySettingEntity,
+        initialDrafts: List<ClusterDraft>
+    ) {
+        var drafts = initialDrafts
+        repeat(SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS) { attempt ->
+            if (replaceClustersIfCurrent(setting.settingId, drafts)) return
+            if (attempt + 1 < SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS) {
+                drafts = buildClusters(setting)
+            }
+        }
+    }
+
+    private fun replaceClustersIfCurrent(settingId: Long, drafts: List<ClusterDraft>): Boolean {
         val now = System.currentTimeMillis()
-        database.runInTransaction {
+        val draftFileIds = drafts
+            .asSequence()
+            .flatMap { draft -> draft.members.asSequence() }
+            .map { member -> member.fileId }
+            .distinct()
+            .toList()
+        return database.runInTransaction<Boolean> {
+            val existingFileIds = hashSetOf<Long>()
+            draftFileIds.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { fileIds ->
+                existingFileIds += similarityDao.listExistingSettingFileIds(settingId, fileIds)
+            }
+            if (existingFileIds.size != draftFileIds.size) {
+                return@runInTransaction false
+            }
+
             val existingByKey = similarityDao.listStoredClusters(settingId).associateBy { it.clusterKey }
             val draftKeys = drafts.mapTo(hashSetOf()) { it.clusterKey }
             val staleIds = existingByKey
@@ -1258,6 +1285,7 @@ class SimilaritySettingsRepository(
                     }
                 )
             }
+            true
         }
     }
 
@@ -1897,6 +1925,7 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
+private const val SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS = 2
 private const val SIMILARITY_WORK_COMPLETION_POLL_MILLIS = 100L
 private const val SIMILARITY_WORK_EXECUTOR_SHUTDOWN_SECONDS = 5L
 private const val SIMILARITY_FILE_STATUS_READY = "ready"

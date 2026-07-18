@@ -305,6 +305,75 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun cacheDeletionAfterClusterDraftDoesNotReinsertMissingFileId() {
+        val first = videoFile("draft-race-a.mp4")
+        val second = videoFile("draft-race-b.mp4")
+        val deleted = videoFile("draft-race-deleted.mp4")
+        listOf(first, second, deleted).forEach { file ->
+            database.fileCacheDao().upsert(entity(file))
+        }
+        val repository = repository(
+            signatures = mapOf(
+                first.absolutePath to "same",
+                second.absolutePath to "same",
+                deleted.absolutePath to "same"
+            )
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val history = ScanHistoryRepository(
+            dao = database.fileCacheDao(),
+            settingsStore = AppSettingsStore(ApplicationProvider.getApplicationContext()),
+            groupDao = database.duplicateGroupDao(),
+            database = database,
+            cacheMutationObserver = repository
+        )
+        val completedFreshFiles = AtomicInteger(0)
+        val checksAfterBatch = AtomicInteger(0)
+        val deletionTriggered = AtomicBoolean(false)
+
+        val summary = repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = false,
+            shouldContinue = {
+                // The third post-batch check runs after the cluster draft has been built.
+                if (
+                    completedFreshFiles.get() == 3 &&
+                    checksAfterBatch.incrementAndGet() == 3 &&
+                    deletionTriggered.compareAndSet(false, true)
+                ) {
+                    history.deleteByNormalizedPath(deleted.normalizedPath())
+                }
+                true
+            },
+            onProgress = { completedFreshFiles.incrementAndGet() }
+        )
+
+        assertTrue(deletionTriggered.get())
+        assertEquals(null, database.fileCacheDao().getByNormalizedPath(deleted.normalizedPath()))
+        assertEquals(1, summary.clusterCount)
+        assertEquals(2, summary.duplicateFileCount)
+        val cluster = repository.listClusters(setting.settingId).single()
+        assertEquals(2, cluster.fileCount)
+        assertEquals(
+            listOf(first.normalizedPath(), second.normalizedPath()),
+            repository.listClusterMembers(cluster.clusterId).map { member ->
+                member.metadata.normalizedPath
+            }
+        )
+    }
+
+    @Test
     fun dbMaintenanceMissingFileDeletionAlsoRemovesSimilarityGroup() {
         val first = videoFile("maintenance-a.mp4")
         val second = videoFile("maintenance-b.mp4")
