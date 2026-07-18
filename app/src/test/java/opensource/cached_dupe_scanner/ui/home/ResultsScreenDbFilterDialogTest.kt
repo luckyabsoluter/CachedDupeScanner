@@ -1,7 +1,11 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -23,6 +27,68 @@ import org.robolectric.annotation.Config
 class ResultsScreenDbFilterDialogTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
+    fun collapsedClustersStayCollapsedWhenFilterScreenReopens() {
+        val initial = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Names",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            value = "sample"
+                        )
+                    )
+                ),
+                ResultsFilterCluster(
+                    id = "cluster_2",
+                    name = "Folders",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_2",
+                            target = ResultsFilterTarget.FolderPath,
+                            value = "/archive"
+                        )
+                    )
+                )
+            )
+        )
+        composeRule.setContent {
+            val filterScreenOpen = remember { mutableStateOf(true) }
+            val clusterExpansionState = rememberFilterClusterExpansionState()
+            if (filterScreenOpen.value) {
+                ResultsFilterScreen(
+                    definition = initial,
+                    onDefinitionChange = {},
+                    onBack = { filterScreenOpen.value = false },
+                    onApply = {},
+                    clusterExpansionState = clusterExpansionState
+                )
+            } else {
+                Button(
+                    onClick = { filterScreenOpen.value = true },
+                    modifier = Modifier.testTag("reopen-filter")
+                ) {
+                    Text("Reopen filter")
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("filter-cluster:cluster_1").performClick()
+        composeRule.onNodeWithTag("filter-cluster:cluster_2").performClick()
+        composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
+        composeRule.onNodeWithContentDescription("Expand cluster 2").assertExists()
+
+        composeRule.onNodeWithText("Cancel").performScrollTo().performClick()
+        composeRule.onNodeWithTag("reopen-filter").performClick()
+
+        composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
+        composeRule.onNodeWithContentDescription("Expand cluster 2").assertExists()
+    }
 
     @Test
     @Config(sdk = [34], qualifiers = "w600dp-h3000dp")

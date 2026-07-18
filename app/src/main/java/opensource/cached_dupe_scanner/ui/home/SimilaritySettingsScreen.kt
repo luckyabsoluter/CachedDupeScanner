@@ -875,6 +875,7 @@ fun SimilaritySettingGroupsScreen(
         )
     }
     var filterScreenOpen by remember { mutableStateOf(false) }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState()
     var groupsMenuExpanded by remember { mutableStateOf(false) }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var clusterSummary by remember(settingId) { mutableStateOf(SimilarityClusterSummary()) }
@@ -1230,7 +1231,8 @@ fun SimilaritySettingGroupsScreen(
                 )
                 filterScreenOpen = false
                 loadClusterPage(reset = true, restoredFirstVisibleIndex = 0)
-            }
+            },
+            clusterExpansionState = filterClusterExpansionState
         )
     }
 }

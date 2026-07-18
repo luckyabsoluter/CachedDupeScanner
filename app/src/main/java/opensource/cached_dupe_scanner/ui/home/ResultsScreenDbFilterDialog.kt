@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,12 +54,47 @@ import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
 
+internal class FilterClusterExpansionState(
+    initialCollapsedClusterIds: Set<String> = emptySet()
+) {
+    private val collapsedClusterIds = mutableStateOf(initialCollapsedClusterIds.toSet())
+
+    fun isExpanded(clusterId: String): Boolean {
+        return !collapsedClusterIds.value.contains(clusterId)
+    }
+
+    fun toggle(clusterId: String) {
+        collapsedClusterIds.value = if (collapsedClusterIds.value.contains(clusterId)) {
+            collapsedClusterIds.value - clusterId
+        } else {
+            collapsedClusterIds.value + clusterId
+        }
+    }
+
+    internal fun savedCollapsedClusterIds(): List<String> {
+        return collapsedClusterIds.value.sorted()
+    }
+}
+
+private val FilterClusterExpansionStateSaver = Saver<FilterClusterExpansionState, List<String>>(
+    save = { state -> state.savedCollapsedClusterIds() },
+    restore = { collapsedClusterIds -> FilterClusterExpansionState(collapsedClusterIds.toSet()) }
+)
+
+@Composable
+internal fun rememberFilterClusterExpansionState(): FilterClusterExpansionState {
+    return rememberSaveable(saver = FilterClusterExpansionStateSaver) {
+        FilterClusterExpansionState()
+    }
+}
+
 @Composable
 internal fun ResultsFilterScreen(
     definition: ResultsFilterDefinition,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
     onBack: () -> Unit,
-    onApply: () -> Unit
+    onApply: () -> Unit,
+    clusterExpansionState: FilterClusterExpansionState = rememberFilterClusterExpansionState()
 ) {
     FilterEditorScreen(
         title = "Result filters",
@@ -71,6 +107,7 @@ internal fun ResultsFilterScreen(
         definition = definition,
         supportedTargets = RESULT_FILTER_TARGETS,
         showMemberMatchMode = true,
+        clusterExpansionState = clusterExpansionState,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -82,7 +119,8 @@ internal fun FileFilterScreen(
     definition: ResultsFilterDefinition,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
     onBack: () -> Unit,
-    onApply: () -> Unit
+    onApply: () -> Unit,
+    clusterExpansionState: FilterClusterExpansionState = rememberFilterClusterExpansionState()
 ) {
     FilterEditorScreen(
         title = "File filters",
@@ -95,6 +133,7 @@ internal fun FileFilterScreen(
         definition = definition,
         supportedTargets = FILE_FILTER_TARGETS,
         showMemberMatchMode = false,
+        clusterExpansionState = clusterExpansionState,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -106,7 +145,8 @@ internal fun SimilarityFilterScreen(
     definition: ResultsFilterDefinition,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
     onBack: () -> Unit,
-    onApply: () -> Unit
+    onApply: () -> Unit,
+    clusterExpansionState: FilterClusterExpansionState = rememberFilterClusterExpansionState()
 ) {
     FilterEditorScreen(
         title = "Similarity filters",
@@ -119,6 +159,7 @@ internal fun SimilarityFilterScreen(
         definition = definition,
         supportedTargets = SIMILARITY_FILTER_TARGETS,
         showMemberMatchMode = true,
+        clusterExpansionState = clusterExpansionState,
         onDefinitionChange = onDefinitionChange,
         onBack = onBack,
         onApply = onApply
@@ -133,6 +174,7 @@ private fun FilterEditorScreen(
     definition: ResultsFilterDefinition,
     supportedTargets: Set<ResultsFilterTarget>,
     showMemberMatchMode: Boolean,
+    clusterExpansionState: FilterClusterExpansionState,
     onDefinitionChange: (ResultsFilterDefinition) -> Unit,
     onBack: () -> Unit,
     onApply: () -> Unit
@@ -200,6 +242,8 @@ private fun FilterEditorScreen(
                             canRemove = definition.clusters.size > 1,
                             supportedTargets = supportedTargets,
                             showMemberMatchMode = showMemberMatchMode,
+                            expanded = clusterExpansionState.isExpanded(cluster.id),
+                            onToggleExpanded = { clusterExpansionState.toggle(cluster.id) },
                             onClusterChange = { updatedCluster ->
                                 onDefinitionChange(
                                     definition.updateCluster(
@@ -299,12 +343,13 @@ private fun ResultsFilterClusterEditor(
     canRemove: Boolean,
     supportedTargets: Set<ResultsFilterTarget>,
     showMemberMatchMode: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     onClusterChange: (ResultsFilterCluster) -> Unit,
     onAddRule: () -> Unit,
     onRemoveRule: (String) -> Unit,
     onRemoveCluster: () -> Unit
 ) {
-    val expanded = rememberSaveable(cluster.id) { mutableStateOf(true) }
     val expandedRuleId = rememberSaveable(cluster.id) { mutableStateOf<String?>(null) }
 
     Card {
@@ -322,9 +367,9 @@ private fun ResultsFilterClusterEditor(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("filter-cluster:${cluster.id}")
-                        .clickable { expanded.value = !expanded.value }
+                        .clickable(onClick = onToggleExpanded)
                         .semantics {
-                            stateDescription = if (expanded.value) "Expanded" else "Collapsed"
+                            stateDescription = if (expanded) "Expanded" else "Collapsed"
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -355,12 +400,12 @@ private fun ResultsFilterClusterEditor(
                         )
                     }
                     Icon(
-                        imageVector = if (expanded.value) {
+                        imageVector = if (expanded) {
                             Icons.Filled.KeyboardArrowUp
                         } else {
                             Icons.Filled.KeyboardArrowDown
                         },
-                        contentDescription = if (expanded.value) {
+                        contentDescription = if (expanded) {
                             "Collapse cluster ${clusterIndex + 1}"
                         } else {
                             "Expand cluster ${clusterIndex + 1}"
@@ -374,7 +419,7 @@ private fun ResultsFilterClusterEditor(
                     }
                 }
 
-                if (!expanded.value) return@clusterContent
+                if (!expanded) return@clusterContent
 
                 OutlinedTextField(
                     value = cluster.name,

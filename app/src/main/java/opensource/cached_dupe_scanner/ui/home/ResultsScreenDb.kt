@@ -129,6 +129,7 @@ fun ResultsScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterDialogOpen = remember { mutableStateOf(false) }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState()
     val bulkDeleteCatalogOpen = remember { mutableStateOf(false) }
     val bulkDeleteCommand = remember { mutableStateOf<ResultsBulkDeleteCommandType?>(null) }
     val settingsSnapshot = remember { settingsStore.load() }
@@ -957,7 +958,8 @@ fun ResultsScreenDb(
                 )
                 filterDialogOpen.value = false
                 refresh(reset = true, rebuild = false)
-            }
+            },
+            clusterExpansionState = filterClusterExpansionState
         )
     }
 

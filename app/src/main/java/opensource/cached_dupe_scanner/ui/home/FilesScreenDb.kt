@@ -94,6 +94,7 @@ fun FilesScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterScreenOpen = remember { mutableStateOf(false) }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState()
     val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
     val showVideoPreviewDuration = rememberSaveable { mutableStateOf(false) }
     val showVideoPreviewResolution = rememberSaveable { mutableStateOf(false) }
@@ -626,7 +627,8 @@ fun FilesScreenDb(
                 )
                 filterScreenOpen.value = false
                 resetAndLoad()
-            }
+            },
+            clusterExpansionState = filterClusterExpansionState
         )
     }
 }
