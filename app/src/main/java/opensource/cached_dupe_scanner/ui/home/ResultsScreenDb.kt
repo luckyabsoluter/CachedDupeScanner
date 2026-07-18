@@ -129,10 +129,13 @@ fun ResultsScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterDialogOpen = remember { mutableStateOf(false) }
-    val filterClusterExpansionState = rememberFilterClusterExpansionState()
     val bulkDeleteCatalogOpen = remember { mutableStateOf(false) }
     val bulkDeleteCommand = remember { mutableStateOf<ResultsBulkDeleteCommandType?>(null) }
     val settingsSnapshot = remember { settingsStore.load() }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState(
+        initialCollapsedClusterIds = settingsSnapshot.resultsFilterCollapsedClusterIds,
+        onCollapsedClusterIdsChange = settingsStore::setResultsFilterCollapsedClusterIds
+    )
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
     val initialFilterDefinition = remember(settingsSnapshot.resultsFilterDefinitionJson) {
         resultsFilterDefinitionFromJson(settingsSnapshot.resultsFilterDefinitionJson)

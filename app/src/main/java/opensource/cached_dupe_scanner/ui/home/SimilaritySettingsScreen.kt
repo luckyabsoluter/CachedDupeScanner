@@ -875,7 +875,10 @@ fun SimilaritySettingGroupsScreen(
         )
     }
     var filterScreenOpen by remember { mutableStateOf(false) }
-    val filterClusterExpansionState = rememberFilterClusterExpansionState()
+    val filterClusterExpansionState = rememberFilterClusterExpansionState(
+        initialCollapsedClusterIds = settingsSnapshot.similarityFilterCollapsedClusterIds,
+        onCollapsedClusterIdsChange = settingsStore::setSimilarityFilterCollapsedClusterIds
+    )
     var groupsMenuExpanded by remember { mutableStateOf(false) }
     var setting by remember { mutableStateOf<SimilaritySettingEntity?>(null) }
     var clusterSummary by remember(settingId) { mutableStateOf(SimilarityClusterSummary()) }

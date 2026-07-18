@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,17 +59,24 @@ internal class FilterClusterExpansionState(
     initialCollapsedClusterIds: Set<String> = emptySet()
 ) {
     private val collapsedClusterIds = mutableStateOf(initialCollapsedClusterIds.toSet())
+    private var onCollapsedClusterIdsChange: (Set<String>) -> Unit = {}
 
     fun isExpanded(clusterId: String): Boolean {
         return !collapsedClusterIds.value.contains(clusterId)
     }
 
     fun toggle(clusterId: String) {
-        collapsedClusterIds.value = if (collapsedClusterIds.value.contains(clusterId)) {
+        val updatedCollapsedClusterIds = if (collapsedClusterIds.value.contains(clusterId)) {
             collapsedClusterIds.value - clusterId
         } else {
             collapsedClusterIds.value + clusterId
         }
+        collapsedClusterIds.value = updatedCollapsedClusterIds
+        onCollapsedClusterIdsChange(updatedCollapsedClusterIds)
+    }
+
+    internal fun updateOnCollapsedClusterIdsChange(callback: (Set<String>) -> Unit) {
+        onCollapsedClusterIdsChange = callback
     }
 
     internal fun savedCollapsedClusterIds(): List<String> {
@@ -82,10 +90,17 @@ private val FilterClusterExpansionStateSaver = Saver<FilterClusterExpansionState
 )
 
 @Composable
-internal fun rememberFilterClusterExpansionState(): FilterClusterExpansionState {
-    return rememberSaveable(saver = FilterClusterExpansionStateSaver) {
-        FilterClusterExpansionState()
+internal fun rememberFilterClusterExpansionState(
+    initialCollapsedClusterIds: Set<String> = emptySet(),
+    onCollapsedClusterIdsChange: (Set<String>) -> Unit = {}
+): FilterClusterExpansionState {
+    val state = rememberSaveable(saver = FilterClusterExpansionStateSaver) {
+        FilterClusterExpansionState(initialCollapsedClusterIds)
     }
+    SideEffect {
+        state.updateOnCollapsedClusterIdsChange(onCollapsedClusterIdsChange)
+    }
+    return state
 }
 
 @Composable

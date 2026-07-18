@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -30,7 +31,7 @@ class ResultsScreenDbFilterDialogTest {
 
     @Test
     @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
-    fun collapsedClustersStayCollapsedWhenFilterScreenReopens() {
+    fun collapsedClustersRestoreWhenFilterStateOwnerIsRecreated() {
         val initial = ResultsFilterDefinition(
             clusters = listOf(
                 ResultsFilterCluster(
@@ -57,23 +58,32 @@ class ResultsScreenDbFilterDialogTest {
                 )
             )
         )
+        val stateOwnerVersion = mutableStateOf(0)
+        val persistedCollapsedClusterIds = mutableStateOf<Set<String>>(emptySet())
         composeRule.setContent {
-            val filterScreenOpen = remember { mutableStateOf(true) }
-            val clusterExpansionState = rememberFilterClusterExpansionState()
-            if (filterScreenOpen.value) {
-                ResultsFilterScreen(
-                    definition = initial,
-                    onDefinitionChange = {},
-                    onBack = { filterScreenOpen.value = false },
-                    onApply = {},
-                    clusterExpansionState = clusterExpansionState
+            key(stateOwnerVersion.value) {
+                val filterScreenOpen = remember { mutableStateOf(true) }
+                val clusterExpansionState = rememberFilterClusterExpansionState(
+                    initialCollapsedClusterIds = persistedCollapsedClusterIds.value,
+                    onCollapsedClusterIdsChange = { collapsedClusterIds ->
+                        persistedCollapsedClusterIds.value = collapsedClusterIds
+                    }
                 )
-            } else {
-                Button(
-                    onClick = { filterScreenOpen.value = true },
-                    modifier = Modifier.testTag("reopen-filter")
-                ) {
-                    Text("Reopen filter")
+                if (filterScreenOpen.value) {
+                    ResultsFilterScreen(
+                        definition = initial,
+                        onDefinitionChange = {},
+                        onBack = { filterScreenOpen.value = false },
+                        onApply = {},
+                        clusterExpansionState = clusterExpansionState
+                    )
+                } else {
+                    Button(
+                        onClick = { filterScreenOpen.value = true },
+                        modifier = Modifier.testTag("reopen-filter")
+                    ) {
+                        Text("Reopen filter")
+                    }
                 }
             }
         }
@@ -82,12 +92,24 @@ class ResultsScreenDbFilterDialogTest {
         composeRule.onNodeWithTag("filter-cluster:cluster_2").performClick()
         composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
         composeRule.onNodeWithContentDescription("Expand cluster 2").assertExists()
+        composeRule.runOnIdle {
+            assertEquals(setOf("cluster_1", "cluster_2"), persistedCollapsedClusterIds.value)
+        }
 
         composeRule.onNodeWithText("Cancel").performScrollTo().performClick()
         composeRule.onNodeWithTag("reopen-filter").performClick()
 
         composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
         composeRule.onNodeWithContentDescription("Expand cluster 2").assertExists()
+
+        composeRule.runOnIdle { stateOwnerVersion.value += 1 }
+
+        composeRule.onNodeWithContentDescription("Expand cluster 1").assertExists()
+        composeRule.onNodeWithContentDescription("Expand cluster 2").assertExists()
+        composeRule.onNodeWithTag("filter-cluster:cluster_1").performClick()
+        composeRule.runOnIdle {
+            assertEquals(setOf("cluster_2"), persistedCollapsedClusterIds.value)
+        }
     }
 
     @Test

@@ -94,7 +94,6 @@ fun FilesScreenDb(
     val menuExpanded = remember { mutableStateOf(false) }
     val sortDialogOpen = remember { mutableStateOf(false) }
     val filterScreenOpen = remember { mutableStateOf(false) }
-    val filterClusterExpansionState = rememberFilterClusterExpansionState()
     val previewMode = rememberSaveable { mutableStateOf(FilesPreviewMode.Compact.name) }
     val showVideoPreviewDuration = rememberSaveable { mutableStateOf(false) }
     val showVideoPreviewResolution = rememberSaveable { mutableStateOf(false) }
@@ -106,6 +105,10 @@ fun FilesScreenDb(
     }
 
     val settingsSnapshot = remember { settingsStore.load() }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState(
+        initialCollapsedClusterIds = settingsSnapshot.filesFilterCollapsedClusterIds,
+        onCollapsedClusterIdsChange = settingsStore::setFilesFilterCollapsedClusterIds
+    )
     val sortKey = remember {
         val key = runCatching { PagedFileRepository.SortKey.valueOf(settingsSnapshot.filesSortKey) }
             .getOrDefault(PagedFileRepository.SortKey.Name)

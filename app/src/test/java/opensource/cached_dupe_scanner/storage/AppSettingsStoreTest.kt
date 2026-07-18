@@ -53,6 +53,9 @@ class AppSettingsStoreTest {
         assertEquals("", settings.resultsFilterDefinitionJson)
         assertEquals("", settings.filesFilterDefinitionJson)
         assertEquals("", settings.similarityFilterDefinitionJson)
+        assertEquals(emptySet<String>(), settings.resultsFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), settings.filesFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), settings.similarityFilterCollapsedClusterIds)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
         assertEquals("FileCount", settings.similarityClusterSortKey)
@@ -136,6 +139,20 @@ class AppSettingsStoreTest {
             store.load().similarityFilterDefinitionJson
         )
 
+        store.setResultsFilterCollapsedClusterIds(setOf("results_1", "results_2"))
+        store.setFilesFilterCollapsedClusterIds(setOf("files_1"))
+        store.setSimilarityFilterCollapsedClusterIds(setOf("similarity_1", "similarity_2"))
+        val persistedExpansionSettings = AppSettingsStore(context).load()
+        assertEquals(
+            setOf("results_1", "results_2"),
+            persistedExpansionSettings.resultsFilterCollapsedClusterIds
+        )
+        assertEquals(setOf("files_1"), persistedExpansionSettings.filesFilterCollapsedClusterIds)
+        assertEquals(
+            setOf("similarity_1", "similarity_2"),
+            persistedExpansionSettings.similarityFilterCollapsedClusterIds
+        )
+
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         val fileSortSettings = store.load()
@@ -176,6 +193,9 @@ class AppSettingsStoreTest {
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
         assertEquals("", imported.similarityFilterDefinitionJson)
+        assertEquals(emptySet<String>(), imported.resultsFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), imported.filesFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), imported.similarityFilterCollapsedClusterIds)
         assertEquals("FileCount", imported.similarityClusterSortKey)
         assertEquals("Desc", imported.similarityClusterSortDirection)
         assertEquals("Path", imported.similarityMemberSortKey)
@@ -210,6 +230,9 @@ class AppSettingsStoreTest {
         store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}")
         store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}")
         store.setSimilarityFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}")
+        store.setResultsFilterCollapsedClusterIds(setOf("cluster_1", "cluster_4"))
+        store.setFilesFilterCollapsedClusterIds(setOf("cluster_2"))
+        store.setSimilarityFilterCollapsedClusterIds(setOf("cluster_3", "cluster_5"))
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         store.setSimilarityClusterSortKey("TotalSize")
@@ -243,6 +266,9 @@ class AppSettingsStoreTest {
         assertEquals("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}", imported.resultsFilterDefinitionJson)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}", imported.filesFilterDefinitionJson)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}", imported.similarityFilterDefinitionJson)
+        assertEquals(setOf("cluster_1", "cluster_4"), imported.resultsFilterCollapsedClusterIds)
+        assertEquals(setOf("cluster_2"), imported.filesFilterCollapsedClusterIds)
+        assertEquals(setOf("cluster_3", "cluster_5"), imported.similarityFilterCollapsedClusterIds)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals("TotalSize", imported.similarityClusterSortKey)
