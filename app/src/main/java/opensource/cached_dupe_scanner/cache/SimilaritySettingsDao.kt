@@ -31,6 +31,22 @@ data class SimilarityClusterRepairRow(
     val totalBytes: Long
 )
 
+data class SimilarityReusableDurationRow(
+    val fileId: Long,
+    val durationMillis: Long?
+)
+
+data class SimilarityReusableDimensionsRow(
+    val fileId: Long,
+    val widthPixels: Int?,
+    val heightPixels: Int?
+)
+
+data class SimilarityFilterResolutionWorkCountRow(
+    val dimensionCount: Int,
+    val durationCount: Int
+)
+
 @Dao
 interface SimilaritySettingsDao {
     @Query("SELECT * FROM similarity_settings ORDER BY updatedAtMillis DESC, settingId DESC")
@@ -170,6 +186,90 @@ interface SimilaritySettingsDao {
 
     @Query(
         """
+        SELECT
+            target.fileId AS fileId,
+            source_duration.durationMillis AS durationMillis
+        FROM similarity_setting_files AS target
+        INNER JOIN similarity_settings AS target_setting
+            ON target_setting.settingId = target.settingId
+        INNER JOIN similarity_setting_files AS source
+            ON source.fileId = target.fileId
+           AND source.settingId = (
+                SELECT candidate.settingId
+                FROM similarity_setting_files AS candidate
+                INNER JOIN similarity_settings AS candidate_setting
+                    ON candidate_setting.settingId = candidate.settingId
+                LEFT JOIN similarity_duration_features AS candidate_duration
+                    ON candidate_duration.settingId = candidate.settingId
+                   AND candidate_duration.fileId = candidate.fileId
+                WHERE candidate.fileId = target.fileId
+                  AND candidate.settingId != target.settingId
+                  AND candidate.sizeBytes = target.sizeBytes
+                  AND candidate.lastModifiedMillis = target.lastModifiedMillis
+                  AND candidate.durationChecked = 1
+                  AND candidate_setting.mediaScope = target_setting.mediaScope
+                ORDER BY
+                    CASE WHEN candidate_duration.durationMillis IS NULL THEN 1 ELSE 0 END ASC,
+                    candidate.settingId ASC
+                LIMIT 1
+            )
+        LEFT JOIN similarity_duration_features AS source_duration
+            ON source_duration.settingId = source.settingId
+           AND source_duration.fileId = source.fileId
+        WHERE target.settingId = :settingId
+          AND target.fileId IN (:fileIds)
+          AND target.durationChecked = 0
+        ORDER BY target.fileId ASC
+        """
+    )
+    fun listReusableDurations(
+        settingId: Long,
+        fileIds: List<Long>
+    ): List<SimilarityReusableDurationRow>
+
+    @Query(
+        """
+        SELECT
+            target.fileId AS fileId,
+            source.widthPixels AS widthPixels,
+            source.heightPixels AS heightPixels
+        FROM similarity_setting_files AS target
+        INNER JOIN similarity_settings AS target_setting
+            ON target_setting.settingId = target.settingId
+        INNER JOIN similarity_setting_files AS source
+            ON source.fileId = target.fileId
+           AND source.settingId = (
+                SELECT candidate.settingId
+                FROM similarity_setting_files AS candidate
+                INNER JOIN similarity_settings AS candidate_setting
+                    ON candidate_setting.settingId = candidate.settingId
+                WHERE candidate.fileId = target.fileId
+                  AND candidate.settingId != target.settingId
+                  AND candidate.sizeBytes = target.sizeBytes
+                  AND candidate.lastModifiedMillis = target.lastModifiedMillis
+                  AND candidate.dimensionsChecked = 1
+                  AND candidate_setting.mediaScope = target_setting.mediaScope
+                ORDER BY
+                    CASE
+                        WHEN candidate.widthPixels IS NULL OR candidate.heightPixels IS NULL THEN 1
+                        ELSE 0
+                    END ASC,
+                    candidate.settingId ASC
+                LIMIT 1
+            )
+        WHERE target.settingId = :settingId
+          AND target.fileId IN (:fileIds)
+          AND target.dimensionsChecked = 0
+        ORDER BY target.fileId ASC
+        """
+    )
+    fun listReusableDimensions(
+        settingId: Long,
+        fileIds: List<Long>
+    ): List<SimilarityReusableDimensionsRow>
+
+    @Query(
+        """
         DELETE FROM similarity_duration_features
         WHERE settingId = :settingId AND fileId = :fileId
         """
@@ -181,7 +281,19 @@ interface SimilaritySettingsDao {
 
     @Query(
         """
-        SELECT COUNT(DISTINCT member.fileId)
+        SELECT
+            COUNT(
+                DISTINCT CASE
+                    WHEN :resolveDimensions = 1 AND setting_file.dimensionsChecked = 0
+                    THEN member.fileId
+                END
+            ) AS dimensionCount,
+            COUNT(
+                DISTINCT CASE
+                    WHEN :resolveDurations = 1 AND setting_file.durationChecked = 0
+                    THEN member.fileId
+                END
+            ) AS durationCount
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
@@ -190,26 +302,14 @@ interface SimilaritySettingsDao {
            AND setting_file.fileId = member.fileId
         WHERE member.clusterId IN (:clusterIds)
           AND cluster.settingId = :settingId
-          AND setting_file.dimensionsChecked = 0
         """
     )
-    fun countUncheckedDimensionsForClusters(settingId: Long, clusterIds: List<Long>): Int
-
-    @Query(
-        """
-        SELECT COUNT(DISTINCT member.fileId)
-        FROM similarity_cluster_members AS member
-        INNER JOIN similarity_clusters AS cluster
-            ON cluster.clusterId = member.clusterId
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = cluster.settingId
-           AND setting_file.fileId = member.fileId
-        WHERE member.clusterId IN (:clusterIds)
-          AND cluster.settingId = :settingId
-          AND setting_file.durationChecked = 0
-        """
-    )
-    fun countUncheckedDurationsForClusters(settingId: Long, clusterIds: List<Long>): Int
+    fun countFilterResolutionWorkForClusters(
+        settingId: Long,
+        clusterIds: List<Long>,
+        resolveDimensions: Boolean,
+        resolveDurations: Boolean
+    ): SimilarityFilterResolutionWorkCountRow
 
     @Query(
         """
@@ -239,16 +339,72 @@ interface SimilaritySettingsDao {
            AND duration.fileId = member.fileId
         WHERE cluster.settingId = :settingId
           AND member.clusterId IN (:clusterIds)
-          AND setting_file.durationChecked = 0
+          AND (
+              (:resolveDimensions = 1 AND setting_file.dimensionsChecked = 0)
+               OR (:resolveDurations = 1 AND setting_file.durationChecked = 0)
+          )
         ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
         LIMIT :limit
         """
     )
-    fun listUncheckedDurationMembersForClusters(
+    fun listUncheckedFilterMetadataMembersForClusters(
         settingId: Long,
         clusterIds: List<Long>,
+        resolveDimensions: Boolean,
+        resolveDurations: Boolean,
         limit: Int
     ): List<SimilarityClusterMemberFileRow>
+
+    @Query(
+        """
+        SELECT
+            member.clusterId AS clusterId,
+            member.position AS position,
+            member.fileId AS fileId,
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
+            CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.widthPixels END AS widthPixels,
+            CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.heightPixels END AS heightPixels
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        INNER JOIN cached_files AS file
+            ON file.fileId = member.fileId
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.fileId = member.fileId
+        WHERE cluster.settingId = :settingId
+          AND member.clusterId IN (:clusterIds)
+          AND (
+              member.clusterId > :afterClusterId
+               OR (
+                   member.clusterId = :afterClusterId
+                   AND member.position > :afterPosition
+               )
+               OR (
+                   member.clusterId = :afterClusterId
+                   AND member.position = :afterPosition
+                   AND member.fileId > :afterFileId
+               )
+          )
+        ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
+        LIMIT :limit
+        """
+    )
+    fun listFilterMembersForClustersPage(
+        settingId: Long,
+        clusterIds: List<Long>,
+        afterClusterId: Long,
+        afterPosition: Int,
+        afterFileId: Long,
+        limit: Int
+    ): List<SimilarityClusterFilterMemberRow>
 
     @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
     fun countExactThumbnailFeatures(settingId: Long): Int

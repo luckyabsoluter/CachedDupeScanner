@@ -30,7 +30,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
-- Average-duration similarity filtering now uses the configured bounded similarity worker pool for missing video metadata and batches duration-only source pages while keeping progress updates and cache writes serialized.
+- Similarity member filters now stream source pages through bounded cross-cluster queries, resolve missing duration and resolution metadata with the configured worker pool, and reuse current metadata across compatible settings while keeping progress updates and cache writes serialized.
 - Similarity filters now show determinate on-demand duration and resolution recalculation progress with the current file, processing speed, elapsed time, and estimated remaining time.
 - Active task cards, banners, notifications, and blocking database upgrades now show processing speed, elapsed time, and estimated remaining time, with database recovery counts advancing after each committed copy batch.
 - Cached files and materialized duplicate groups now store SHA-256 values as 32-byte blobs, with a v22-to-v23 migration that preserves file identities and similarity relationships while rebuilding derived groups.

@@ -46,3 +46,16 @@ data class SimilarityClusterMemberFileRow(
     val hashHex: String?
         get() = hashBytes?.toExternalString()
 }
+
+data class SimilarityClusterFilterMemberRow(
+    val clusterId: Long,
+    val position: Int,
+    val fileId: Long,
+    val normalizedPath: String,
+    val path: String,
+    val sizeBytes: Long,
+    val lastModifiedMillis: Long,
+    val durationMillis: Long?,
+    val widthPixels: Int?,
+    val heightPixels: Int?
+)

@@ -2,11 +2,12 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterFilterMemberRow
+import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSortColumn
 import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionEvent
 import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
-import opensource.cached_dupe_scanner.storage.SimilarityMemberSortColumn
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 
 internal data class FilteredSimilarityClustersPage(
@@ -46,12 +47,9 @@ internal fun loadFilteredSimilarityClustersPage(
         target = ResultsFilterTarget.DurationFromAverage,
         supportedTargets = SIMILARITY_FILTER_TARGETS
     )
-    val durationOnlyFilter = resolveDurations && ResultsFilterTarget.entries.all { target ->
-        target == ResultsFilterTarget.DurationFromAverage ||
-            !definition.hasActiveTarget(target, SIMILARITY_FILTER_TARGETS)
-    }
     var resolutionProcessed = 0
     var resolutionTotal = 0
+    var currentPageMatches = emptyMap<Long, Boolean>()
     val publishResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = { event ->
         if (event.completed) {
             resolutionProcessed = (resolutionProcessed + 1).coerceAtMost(resolutionTotal)
@@ -76,9 +74,10 @@ internal fun loadFilteredSimilarityClustersPage(
                 sortColumn = sortColumn,
                 direction = sortDirection
             )
+            val clusterIds = clusters.map { cluster -> cluster.clusterId }
             val addedResolutionWork = repository.countFilterResolutionWorkForClusters(
                 settingId = settingId,
-                clusterIds = clusters.map { cluster -> cluster.clusterId },
+                clusterIds = clusterIds,
                 resolveDimensions = resolveDimensions,
                 resolveDurations = resolveDurations
             )
@@ -95,12 +94,25 @@ internal fun loadFilteredSimilarityClustersPage(
                     )
                 )
             }
-            if (durationOnlyFilter && addedResolutionWork > 0) {
-                repository.resolveFilterDurationsForClusters(
+            if (addedResolutionWork > 0) {
+                repository.resolveFilterMetadataForClusters(
                     settingId = settingId,
-                    clusterIds = clusters.map { cluster -> cluster.clusterId },
+                    clusterIds = clusterIds,
+                    resolveDimensions = resolveDimensions,
+                    resolveDurations = resolveDurations,
                     onResolutionEvent = publishResolutionEvent
                 )
+            }
+            currentPageMatches = if (needsMembers && clusters.isNotEmpty()) {
+                matchSimilarityClustersFromMemberPages(
+                    repository = repository,
+                    settingId = settingId,
+                    clusters = clusters,
+                    definition = definition,
+                    memberPageSize = memberPageSize
+                )
+            } else {
+                emptyMap()
             }
             SourcePage(
                 items = clusters,
@@ -111,32 +123,7 @@ internal fun loadFilteredSimilarityClustersPage(
         transformMatch = { cluster ->
             val group = cluster.asFilterGroup()
             val matched = if (needsMembers) {
-                matchesResultsFilterPagedMembers(
-                    definition = definition,
-                    group = group,
-                    supportedTargets = SIMILARITY_FILTER_TARGETS,
-                    memberPages = {
-                        sequence {
-                            var memberOffset = 0
-                            do {
-                                val members = repository.listClusterMembersPage(
-                                    clusterId = cluster.clusterId,
-                                    offset = memberOffset,
-                                    limit = memberPageSize,
-                                    sortColumn = SimilarityMemberSortColumn.Position,
-                                    direction = SortDirection.Asc,
-                                    resolveDimensions = resolveDimensions,
-                                    resolveDurations = resolveDurations,
-                                    onResolutionEvent = publishResolutionEvent
-                                )
-                                if (members.isNotEmpty()) {
-                                    yield(members.map { it.metadata })
-                                    memberOffset += members.size
-                                }
-                            } while (members.size == memberPageSize)
-                        }
-                    }
-                )
+                currentPageMatches[cluster.clusterId] == true
             } else {
                 matchesResultsFilter(
                     definition = definition,
@@ -153,6 +140,54 @@ internal fun loadFilteredSimilarityClustersPage(
         clusters = page.items,
         nextSourceOffset = page.nextCursor ?: startOffset,
         exhausted = page.exhausted
+    )
+}
+
+private fun matchSimilarityClustersFromMemberPages(
+    repository: SimilaritySettingsRepository,
+    settingId: Long,
+    clusters: List<SimilarityClusterEntity>,
+    definition: ResultsFilterDefinition,
+    memberPageSize: Int
+): Map<Long, Boolean> {
+    val matchers = clusters.associate { cluster ->
+        cluster.clusterId to ResultsFilterPagedMatcher(
+            definition = definition,
+            group = cluster.asFilterGroup(),
+            supportedTargets = SIMILARITY_FILTER_TARGETS
+        )
+    }
+    val unresolvedClusterIds = matchers.mapNotNullTo(linkedSetOf()) { (clusterId, matcher) ->
+        clusterId.takeIf { matcher.resolved() == null }
+    }
+    repository.visitFilterMemberPagesForClusters(
+        settingId = settingId,
+        clusterIds = unresolvedClusterIds.toList(),
+        pageSize = memberPageSize,
+        onPage = { rows ->
+            val resolvedClusterIds = linkedSetOf<Long>()
+            rows.groupBy { row -> row.clusterId }.forEach { (clusterId, clusterRows) ->
+                val matcher = matchers.getValue(clusterId)
+                matcher.consume(clusterRows.map { row -> row.toFilterMetadata() })
+                if (matcher.resolved() != null) {
+                    resolvedClusterIds += clusterId
+                }
+            }
+            resolvedClusterIds
+        }
+    )
+    return matchers.mapValues { (_, matcher) -> matcher.finish() }
+}
+
+private fun SimilarityClusterFilterMemberRow.toFilterMetadata(): FileMetadata {
+    return FileMetadata(
+        path = path,
+        normalizedPath = normalizedPath,
+        sizeBytes = sizeBytes,
+        lastModifiedMillis = lastModifiedMillis,
+        durationMillis = durationMillis,
+        widthPixels = widthPixels,
+        heightPixels = heightPixels
     )
 }
 

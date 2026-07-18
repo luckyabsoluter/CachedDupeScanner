@@ -247,47 +247,75 @@ internal fun matchesResultsFilterPagedMembers(
     memberPages: () -> Sequence<List<FileMetadata>>,
     onPreviewMembers: (List<FileMetadata>) -> Unit = {}
 ): Boolean {
-    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
-    if (activeClusters.isEmpty()) return true
-    if (!definition.requiresGroupMembers(supportedTargets)) {
-        return matchesResultsFilter(
-            definition = definition,
-            group = group,
-            members = emptyList(),
-            supportedTargets = supportedTargets
-        )
-    }
-
-    val clusters = activeClusters.map { (cluster, rules) ->
-        ResultFilterClusterProgress(
-            mode = cluster.mode,
-            rules = rules.map { rule -> ResultFilterRuleProgress(rule = rule, group = group) }
-        )
-    }
-    fun resolved(): Boolean? {
-        val results = clusters.map { it.result(ended = false) }
-        return when {
-            results.any { it == false } -> false
-            results.all { it == true } -> true
-            else -> null
-        }
-    }
-    resolved()?.let { return it }
+    val matcher = ResultsFilterPagedMatcher(
+        definition = definition,
+        group = group,
+        supportedTargets = supportedTargets
+    )
+    matcher.resolved()?.let { return it }
 
     val preview = mutableListOf<FileMetadata>()
     memberPages().forEach { page ->
         if (preview.size < 10) {
             preview += page.take(10 - preview.size)
         }
-        clusters.forEach { cluster -> cluster.consume(page) }
-        resolved()?.let { result ->
+        matcher.consume(page)
+        matcher.resolved()?.let { result ->
             if (preview.isNotEmpty()) onPreviewMembers(preview)
             return result
         }
     }
 
     if (preview.isNotEmpty()) onPreviewMembers(preview)
-    return clusters.all { it.result(ended = true) == true }
+    return matcher.finish()
+}
+
+internal class ResultsFilterPagedMatcher(
+    definition: ResultsFilterDefinition,
+    group: DuplicateGroupEntity,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS
+) {
+    private val activeClusters = activeResultFilterClusters(definition, supportedTargets)
+    private val immediateResult = when {
+        activeClusters.isEmpty() -> true
+        !definition.requiresGroupMembers(supportedTargets) -> matchesResultsFilter(
+            definition = definition,
+            group = group,
+            members = emptyList(),
+            supportedTargets = supportedTargets
+        )
+        else -> null
+    }
+    private val clusters = if (immediateResult == null) {
+        activeClusters.map { (cluster, rules) ->
+            ResultFilterClusterProgress(
+                mode = cluster.mode,
+                rules = rules.map { rule -> ResultFilterRuleProgress(rule = rule, group = group) }
+            )
+        }
+    } else {
+        emptyList()
+    }
+
+    fun consume(page: List<FileMetadata>) {
+        if (immediateResult != null) return
+        clusters.forEach { cluster -> cluster.consume(page) }
+    }
+
+    fun resolved(): Boolean? {
+        immediateResult?.let { result -> return result }
+        val results = clusters.map { cluster -> cluster.result(ended = false) }
+        return when {
+            results.any { result -> result == false } -> false
+            results.all { result -> result == true } -> true
+            else -> null
+        }
+    }
+
+    fun finish(): Boolean {
+        immediateResult?.let { result -> return result }
+        return clusters.all { cluster -> cluster.result(ended = true) == true }
+    }
 }
 
 private fun activeResultFilterClusters(
