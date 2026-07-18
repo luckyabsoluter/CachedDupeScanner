@@ -5,6 +5,11 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import java.io.File
 
+data class VideoFrameSignatureResult(
+    val signature: String,
+    val durationMillis: Long?
+)
+
 interface VideoFrameSignatureExtractor {
     fun signature(
         file: File,
@@ -12,6 +17,17 @@ interface VideoFrameSignatureExtractor {
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
     ): String?
+
+    fun signatureWithMetadata(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): VideoFrameSignatureResult? {
+        return signature(file, mediaScope, step, shouldContinue)?.let { signature ->
+            VideoFrameSignatureResult(signature = signature, durationMillis = null)
+        }
+    }
 }
 
 internal interface VideoFrameSource {
@@ -63,17 +79,28 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
     ): String? {
+        return signatureWithMetadata(file, mediaScope, step, shouldContinue)?.signature
+    }
+
+    override fun signatureWithMetadata(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): VideoFrameSignatureResult? {
         return when (mediaScope) {
-            SimilarityMediaScope.Video -> videoSignature(file, step, shouldContinue)
-            SimilarityMediaScope.Image -> imageSignature(file, step, shouldContinue)
+            SimilarityMediaScope.Video -> videoSignatureWithMetadata(file, step, shouldContinue)
+            SimilarityMediaScope.Image -> imageSignature(file, step, shouldContinue)?.let { signature ->
+                VideoFrameSignatureResult(signature = signature, durationMillis = null)
+            }
         }
     }
 
-    private fun videoSignature(
+    private fun videoSignatureWithMetadata(
         file: File,
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
-    ): String? {
+    ): VideoFrameSignatureResult? {
         if (!shouldContinue()) return null
         val source = sourceFactory()
         return try {
@@ -85,7 +112,10 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
                 val bitmap = source.frameAtTime(timeMicros) ?: return null
                 thumbnailSignature(bitmap, step)
             }
-            buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures)
+            VideoFrameSignatureResult(
+                signature = buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures),
+                durationMillis = durationMillis
+            )
         } catch (_: RuntimeException) {
             null
         } finally {

@@ -318,6 +318,37 @@ internal class ResultsFilterPagedMatcher(
     }
 }
 
+internal data class DurationAverageFilterStats(
+    val memberCount: Long,
+    val checkedCount: Long,
+    val durationCount: Long,
+    val durationSumMillis: Long?,
+    val minimumDurationMillis: Long?,
+    val maximumDurationMillis: Long?
+)
+
+internal fun matchesDurationOnlyResultsFilter(
+    definition: ResultsFilterDefinition,
+    stats: DurationAverageFilterStats?,
+    supportedTargets: Set<ResultsFilterTarget> = SIMILARITY_FILTER_TARGETS
+): Boolean {
+    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
+    if (activeClusters.isEmpty()) return true
+    return activeClusters.all { (cluster, rules) ->
+        val results = rules.map { rule ->
+            rule.target == ResultsFilterTarget.DurationFromAverage &&
+                matchesDurationAverageStats(
+                    stats = stats,
+                    toleranceMillis = rule.durationToleranceMillis()
+                )
+        }
+        when (cluster.mode) {
+            ResultsFilterClusterMode.All -> results.all { result -> result }
+            ResultsFilterClusterMode.Any -> results.any { result -> result }
+        }
+    }
+}
+
 private fun activeResultFilterClusters(
     definition: ResultsFilterDefinition,
     supportedTargets: Set<ResultsFilterTarget>
@@ -554,18 +585,59 @@ private class DurationAverageAccumulator {
 
     fun matches(toleranceMillis: Long): Boolean {
         if (invalid || count <= 0L || toleranceMillis < 0L) return false
-        val countValue = BigInteger.valueOf(count)
-        val sumValue = overflowSum ?: BigInteger.valueOf(sum)
-        val toleranceValue = BigInteger.valueOf(toleranceMillis).multiply(countValue)
-        val minimumDeviation = sumValue
-            .subtract(BigInteger.valueOf(minimum).multiply(countValue))
-            .abs()
-        val maximumDeviation = BigInteger.valueOf(maximum)
-            .multiply(countValue)
-            .subtract(sumValue)
-            .abs()
-        return minimumDeviation <= toleranceValue && maximumDeviation <= toleranceValue
+        return durationBoundsMatchAverageTolerance(
+            count = count,
+            sum = overflowSum ?: BigInteger.valueOf(sum),
+            minimum = minimum,
+            maximum = maximum,
+            toleranceMillis = toleranceMillis
+        )
     }
+}
+
+private fun matchesDurationAverageStats(
+    stats: DurationAverageFilterStats?,
+    toleranceMillis: Long?
+): Boolean {
+    if (stats == null || toleranceMillis == null || toleranceMillis < 0L) return false
+    val durationSumMillis = stats.durationSumMillis ?: return false
+    val minimumDurationMillis = stats.minimumDurationMillis ?: return false
+    val maximumDurationMillis = stats.maximumDurationMillis ?: return false
+    if (
+        stats.memberCount <= 0L ||
+        stats.checkedCount != stats.memberCount ||
+        stats.durationCount != stats.memberCount ||
+        minimumDurationMillis < 0L ||
+        maximumDurationMillis < 0L
+    ) {
+        return false
+    }
+    return durationBoundsMatchAverageTolerance(
+        count = stats.memberCount,
+        sum = BigInteger.valueOf(durationSumMillis),
+        minimum = minimumDurationMillis,
+        maximum = maximumDurationMillis,
+        toleranceMillis = toleranceMillis
+    )
+}
+
+private fun durationBoundsMatchAverageTolerance(
+    count: Long,
+    sum: BigInteger,
+    minimum: Long,
+    maximum: Long,
+    toleranceMillis: Long
+): Boolean {
+    val countValue = BigInteger.valueOf(count)
+    val toleranceValue = BigInteger.valueOf(toleranceMillis).multiply(countValue)
+    val minimumDeviation = sum
+        .subtract(BigInteger.valueOf(minimum).multiply(countValue))
+        .abs()
+    val maximumDeviation = BigInteger.valueOf(maximum)
+        .multiply(countValue)
+        .subtract(sum)
+        .abs()
+    return minimumDeviation <= toleranceValue && maximumDeviation <= toleranceValue
 }
 
 private fun configuredRules(

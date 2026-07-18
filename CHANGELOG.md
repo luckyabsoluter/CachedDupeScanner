@@ -30,6 +30,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Average-duration similarity filters now evaluate cached clusters from one bounded `count`/`sum`/`min`/`max` aggregate query instead of streaming every member row, while exact-thumbnail generation retains video duration already read during frame sampling.
 - Similarity member filters now stream source pages through bounded cross-cluster queries, resolve missing duration and resolution metadata with the configured worker pool, and reuse current metadata across compatible settings while keeping progress updates and cache writes serialized.
 - Similarity filters now show determinate on-demand duration and resolution recalculation progress with the current file, processing speed, elapsed time, and estimated remaining time.
 - Active task cards, banners, notifications, and blocking database upgrades now show processing speed, elapsed time, and estimated remaining time, with database recovery counts advancing after each committed copy batch.

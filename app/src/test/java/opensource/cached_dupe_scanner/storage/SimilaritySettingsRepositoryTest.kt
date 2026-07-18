@@ -29,6 +29,7 @@ import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
+import opensource.cached_dupe_scanner.core.VideoFrameSignatureResult
 import opensource.cached_dupe_scanner.ui.home.FilteredSimilarityClustersPage
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterCluster
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterDefinition
@@ -126,6 +127,53 @@ class SimilaritySettingsRepositoryTest {
             listOf(first, second).map { it.normalizedPath() },
             repository.listClusterMembers(cluster.clusterId).map { it.metadata.normalizedPath }
         )
+    }
+
+    @Test
+    fun exactThumbnailMaintenancePersistsDurationAlreadyReadForVideoSignature() {
+        val files = listOf(
+            videoFile("signature-duration-a.mp4"),
+            videoFile("signature-duration-b.mp4")
+        )
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureMetadataExtractor(
+                signaturesByPath = files.associate { file -> file.absolutePath to THUMBNAIL_TEST_HASH },
+                durationsByPath = files.associate { file -> file.absolutePath to 12_345L }
+            ),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 2, height = 2),
+            enabled = true
+        )
+
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        files.forEach { file ->
+            assertTrue(
+                requireNotNull(
+                    database.similaritySettingsDao().getSettingFile(setting.settingId, fileId(file))
+                ).durationChecked
+            )
+            assertEquals(
+                12_345L,
+                database.similaritySettingsDao()
+                    .getDurationFeature(setting.settingId, fileId(file))
+                    ?.durationMillis
+            )
+        }
     }
 
     @Test
@@ -966,8 +1014,23 @@ class SimilaritySettingsRepositoryTest {
         val perClusterMemberQueries = executedQueries.filter { sqlQuery ->
             normalizedSql(sqlQuery).contains("where member.clusterid = ?")
         }
+        val streamedMemberQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("member.position as position")
+        }
+        val durationAggregateQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("sum(duration.durationmillis) as durationsummillis")
+        }
+        val separateResolutionCountQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("as dimensioncount")
+        }
         assertEquals(3, cached.clusters.size)
         assertTrue(perClusterMemberQueries.joinToString(separator = "\n"), perClusterMemberQueries.isEmpty())
+        assertTrue(streamedMemberQueries.joinToString(separator = "\n"), streamedMemberQueries.isEmpty())
+        assertEquals(1, durationAggregateQueries.size)
+        assertTrue(
+            separateResolutionCountQueries.joinToString(separator = "\n"),
+            separateResolutionCountQueries.isEmpty()
+        )
     }
 
     @Test
@@ -2065,6 +2128,34 @@ private class FakeSignatureExtractor(
         shouldContinue: () -> Boolean
     ): String? {
         return signaturesByPath[file.absolutePath]
+    }
+}
+
+private class FakeSignatureMetadataExtractor(
+    private val signaturesByPath: Map<String, String>,
+    private val durationsByPath: Map<String, Long>
+) : VideoFrameSignatureExtractor {
+    override fun signature(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): String? {
+        return signaturesByPath[file.absolutePath]
+    }
+
+    override fun signatureWithMetadata(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): VideoFrameSignatureResult? {
+        return signaturesByPath[file.absolutePath]?.let { signature ->
+            VideoFrameSignatureResult(
+                signature = signature,
+                durationMillis = durationsByPath[file.absolutePath]
+            )
+        }
     }
 }
 

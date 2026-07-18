@@ -406,6 +406,38 @@ interface SimilaritySettingsDao {
         limit: Int
     ): List<SimilarityClusterFilterMemberRow>
 
+    @Query(
+        """
+        SELECT
+            member.clusterId AS clusterId,
+            COUNT(*) AS memberCount,
+            SUM(
+                CASE WHEN setting_file.durationChecked = 1 THEN 1 ELSE 0 END
+            ) AS checkedCount,
+            COUNT(duration.durationMillis) AS durationCount,
+            SUM(duration.durationMillis) AS durationSumMillis,
+            MIN(duration.durationMillis) AS minimumDurationMillis,
+            MAX(duration.durationMillis) AS maximumDurationMillis
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.fileId = member.fileId
+        WHERE cluster.settingId = :settingId
+          AND member.clusterId IN (:clusterIds)
+        GROUP BY member.clusterId
+        ORDER BY member.clusterId ASC
+        """
+    )
+    fun listDurationStatsForClusters(
+        settingId: Long,
+        clusterIds: List<Long>
+    ): List<SimilarityClusterDurationStatsRow>
+
     @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
     fun countExactThumbnailFeatures(settingId: Long): Int
 

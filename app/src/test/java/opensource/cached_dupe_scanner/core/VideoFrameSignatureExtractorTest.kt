@@ -33,7 +33,7 @@ class VideoFrameSignatureExtractorTest {
             grayscale = false
         )
 
-        val signature = AndroidVideoFrameSignatureExtractor { source }.signature(
+        val result = AndroidVideoFrameSignatureExtractor { source }.signatureWithMetadata(
             file = File("short-video.mp4"),
             mediaScope = SimilarityMediaScope.Video,
             step = step,
@@ -45,8 +45,9 @@ class VideoFrameSignatureExtractorTest {
                 step = step,
                 frameSignatures = listOf("ff0000", "00ff00", "0000ff")
             ),
-            signature
+            result?.signature
         )
+        assertEquals(1_500L, result?.durationMillis)
         assertEquals(listOf(0L, 1_000_000L, 1_499_000L), source.requestedTimesMicros)
         assertTrue(source.released)
     }

@@ -450,6 +450,51 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun durationAggregateFilterMatchesExactMemberAverageBoundaries() {
+        val definition = durationAverageDefinition(seconds = "0", milliseconds = "100")
+
+        assertTrue(
+            matchesDurationOnlyResultsFilter(
+                definition = definition,
+                stats = DurationAverageFilterStats(
+                    memberCount = 3L,
+                    checkedCount = 3L,
+                    durationCount = 3L,
+                    durationSumMillis = 30_300L,
+                    minimumDurationMillis = 10_000L,
+                    maximumDurationMillis = 10_200L
+                )
+            )
+        )
+        assertFalse(
+            matchesDurationOnlyResultsFilter(
+                definition = definition,
+                stats = DurationAverageFilterStats(
+                    memberCount = 3L,
+                    checkedCount = 3L,
+                    durationCount = 3L,
+                    durationSumMillis = 30_301L,
+                    minimumDurationMillis = 10_000L,
+                    maximumDurationMillis = 10_201L
+                )
+            )
+        )
+        assertFalse(
+            matchesDurationOnlyResultsFilter(
+                definition = definition,
+                stats = DurationAverageFilterStats(
+                    memberCount = 2L,
+                    checkedCount = 2L,
+                    durationCount = 1L,
+                    durationSumMillis = 10_000L,
+                    minimumDurationMillis = 10_000L,
+                    maximumDurationMillis = 10_000L
+                )
+            )
+        )
+    }
+
+    @Test
     fun pagedSimilarityFilterAccumulatesAverageAcrossEveryMemberPage() {
         val definition = durationAverageDefinition(seconds = "1", milliseconds = "250")
         val members = listOf(

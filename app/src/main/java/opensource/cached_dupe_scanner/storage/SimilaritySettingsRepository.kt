@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterDurationStatsRow
 import opensource.cached_dupe_scanner.cache.SimilarityClusterFilterMemberRow
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberFileRow
@@ -608,6 +609,17 @@ class SimilaritySettingsRepository(
             }
     }
 
+    internal fun listFilterDurationStatsForClusters(
+        settingId: Long,
+        clusterIds: List<Long>
+    ): List<SimilarityClusterDurationStatsRow> {
+        return clusterIds.distinct()
+            .chunked(SIMILARITY_DB_BIND_CHUNK_SIZE)
+            .flatMap { clusterIdChunk ->
+                similarityDao.listDurationStatsForClusters(settingId, clusterIdChunk)
+            }
+    }
+
     fun generateEnabledResults(
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
@@ -885,7 +897,16 @@ class SimilaritySettingsRepository(
                     similarityDao.upsertSettingFiles(preparedFiles.map { prepared -> prepared.settingFile })
                     val exactFeatures = preparedFiles.mapNotNull { prepared -> prepared.exactFeature }
                     val durationFeatures = preparedFiles.mapNotNull { prepared -> prepared.durationFeature }
+                    val replacedDurationFileIds = preparedFiles.mapNotNull { prepared ->
+                        prepared.settingFile.fileId.takeIf { prepared.replaceDurationFeature }
+                    }
                     if (exactFeatures.isNotEmpty()) similarityDao.upsertExactThumbnailFeatures(exactFeatures)
+                    if (replacedDurationFileIds.isNotEmpty()) {
+                        similarityDao.deleteDurationFeaturesForSettingByIds(
+                            settingId = setting.settingId,
+                            fileIds = replacedDurationFileIds
+                        )
+                    }
                     if (durationFeatures.isNotEmpty()) similarityDao.upsertDurationFeatures(durationFeatures)
                 }
             }
@@ -1005,12 +1026,17 @@ class SimilaritySettingsRepository(
         return when (setting.methodId) {
             SIMILARITY_METHOD_EXACT_THUMBNAIL -> {
                 val step = exactThumbnailStepFromParams(setting.paramsJson)
-                frameSignatureExtractor.signature(
+                frameSignatureExtractor.signatureWithMetadata(
                     file = file,
                     mediaScope = mediaScope,
                     step = step,
                     shouldContinue = shouldContinue
-                )?.let(CalculatedFeature::ExactThumbnail)
+                )?.let { result ->
+                    CalculatedFeature.ExactThumbnail(
+                        signature = result.signature,
+                        durationMillis = result.durationMillis?.takeIf { value -> value >= 0L }
+                    )
+                }
             }
             SIMILARITY_METHOD_DURATION_TOLERANCE,
             SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST -> {
@@ -1116,7 +1142,8 @@ class SimilaritySettingsRepository(
                                 updatedAtMillis = updatedAtMillis
                             ),
                             exactFeature = null,
-                            durationFeature = null
+                            durationFeature = null,
+                            replaceDurationFeature = false
                         )
                     )
                 }
@@ -1685,7 +1712,9 @@ class SimilaritySettingsRepository(
                 dimensions = dimensions,
                 dimensionsChecked = ready,
                 durationChecked = ready && (
-                    mediaScope == SimilarityMediaScope.Image || feature is CalculatedFeature.Duration
+                    mediaScope == SimilarityMediaScope.Image ||
+                        feature is CalculatedFeature.Duration ||
+                        (feature is CalculatedFeature.ExactThumbnail && feature.durationMillis != null)
                 ),
                 updatedAtMillis = updatedAtMillis
             ),
@@ -1696,13 +1725,14 @@ class SimilaritySettingsRepository(
                     thumbnailHash = StoredHash.fromExternalString(exact.signature)
                 )
             },
-            durationFeature = (feature as? CalculatedFeature.Duration)?.let { duration ->
+            durationFeature = feature.durationMillisOrNull()?.let { durationMillis ->
                 SimilarityDurationFeatureEntity(
                     settingId = setting.settingId,
                     fileId = entity.fileId,
-                    durationMillis = duration.durationMillis
+                    durationMillis = durationMillis
                 )
-            }
+            },
+            replaceDurationFeature = true
         )
     }
 
@@ -2087,14 +2117,26 @@ class SimilaritySettingsRepository(
 }
 
 private sealed interface CalculatedFeature {
-    data class ExactThumbnail(val signature: String) : CalculatedFeature
+    data class ExactThumbnail(
+        val signature: String,
+        val durationMillis: Long?
+    ) : CalculatedFeature
     data class Duration(val durationMillis: Long) : CalculatedFeature
+}
+
+private fun CalculatedFeature?.durationMillisOrNull(): Long? {
+    return when (this) {
+        is CalculatedFeature.Duration -> durationMillis
+        is CalculatedFeature.ExactThumbnail -> durationMillis
+        null -> null
+    }
 }
 
 private data class PreparedSettingFile(
     val settingFile: SimilaritySettingFileEntity,
     val exactFeature: SimilarityExactThumbnailFeatureEntity?,
-    val durationFeature: SimilarityDurationFeatureEntity?
+    val durationFeature: SimilarityDurationFeatureEntity?,
+    val replaceDurationFeature: Boolean
 )
 
 private data class SimilarityFeatureWorkItem(

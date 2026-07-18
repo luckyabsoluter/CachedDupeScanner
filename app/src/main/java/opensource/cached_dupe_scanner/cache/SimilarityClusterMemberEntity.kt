@@ -59,3 +59,13 @@ data class SimilarityClusterFilterMemberRow(
     val widthPixels: Int?,
     val heightPixels: Int?
 )
+
+data class SimilarityClusterDurationStatsRow(
+    val clusterId: Long,
+    val memberCount: Long,
+    val checkedCount: Long,
+    val durationCount: Long,
+    val durationSumMillis: Long?,
+    val minimumDurationMillis: Long?,
+    val maximumDurationMillis: Long?
+)
