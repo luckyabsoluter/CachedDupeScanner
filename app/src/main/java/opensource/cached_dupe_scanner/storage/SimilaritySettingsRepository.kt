@@ -745,11 +745,19 @@ class SimilaritySettingsRepository(
                 }
                 currentPath = entity.path.ifBlank { entity.normalizedPath }
                 val existing = similarityDao.getSettingFile(setting.settingId, entity.fileId)
-                val featureIsFresh = !rebuild &&
-                    existing?.status == SIMILARITY_FILE_STATUS_READY &&
+                val storedFileIsFresh = !rebuild &&
+                    existing != null &&
                     existing.sizeBytes == entity.sizeBytes &&
                     existing.lastModifiedMillis == entity.lastModifiedMillis
-                if (featureIsFresh && existing?.dimensionsChecked == true) {
+                val readyFeatureIsFresh = storedFileIsFresh &&
+                    existing?.status == SIMILARITY_FILE_STATUS_READY
+                val skippedFeatureIsFresh = storedFileIsFresh &&
+                    existing?.status == SIMILARITY_FILE_STATUS_SKIPPED
+                if (
+                    skippedFeatureIsFresh ||
+                    (readyFeatureIsFresh && existing?.dimensionsChecked == true)
+                ) {
+                    if (skippedFeatureIsFresh) skipped += 1
                     processed += 1
                     onProgress(
                         SimilarityMaintenanceProgress(
@@ -765,7 +773,7 @@ class SimilaritySettingsRepository(
                 }
                 workItems += SimilarityFeatureWorkItem(
                     entity = entity,
-                    freshSettingFile = existing.takeIf { featureIsFresh }
+                    freshSettingFile = existing.takeIf { readyFeatureIsFresh }
                 )
             }
 
@@ -1892,4 +1900,4 @@ private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_WORK_COMPLETION_POLL_MILLIS = 100L
 private const val SIMILARITY_WORK_EXECUTOR_SHUTDOWN_SECONDS = 5L
 private const val SIMILARITY_FILE_STATUS_READY = "ready"
-private const val SIMILARITY_FILE_STATUS_SKIPPED = "skipped"
+private const val SIMILARITY_FILE_STATUS_SKIPPED = "skipped-v2"

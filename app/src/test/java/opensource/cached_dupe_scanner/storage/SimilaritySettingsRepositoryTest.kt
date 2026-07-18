@@ -985,6 +985,106 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun incrementalMaintenanceDoesNotRetryAnUnchangedUndecodableVideo() {
+        val file = videoFile("undecodable.mp4")
+        database.fileCacheDao().upsert(entity(file))
+        val extractor = CountingNullSignatureExtractor()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = extractor,
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+
+        val initial = repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val incremental = repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = false,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(1, initial.skippedCount)
+        assertEquals(1, incremental.skippedCount)
+        assertEquals(1, extractor.extractionCalls.get())
+
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(2, extractor.extractionCalls.get())
+    }
+
+    @Test
+    fun incrementalMaintenanceRetriesLegacySkippedVideoWithBoundedSampling() {
+        val file = videoFile("legacy-skipped.mp4")
+        database.fileCacheDao().upsert(entity(file))
+        val extractor = CountingNullSignatureExtractor()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = extractor,
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        database.similaritySettingsDao().upsertSettingFiles(
+            listOf(
+                SimilaritySettingFileEntity(
+                    settingId = setting.settingId,
+                    fileId = fileId(file),
+                    sizeBytes = file.length(),
+                    lastModifiedMillis = file.lastModified(),
+                    status = "skipped",
+                    widthPixels = null,
+                    heightPixels = null,
+                    dimensionsChecked = false,
+                    durationChecked = false,
+                    updatedAtMillis = 1L
+                )
+            )
+        )
+
+        val summary = repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = false,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(1, summary.skippedCount)
+        assertEquals(1, extractor.extractionCalls.get())
+        assertEquals(
+            "skipped-v2",
+            requireNotNull(
+                database.similaritySettingsDao().getSettingFile(setting.settingId, fileId(file))
+            ).status
+        )
+    }
+
+    @Test
     fun createSettingNormalizesSimilarityIdentity() {
         val repository = repository()
 
@@ -1480,6 +1580,20 @@ private class FakeSignatureExtractor(
         shouldContinue: () -> Boolean
     ): String? {
         return signaturesByPath[file.absolutePath]
+    }
+}
+
+private class CountingNullSignatureExtractor : VideoFrameSignatureExtractor {
+    val extractionCalls = AtomicInteger(0)
+
+    override fun signature(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): String? {
+        extractionCalls.incrementAndGet()
+        return null
     }
 }
 
