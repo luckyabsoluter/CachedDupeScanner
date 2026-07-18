@@ -28,6 +28,7 @@ import opensource.cached_dupe_scanner.core.SimilarityMediaScope
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
+import opensource.cached_dupe_scanner.ui.home.FilteredSimilarityClustersPage
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterCluster
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterDefinition
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterRule
@@ -822,6 +823,91 @@ class SimilaritySettingsRepositoryTest {
 
         assertEquals(1, cached.clusters.size)
         assertTrue(cachedProgress.isEmpty())
+    }
+
+    @Test
+    fun durationAverageFilterUsesConfiguredWorkersForMissingDurations() {
+        val files = (0 until 6).map { index -> videoFile("parallel-filter-duration-$index.mp4") }
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val durationExtractor = BlockingParallelDurationExtractor(expectedConcurrent = 3)
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(
+                files.mapIndexed { index, file ->
+                    val signature = when (index / 2) {
+                        0 -> THUMBNAIL_TEST_HASH
+                        1 -> THUMBNAIL_UNIQUE_TEST_HASH
+                        else -> THUMBNAIL_THIRD_TEST_HASH
+                    }
+                    file.absolutePath to signature
+                }.toMap()
+            ),
+            durationExtractor = durationExtractor,
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap()),
+            workerCountProvider = { 3 }
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_parallel_duration",
+                    name = "Near average",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_parallel_duration",
+                            target = ResultsFilterTarget.DurationFromAverage,
+                            durationToleranceMilliseconds = "0"
+                        )
+                    )
+                )
+            )
+        )
+        val filtered = AtomicReference<FilteredSimilarityClustersPage?>()
+        val failure = AtomicReference<Throwable?>()
+        val progressThreads = mutableListOf<Thread>()
+        val filterThread = Thread {
+            runCatching {
+                loadFilteredSimilarityClustersPage(
+                    repository = repository,
+                    settingId = setting.settingId,
+                    sortColumn = SimilarityClusterSortColumn.FileCount,
+                    sortDirection = SortDirection.Desc,
+                    definition = definition,
+                    startOffset = 0,
+                    minMatches = 3,
+                    sourcePageSize = 3,
+                    memberPageSize = 2,
+                    onResolutionProgress = { progressThreads += Thread.currentThread() }
+                )
+            }.onSuccess(filtered::set).onFailure(failure::set)
+        }
+
+        filterThread.start()
+        val reachedConfiguredConcurrency = durationExtractor.expectedWorkersEntered.await(2, TimeUnit.SECONDS)
+        durationExtractor.releaseWorkers.countDown()
+        filterThread.join(10_000L)
+
+        assertTrue(reachedConfiguredConcurrency)
+        assertFalse(filterThread.isAlive)
+        failure.get()?.let { error -> throw AssertionError(error) }
+        assertEquals(3, durationExtractor.maxConcurrentExtractions.get())
+        assertEquals(files.size, durationExtractor.extractionCalls.get())
+        assertEquals(3, filtered.get()?.clusters?.size)
+        assertTrue(progressThreads.isNotEmpty())
+        assertTrue(progressThreads.all { progressThread -> progressThread === filterThread })
     }
 
     @Test
@@ -1674,6 +1760,27 @@ private class FakeDurationExtractor(
     }
 }
 
+private class BlockingParallelDurationExtractor(expectedConcurrent: Int) : VideoDurationExtractor {
+    val expectedWorkersEntered = CountDownLatch(expectedConcurrent)
+    val releaseWorkers = CountDownLatch(1)
+    val maxConcurrentExtractions = AtomicInteger(0)
+    val extractionCalls = AtomicInteger(0)
+    private val activeExtractions = AtomicInteger(0)
+
+    override fun durationMillis(file: File, shouldContinue: () -> Boolean): Long? {
+        extractionCalls.incrementAndGet()
+        val active = activeExtractions.incrementAndGet()
+        maxConcurrentExtractions.updateAndGet { previous -> maxOf(previous, active) }
+        expectedWorkersEntered.countDown()
+        return try {
+            releaseWorkers.await(5, TimeUnit.SECONDS)
+            if (shouldContinue()) 10_000L else null
+        } finally {
+            activeExtractions.decrementAndGet()
+        }
+    }
+}
+
 private class FakeMediaDimensionsExtractor(
     private val dimensionsByPath: Map<String, MediaDimensions>
 ) : MediaDimensionsExtractor {
@@ -1758,3 +1865,5 @@ private const val THUMBNAIL_TEST_HASH =
     "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744"
 private const val THUMBNAIL_UNIQUE_TEST_HASH =
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+private const val THUMBNAIL_THIRD_TEST_HASH =
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

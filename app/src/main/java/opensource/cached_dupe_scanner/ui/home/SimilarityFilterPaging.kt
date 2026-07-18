@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.core.SortDirection
 import opensource.cached_dupe_scanner.storage.SimilarityClusterSortColumn
+import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionEvent
 import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilarityMemberSortColumn
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
@@ -45,8 +46,25 @@ internal fun loadFilteredSimilarityClustersPage(
         target = ResultsFilterTarget.DurationFromAverage,
         supportedTargets = SIMILARITY_FILTER_TARGETS
     )
+    val durationOnlyFilter = resolveDurations && ResultsFilterTarget.entries.all { target ->
+        target == ResultsFilterTarget.DurationFromAverage ||
+            !definition.hasActiveTarget(target, SIMILARITY_FILTER_TARGETS)
+    }
     var resolutionProcessed = 0
     var resolutionTotal = 0
+    val publishResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = { event ->
+        if (event.completed) {
+            resolutionProcessed = (resolutionProcessed + 1).coerceAtMost(resolutionTotal)
+        }
+        onResolutionProgress(
+            SimilarityFilterResolutionProgress(
+                processed = resolutionProcessed,
+                total = resolutionTotal,
+                currentPath = event.path,
+                kind = event.kind
+            )
+        )
+    }
     val page = loadFilteredSourcePage(
         startCursor = startOffset,
         minMatches = minMatches,
@@ -77,6 +95,13 @@ internal fun loadFilteredSimilarityClustersPage(
                     )
                 )
             }
+            if (durationOnlyFilter && addedResolutionWork > 0) {
+                repository.resolveFilterDurationsForClusters(
+                    settingId = settingId,
+                    clusterIds = clusters.map { cluster -> cluster.clusterId },
+                    onResolutionEvent = publishResolutionEvent
+                )
+            }
             SourcePage(
                 items = clusters,
                 nextCursor = offset + clusters.size,
@@ -102,20 +127,7 @@ internal fun loadFilteredSimilarityClustersPage(
                                     direction = SortDirection.Asc,
                                     resolveDimensions = resolveDimensions,
                                     resolveDurations = resolveDurations,
-                                    onResolutionEvent = { event ->
-                                        if (event.completed) {
-                                            resolutionProcessed = (resolutionProcessed + 1)
-                                                .coerceAtMost(resolutionTotal)
-                                        }
-                                        onResolutionProgress(
-                                            SimilarityFilterResolutionProgress(
-                                                processed = resolutionProcessed,
-                                                total = resolutionTotal,
-                                                currentPath = event.path,
-                                                kind = event.kind
-                                            )
-                                        )
-                                    }
+                                    onResolutionEvent = publishResolutionEvent
                                 )
                                 if (members.isNotEmpty()) {
                                     yield(members.map { it.metadata })

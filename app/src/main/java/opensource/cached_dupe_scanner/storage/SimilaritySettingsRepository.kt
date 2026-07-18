@@ -532,6 +532,28 @@ class SimilaritySettingsRepository(
         return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
+    internal fun resolveFilterDurationsForClusters(
+        settingId: Long,
+        clusterIds: List<Long>,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+    ) {
+        val distinctClusterIds = clusterIds.distinct()
+        if (distinctClusterIds.isEmpty()) return
+        while (!Thread.currentThread().isInterrupted) {
+            val uncheckedRows = similarityDao.listUncheckedDurationMembersForClusters(
+                settingId = settingId,
+                clusterIds = distinctClusterIds,
+                limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
+            ).distinctBy { row -> row.fileId }
+            if (uncheckedRows.isEmpty()) return
+            val resolvedRows = resolveUncheckedDurations(
+                rows = uncheckedRows,
+                onResolutionEvent = onResolutionEvent
+            )
+            if (resolvedRows.none { row -> row.durationChecked }) return
+        }
+    }
+
     fun generateEnabledResults(
         shouldContinue: () -> Boolean,
         onProgress: (SimilarityMaintenanceProgress) -> Unit
@@ -1763,37 +1785,13 @@ class SimilaritySettingsRepository(
             ?.let { value -> runCatching { SimilarityMediaScope.valueOf(value) }.getOrNull() }
             ?: return rows
         val shouldContinue = { !Thread.currentThread().isInterrupted }
-        val resolved = uncheckedRows.mapNotNull { row ->
-            if (!shouldContinue()) return@mapNotNull null
-            onResolutionEvent(
-                SimilarityMemberResolutionEvent(
-                    kind = SimilarityMemberResolutionKind.Duration,
-                    path = row.path,
-                    completed = false
-                )
-            )
-            val file = File(row.path)
-            val durationMillis = if (mediaScope == SimilarityMediaScope.Video && file.exists()) {
-                durationExtractor.durationMillis(
-                    file = file,
-                    shouldContinue = shouldContinue
-                )?.takeIf { value -> value >= 0L }
-            } else {
-                null
-            }
-            if (!shouldContinue()) {
-                null
-            } else {
-                onResolutionEvent(
-                    SimilarityMemberResolutionEvent(
-                        kind = SimilarityMemberResolutionKind.Duration,
-                        path = row.path,
-                        completed = true
-                    )
-                )
-                PendingDurationResolution(row, durationMillis)
-            }
-        }
+        val resolved = resolveDurationWorkBatch(
+            rows = uncheckedRows,
+            mediaScope = mediaScope,
+            workerCount = sanitizeScanWorkerCount(workerCountProvider()),
+            shouldContinue = shouldContinue,
+            onResolutionEvent = onResolutionEvent
+        )
         if (resolved.isEmpty()) return rows
 
         val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
@@ -1843,6 +1841,138 @@ class SimilaritySettingsRepository(
             }
         }
         return rows.map { row -> updatedRows[row.fileId] ?: row }
+    }
+
+    private fun resolveDurationWorkBatch(
+        rows: List<SimilarityClusterMemberFileRow>,
+        mediaScope: SimilarityMediaScope,
+        workerCount: Int,
+        shouldContinue: () -> Boolean,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+    ): List<PendingDurationResolution> {
+        if (rows.isEmpty() || !shouldContinue()) return emptyList()
+        val concurrency = workerCount.coerceAtMost(rows.size)
+        if (concurrency <= 1) {
+            return rows.mapNotNull { row ->
+                resolveDurationWorkItemWithProgress(
+                    row = row,
+                    mediaScope = mediaScope,
+                    shouldContinue = shouldContinue,
+                    onResolutionEvent = onResolutionEvent
+                )
+            }
+        }
+
+        val threadIndex = AtomicInteger(0)
+        val executor = Executors.newFixedThreadPool(concurrency) { runnable ->
+            Thread(
+                runnable,
+                "CachedDupeScanner-FilterDuration-${threadIndex.incrementAndGet()}"
+            ).apply {
+                isDaemon = true
+            }
+        }
+        val completionService = ExecutorCompletionService<DurationResolutionWorkResult>(executor)
+        val resolved = mutableListOf<PendingDurationResolution>()
+        var nextIndex = 0
+        var activeWorkers = 0
+
+        fun submitNext(): Boolean {
+            if (nextIndex >= rows.size || !shouldContinue()) return false
+            val row = rows[nextIndex]
+            nextIndex += 1
+            onResolutionEvent(row.durationResolutionEvent(completed = false))
+            completionService.submit(
+                Callable {
+                    resolveDurationWorkItem(
+                        row = row,
+                        mediaScope = mediaScope,
+                        shouldContinue = shouldContinue
+                    )
+                }
+            )
+            activeWorkers += 1
+            return true
+        }
+
+        try {
+            repeat(concurrency) { submitNext() }
+            while (activeWorkers > 0 && shouldContinue()) {
+                val completedFuture = try {
+                    completionService.poll(
+                        SIMILARITY_WORK_COMPLETION_POLL_MILLIS,
+                        TimeUnit.MILLISECONDS
+                    )
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                } ?: continue
+                activeWorkers -= 1
+                val result = completedFuture.get()
+                result.failure?.let { failure -> throw failure }
+                if (!result.cancelled && shouldContinue()) {
+                    onResolutionEvent(result.row.durationResolutionEvent(completed = true))
+                    resolved += PendingDurationResolution(result.row, result.durationMillis)
+                }
+                submitNext()
+            }
+        } finally {
+            executor.shutdownNow()
+            try {
+                executor.awaitTermination(
+                    SIMILARITY_WORK_EXECUTOR_SHUTDOWN_SECONDS,
+                    TimeUnit.SECONDS
+                )
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        return resolved
+    }
+
+    private fun resolveDurationWorkItemWithProgress(
+        row: SimilarityClusterMemberFileRow,
+        mediaScope: SimilarityMediaScope,
+        shouldContinue: () -> Boolean,
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+    ): PendingDurationResolution? {
+        if (!shouldContinue()) return null
+        onResolutionEvent(row.durationResolutionEvent(completed = false))
+        val result = resolveDurationWorkItem(
+            row = row,
+            mediaScope = mediaScope,
+            shouldContinue = shouldContinue
+        )
+        result.failure?.let { failure -> throw failure }
+        if (result.cancelled || !shouldContinue()) return null
+        onResolutionEvent(row.durationResolutionEvent(completed = true))
+        return PendingDurationResolution(row, result.durationMillis)
+    }
+
+    private fun resolveDurationWorkItem(
+        row: SimilarityClusterMemberFileRow,
+        mediaScope: SimilarityMediaScope,
+        shouldContinue: () -> Boolean
+    ): DurationResolutionWorkResult {
+        if (!shouldContinue()) return DurationResolutionWorkResult(row = row, cancelled = true)
+        return try {
+            val file = File(row.path)
+            val durationMillis = if (mediaScope == SimilarityMediaScope.Video && file.exists()) {
+                durationExtractor.durationMillis(
+                    file = file,
+                    shouldContinue = shouldContinue
+                )?.takeIf { value -> value >= 0L }
+            } else {
+                null
+            }
+            if (shouldContinue()) {
+                DurationResolutionWorkResult(row = row, durationMillis = durationMillis)
+            } else {
+                DurationResolutionWorkResult(row = row, cancelled = true)
+            }
+        } catch (error: Exception) {
+            DurationResolutionWorkResult(row = row, failure = error)
+        }
     }
 
     private fun emptySummary(cancelled: Boolean): SimilarityMaintenanceSummary {
@@ -1902,6 +2032,23 @@ private data class PendingDurationResolution(
     val durationMillis: Long?
 )
 
+private data class DurationResolutionWorkResult(
+    val row: SimilarityClusterMemberFileRow,
+    val durationMillis: Long? = null,
+    val cancelled: Boolean = false,
+    val failure: Exception? = null
+)
+
+private fun SimilarityClusterMemberFileRow.durationResolutionEvent(
+    completed: Boolean
+): SimilarityMemberResolutionEvent {
+    return SimilarityMemberResolutionEvent(
+        kind = SimilarityMemberResolutionKind.Duration,
+        path = path,
+        completed = completed
+    )
+}
+
 private fun SimilarityClusterMemberFileRow.toFileMetadata(): FileMetadata {
     return FileMetadata(
         path = path,
@@ -1923,6 +2070,7 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 }
 
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
+private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 200
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS = 2

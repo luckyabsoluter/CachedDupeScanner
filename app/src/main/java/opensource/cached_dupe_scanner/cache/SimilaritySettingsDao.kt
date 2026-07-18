@@ -211,6 +211,45 @@ interface SimilaritySettingsDao {
     )
     fun countUncheckedDurationsForClusters(settingId: Long, clusterIds: List<Long>): Int
 
+    @Query(
+        """
+        SELECT
+            cluster.settingId AS settingId,
+            member.fileId AS fileId,
+            file.normalizedPath AS normalizedPath,
+            file.path AS path,
+            setting_file.sizeBytes AS sizeBytes,
+            setting_file.lastModifiedMillis AS lastModifiedMillis,
+            file.hashBytes AS hashBytes,
+            CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
+            setting_file.widthPixels AS widthPixels,
+            setting_file.heightPixels AS heightPixels,
+            setting_file.dimensionsChecked AS dimensionsChecked,
+            setting_file.durationChecked AS durationChecked
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        INNER JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        INNER JOIN cached_files AS file
+            ON file.fileId = member.fileId
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.fileId = member.fileId
+        WHERE cluster.settingId = :settingId
+          AND member.clusterId IN (:clusterIds)
+          AND setting_file.durationChecked = 0
+        ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
+        LIMIT :limit
+        """
+    )
+    fun listUncheckedDurationMembersForClusters(
+        settingId: Long,
+        clusterIds: List<Long>,
+        limit: Int
+    ): List<SimilarityClusterMemberFileRow>
+
     @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
     fun countExactThumbnailFeatures(settingId: Long): Int
 
