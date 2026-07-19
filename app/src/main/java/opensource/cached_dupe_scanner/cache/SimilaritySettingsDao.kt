@@ -116,6 +116,19 @@ interface SimilaritySettingsDao {
     fun getSettingFile(settingId: Long, fileId: Long): SimilaritySettingFileEntity?
 
     @Query(
+        """
+        SELECT *
+        FROM similarity_setting_files
+        WHERE settingId = :settingId
+          AND fileId IN (:fileIds)
+        """
+    )
+    fun listSettingFilesByIds(
+        settingId: Long,
+        fileIds: List<Long>
+    ): List<SimilaritySettingFileEntity>
+
+    @Query(
         "SELECT fileId FROM similarity_setting_files " +
             "WHERE settingId = :settingId AND fileId IN (:fileIds)"
     )
@@ -230,6 +243,46 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            file.fileId AS fileId,
+            source_duration.durationMillis AS durationMillis
+        FROM cached_files AS file
+        INNER JOIN similarity_setting_files AS source
+            ON source.fileId = file.fileId
+           AND source.settingId = (
+                SELECT candidate.settingId
+                FROM similarity_setting_files AS candidate
+                INNER JOIN similarity_settings AS candidate_setting
+                    ON candidate_setting.settingId = candidate.settingId
+                LEFT JOIN similarity_duration_features AS candidate_duration
+                    ON candidate_duration.settingId = candidate.settingId
+                   AND candidate_duration.fileId = candidate.fileId
+                WHERE candidate.fileId = file.fileId
+                  AND candidate.settingId != :settingId
+                  AND candidate.sizeBytes = file.sizeBytes
+                  AND candidate.lastModifiedMillis = file.lastModifiedMillis
+                  AND candidate.durationChecked = 1
+                  AND candidate_setting.mediaScope = :mediaScope
+                ORDER BY
+                    CASE WHEN candidate_duration.durationMillis IS NULL THEN 1 ELSE 0 END ASC,
+                    candidate.settingId ASC
+                LIMIT 1
+            )
+        LEFT JOIN similarity_duration_features AS source_duration
+            ON source_duration.settingId = source.settingId
+           AND source_duration.fileId = source.fileId
+        WHERE file.fileId IN (:fileIds)
+        ORDER BY file.fileId ASC
+        """
+    )
+    fun listReusableDurationsForFiles(
+        settingId: Long,
+        mediaScope: String,
+        fileIds: List<Long>
+    ): List<SimilarityReusableDurationRow>
+
+    @Query(
+        """
+        SELECT
             target.fileId AS fileId,
             source.widthPixels AS widthPixels,
             source.heightPixels AS heightPixels
@@ -314,6 +367,8 @@ interface SimilaritySettingsDao {
     @Query(
         """
         SELECT
+            member.clusterId AS clusterId,
+            member.position AS position,
             cluster.settingId AS settingId,
             member.fileId AS fileId,
             file.normalizedPath AS normalizedPath,
@@ -343,6 +398,18 @@ interface SimilaritySettingsDao {
               (:resolveDimensions = 1 AND setting_file.dimensionsChecked = 0)
                OR (:resolveDurations = 1 AND setting_file.durationChecked = 0)
           )
+          AND (
+              member.clusterId > :afterClusterId
+               OR (
+                   member.clusterId = :afterClusterId
+                   AND member.position > :afterPosition
+               )
+               OR (
+                   member.clusterId = :afterClusterId
+                   AND member.position = :afterPosition
+                   AND member.fileId > :afterFileId
+               )
+          )
         ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
         LIMIT :limit
         """
@@ -352,8 +419,11 @@ interface SimilaritySettingsDao {
         clusterIds: List<Long>,
         resolveDimensions: Boolean,
         resolveDurations: Boolean,
+        afterClusterId: Long,
+        afterPosition: Int,
+        afterFileId: Long,
         limit: Int
-    ): List<SimilarityClusterMemberFileRow>
+    ): List<SimilarityFilterMetadataResolutionRow>
 
     @Query(
         """
@@ -689,6 +759,114 @@ interface SimilaritySettingsDao {
     fun listStoredClustersByTotalSizeDesc(
         settingId: Long,
         offset: Int,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+          AND (
+              fileCount > :afterFileCount
+               OR (fileCount = :afterFileCount AND totalBytes > :afterTotalBytes)
+               OR (
+                   fileCount = :afterFileCount
+                   AND totalBytes = :afterTotalBytes
+                   AND clusterKey > :afterClusterKey
+               )
+          )
+        ORDER BY fileCount ASC, totalBytes ASC, clusterKey ASC
+        LIMIT :limit
+        """
+    )
+    fun listStoredClustersByFileCountAscAfter(
+        settingId: Long,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterClusterKey: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+          AND (
+              fileCount < :afterFileCount
+               OR (fileCount = :afterFileCount AND totalBytes < :afterTotalBytes)
+               OR (
+                   fileCount = :afterFileCount
+                   AND totalBytes = :afterTotalBytes
+                   AND clusterKey > :afterClusterKey
+               )
+          )
+        ORDER BY fileCount DESC, totalBytes DESC, clusterKey ASC
+        LIMIT :limit
+        """
+    )
+    fun listStoredClustersByFileCountDescAfter(
+        settingId: Long,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterClusterKey: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+          AND (
+              totalBytes > :afterTotalBytes
+               OR (totalBytes = :afterTotalBytes AND fileCount > :afterFileCount)
+               OR (
+                   totalBytes = :afterTotalBytes
+                   AND fileCount = :afterFileCount
+                   AND clusterKey > :afterClusterKey
+               )
+          )
+        ORDER BY totalBytes ASC, fileCount ASC, clusterKey ASC
+        LIMIT :limit
+        """
+    )
+    fun listStoredClustersByTotalSizeAscAfter(
+        settingId: Long,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterClusterKey: String,
+        limit: Int
+    ): List<SimilarityClusterEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM similarity_clusters
+        WHERE settingId = :settingId
+          AND fileCount > 1
+          AND (
+              totalBytes < :afterTotalBytes
+               OR (totalBytes = :afterTotalBytes AND fileCount < :afterFileCount)
+               OR (
+                   totalBytes = :afterTotalBytes
+                   AND fileCount = :afterFileCount
+                   AND clusterKey > :afterClusterKey
+               )
+          )
+        ORDER BY totalBytes DESC, fileCount DESC, clusterKey ASC
+        LIMIT :limit
+        """
+    )
+    fun listStoredClustersByTotalSizeDescAfter(
+        settingId: Long,
+        afterFileCount: Int,
+        afterTotalBytes: Long,
+        afterClusterKey: String,
         limit: Int
     ): List<SimilarityClusterEntity>
 
@@ -1142,7 +1320,7 @@ interface SimilaritySettingsDao {
         INNER JOIN cached_files AS file
             ON file.fileId = feature.fileId
         WHERE feature.settingId = :settingId
-        ORDER BY feature.durationMillis ASC, feature.fileId ASC
+        ORDER BY feature.durationMillis ASC, file.normalizedPath ASC
         """
     )
     fun listActiveDurationFeatures(settingId: Long): List<SimilarityDurationFeatureRow>

@@ -60,6 +60,23 @@ data class SimilarityClusterFilterMemberRow(
     val heightPixels: Int?
 )
 
+data class SimilarityFilterMetadataResolutionRow(
+    val clusterId: Long,
+    val position: Int,
+    val settingId: Long,
+    val fileId: Long,
+    val normalizedPath: String,
+    val path: String,
+    val sizeBytes: Long,
+    val lastModifiedMillis: Long,
+    val hashBytes: StoredHash?,
+    val durationMillis: Long?,
+    val widthPixels: Int?,
+    val heightPixels: Int?,
+    val dimensionsChecked: Boolean,
+    val durationChecked: Boolean
+)
+
 data class SimilarityClusterDurationStatsRow(
     val clusterId: Long,
     val memberCount: Long,

@@ -16,6 +16,7 @@ import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
 import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureEntity
+import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow
 import opensource.cached_dupe_scanner.cache.SimilarityExactThumbnailFeatureEntity
 import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
@@ -663,6 +664,167 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun durationToleranceGroupingKeepsLargeSortedWindowTogether() {
+        val rows = (0 until 20_000).map { index ->
+            SimilarityDurationFeatureRow(
+                fileId = index.toLong() + 1L,
+                normalizedPath = "/videos/$index.mp4",
+                durationMillis = index.toLong(),
+                sizeBytes = 1L
+            )
+        }
+
+        val ranges = durationToleranceClusterRanges(
+            sortedRows = rows,
+            toleranceMillis = rows.last().durationMillis
+        )
+
+        assertEquals(listOf(0..rows.lastIndex), ranges)
+    }
+
+    @Test
+    fun durationToleranceMaintenanceBatchesStateLookupAndDefersDimensions() {
+        val files = (0 until 12).map { index -> videoFile("duration-batch-$index.mp4") }
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val durationExtractor = CountingDurationExtractor(
+            files.associate { file -> file.absolutePath to 10_000L }
+        )
+        val dimensionsExtractor = CountingMediaDimensionsExtractor(
+            files.associate { file -> file.absolutePath to MediaDimensions(1920, 1080) }
+        )
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(emptyMap()),
+            durationExtractor = durationExtractor,
+            mediaDimensionsExtractor = dimensionsExtractor,
+            workerCountProvider = { 4 }
+        )
+        val setting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceSeconds = 1),
+            enabled = true
+        )
+        executedQueries.clear()
+
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        val perFileStateQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains(
+                "from similarity_setting_files where settingid = ? and fileid = ? limit 1"
+            )
+        }
+        assertEquals(files.size, durationExtractor.extractionCalls.get())
+        assertEquals(0, dimensionsExtractor.extractionCalls.get())
+        assertTrue(perFileStateQueries.joinToString(separator = "\n"), perFileStateQueries.isEmpty())
+        files.forEach { file ->
+            assertFalse(
+                requireNotNull(
+                    database.similaritySettingsDao().getSettingFile(setting.settingId, fileId(file))
+                ).dimensionsChecked
+            )
+        }
+    }
+
+    @Test
+    fun durationToleranceMaintenanceReusesCurrentDurationsFromAnotherSetting() {
+        val files = listOf(
+            videoFile("duration-reuse-a.mp4"),
+            videoFile("duration-reuse-b.mp4")
+        )
+        files.forEach { file -> database.fileCacheDao().upsert(entity(file)) }
+        val durationExtractor = CountingDurationExtractor(
+            files.associate { file -> file.absolutePath to 10_000L }
+        )
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(emptyMap()),
+            durationExtractor = durationExtractor,
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap()),
+            workerCountProvider = { 2 }
+        )
+        val firstSetting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 1_000L),
+            enabled = true
+        )
+        val secondSetting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 2_000L),
+            enabled = true
+        )
+
+        repository.runSettingMaintenance(
+            settingId = firstSetting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val callsAfterFirstSetting = durationExtractor.extractionCalls.get()
+        repository.runSettingMaintenance(
+            settingId = secondSetting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        assertEquals(files.size, callsAfterFirstSetting)
+        assertEquals(callsAfterFirstSetting, durationExtractor.extractionCalls.get())
+        assertEquals(1, repository.getClusterSummary(secondSetting.settingId).clusterCount)
+    }
+
+    @Test
+    fun cancelledDurationReuseCommitsTheCompletedBatchPrefix() {
+        val files = listOf(
+            videoFile("duration-reuse-cancel-a.mp4"),
+            videoFile("duration-reuse-cancel-b.mp4")
+        )
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val repository = repository(
+            durations = files.associate { file -> file.absolutePath to 10_000L }
+        )
+        val sourceSetting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 1_000L),
+            enabled = true
+        )
+        val targetSetting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 2_000L),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = sourceSetting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val continueReuse = AtomicBoolean(true)
+
+        val summary = repository.runSettingMaintenance(
+            settingId = targetSetting.settingId,
+            rebuild = true,
+            shouldContinue = continueReuse::get,
+            onProgress = { progress ->
+                if (progress.processed == 1) continueReuse.set(false)
+            }
+        )
+
+        assertTrue(summary.cancelled)
+        assertEquals(1, summary.processedCount)
+        assertEquals(1, database.similaritySettingsDao().countSettingFiles(targetSetting.settingId))
+        assertEquals(1, database.similaritySettingsDao().countDurationFeatures(targetSetting.settingId))
+    }
+
+    @Test
     fun durationNeighborMaintenanceClustersConnectedNeighbors() {
         val first = videoFile("neighbor-a.mp4")
         val second = videoFile("neighbor-b.mp4")
@@ -1030,6 +1192,213 @@ class SimilaritySettingsRepositoryTest {
         assertTrue(
             separateResolutionCountQueries.joinToString(separator = "\n"),
             separateResolutionCountQueries.isEmpty()
+        )
+    }
+
+    @Test
+    fun durationAverageFilterUsesKeysetAfterFirstSelectiveSourcePage() {
+        val groups = (0 until 8).map { groupIndex ->
+            listOf(
+                videoFile("selective-duration-$groupIndex-a.mp4"),
+                videoFile("selective-duration-$groupIndex-b.mp4")
+            )
+        }
+        val files = groups.flatten()
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val signatures = groups.flatMapIndexed { groupIndex, groupFiles ->
+            val signature = (groupIndex + 1).toString(16).padStart(64, '0')
+            groupFiles.map { file -> file.absolutePath to signature }
+        }.toMap()
+        val durations = groups.flatMapIndexed { groupIndex, groupFiles ->
+            val groupDurations = if (groupIndex == groups.lastIndex) {
+                listOf(10_000L, 10_000L)
+            } else {
+                listOf(10_000L, 20_000L)
+            }
+            groupFiles.zip(groupDurations).map { (file, durationMillis) ->
+                file.absolutePath to durationMillis
+            }
+        }.toMap()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureMetadataExtractor(signatures, durations),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        executedQueries.clear()
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = durationAverageFilterDefinition(idSuffix = "selective-keyset"),
+            startOffset = 0,
+            minMatches = 1,
+            sourcePageSize = 1
+        )
+
+        val sourceQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains(
+                "from similarity_clusters where settingid = ? and filecount > 1"
+            ) && normalizedSql(sqlQuery).contains(
+                "order by filecount desc, totalbytes desc, clusterkey asc"
+            )
+        }
+        val offsetQueries = sourceQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("limit ? offset ?")
+        }
+        val keysetQueries = sourceQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("clusterkey > ?")
+        }
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(1, offsetQueries.size)
+        assertTrue(sourceQueries.joinToString(separator = "\n"), keysetQueries.isNotEmpty())
+    }
+
+    @Test
+    fun clusterKeysetPagingMatchesOffsetOrderForEverySort() {
+        val repository = repository()
+        val setting = repository.createDurationToleranceSetting(
+            minSizeBytes = 1L,
+            step = DurationToleranceStep(toleranceMillis = 1_000L),
+            enabled = true
+        )
+        listOf(
+            Triple("a", 2, 200L),
+            Triple("b", 2, 200L),
+            Triple("c", 2, 300L),
+            Triple("d", 3, 200L),
+            Triple("e", 3, 400L),
+            Triple("f", 4, 100L)
+        ).forEach { (clusterKey, fileCount, totalBytes) ->
+            database.similaritySettingsDao().insertCluster(
+                SimilarityClusterEntity(
+                    settingId = setting.settingId,
+                    clusterKey = clusterKey,
+                    fileCount = fileCount,
+                    totalBytes = totalBytes,
+                    updatedAtMillis = 1L
+                )
+            )
+        }
+
+        SimilarityClusterSortColumn.entries.forEach { sortColumn ->
+            SortDirection.entries.forEach { direction ->
+                val expected = repository.listClustersPage(
+                    settingId = setting.settingId,
+                    offset = 0,
+                    limit = 100,
+                    sortColumn = sortColumn,
+                    direction = direction
+                )
+                val actual = mutableListOf<SimilarityClusterEntity>()
+                var afterCluster: SimilarityClusterEntity? = null
+                do {
+                    val cursor = afterCluster
+                    val next = if (cursor == null) {
+                        repository.listClustersPage(
+                            settingId = setting.settingId,
+                            offset = 0,
+                            limit = 2,
+                            sortColumn = sortColumn,
+                            direction = direction
+                        )
+                    } else {
+                        repository.listClustersPageAfter(
+                            settingId = setting.settingId,
+                            afterCluster = cursor,
+                            limit = 2,
+                            sortColumn = sortColumn,
+                            direction = direction
+                        )
+                    }
+                    actual += next
+                    afterCluster = next.lastOrNull()
+                } while (next.size == 2)
+
+                assertEquals(
+                    "$sortColumn $direction",
+                    expected.map { cluster -> cluster.clusterId },
+                    actual.map { cluster -> cluster.clusterId }
+                )
+            }
+        }
+    }
+
+    @Test
+    fun durationAverageFilterAdvancesUncheckedMetadataWithKeysetBatches() {
+        val files = (0 until 205).map { index -> videoFile("duration-keyset-$index.mp4") }
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val durationExtractor = CountingDurationExtractor(
+            files.associate { file -> file.absolutePath to 10_000L }
+        )
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(
+                files.associate { file -> file.absolutePath to THUMBNAIL_TEST_HASH }
+            ),
+            durationExtractor = durationExtractor,
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap()),
+            workerCountProvider = { 4 }
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        executedQueries.clear()
+        val progress = mutableListOf<SimilarityFilterResolutionProgress>()
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = durationAverageFilterDefinition(idSuffix = "metadata-keyset"),
+            startOffset = 0,
+            minMatches = 1,
+            sourcePageSize = 1,
+            onResolutionProgress = progress::add
+        )
+
+        val resolutionQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("file.hashbytes as hashbytes") &&
+                normalizedSql(sqlQuery).contains("setting_file.durationchecked as durationchecked")
+        }
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(files.size, durationExtractor.extractionCalls.get())
+        assertEquals(2, resolutionQueries.size)
+        assertTrue(progress.size.toString(), progress.size <= 16)
+        assertEquals(files.size, progress.last().processed)
+        assertTrue(
+            resolutionQueries.joinToString(separator = "\n"),
+            resolutionQueries.all { sqlQuery ->
+                normalizedSql(sqlQuery).contains("member.clusterid > ?")
+            }
         )
     }
 

@@ -9,7 +9,9 @@ import opensource.cached_dupe_scanner.cache.SimilarityClusterFilterMemberRow
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberFileRow
 import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureEntity
+import opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow
 import opensource.cached_dupe_scanner.cache.SimilarityExactThumbnailFeatureEntity
+import opensource.cached_dupe_scanner.cache.SimilarityFilterMetadataResolutionRow
 import opensource.cached_dupe_scanner.cache.SimilarityMaintenanceRunEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingEntity
 import opensource.cached_dupe_scanner.cache.SimilaritySettingFileEntity
@@ -401,6 +403,56 @@ class SimilaritySettingsRepository(
         }
     }
 
+    internal fun listClustersPageAfter(
+        settingId: Long,
+        afterCluster: SimilarityClusterEntity,
+        limit: Int,
+        sortColumn: SimilarityClusterSortColumn,
+        direction: SortDirection
+    ): List<SimilarityClusterEntity> {
+        val safeLimit = limit.coerceAtLeast(0)
+        return when (sortColumn) {
+            SimilarityClusterSortColumn.FileCount -> {
+                if (direction == SortDirection.Asc) {
+                    similarityDao.listStoredClustersByFileCountAscAfter(
+                        settingId = settingId,
+                        afterFileCount = afterCluster.fileCount,
+                        afterTotalBytes = afterCluster.totalBytes,
+                        afterClusterKey = afterCluster.clusterKey,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listStoredClustersByFileCountDescAfter(
+                        settingId = settingId,
+                        afterFileCount = afterCluster.fileCount,
+                        afterTotalBytes = afterCluster.totalBytes,
+                        afterClusterKey = afterCluster.clusterKey,
+                        limit = safeLimit
+                    )
+                }
+            }
+            SimilarityClusterSortColumn.TotalSize -> {
+                if (direction == SortDirection.Asc) {
+                    similarityDao.listStoredClustersByTotalSizeAscAfter(
+                        settingId = settingId,
+                        afterFileCount = afterCluster.fileCount,
+                        afterTotalBytes = afterCluster.totalBytes,
+                        afterClusterKey = afterCluster.clusterKey,
+                        limit = safeLimit
+                    )
+                } else {
+                    similarityDao.listStoredClustersByTotalSizeDescAfter(
+                        settingId = settingId,
+                        afterFileCount = afterCluster.fileCount,
+                        afterTotalBytes = afterCluster.totalBytes,
+                        afterClusterKey = afterCluster.clusterKey,
+                        limit = safeLimit
+                    )
+                }
+            }
+        }
+    }
+
     fun listClustersAfterId(
         settingId: Long,
         afterClusterId: Long,
@@ -547,30 +599,37 @@ class SimilaritySettingsRepository(
         val distinctClusterIds = clusterIds.distinct()
         if (distinctClusterIds.isEmpty() || (!resolveDimensions && !resolveDurations)) return
         distinctClusterIds.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { clusterIdChunk ->
+            var afterClusterId = -1L
+            var afterPosition = -1
+            var afterFileId = -1L
             while (!Thread.currentThread().isInterrupted) {
                 val queriedRows = similarityDao.listUncheckedFilterMetadataMembersForClusters(
                     settingId = settingId,
                     clusterIds = clusterIdChunk,
                     resolveDimensions = resolveDimensions,
                     resolveDurations = resolveDurations,
+                    afterClusterId = afterClusterId,
+                    afterPosition = afterPosition,
+                    afterFileId = afterFileId,
                     limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
                 )
-                val uncheckedRows = queriedRows.distinctBy { row -> row.fileId }
+                val uncheckedRows = queriedRows
+                    .distinctBy { row -> row.fileId }
+                    .map(SimilarityFilterMetadataResolutionRow::toMemberFileRow)
                 if (uncheckedRows.isEmpty()) break
-                var resolvedRows = uncheckedRows
-                if (resolveDimensions) {
-                    resolvedRows = resolveUncheckedDimensions(resolvedRows, onResolutionEvent)
+                val lastQueriedRow = queriedRows.last()
+                afterClusterId = lastQueriedRow.clusterId
+                afterPosition = lastQueriedRow.position
+                afterFileId = lastQueriedRow.fileId
+                val rowsWithDimensions = if (resolveDimensions) {
+                    resolveUncheckedDimensions(uncheckedRows, onResolutionEvent)
+                } else {
+                    uncheckedRows
                 }
                 if (resolveDurations) {
-                    resolvedRows = resolveUncheckedDurations(resolvedRows, onResolutionEvent)
+                    resolveUncheckedDurations(rowsWithDimensions, onResolutionEvent)
                 }
-                val previousRows = uncheckedRows.associateBy { row -> row.fileId }
-                val madeProgress = resolvedRows.any { row ->
-                    val previous = previousRows.getValue(row.fileId)
-                    (resolveDimensions && !previous.dimensionsChecked && row.dimensionsChecked) ||
-                        (resolveDurations && !previous.durationChecked && row.durationChecked)
-                }
-                if (!madeProgress || queriedRows.size < SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE) break
+                if (queriedRows.size < SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE) break
             }
         }
     }
@@ -819,6 +878,15 @@ class SimilaritySettingsRepository(
             val preparedFiles = mutableListOf<PreparedSettingFile>()
             val workItems = mutableListOf<SimilarityFeatureWorkItem>()
             val now = System.currentTimeMillis()
+            val existingFilesById = if (rebuild) {
+                emptyMap()
+            } else {
+                similarityDao.listSettingFilesByIds(
+                    settingId = setting.settingId,
+                    fileIds = batch.map { entity -> entity.fileId }
+                ).associateBy { settingFile -> settingFile.fileId }
+            }
+            val requiresDimensions = setting.methodId == SIMILARITY_METHOD_EXACT_THUMBNAIL
 
             for (entity in batch) {
                 if (!shouldContinue()) {
@@ -832,7 +900,7 @@ class SimilaritySettingsRepository(
                     )
                 }
                 currentPath = entity.path.ifBlank { entity.normalizedPath }
-                val existing = similarityDao.getSettingFile(setting.settingId, entity.fileId)
+                val existing = existingFilesById[entity.fileId]
                 val storedFileIsFresh = !rebuild &&
                     existing != null &&
                     existing.sizeBytes == entity.sizeBytes &&
@@ -843,7 +911,7 @@ class SimilaritySettingsRepository(
                     existing?.status == SIMILARITY_FILE_STATUS_SKIPPED
                 if (
                     skippedFeatureIsFresh ||
-                    (readyFeatureIsFresh && existing?.dimensionsChecked == true)
+                    (readyFeatureIsFresh && (!requiresDimensions || existing?.dimensionsChecked == true))
                 ) {
                     if (skippedFeatureIsFresh) skipped += 1
                     processed += 1
@@ -865,21 +933,37 @@ class SimilaritySettingsRepository(
                 )
             }
 
-            val cancelled = calculateFeatureWorkBatch(
-                setting = setting,
-                mediaScope = mediaScope,
-                workItems = workItems,
-                updatedAtMillis = now,
-                workerCount = workerCount,
-                shouldContinue = shouldContinue
-            ) { result ->
-                val preparedFile = requireNotNull(result.preparedFile)
-                preparedFiles += preparedFile
-                if (result.skipped) skipped += 1
-                processed += 1
-                currentPath = result.workItem.entity.path.ifBlank {
-                    result.workItem.entity.normalizedPath
+            val durationMethod = setting.methodId == SIMILARITY_METHOD_DURATION_TOLERANCE ||
+                setting.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
+            val workItemsByFileId = workItems.associateBy { workItem -> workItem.entity.fileId }
+            val reusableDurationsByFileId = if (durationMethod && workItems.isNotEmpty()) {
+                similarityDao.listReusableDurationsForFiles(
+                    settingId = setting.settingId,
+                    mediaScope = setting.mediaScope,
+                    fileIds = workItems.map { workItem -> workItem.entity.fileId }
+                ).associateBy { reusable -> reusable.fileId }
+            } else {
+                emptyMap()
+            }
+            var cancelledDuringReuse = false
+            for ((fileId, reusable) in reusableDurationsByFileId) {
+                if (!shouldContinue()) {
+                    cancelledDuringReuse = true
+                    break
                 }
+                val workItem = workItemsByFileId.getValue(fileId)
+                val feature = reusable.durationMillis?.let(CalculatedFeature::Duration)
+                preparedFiles += prepareSettingFile(
+                    setting = setting,
+                    mediaScope = mediaScope,
+                    entity = workItem.entity,
+                    feature = feature,
+                    dimensions = null,
+                    updatedAtMillis = now
+                )
+                if (feature == null) skipped += 1
+                processed += 1
+                currentPath = workItem.entity.path.ifBlank { workItem.entity.normalizedPath }
                 onProgress(
                     SimilarityMaintenanceProgress(
                         total = total,
@@ -890,6 +974,44 @@ class SimilaritySettingsRepository(
                         settingName = setting.displayName
                     )
                 )
+            }
+            val unresolvedWorkItems = if (reusableDurationsByFileId.isEmpty()) {
+                workItems
+            } else {
+                workItems.filterNot { workItem ->
+                    reusableDurationsByFileId.containsKey(workItem.entity.fileId)
+                }
+            }
+
+            val cancelled = if (cancelledDuringReuse) {
+                true
+            } else {
+                calculateFeatureWorkBatch(
+                    setting = setting,
+                    mediaScope = mediaScope,
+                    workItems = unresolvedWorkItems,
+                    updatedAtMillis = now,
+                    workerCount = workerCount,
+                    shouldContinue = shouldContinue
+                ) { result ->
+                    val preparedFile = requireNotNull(result.preparedFile)
+                    preparedFiles += preparedFile
+                    if (result.skipped) skipped += 1
+                    processed += 1
+                    currentPath = result.workItem.entity.path.ifBlank {
+                        result.workItem.entity.normalizedPath
+                    }
+                    onProgress(
+                        SimilarityMaintenanceProgress(
+                            total = total,
+                            processed = processed,
+                            skipped = skipped,
+                            clusterCandidates = 0,
+                            currentPath = currentPath,
+                            settingName = setting.displayName
+                        )
+                    )
+                }
             }
 
             if (preparedFiles.isNotEmpty()) {
@@ -1157,7 +1279,9 @@ class SimilaritySettingsRepository(
                 if (!shouldContinue()) {
                     SimilarityFeatureWorkResult(workItem = workItem, cancelled = true)
                 } else {
-                    val dimensions = if (feature == null) {
+                    val dimensions = if (
+                        feature == null || setting.methodId != SIMILARITY_METHOD_EXACT_THUMBNAIL
+                    ) {
                         null
                     } else {
                         extractDimensions(mediaScope, workItem.entity, shouldContinue)
@@ -1222,42 +1346,23 @@ class SimilaritySettingsRepository(
     }
 
     private fun durationToleranceClusters(
-        rows: List<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>,
+        rows: List<SimilarityDurationFeatureRow>,
         step: DurationToleranceStep
     ): List<ClusterDraft> {
         val tolerance = durationToleranceMillis(step)
-        val sorted = rows.sortedWith(compareBy({ it.durationMillis }, { it.normalizedPath }))
-        val clusters = mutableListOf<ClusterDraft>()
-        var current = mutableListOf<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>()
-        for (row in sorted) {
-            if (current.isEmpty()) {
-                current.add(row)
-                continue
-            }
-            val min = current.minOf { it.durationMillis }
-            val max = current.maxOf { it.durationMillis }
-            val candidateMin = minOf(min, row.durationMillis)
-            val candidateMax = maxOf(max, row.durationMillis)
-            if (candidateMax - candidateMin <= tolerance) {
-                current.add(row)
-            } else {
-                if (current.size > 1) clusters.add(durationCluster(current, step))
-                current = mutableListOf(row)
-            }
+        return durationToleranceClusterRanges(rows, tolerance).map { range ->
+            durationCluster(rows.subList(range.first, range.last + 1), step)
         }
-        if (current.size > 1) clusters.add(durationCluster(current, step))
-        return clusters
     }
 
     private fun durationNeighborClusters(
-        rows: List<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>,
+        rows: List<SimilarityDurationFeatureRow>,
         step: DurationNeighborListStep
     ): List<ClusterDraft> {
         val tolerance = durationNeighborToleranceMillis(step)
-        val sorted = rows.sortedWith(compareBy({ it.durationMillis }, { it.normalizedPath }))
         val clusters = mutableListOf<ClusterDraft>()
-        var current = mutableListOf<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>()
-        for (row in sorted) {
+        var current = mutableListOf<SimilarityDurationFeatureRow>()
+        for (row in rows) {
             if (current.isEmpty()) {
                 current.add(row)
                 continue
@@ -1275,11 +1380,11 @@ class SimilaritySettingsRepository(
     }
 
     private fun durationCluster(
-        rows: List<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>,
+        rows: List<SimilarityDurationFeatureRow>,
         step: DurationToleranceStep
     ): ClusterDraft {
-        val min = rows.minOf { it.durationMillis }
-        val max = rows.maxOf { it.durationMillis }
+        val min = rows.first().durationMillis
+        val max = rows.last().durationMillis
         val key = buildDurationToleranceSignature(min, max, step)
         return ClusterDraft(
             clusterKey = key,
@@ -1293,11 +1398,11 @@ class SimilaritySettingsRepository(
     }
 
     private fun durationNeighborCluster(
-        rows: List<opensource.cached_dupe_scanner.cache.SimilarityDurationFeatureRow>,
+        rows: List<SimilarityDurationFeatureRow>,
         step: DurationNeighborListStep
     ): ClusterDraft {
-        val min = rows.minOf { it.durationMillis }
-        val max = rows.maxOf { it.durationMillis }
+        val min = rows.first().durationMillis
+        val max = rows.last().durationMillis
         val key = buildDurationNeighborListSignature(min, max, step)
         return ClusterDraft(
             clusterKey = key,
@@ -1710,7 +1815,7 @@ class SimilaritySettingsRepository(
                 entity = entity,
                 status = if (ready) SIMILARITY_FILE_STATUS_READY else SIMILARITY_FILE_STATUS_SKIPPED,
                 dimensions = dimensions,
-                dimensionsChecked = ready,
+                dimensionsChecked = ready && setting.methodId == SIMILARITY_METHOD_EXACT_THUMBNAIL,
                 durationChecked = ready && (
                     mediaScope == SimilarityMediaScope.Image ||
                         feature is CalculatedFeature.Duration ||
@@ -2114,6 +2219,46 @@ class SimilaritySettingsRepository(
             cancelled = cancelled
         )
     }
+}
+
+internal fun durationToleranceClusterRanges(
+    sortedRows: List<SimilarityDurationFeatureRow>,
+    toleranceMillis: Long
+): List<IntRange> {
+    if (sortedRows.size < 2) return emptyList()
+    val ranges = mutableListOf<IntRange>()
+    var startIndex = 0
+    for (index in 1..sortedRows.lastIndex) {
+        val minimumDuration = sortedRows[startIndex].durationMillis
+        val candidateMaximum = sortedRows[index].durationMillis
+        if (candidateMaximum - minimumDuration > toleranceMillis) {
+            if (index - startIndex > 1) {
+                ranges += startIndex until index
+            }
+            startIndex = index
+        }
+    }
+    if (sortedRows.size - startIndex > 1) {
+        ranges += startIndex..sortedRows.lastIndex
+    }
+    return ranges
+}
+
+private fun SimilarityFilterMetadataResolutionRow.toMemberFileRow(): SimilarityClusterMemberFileRow {
+    return SimilarityClusterMemberFileRow(
+        settingId = settingId,
+        fileId = fileId,
+        normalizedPath = normalizedPath,
+        path = path,
+        sizeBytes = sizeBytes,
+        lastModifiedMillis = lastModifiedMillis,
+        hashBytes = hashBytes,
+        durationMillis = durationMillis,
+        widthPixels = widthPixels,
+        heightPixels = heightPixels,
+        dimensionsChecked = dimensionsChecked,
+        durationChecked = durationChecked
+    )
 }
 
 private sealed interface CalculatedFeature {

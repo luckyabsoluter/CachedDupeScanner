@@ -11,6 +11,8 @@ import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionEvent
 import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 
+private const val SIMILARITY_FILTER_PROGRESS_UPDATE_INTERVAL = 16
+
 internal data class FilteredSimilarityClustersPage(
     val clusters: List<SimilarityClusterEntity>,
     val nextSourceOffset: Int,
@@ -22,6 +24,11 @@ internal data class SimilarityFilterResolutionProgress(
     val total: Int,
     val currentPath: String?,
     val kind: SimilarityMemberResolutionKind?
+)
+
+private data class SimilarityFilterSourceCursor(
+    val offset: Int,
+    val afterCluster: SimilarityClusterEntity?
 )
 
 internal fun loadFilteredSimilarityClustersPage(
@@ -54,31 +61,61 @@ internal fun loadFilteredSimilarityClustersPage(
     }
     var resolutionProcessed = 0
     var resolutionTotal = 0
+    var initialResolutionWorkPublished = false
     var currentPageMatches = emptyMap<Long, Boolean>()
     val publishResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = { event ->
-        if (event.completed) {
-            resolutionProcessed = (resolutionProcessed + 1).coerceAtMost(resolutionTotal)
-        }
-        onResolutionProgress(
-            SimilarityFilterResolutionProgress(
-                processed = resolutionProcessed,
-                total = resolutionTotal,
-                currentPath = event.path,
-                kind = event.kind
+        if (!event.completed && !initialResolutionWorkPublished) {
+            initialResolutionWorkPublished = true
+            onResolutionProgress(
+                SimilarityFilterResolutionProgress(
+                    processed = resolutionProcessed,
+                    total = resolutionTotal,
+                    currentPath = event.path,
+                    kind = event.kind
+                )
             )
-        )
+        } else if (event.completed) {
+            resolutionProcessed = (resolutionProcessed + 1).coerceAtMost(resolutionTotal)
+            if (
+                resolutionProcessed == resolutionTotal ||
+                resolutionProcessed % SIMILARITY_FILTER_PROGRESS_UPDATE_INTERVAL == 0
+            ) {
+                onResolutionProgress(
+                    SimilarityFilterResolutionProgress(
+                        processed = resolutionProcessed,
+                        total = resolutionTotal,
+                        currentPath = event.path,
+                        kind = event.kind
+                    )
+                )
+            }
+        }
     }
     val page = loadFilteredSourcePage(
-        startCursor = startOffset,
+        startCursor = SimilarityFilterSourceCursor(
+            offset = startOffset,
+            afterCluster = null
+        ),
         minMatches = minMatches,
-        loadPage = { offset ->
-            val clusters = repository.listClustersPage(
-                settingId = settingId,
-                offset = offset,
-                limit = sourcePageSize,
-                sortColumn = sortColumn,
-                direction = sortDirection
-            )
+        loadPage = { cursor ->
+            val afterCluster = cursor.afterCluster
+            val clusters = if (afterCluster == null) {
+                repository.listClustersPage(
+                    settingId = settingId,
+                    offset = cursor.offset,
+                    limit = sourcePageSize,
+                    sortColumn = sortColumn,
+                    direction = sortDirection
+                )
+            } else {
+                repository.listClustersPageAfter(
+                    settingId = settingId,
+                    afterCluster = afterCluster,
+                    limit = sourcePageSize,
+                    sortColumn = sortColumn,
+                    direction = sortDirection
+                )
+            }
             val clusterIds = clusters.map { cluster -> cluster.clusterId }
             val initialDurationStats = if (durationOnlyFilter && clusterIds.isNotEmpty()) {
                 repository.listFilterDurationStatsForClusters(settingId, clusterIds)
@@ -141,7 +178,10 @@ internal fun loadFilteredSimilarityClustersPage(
             }
             SourcePage(
                 items = clusters,
-                nextCursor = offset + clusters.size,
+                nextCursor = SimilarityFilterSourceCursor(
+                    offset = cursor.offset + clusters.size,
+                    afterCluster = clusters.lastOrNull() ?: cursor.afterCluster
+                ),
                 exhausted = clusters.isEmpty() || clusters.size < sourcePageSize
             )
         },
@@ -163,7 +203,7 @@ internal fun loadFilteredSimilarityClustersPage(
     )
     return FilteredSimilarityClustersPage(
         clusters = page.items,
-        nextSourceOffset = page.nextCursor ?: startOffset,
+        nextSourceOffset = page.nextCursor?.offset ?: startOffset,
         exhausted = page.exhausted
     )
 }
