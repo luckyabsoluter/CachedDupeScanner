@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.ui.home
 
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
+import java.math.BigInteger
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -12,12 +13,25 @@ internal enum class ResultsFilterTarget(val label: String) {
     FileName("File name"),
     FolderPath("Folder"),
     ModifiedTime("Modified time"),
-    SameFolder("All same folder")
+    SameFolder("All same folder"),
+    SameFileSize("All same size"),
+    SameResolution("All same resolution"),
+    DurationFromAverage("All near average duration")
+}
+
+internal enum class ResultsFilterDurationUnit(val label: String) {
+    Seconds("s"),
+    Milliseconds("ms")
 }
 
 internal enum class ResultsFilterClusterMode(val label: String) {
     All("Match all"),
     Any("Match any")
+}
+
+internal enum class ResultsFilterMemberMatchMode(val label: String) {
+    Any("Any member"),
+    All("All members")
 }
 
 internal enum class ResultsFilterTextOperator(val label: String) {
@@ -43,10 +57,13 @@ internal data class ResultsFilterRule(
     val id: String,
     val enabled: Boolean = true,
     val target: ResultsFilterTarget = ResultsFilterTarget.FileName,
+    val memberMatchMode: ResultsFilterMemberMatchMode = ResultsFilterMemberMatchMode.Any,
     val textOperator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val countOperator: ResultsFilterCountOperator = ResultsFilterCountOperator.AtLeast,
     val timeOperator: ResultsFilterTimeOperator = ResultsFilterTimeOperator.OnOrAfter,
-    val value: String = ""
+    val value: String = "",
+    val durationToleranceSeconds: String = "",
+    val durationToleranceMilliseconds: String = ""
 )
 
 internal data class ResultsFilterCluster(
@@ -66,6 +83,21 @@ internal val FILE_FILTER_TARGETS: Set<ResultsFilterTarget> = setOf(
     ResultsFilterTarget.FolderPath,
     ResultsFilterTarget.ModifiedTime
 )
+
+internal val RESULT_FILTER_TARGETS: Set<ResultsFilterTarget> =
+    ResultsFilterTarget.entries.toSet() - setOf(
+        ResultsFilterTarget.DurationFromAverage,
+        ResultsFilterTarget.SameResolution
+    )
+
+internal val SIMILARITY_FILTER_TARGETS: Set<ResultsFilterTarget> =
+    ResultsFilterTarget.entries.toSet()
+
+internal fun ResultsFilterTarget.supportsMemberMatchMode(): Boolean {
+    return this == ResultsFilterTarget.FileName ||
+        this == ResultsFilterTarget.FolderPath ||
+        this == ResultsFilterTarget.ModifiedTime
+}
 
 private object ResultsFilterIdGenerator {
     private var nextId = 1L
@@ -116,9 +148,22 @@ internal fun ResultsFilterDefinition.hasActiveRules(
     }
 }
 
-internal fun ResultsFilterDefinition.requiresGroupMembers(): Boolean {
+internal fun ResultsFilterDefinition.hasActiveTarget(
+    target: ResultsFilterTarget,
+    supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
+): Boolean {
     return clusters.any { cluster ->
-        cluster.enabled && configuredRules(cluster).any { rule ->
+        cluster.enabled && configuredRules(cluster, supportedTargets).any { rule ->
+            rule.target == target
+        }
+    }
+}
+
+internal fun ResultsFilterDefinition.requiresGroupMembers(
+    supportedTargets: Set<ResultsFilterTarget> = ResultsFilterTarget.entries.toSet()
+): Boolean {
+    return clusters.any { cluster ->
+        cluster.enabled && configuredRules(cluster, supportedTargets).any { rule ->
             rule.target != ResultsFilterTarget.GroupItemCount
         }
     }
@@ -175,9 +220,10 @@ internal fun summarizeResultsFilter(
 internal fun matchesResultsFilter(
     definition: ResultsFilterDefinition,
     group: DuplicateGroupEntity,
-    members: List<FileMetadata>
+    members: List<FileMetadata>,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS
 ): Boolean {
-    val activeClusters = activeResultFilterClusters(definition)
+    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
     if (activeClusters.isEmpty()) return true
     return activeClusters.all { (cluster, rules) ->
         val results = rules.map { rule ->
@@ -197,55 +243,121 @@ internal fun matchesResultsFilter(
 internal fun matchesResultsFilterPagedMembers(
     definition: ResultsFilterDefinition,
     group: DuplicateGroupEntity,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS,
     memberPages: () -> Sequence<List<FileMetadata>>,
     onPreviewMembers: (List<FileMetadata>) -> Unit = {}
 ): Boolean {
-    val activeClusters = activeResultFilterClusters(definition)
-    if (activeClusters.isEmpty()) return true
-    if (!definition.requiresGroupMembers()) {
-        return matchesResultsFilter(definition = definition, group = group, members = emptyList())
-    }
-
-    val clusters = activeClusters.map { (cluster, rules) ->
-        ResultFilterClusterProgress(
-            mode = cluster.mode,
-            rules = rules.map { rule -> ResultFilterRuleProgress(rule = rule, group = group) }
-        )
-    }
-    fun resolved(): Boolean? {
-        val results = clusters.map { it.result(ended = false) }
-        return when {
-            results.any { it == false } -> false
-            results.all { it == true } -> true
-            else -> null
-        }
-    }
-    resolved()?.let { return it }
+    val matcher = ResultsFilterPagedMatcher(
+        definition = definition,
+        group = group,
+        supportedTargets = supportedTargets
+    )
+    matcher.resolved()?.let { return it }
 
     val preview = mutableListOf<FileMetadata>()
     memberPages().forEach { page ->
         if (preview.size < 10) {
             preview += page.take(10 - preview.size)
         }
-        clusters.forEach { cluster -> cluster.consume(page) }
-        resolved()?.let { result ->
+        matcher.consume(page)
+        matcher.resolved()?.let { result ->
             if (preview.isNotEmpty()) onPreviewMembers(preview)
             return result
         }
     }
 
     if (preview.isNotEmpty()) onPreviewMembers(preview)
-    return clusters.all { it.result(ended = true) == true }
+    return matcher.finish()
+}
+
+internal class ResultsFilterPagedMatcher(
+    definition: ResultsFilterDefinition,
+    group: DuplicateGroupEntity,
+    supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS
+) {
+    private val activeClusters = activeResultFilterClusters(definition, supportedTargets)
+    private val immediateResult = when {
+        activeClusters.isEmpty() -> true
+        !definition.requiresGroupMembers(supportedTargets) -> matchesResultsFilter(
+            definition = definition,
+            group = group,
+            members = emptyList(),
+            supportedTargets = supportedTargets
+        )
+        else -> null
+    }
+    private val clusters = if (immediateResult == null) {
+        activeClusters.map { (cluster, rules) ->
+            ResultFilterClusterProgress(
+                mode = cluster.mode,
+                rules = rules.map { rule -> ResultFilterRuleProgress(rule = rule, group = group) }
+            )
+        }
+    } else {
+        emptyList()
+    }
+
+    fun consume(page: List<FileMetadata>) {
+        if (immediateResult != null) return
+        clusters.forEach { cluster -> cluster.consume(page) }
+    }
+
+    fun resolved(): Boolean? {
+        immediateResult?.let { result -> return result }
+        val results = clusters.map { cluster -> cluster.result(ended = false) }
+        return when {
+            results.any { result -> result == false } -> false
+            results.all { result -> result == true } -> true
+            else -> null
+        }
+    }
+
+    fun finish(): Boolean {
+        immediateResult?.let { result -> return result }
+        return clusters.all { cluster -> cluster.result(ended = true) == true }
+    }
+}
+
+internal data class DurationAverageFilterStats(
+    val memberCount: Long,
+    val checkedCount: Long,
+    val durationCount: Long,
+    val durationSumMillis: Long?,
+    val minimumDurationMillis: Long?,
+    val maximumDurationMillis: Long?
+)
+
+internal fun matchesDurationOnlyResultsFilter(
+    definition: ResultsFilterDefinition,
+    stats: DurationAverageFilterStats?,
+    supportedTargets: Set<ResultsFilterTarget> = SIMILARITY_FILTER_TARGETS
+): Boolean {
+    val activeClusters = activeResultFilterClusters(definition, supportedTargets)
+    if (activeClusters.isEmpty()) return true
+    return activeClusters.all { (cluster, rules) ->
+        val results = rules.map { rule ->
+            rule.target == ResultsFilterTarget.DurationFromAverage &&
+                matchesDurationAverageStats(
+                    stats = stats,
+                    toleranceMillis = rule.durationToleranceMillis()
+                )
+        }
+        when (cluster.mode) {
+            ResultsFilterClusterMode.All -> results.all { result -> result }
+            ResultsFilterClusterMode.Any -> results.any { result -> result }
+        }
+    }
 }
 
 private fun activeResultFilterClusters(
-    definition: ResultsFilterDefinition
+    definition: ResultsFilterDefinition,
+    supportedTargets: Set<ResultsFilterTarget>
 ): List<Pair<ResultsFilterCluster, List<ResultsFilterRule>>> {
     return definition.clusters.mapNotNull { cluster ->
         if (!cluster.enabled) {
             null
         } else {
-            val rules = configuredRules(cluster)
+            val rules = configuredRules(cluster, supportedTargets)
             if (rules.isEmpty()) null else cluster to rules
         }
     }
@@ -281,9 +393,16 @@ private class ResultFilterRuleProgress(
     group: DuplicateGroupEntity
 ) {
     private var matched = false
+    private var memberMismatch = false
     private var sawMember = false
     private var firstFolder: String? = null
     private var folderMismatch = false
+    private var firstFileSize: Long? = null
+    private var fileSizeMismatch = false
+    private var firstResolution: Pair<Int, Int>? = null
+    private var resolutionMismatch = false
+    private var resolutionInvalid = false
+    private val durationAccumulator = DurationAverageAccumulator()
     private val groupResult: Boolean? = if (rule.target == ResultsFilterTarget.GroupItemCount) {
         val threshold = rule.value.trim().toIntOrNull()
         if (threshold == null) {
@@ -300,29 +419,43 @@ private class ResultFilterRuleProgress(
     }
 
     fun consume(page: List<FileMetadata>) {
-        if (groupResult != null || matched && rule.target != ResultsFilterTarget.SameFolder) return
+        val memberRuleResolved = if (rule.target.supportsMemberMatchMode()) {
+            when (rule.memberMatchMode) {
+                ResultsFilterMemberMatchMode.Any -> matched
+                ResultsFilterMemberMatchMode.All -> memberMismatch
+            }
+        } else {
+            false
+        }
+        if (groupResult != null || memberRuleResolved) return
         page.forEach { member ->
             when (rule.target) {
                 ResultsFilterTarget.FileName -> {
-                    matched = matched || matchesTextOperator(
-                        source = fileNameFromPath(member.normalizedPath),
-                        expected = rule.value,
-                        operator = rule.textOperator
+                    consumeMemberMatch(
+                        matchesTextOperator(
+                            source = fileNameFromPath(member.normalizedPath),
+                            expected = rule.value,
+                            operator = rule.textOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.FolderPath -> {
-                    matched = matched || matchesTextOperator(
-                        source = folderPathFromPath(member.normalizedPath),
-                        expected = rule.value,
-                        operator = rule.textOperator
+                    consumeMemberMatch(
+                        matchesTextOperator(
+                            source = folderPathFromPath(member.normalizedPath),
+                            expected = rule.value,
+                            operator = rule.textOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.ModifiedTime -> {
                     val timeValue = parseResultsFilterTimeValue(rule.value) ?: return@forEach
-                    matched = matched || matchesTimeOperator(
-                        sourceMillis = member.lastModifiedMillis,
-                        expected = timeValue,
-                        operator = rule.timeOperator
+                    consumeMemberMatch(
+                        matchesTimeOperator(
+                            sourceMillis = member.lastModifiedMillis,
+                            expected = timeValue,
+                            operator = rule.timeOperator
+                        )
                     )
                 }
                 ResultsFilterTarget.SameFolder -> {
@@ -335,7 +468,57 @@ private class ResultFilterRuleProgress(
                         folderMismatch = true
                     }
                 }
+                ResultsFilterTarget.SameFileSize -> {
+                    sawMember = true
+                    val currentFirst = firstFileSize
+                    if (currentFirst == null) {
+                        firstFileSize = member.sizeBytes
+                    } else if (currentFirst != member.sizeBytes) {
+                        fileSizeMismatch = true
+                    }
+                }
+                ResultsFilterTarget.SameResolution -> {
+                    sawMember = true
+                    val resolution = member.mediaResolution()
+                    if (resolution == null) {
+                        resolutionInvalid = true
+                    } else {
+                        val currentFirst = firstResolution
+                        if (currentFirst == null) {
+                            firstResolution = resolution
+                        } else if (currentFirst != resolution) {
+                            resolutionMismatch = true
+                        }
+                    }
+                }
+                ResultsFilterTarget.DurationFromAverage -> {
+                    durationAccumulator.consume(member.durationMillis)
+                }
                 ResultsFilterTarget.GroupItemCount -> Unit
+            }
+        }
+    }
+
+    private fun consumeMemberMatch(matches: Boolean) {
+        sawMember = true
+        if (matches) {
+            matched = true
+        } else {
+            memberMismatch = true
+        }
+    }
+
+    private fun memberMatchResult(ended: Boolean): Boolean? {
+        return when (rule.memberMatchMode) {
+            ResultsFilterMemberMatchMode.Any -> when {
+                matched -> true
+                ended -> false
+                else -> null
+            }
+            ResultsFilterMemberMatchMode.All -> when {
+                memberMismatch -> false
+                ended -> sawMember
+                else -> null
             }
         }
     }
@@ -345,19 +528,116 @@ private class ResultFilterRuleProgress(
         return when (rule.target) {
             ResultsFilterTarget.FileName,
             ResultsFilterTarget.FolderPath,
-            ResultsFilterTarget.ModifiedTime -> when {
-                matched -> true
-                ended -> false
-                else -> null
-            }
+            ResultsFilterTarget.ModifiedTime -> memberMatchResult(ended)
             ResultsFilterTarget.SameFolder -> when {
                 folderMismatch -> false
                 ended -> sawMember
                 else -> null
             }
+            ResultsFilterTarget.SameFileSize -> when {
+                fileSizeMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+            ResultsFilterTarget.SameResolution -> when {
+                resolutionInvalid || resolutionMismatch -> false
+                ended -> sawMember
+                else -> null
+            }
+            ResultsFilterTarget.DurationFromAverage -> when {
+                durationAccumulator.invalid -> false
+                ended -> rule.durationToleranceMillis()?.let(durationAccumulator::matches) ?: false
+                else -> null
+            }
             ResultsFilterTarget.GroupItemCount -> groupResult
         }
     }
+}
+
+private class DurationAverageAccumulator {
+    private var count = 0L
+    private var sum = 0L
+    private var overflowSum: BigInteger? = null
+    private var minimum = Long.MAX_VALUE
+    private var maximum = Long.MIN_VALUE
+    var invalid: Boolean = false
+        private set
+
+    fun consume(durationMillis: Long?) {
+        if (durationMillis == null || durationMillis < 0L) {
+            invalid = true
+            return
+        }
+        count += 1L
+        minimum = minOf(minimum, durationMillis)
+        maximum = maxOf(maximum, durationMillis)
+        val currentOverflowSum = overflowSum
+        if (currentOverflowSum != null) {
+            overflowSum = currentOverflowSum.add(BigInteger.valueOf(durationMillis))
+        } else {
+            try {
+                sum = Math.addExact(sum, durationMillis)
+            } catch (_: ArithmeticException) {
+                overflowSum = BigInteger.valueOf(sum).add(BigInteger.valueOf(durationMillis))
+            }
+        }
+    }
+
+    fun matches(toleranceMillis: Long): Boolean {
+        if (invalid || count <= 0L || toleranceMillis < 0L) return false
+        return durationBoundsMatchAverageTolerance(
+            count = count,
+            sum = overflowSum ?: BigInteger.valueOf(sum),
+            minimum = minimum,
+            maximum = maximum,
+            toleranceMillis = toleranceMillis
+        )
+    }
+}
+
+private fun matchesDurationAverageStats(
+    stats: DurationAverageFilterStats?,
+    toleranceMillis: Long?
+): Boolean {
+    if (stats == null || toleranceMillis == null || toleranceMillis < 0L) return false
+    val durationSumMillis = stats.durationSumMillis ?: return false
+    val minimumDurationMillis = stats.minimumDurationMillis ?: return false
+    val maximumDurationMillis = stats.maximumDurationMillis ?: return false
+    if (
+        stats.memberCount <= 0L ||
+        stats.checkedCount != stats.memberCount ||
+        stats.durationCount != stats.memberCount ||
+        minimumDurationMillis < 0L ||
+        maximumDurationMillis < 0L
+    ) {
+        return false
+    }
+    return durationBoundsMatchAverageTolerance(
+        count = stats.memberCount,
+        sum = BigInteger.valueOf(durationSumMillis),
+        minimum = minimumDurationMillis,
+        maximum = maximumDurationMillis,
+        toleranceMillis = toleranceMillis
+    )
+}
+
+private fun durationBoundsMatchAverageTolerance(
+    count: Long,
+    sum: BigInteger,
+    minimum: Long,
+    maximum: Long,
+    toleranceMillis: Long
+): Boolean {
+    val countValue = BigInteger.valueOf(count)
+    val toleranceValue = BigInteger.valueOf(toleranceMillis).multiply(countValue)
+    val minimumDeviation = sum
+        .subtract(BigInteger.valueOf(minimum).multiply(countValue))
+        .abs()
+    val maximumDeviation = BigInteger.valueOf(maximum)
+        .multiply(countValue)
+        .subtract(sum)
+        .abs()
+    return minimumDeviation <= toleranceValue && maximumDeviation <= toleranceValue
 }
 
 private fun configuredRules(
@@ -378,6 +658,9 @@ private fun isResultsFilterRuleConfigured(rule: ResultsFilterRule): Boolean {
         ResultsFilterTarget.FolderPath -> rule.value.isNotBlank()
         ResultsFilterTarget.ModifiedTime -> parseResultsFilterTimeValue(rule.value) != null
         ResultsFilterTarget.SameFolder -> true
+        ResultsFilterTarget.SameFileSize -> true
+        ResultsFilterTarget.SameResolution -> true
+        ResultsFilterTarget.DurationFromAverage -> rule.durationToleranceMillis() != null
     }
 }
 
@@ -396,7 +679,7 @@ private fun matchesResultsFilterRule(
             }
         }
         ResultsFilterTarget.FileName -> {
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTextOperator(
                     source = fileNameFromPath(member.normalizedPath),
                     expected = rule.value,
@@ -405,7 +688,7 @@ private fun matchesResultsFilterRule(
             }
         }
         ResultsFilterTarget.FolderPath -> {
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTextOperator(
                     source = folderPathFromPath(member.normalizedPath),
                     expected = rule.value,
@@ -415,7 +698,7 @@ private fun matchesResultsFilterRule(
         }
         ResultsFilterTarget.ModifiedTime -> {
             val timeValue = parseResultsFilterTimeValue(rule.value) ?: return false
-            members.any { member ->
+            membersMatchRule(members, rule.memberMatchMode) { member ->
                 matchesTimeOperator(
                     sourceMillis = member.lastModifiedMillis,
                     expected = timeValue,
@@ -432,7 +715,112 @@ private fun matchesResultsFilterRule(
                     .size == 1
             }
         }
+        ResultsFilterTarget.SameFileSize -> {
+            members.isNotEmpty() && members.map { member -> member.sizeBytes }.distinct().size == 1
+        }
+        ResultsFilterTarget.SameResolution -> {
+            val resolutions = members.map { member -> member.mediaResolution() }
+            resolutions.isNotEmpty() && resolutions.none { resolution -> resolution == null } &&
+                resolutions.distinct().size == 1
+        }
+        ResultsFilterTarget.DurationFromAverage -> {
+            val toleranceMillis = rule.durationToleranceMillis() ?: return false
+            DurationAverageAccumulator().run {
+                members.forEach { member -> consume(member.durationMillis) }
+                matches(toleranceMillis)
+            }
+        }
     }
+}
+
+private inline fun membersMatchRule(
+    members: List<FileMetadata>,
+    mode: ResultsFilterMemberMatchMode,
+    predicate: (FileMetadata) -> Boolean
+): Boolean {
+    if (members.isEmpty()) return false
+    return when (mode) {
+        ResultsFilterMemberMatchMode.Any -> members.any(predicate)
+        ResultsFilterMemberMatchMode.All -> members.all(predicate)
+    }
+}
+
+internal fun ResultsFilterRule.durationToleranceMillis(): Long? {
+    val secondsText = durationToleranceSeconds.trim()
+    val millisecondsText = durationToleranceMilliseconds.trim()
+    if (secondsText.isEmpty() && millisecondsText.isEmpty()) return null
+    return try {
+        when {
+            secondsText.isNotEmpty() && millisecondsText.isNotEmpty() -> {
+                val seconds = secondsText.toLongOrNull() ?: return null
+                val milliseconds = millisecondsText.toLongOrNull() ?: return null
+                if (seconds < 0L || milliseconds !in 0L..999L) return null
+                Math.addExact(Math.multiplyExact(seconds, 1_000L), milliseconds)
+            }
+            secondsText.isNotEmpty() -> {
+                val seconds = secondsText.toLongOrNull()?.takeIf { value -> value >= 0L } ?: return null
+                Math.multiplyExact(seconds, 1_000L)
+            }
+            else -> millisecondsText.toLongOrNull()?.takeIf { value -> value >= 0L }
+        }
+    } catch (_: ArithmeticException) {
+        null
+    }
+}
+
+internal fun ResultsFilterRule.durationToleranceUnit(): ResultsFilterDurationUnit {
+    return if (durationToleranceMilliseconds.isNotBlank()) {
+        ResultsFilterDurationUnit.Milliseconds
+    } else {
+        ResultsFilterDurationUnit.Seconds
+    }
+}
+
+internal fun ResultsFilterRule.durationToleranceInput(): String {
+    val secondsText = durationToleranceSeconds.trim()
+    val millisecondsText = durationToleranceMilliseconds.trim()
+    return if (secondsText.isNotEmpty() && millisecondsText.isNotEmpty()) {
+        durationToleranceMillis()?.toString().orEmpty()
+    } else if (millisecondsText.isNotEmpty()) {
+        millisecondsText
+    } else {
+        secondsText
+    }
+}
+
+internal fun ResultsFilterRule.withDurationToleranceInput(input: String): ResultsFilterRule {
+    return when (durationToleranceUnit()) {
+        ResultsFilterDurationUnit.Seconds -> copy(
+            durationToleranceSeconds = input,
+            durationToleranceMilliseconds = ""
+        )
+        ResultsFilterDurationUnit.Milliseconds -> copy(
+            durationToleranceSeconds = "",
+            durationToleranceMilliseconds = input
+        )
+    }
+}
+
+internal fun ResultsFilterRule.withDurationToleranceUnit(
+    unit: ResultsFilterDurationUnit
+): ResultsFilterRule {
+    val input = durationToleranceInput()
+    return when (unit) {
+        ResultsFilterDurationUnit.Seconds -> copy(
+            durationToleranceSeconds = input,
+            durationToleranceMilliseconds = ""
+        )
+        ResultsFilterDurationUnit.Milliseconds -> copy(
+            durationToleranceSeconds = "",
+            durationToleranceMilliseconds = input
+        )
+    }
+}
+
+private fun FileMetadata.mediaResolution(): Pair<Int, Int>? {
+    val width = widthPixels?.takeIf { value -> value > 0 } ?: return null
+    val height = heightPixels?.takeIf { value -> value > 0 } ?: return null
+    return width to height
 }
 
 internal fun matchesTextOperator(
@@ -574,7 +962,10 @@ internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition):
                         rule.textOperator.name,
                         rule.countOperator.name,
                         encodeFilterToken(rule.value),
-                        rule.timeOperator.name
+                        rule.timeOperator.name,
+                        encodeFilterToken(rule.durationToleranceSeconds),
+                        encodeFilterToken(rule.durationToleranceMilliseconds),
+                        rule.memberMatchMode.name
                     ).joinToString("\t")
                 )
                 append('\n')
@@ -636,7 +1027,10 @@ internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefini
                                 textOperator = parseResultsFilterTextOperator(parts[5]),
                                 countOperator = parseResultsFilterCountOperator(parts[6]),
                                 value = decodeFilterToken(parts[7]),
-                                timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty())
+                                timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty()),
+                                durationToleranceSeconds = decodeFilterToken(parts.getOrNull(9).orEmpty()),
+                                durationToleranceMilliseconds = decodeFilterToken(parts.getOrNull(10).orEmpty()),
+                                memberMatchMode = parseResultsFilterMemberMatchMode(parts.getOrNull(11).orEmpty())
                             )
                         )
                 }
@@ -669,6 +1063,11 @@ private fun parseResultsFilterTarget(value: String): ResultsFilterTarget {
 private fun parseResultsFilterClusterMode(value: String): ResultsFilterClusterMode {
     return runCatching { ResultsFilterClusterMode.valueOf(value) }
         .getOrDefault(ResultsFilterClusterMode.All)
+}
+
+private fun parseResultsFilterMemberMatchMode(value: String): ResultsFilterMemberMatchMode {
+    return runCatching { ResultsFilterMemberMatchMode.valueOf(value) }
+        .getOrDefault(ResultsFilterMemberMatchMode.Any)
 }
 
 private fun parseResultsFilterTextOperator(value: String): ResultsFilterTextOperator {

@@ -22,6 +22,10 @@ class SimilaritySettingsScreenTest {
             frameSeconds = listOf("0", "1"),
             sampleSignatures = listOf("0f0f0f,000000", "ffffff,101010")
         )
+        val hashedExact = exact.copy(
+            sampleSignatures = emptyList(),
+            thumbnailHashHex = "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744"
+        )
         val neighbor = DurationNeighborClusterExplanation(
             toleranceMillis = 500L,
             minDurationMillis = 1_000L,
@@ -31,6 +35,11 @@ class SimilaritySettingsScreenTest {
         assertEquals(
             "Matched thumbnail signature: 0f0f0f,000000 | ffffff,101010",
             exactHashClusterSummary(exact)
+        )
+        assertEquals(
+            "Matched thumbnail SHA-256: " +
+                "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744",
+            exactHashClusterSummary(hashedExact)
         )
         assertEquals(
             "Visible duration span: 1s - 1.500s",

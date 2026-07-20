@@ -54,6 +54,10 @@ class FilesScreenDbFiltersTest {
                             id = "rule_2",
                             target = ResultsFilterTarget.FileName,
                             value = "keep"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_3",
+                            target = ResultsFilterTarget.SameFileSize
                         )
                     )
                 )

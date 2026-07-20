@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun ScreenScrollColumn(
     modifier: Modifier = Modifier,
+    listModifier: Modifier = Modifier,
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
     contentPadding: PaddingValues = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp),
     listState: LazyListState = rememberLazyListState(),
@@ -29,7 +30,8 @@ fun ScreenScrollColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(Spacing.screenPadding),
+                .padding(Spacing.screenPadding)
+                .then(listModifier),
             contentPadding = contentPadding,
             verticalArrangement = verticalArrangement,
             content = content

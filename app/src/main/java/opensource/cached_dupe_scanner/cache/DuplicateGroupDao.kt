@@ -31,16 +31,16 @@ interface DuplicateGroupDao {
 
     @Query(
         """
-        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashHex, fileCount, totalBytes, updatedAtMillis)
+        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashBytes, fileCount, totalBytes, updatedAtMillis)
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex,
+            hashBytes as hashBytes,
             COUNT(*) as fileCount,
             (COUNT(*) * sizeBytes) as totalBytes,
             :updatedAtMillis as updatedAtMillis
         FROM cached_files
-        WHERE hashHex IS NOT NULL
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes IS NOT NULL
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
         """
     )
@@ -48,20 +48,24 @@ interface DuplicateGroupDao {
 
     @Query(
         """
-        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashHex, fileCount, totalBytes, updatedAtMillis)
+        INSERT OR REPLACE INTO dupe_groups (sizeBytes, hashBytes, fileCount, totalBytes, updatedAtMillis)
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex,
+            hashBytes as hashBytes,
             COUNT(*) as fileCount,
             (COUNT(*) * sizeBytes) as totalBytes,
             :updatedAtMillis as updatedAtMillis
         FROM cached_files
-        WHERE hashHex = :hashHex AND sizeBytes = :sizeBytes
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes = :hashBytes AND sizeBytes = :sizeBytes
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
         """
     )
-    fun insertSingleGroupFromCache(sizeBytes: Long, hashHex: String, updatedAtMillis: Long)
+    fun insertSingleGroupFromCacheByStoredHash(
+        sizeBytes: Long,
+        hashBytes: StoredHash,
+        updatedAtMillis: Long
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun upsertAll(groups: List<DuplicateGroupEntity>)
@@ -79,16 +83,24 @@ interface DuplicateGroupDao {
         insertSingleGroupFromCache(sizeBytes, hashHex, snapshotUpdatedAtMillis)
     }
 
+    fun insertSingleGroupFromCache(sizeBytes: Long, hashHex: String, updatedAtMillis: Long) {
+        insertSingleGroupFromCacheByStoredHash(
+            sizeBytes,
+            StoredHash.fromExternalString(hashHex),
+            updatedAtMillis
+        )
+    }
+
     @Query("SELECT COUNT(*) FROM dupe_groups")
     fun countGroups(): Int
 
     @Query(
         """
         SELECT COUNT(*) FROM (
-            SELECT sizeBytes, hashHex
+            SELECT sizeBytes, hashBytes
             FROM cached_files
-            WHERE hashHex IS NOT NULL
-            GROUP BY sizeBytes, hashHex
+            WHERE hashBytes IS NOT NULL
+            GROUP BY sizeBytes, hashBytes
             HAVING COUNT(*) > 1
         )
         """
@@ -104,7 +116,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashHex DESC
+        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -113,7 +125,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashHex ASC
+        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -122,7 +134,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashHex DESC
+        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -131,7 +143,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashHex ASC
+        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -140,7 +152,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashHex DESC
+        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -149,7 +161,7 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -159,7 +171,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashHex DESC
+        ORDER BY fileCount DESC, totalBytes DESC, sizeBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -169,7 +181,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashHex ASC
+        ORDER BY fileCount ASC, totalBytes ASC, sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -179,7 +191,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashHex DESC
+        ORDER BY totalBytes DESC, fileCount DESC, sizeBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -189,7 +201,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashHex ASC
+        ORDER BY totalBytes ASC, fileCount ASC, sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -199,7 +211,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashHex DESC
+        ORDER BY sizeBytes DESC, fileCount DESC, totalBytes DESC, hashBytes DESC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -209,7 +221,7 @@ interface DuplicateGroupDao {
         """
         SELECT * FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, fileCount ASC, totalBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -218,25 +230,33 @@ interface DuplicateGroupDao {
     @Query(
         """
         SELECT * FROM dupe_groups
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes
         LIMIT 1
         """
     )
-    fun get(sizeBytes: Long, hashHex: String): DuplicateGroupEntity?
+    fun getByStoredHash(sizeBytes: Long, hashBytes: StoredHash): DuplicateGroupEntity?
+
+    fun get(sizeBytes: Long, hashHex: String): DuplicateGroupEntity? {
+        return getByStoredHash(sizeBytes, StoredHash.fromExternalString(hashHex))
+    }
 
     @Query(
         """
         DELETE FROM dupe_groups
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes
         """
     )
-    fun delete(sizeBytes: Long, hashHex: String)
+    fun deleteByStoredHash(sizeBytes: Long, hashBytes: StoredHash)
+
+    fun delete(sizeBytes: Long, hashHex: String) {
+        deleteByStoredHash(sizeBytes, StoredHash.fromExternalString(hashHex))
+    }
 
     @Query(
         """
         SELECT *
         FROM dupe_groups
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -247,7 +267,7 @@ interface DuplicateGroupDao {
         SELECT *
         FROM dupe_groups
         WHERE updatedAtMillis = :updatedAtMillis
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit
         """
     )
@@ -260,31 +280,45 @@ interface DuplicateGroupDao {
         WHERE updatedAtMillis = :updatedAtMillis
           AND (
               sizeBytes > :afterSizeBytes
-              OR (sizeBytes = :afterSizeBytes AND hashHex > :afterHashHex)
+              OR (sizeBytes = :afterSizeBytes AND hashBytes > :afterHashBytes)
           )
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit
         """
     )
+    fun listPageByKeyAtAfterStoredHash(
+        updatedAtMillis: Long,
+        afterSizeBytes: Long,
+        afterHashBytes: StoredHash,
+        limit: Int
+    ): List<DuplicateGroupEntity>
+
     fun listPageByKeyAtAfter(
         updatedAtMillis: Long,
         afterSizeBytes: Long,
         afterHashHex: String,
         limit: Int
-    ): List<DuplicateGroupEntity>
+    ): List<DuplicateGroupEntity> {
+        return listPageByKeyAtAfterStoredHash(
+            updatedAtMillis,
+            afterSizeBytes,
+            StoredHash.fromExternalString(afterHashHex),
+            limit
+        )
+    }
 
     @Query(
         """
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex,
+            hashBytes as hashBytes,
             COUNT(*) as fileCount,
             (COUNT(*) * sizeBytes) as totalBytes
         FROM cached_files
-        WHERE hashHex IS NOT NULL
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes IS NOT NULL
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit OFFSET :offset
         """
     )
@@ -294,15 +328,22 @@ interface DuplicateGroupDao {
         """
         SELECT COUNT(*)
         FROM cached_files
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes
         """
     )
-    fun countMembers(sizeBytes: Long, hashHex: String): Int
+    fun countMembersByStoredHash(sizeBytes: Long, hashBytes: StoredHash): Int
+
+    fun countMembers(sizeBytes: Long, hashHex: String): Int {
+        return countMembersByStoredHash(sizeBytes, StoredHash.fromExternalString(hashHex))
+    }
 }
 
 data class DuplicateGroupSnapshotRow(
     val sizeBytes: Long,
-    val hashHex: String,
+    val hashBytes: StoredHash,
     val fileCount: Int,
     val totalBytes: Long
-)
+) {
+    val hashHex: String
+        get() = hashBytes.toExternalString()
+}

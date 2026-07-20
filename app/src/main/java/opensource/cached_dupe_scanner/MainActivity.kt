@@ -41,7 +41,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
-import opensource.cached_dupe_scanner.cache.buildCacheDatabase
+import opensource.cached_dupe_scanner.cache.inspectCacheDatabaseStartup
+import opensource.cached_dupe_scanner.cache.openCacheDatabaseForStartup
 import opensource.cached_dupe_scanner.core.ResultSortKey
 import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.core.ScanResultViewFilter
@@ -76,11 +77,12 @@ import opensource.cached_dupe_scanner.ui.home.SimilarityDurationSettingScreen
 import opensource.cached_dupe_scanner.ui.home.SimilarityExactThumbnailSettingScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingCreateScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingDetailScreen
-import opensource.cached_dupe_scanner.ui.home.SimilaritySettingGroupsScreen
+import opensource.cached_dupe_scanner.ui.home.SimilaritySettingResultsScreen
 import opensource.cached_dupe_scanner.ui.home.SimilaritySettingsScreen
 import opensource.cached_dupe_scanner.ui.home.TargetsScreen
 import opensource.cached_dupe_scanner.ui.home.TrashScreen
 import opensource.cached_dupe_scanner.ui.home.similarity.runScanIntegratedSimilarityGeneration
+import opensource.cached_dupe_scanner.ui.cacheDatabaseStartupGate
 import opensource.cached_dupe_scanner.ui.results.ScanUiState
 import opensource.cached_dupe_scanner.ui.theme.CachedDupeScannerTheme
 
@@ -90,6 +92,18 @@ class MainActivity : ComponentActivity() {
         updateSystemBars()
         setContent {
             CachedDupeScannerTheme {
+                val context = LocalContext.current
+                val database = cacheDatabaseStartupGate(
+                    inspect = { inspectCacheDatabaseStartup(context) },
+                    openDatabase = { plan, onProgress ->
+                        openCacheDatabaseForStartup(
+                            context = context,
+                            plan = plan,
+                            onProgress = onProgress
+                        )
+                    },
+                    onClose = ::finish
+                ) ?: return@CachedDupeScannerTheme
                 val state = remember { mutableStateOf<ScanUiState>(ScanUiState.Idle) }
                 val deletedPaths = remember { mutableStateOf(setOf<String>()) }
                 val displayResult = remember { mutableStateOf<ScanResult?>(null) }
@@ -105,7 +119,6 @@ class MainActivity : ComponentActivity() {
                 val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
-                val context = LocalContext.current
                 val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
                 val rememberedThumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
@@ -135,14 +148,19 @@ class MainActivity : ComponentActivity() {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                val database = remember { buildCacheDatabase(context) }
                 val scanCacheStore = remember { CacheStore(database.fileCacheDao()) }
-                val scanner = remember { IncrementalScanner(scanCacheStore) }
+                val scanner = remember {
+                    IncrementalScanner(
+                        cacheStore = scanCacheStore,
+                        workerCountProvider = { settingsStore.load().scanWorkerCount }
+                    )
+                }
                 val similarityRepo = remember {
                     SimilaritySettingsRepository(
                         database = database,
                         fileDao = database.fileCacheDao(),
-                        similarityDao = database.similaritySettingsDao()
+                        similarityDao = database.similaritySettingsDao(),
+                        workerCountProvider = { settingsStore.load().similarityWorkerCount }
                     )
                 }
                 val historyRepo = remember {
@@ -504,27 +522,56 @@ class MainActivity : ComponentActivity() {
                                 modifier = screenModifier
                             )
 
-                            is Screen.SimilaritySettingGroups -> SimilaritySettingGroupsScreen(
+                            is Screen.SimilaritySettingGroups -> SimilaritySettingResultsScreen(
                                 repository = similarityRepo,
                                 settingsStore = settingsStore,
                                 keepLoadedThumbnailsInMemory = settingsSnapshot.keepLoadedThumbnailsInMemory,
+                                keepLoadedVideoPreviewsInMemory = settingsSnapshot.keepLoadedVideoPreviewsInMemory,
+                                snapVideoPreviewFramesToWidth = settingsSnapshot.snapVideoPreviewFramesToWidth,
+                                videoPreviewLineCount = settingsSnapshot.videoPreviewLineCount,
                                 thumbnailSizeScale = settingsSnapshot.thumbnailSizePercent / 100f,
+                                videoPreviewSizeScale = settingsSnapshot.videoPreviewSizePercent / 100f,
                                 rememberedPreviewCache = rememberedThumbnailCache,
+                                rememberedVideoPreviewCache = rememberedVideoPreviewCache,
                                 showFullPaths = settingsSnapshot.showFullPaths,
+                                showVideoPreviews = similarityShowVideoPreviews.value,
+                                showVideoPreviewDurations = similarityShowVideoPreviewDurations.value,
+                                showVideoPreviewResolutions = similarityShowVideoPreviewResolutions.value,
+                                onShowVideoPreviewsChange = { similarityShowVideoPreviews.value = it },
+                                onShowVideoPreviewDurationsChange = {
+                                    similarityShowVideoPreviewDurations.value = it
+                                },
+                                onShowVideoPreviewResolutionsChange = {
+                                    similarityShowVideoPreviewResolutions.value = it
+                                },
                                 deletedPaths = deletedPaths.value,
+                                onDeleteFile = { file ->
+                                    if (taskCoordinator.isAreaBusy(TaskArea.Trash)) {
+                                        return@SimilaritySettingResultsScreen false
+                                    }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                onBulkDeleteFile = { file ->
+                                    val ok = withContext(Dispatchers.IO) {
+                                        trashController.moveToTrash(file.normalizedPath).success
+                                    }
+                                    if (ok) {
+                                        deletedPaths.value = deletedPaths.value + file.normalizedPath
+                                    }
+                                    ok
+                                },
+                                taskScope = AppWorkScopes.taskScope,
+                                taskCoordinator = taskCoordinator,
+                                notificationController = notificationController,
                                 settingId = screen.settingId,
                                 refreshVersion = similarityRefreshVersion.value,
                                 onBack = { pop(backStack) },
-                                onOpenCluster = { settingId, clusterId ->
-                                    navigateTo(
-                                        backStack,
-                                        screenCache,
-                                        Screen.SimilarityClusterDetail(
-                                            settingId = settingId,
-                                            clusterId = clusterId
-                                        )
-                                    )
-                                },
                                 modifier = screenModifier
                             )
 
@@ -602,11 +649,16 @@ class MainActivity : ComponentActivity() {
                                 onTrashChanged = { restoredOriginalPath ->
                                     if (restoredOriginalPath != null) {
                                         deletedPaths.value = deletedPaths.value - restoredOriginalPath
+                                        withContext(Dispatchers.IO) {
+                                            similarityRepo.refreshRestoredFileResults(
+                                                normalizedPath = restoredOriginalPath,
+                                                shouldContinue = { true }
+                                            )
+                                        }
                                     }
-                                    refreshSimilarityFromCache {
-                                        filesRefreshVersion.value += 1
-                                        resultsRefreshVersion.value += 1
-                                    }
+                                    similarityRefreshVersion.value += 1
+                                    filesRefreshVersion.value += 1
+                                    resultsRefreshVersion.value += 1
                                 },
                                 onBack = { pop(backStack) },
                                 modifier = screenModifier

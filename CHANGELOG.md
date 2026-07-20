@@ -8,16 +8,42 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Similarity management for named video/image duplicate candidates, including exact-thumbnail grouping, duration-only video grouping, duration-neighbor video lists, and update, rebuild, and clear controls.
+- Similarity management for named video/image duplicate candidates, including SHA-256 exact-thumbnail grouping, duration-only video grouping, duration-neighbor video lists, and update, rebuild, and clear controls.
 - Similarity now provides separate flows for type selection, custom creation controls, management, and similarity group member browsing.
 - Similarity identity now treats different method parameters as separate entries, so thumbnail sizes such as 2x2 and 3x3 maintain independent results.
-- Similarity result previews with exact-hash reduction tiles, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, group list sort options, lazy result browsing, and task progress notifications.
+- Similarity result previews with exact-thumbnail SHA-256 summaries, per-file member thumbnails, compact member previews, duration labels, tappable video cards, retained sort and preview menu selections, duration-neighbor sort direction controls, group list sort options, lazy result browsing, and task progress notifications.
 - Similarity group detail video members now provide an optional timeline video preview from the detail overflow menu, using the configured video preview cache, width snap, line count, and frame size.
 - Video timeline preview menus now provide optional duration and resolution labels in Files and similarity group details without forcing timeline frames on.
 - Duplicate group detail views now support long-press member selection and selected-file deletion.
+- Similarity group browsing now supports the saved result filter editor and applies group and paged member rules before groups enter the visible list.
+- Result and similarity group filters now support matching groups whose members all have the same byte size.
+- Similarity group browsing now provides the shared bulk-delete catalog, filtered previews, and keep-by-text or modified-time commands while retaining deletion highlights only in the active results screen.
+- Similarity filters now support matching groups where every video duration stays within a single-value `s` or `ms` tolerance of the exact group average, resolving and caching missing durations in bounded pages when the rule is applied.
+- Similarity filters can now match only groups whose media members all have the same width and height, resolving and caching missing dimensions in bounded pages when the rule is applied.
+- Results and Similarity bulk delete can now keep the shortest or longest video in each eligible group, using oldest or newest modified time to break equal-duration ties and skipping groups with unreadable durations.
+- Results and Similarity text-rule bulk delete can now keep the matching or non-matching side with an exact-one, one-or-more, or exact custom-count requirement before deleting the opposite set.
+- Results and Similarity file-name, folder, and modified-time rules now branch to `Any member` or `All members` inside each rule, with existing saved rules retaining `Any member` behavior.
+- Similarity result clearing now publishes shared task progress and failure or cancellation outcomes, with a separate resumable incremental clear for recovering large or interrupted result sets in bounded commits.
+- Settings now provides a 1-32 scan worker control that persists through preference export and import, bounds concurrent SHA-256 hashing, and applies when each scan starts.
+- Settings now provides a separate 1-32 similarity worker control that persists through preference export and import and applies when the next similarity generation starts.
+- DB maintenance now provides separate all-cache, duplicate-result-group, and similarity-group scopes, deduplicating similarity members by numeric file identity before bounded processing.
 
 ### Changed
 
+- Similarity filters now advance selective cluster pages and missing duration or resolution metadata batches with keyset cursors instead of rescanning prior rows, while coalescing progress updates during large metadata backfills.
+- Video duration-tolerance and neighbor generation now batches existing-state reads, reuses current duration metadata across compatible settings, defers width and height extraction until requested, and partitions database-sorted tolerance groups in one pass.
+- Average-duration similarity filters now evaluate cached clusters from one bounded `count`/`sum`/`min`/`max` aggregate query instead of streaming every member row, while exact-thumbnail generation retains video duration already read during frame sampling.
+- Similarity member filters now stream source pages through bounded cross-cluster queries, resolve missing duration and resolution metadata with the configured worker pool, and reuse current metadata across compatible settings while keeping progress updates and cache writes serialized.
+- Similarity filters now show determinate on-demand duration and resolution recalculation progress with the current file, processing speed, elapsed time, and estimated remaining time.
+- Active task cards, banners, notifications, and blocking database upgrades now show processing speed, elapsed time, and estimated remaining time, with database recovery counts advancing after each committed copy batch.
+- Cached files and materialized duplicate groups now store SHA-256 values as 32-byte blobs, with a v22-to-v23 migration that preserves file identities and similarity relationships while rebuilding derived groups.
+- Exact-thumbnail similarity features now store canonical reduced-thumbnail SHA-256 values as 32-byte blobs, with a v23-to-v24 migration that hashes existing payloads and replaces raw-pixel cluster keys.
+- Database upgrades now require explicit confirmation on a blocking startup screen, keep the main app unavailable until completion, and report the active migration stage.
+- Version 21 cache upgrades now build and verify a side-by-side v24 database, preserve readable scan and similarity results when oversized legacy derived tables are corrupt, reconstruct exact-thumbnail features from cluster identities, and replace the original only after integrity and relationship checks pass.
+- Scan-cache files and similarity sidecar rows now share stable integer file identities, with an indexed v21-to-v22 migration that preserves valid generated data and removes orphaned relationships.
+- Filter editor clusters now provide collapsible headers that retain cluster identity, rule count, logic, enablement, removal, any open rule editor state, and persist collapsed clusters across filter reopening and app sessions.
+- Filter editors now present rules inside each cluster as target-labeled accordion rows with distinct tonal borders, expanding one editor at a time while keeping enable and removal controls available.
+- Filter rule editors now show only the current target until its selector is opened, with the available targets presented in a dropdown menu.
 - Source and manifest text assertions are replaced by runtime tests for merged package metadata, app-owned task survival, foreground-service routing, scan completion ordering, serialized similarity maintenance, and Compose detail interactions.
 - Similarity deletion regression coverage now exercises group navigation, detail deletion through Trash, and return-to-list snapshot preservation as one Compose path.
 - Duplicate and similarity detail views now check loaded members against the filesystem and mark missing files explicitly.
@@ -43,6 +69,13 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Similarity cluster replacement now detects cache files removed after draft construction and retries from current feature rows instead of reinserting stale file IDs and crashing on a foreign-key constraint.
+- Exact-thumbnail similarity now bounds configured sample timestamps to each video's duration and avoids repeatedly decoding unchanged videos that the platform cannot read.
+- Android back handling now opts into `OnBackInvokedCallback` dispatch, preventing repeated platform warnings while retaining the existing AndroidX back navigation flow.
+- Current databases now remain on the neutral launch background while they are checked and opened, so the blocking upgrade screen appears only when an upgrade is actually required.
+- The Android launch splash and blocking database upgrade screen now follow system dark mode with matching opaque backgrounds and readable foreground colors.
+- Task progress bars no longer draw a primary-color stop marker at the right edge while incomplete, and very large incomplete counts remain below 100 percent.
+- Scrollbars now map each drag from the current pointer position instead of accumulated deltas, keeping variable-height lazy lists pinned to the final item when thumb estimates change.
 - Scan completion now reports automatic similarity generation as part of the scan task instead of staying on the cache-saving status without progress.
 - Scan command now uses the shared cache database builder so newly added Room migrations are registered consistently.
 - Scan completion now waits for cache persistence and similarity refresh before marking scan tasks complete.
@@ -51,9 +84,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Similarity group detail member sorting now applies at the paged query source instead of sorting only the already loaded subset.
 - Similarity result routes now show retryable load errors instead of getting stuck on loading or missing-result states.
 - Similarity result lists and result details now use the shared lazy load indicator container.
-- Similarity result details keep deleted members across re-entry with only the deleted-background highlight, and parent group cards highlight when any stored member was deleted.
-- Trash file delete actions keep generated similarity groups in place without cache-mutation cleanup until an explicit scan, update, or rebuild refreshes them.
-- Restoring files from Trash now clears their session deleted state before refreshing similarity groups.
+- Similarity group browsing keeps its loaded parent list and detail-member snapshots in memory across detail back navigation and same-screen re-entry, with deletion changing only the active snapshot colors.
+- Trash deletion and DB maintenance now propagate canonical scan-cache mutations to persisted similarity members and groups while the active in-memory result snapshot remains stable.
+- Restoring files from Trash now waits for the restored path to rejoin every generated similarity entry, including paused entries, before refreshing cached screens.
 - Settings and cancellation tests now isolate persisted preferences and avoid sleep-loop task bodies.
 - Similarity group pages now remove or refresh stored group rows when cached files are deleted or changed.
 - Similarity group sort changes now rerun after any in-flight page load instead of leaving stale ordering.
@@ -74,8 +107,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Simple and result-detail screens now use result-style lazy side scrollbars instead of standalone scroll-state scrollbars.
 - Background DB, trash, bulk-delete, and similarity work now use the app-owned task runtime and foreground service, so UI lifecycle changes no longer cancel tracked tasks or reset active task monitoring.
 - Bulk-delete execution now keeps paging stable while successful deletes refresh duplicate groups, preventing later groups from being skipped.
-- Bulk-delete previews now report full candidate group and file totals while keeping preview samples bounded.
-- Bulk-delete execution now rescans the current snapshot, filter, and command so capped preview samples do not limit eligible deletions.
+- Bulk-delete previews now retain and display every candidate group while reporting full group and file totals.
+- Bulk-delete execution now rescans the current snapshot, filter, and command so the displayed preview and full execution use the same candidate scope.
 - Results DB filters now evaluate member-dependent filters page-by-page instead of materializing every member at once.
 - Duration-neighbor similarity result lists now lazy-load larger member pages and prefetch earlier near the end of the visible list.
 - App screens now handle screen size, orientation, layout, and keyboard-hidden configuration changes without recreating and crashing active screens.
@@ -86,11 +119,17 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
+- Duplicate detection, grouping, member lookup, and group paging now compare indexed 32-byte hash blobs instead of 64-character hexadecimal text.
+- Similarity feature, member, repair, and result queries now join through integer file IDs instead of normalized path strings, while cache updates preserve IDs through batched inserts and updates.
+- Exact-thumbnail grouping now compares indexed 32-byte SHA-256 blobs instead of serialized reduced-pixel text.
+- Size-collision hash candidates now run through a bounded worker pool while progress collection and cache writes remain serialized.
+- Similarity generation now extracts media signatures, durations, and dimensions through a bounded worker pool while progress collection, database batches, and cluster rebuilding remain serialized.
 - Similarity group page queries now use setting-aware sort indexes for file-count and total-size ordering.
 - Similarity group browsing now loads stored group rows by page and uses aggregate summaries instead of materializing every group.
 - Similarity group detail member thumbnails now compose through lazy list items, so thumbnail and optional video preview loading starts from visible members instead of the whole loaded page.
 - Similarity group detail screens now load members page-by-page instead of materializing entire large groups at once.
 - Scan cancellation, filtered duplicate results, bulk-delete previews, Empty Trash, scan reports, and duplicate-only database maintenance now page or stream large data sets instead of loading them eagerly.
+- Trash restore now recalculates only the restored path instead of scanning every cached file for enabled similarities.
 
 ## [1.4.0] - 2026-04-30
 

@@ -2,6 +2,9 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import opensource.cached_dupe_scanner.core.MAX_SCAN_WORKER_COUNT
+import opensource.cached_dupe_scanner.core.MIN_SCAN_WORKER_COUNT
+import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +40,8 @@ class AppSettingsStoreTest {
         assertFalse(settings.keepLoadedThumbnailsInMemory)
         assertTrue(settings.keepLoadedVideoPreviewsInMemory)
         assertFalse(settings.snapVideoPreviewFramesToWidth)
+        assertEquals(defaultScanWorkerCount(), settings.scanWorkerCount)
+        assertEquals(defaultScanWorkerCount(), settings.similarityWorkerCount)
         assertEquals(1, settings.videoPreviewLineCount)
         assertEquals(100, settings.thumbnailSizePercent)
         assertEquals(100, settings.videoPreviewSizePercent)
@@ -47,6 +52,10 @@ class AppSettingsStoreTest {
         assertFalse(settings.showFullPaths)
         assertEquals("", settings.resultsFilterDefinitionJson)
         assertEquals("", settings.filesFilterDefinitionJson)
+        assertEquals("", settings.similarityFilterDefinitionJson)
+        assertEquals(emptySet<String>(), settings.resultsFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), settings.filesFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), settings.similarityFilterCollapsedClusterIds)
         assertEquals("Name", settings.filesSortKey)
         assertEquals("Asc", settings.filesSortDirection)
         assertEquals("FileCount", settings.similarityClusterSortKey)
@@ -81,6 +90,12 @@ class AppSettingsStoreTest {
 
         store.setSnapVideoPreviewFramesToWidth(true)
         assertTrue(store.load().snapVideoPreviewFramesToWidth)
+
+        store.setScanWorkerCount(6)
+        assertEquals(6, store.load().scanWorkerCount)
+
+        store.setSimilarityWorkerCount(5)
+        assertEquals(5, store.load().similarityWorkerCount)
 
         store.setVideoPreviewLineCount(3)
         assertEquals(3, store.load().videoPreviewLineCount)
@@ -118,6 +133,26 @@ class AppSettingsStoreTest {
             store.load().filesFilterDefinitionJson
         )
 
+        store.setSimilarityFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_3\"}]}")
+        assertEquals(
+            "{\"clusters\":[{\"id\":\"cluster_3\"}]}",
+            store.load().similarityFilterDefinitionJson
+        )
+
+        store.setResultsFilterCollapsedClusterIds(setOf("results_1", "results_2"))
+        store.setFilesFilterCollapsedClusterIds(setOf("files_1"))
+        store.setSimilarityFilterCollapsedClusterIds(setOf("similarity_1", "similarity_2"))
+        val persistedExpansionSettings = AppSettingsStore(context).load()
+        assertEquals(
+            setOf("results_1", "results_2"),
+            persistedExpansionSettings.resultsFilterCollapsedClusterIds
+        )
+        assertEquals(setOf("files_1"), persistedExpansionSettings.filesFilterCollapsedClusterIds)
+        assertEquals(
+            setOf("similarity_1", "similarity_2"),
+            persistedExpansionSettings.similarityFilterCollapsedClusterIds
+        )
+
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         val fileSortSettings = store.load()
@@ -150,11 +185,17 @@ class AppSettingsStoreTest {
         assertFalse(imported.keepLoadedThumbnailsInMemory)
         assertTrue(imported.keepLoadedVideoPreviewsInMemory)
         assertFalse(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(defaultScanWorkerCount(), imported.scanWorkerCount)
+        assertEquals(defaultScanWorkerCount(), imported.similarityWorkerCount)
         assertEquals(1, imported.videoPreviewLineCount)
         assertEquals(100, imported.thumbnailSizePercent)
         assertEquals(100, imported.videoPreviewSizePercent)
         assertEquals("", imported.resultsFilterDefinitionJson)
         assertEquals("", imported.filesFilterDefinitionJson)
+        assertEquals("", imported.similarityFilterDefinitionJson)
+        assertEquals(emptySet<String>(), imported.resultsFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), imported.filesFilterCollapsedClusterIds)
+        assertEquals(emptySet<String>(), imported.similarityFilterCollapsedClusterIds)
         assertEquals("FileCount", imported.similarityClusterSortKey)
         assertEquals("Desc", imported.similarityClusterSortDirection)
         assertEquals("Path", imported.similarityMemberSortKey)
@@ -176,6 +217,8 @@ class AppSettingsStoreTest {
         store.setKeepLoadedThumbnailsInMemory(true)
         store.setKeepLoadedVideoPreviewsInMemory(false)
         store.setSnapVideoPreviewFramesToWidth(true)
+        store.setScanWorkerCount(7)
+        store.setSimilarityWorkerCount(8)
         store.setVideoPreviewLineCount(4)
         store.setThumbnailSizePercent(125)
         store.setVideoPreviewSizePercent(80)
@@ -186,6 +229,10 @@ class AppSettingsStoreTest {
         store.setShowFullPaths(true)
         store.setResultsFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}")
         store.setFilesFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}")
+        store.setSimilarityFilterDefinitionJson("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}")
+        store.setResultsFilterCollapsedClusterIds(setOf("cluster_1", "cluster_4"))
+        store.setFilesFilterCollapsedClusterIds(setOf("cluster_2"))
+        store.setSimilarityFilterCollapsedClusterIds(setOf("cluster_3", "cluster_5"))
         store.setFilesSortKey("Size")
         store.setFilesSortDirection("Desc")
         store.setSimilarityClusterSortKey("TotalSize")
@@ -206,6 +253,8 @@ class AppSettingsStoreTest {
         assertTrue(imported.keepLoadedThumbnailsInMemory)
         assertFalse(imported.keepLoadedVideoPreviewsInMemory)
         assertTrue(imported.snapVideoPreviewFramesToWidth)
+        assertEquals(7, imported.scanWorkerCount)
+        assertEquals(8, imported.similarityWorkerCount)
         assertEquals(4, imported.videoPreviewLineCount)
         assertEquals(125, imported.thumbnailSizePercent)
         assertEquals(80, imported.videoPreviewSizePercent)
@@ -216,6 +265,10 @@ class AppSettingsStoreTest {
         assertTrue(imported.showFullPaths)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_1\",\"name\":\"Saved\"}]}", imported.resultsFilterDefinitionJson)
         assertEquals("{\"clusters\":[{\"id\":\"cluster_2\",\"name\":\"Files\"}]}", imported.filesFilterDefinitionJson)
+        assertEquals("{\"clusters\":[{\"id\":\"cluster_3\",\"name\":\"Similarity\"}]}", imported.similarityFilterDefinitionJson)
+        assertEquals(setOf("cluster_1", "cluster_4"), imported.resultsFilterCollapsedClusterIds)
+        assertEquals(setOf("cluster_2"), imported.filesFilterCollapsedClusterIds)
+        assertEquals(setOf("cluster_3", "cluster_5"), imported.similarityFilterCollapsedClusterIds)
         assertEquals("Size", imported.filesSortKey)
         assertEquals("Desc", imported.filesSortDirection)
         assertEquals("TotalSize", imported.similarityClusterSortKey)
@@ -254,6 +307,30 @@ class AppSettingsStoreTest {
 
         store.setVideoPreviewLineCount(-9)
         assertEquals(1, store.load().videoPreviewLineCount)
+    }
+
+    @Test
+    fun scanWorkerCountIsBoundedWhenStoredOrImported() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setScanWorkerCount(0)
+        assertEquals(MIN_SCAN_WORKER_COUNT, store.load().scanWorkerCount)
+
+        store.setScanWorkerCount(Int.MAX_VALUE)
+        assertEquals(MAX_SCAN_WORKER_COUNT, store.load().scanWorkerCount)
+
+        val importedLow = store.importFromJson("{\"scan_worker_count\":0}")
+        assertEquals(MIN_SCAN_WORKER_COUNT, importedLow.scanWorkerCount)
+
+        val importedHigh = store.importFromJson("{\"scan_worker_count\":999}")
+        assertEquals(MAX_SCAN_WORKER_COUNT, importedHigh.scanWorkerCount)
+
+        store.setSimilarityWorkerCount(0)
+        assertEquals(MIN_SCAN_WORKER_COUNT, store.load().similarityWorkerCount)
+
+        val importedSimilarityHigh = store.importFromJson("{\"similarity_worker_count\":999}")
+        assertEquals(MAX_SCAN_WORKER_COUNT, importedSimilarityHigh.similarityWorkerCount)
     }
 
     private fun clearSettings() {

@@ -47,6 +47,7 @@ class SettingsScreenTest {
     @Test
     fun dedicatedControlSectionsDoNotExposeToggleBindings() {
         val sections = listOf(
+            workerSettingsSection(),
             thumbnailSizeSettingsSection(),
             videoPreviewSizeSettingsSection(),
             videoPreviewLineCountSettingsSection(),
@@ -68,6 +69,7 @@ class SettingsScreenTest {
         assertEquals(80, normalizedDraftValue(input = "", fallback = 80, minValue = 0))
         assertEquals(1, normalizedDraftValue(input = "0", fallback = 3, minValue = 1))
         assertEquals(125, normalizedDraftValue(input = "125", fallback = 80, minValue = 0))
+        assertEquals(32, normalizedDraftValue(input = "99", fallback = 4, minValue = 1, maxValue = 32))
     }
 
     @Test
@@ -75,6 +77,10 @@ class SettingsScreenTest {
         assertEquals("90", adjustedDraftInput(input = "100", fallback = 100, delta = -10, minValue = 0))
         assertEquals("1", adjustedDraftInput(input = "1", fallback = 1, delta = -1, minValue = 1))
         assertEquals("6", adjustedDraftInput(input = "", fallback = 5, delta = 1, minValue = 1))
+        assertEquals(
+            "32",
+            adjustedDraftInput(input = "31", fallback = 4, delta = 4, minValue = 1, maxValue = 32)
+        )
     }
 
     private fun assertSectionToggles(
@@ -107,6 +113,8 @@ class SettingsScreenTest {
             keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
             keepLoadedVideoPreviewsInMemory = keepLoadedVideoPreviewsInMemory,
             snapVideoPreviewFramesToWidth = snapVideoPreviewFramesToWidth,
+            scanWorkerCount = 4,
+            similarityWorkerCount = 4,
             videoPreviewLineCount = 1,
             thumbnailSizePercent = 100,
             videoPreviewSizePercent = 100,

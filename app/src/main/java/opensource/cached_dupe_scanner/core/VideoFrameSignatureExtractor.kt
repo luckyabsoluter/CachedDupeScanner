@@ -5,6 +5,11 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import java.io.File
 
+data class VideoFrameSignatureResult(
+    val signature: String,
+    val durationMillis: Long?
+)
+
 interface VideoFrameSignatureExtractor {
     fun signature(
         file: File,
@@ -12,43 +17,109 @@ interface VideoFrameSignatureExtractor {
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
     ): String?
+
+    fun signatureWithMetadata(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): VideoFrameSignatureResult? {
+        return signature(file, mediaScope, step, shouldContinue)?.let { signature ->
+            VideoFrameSignatureResult(signature = signature, durationMillis = null)
+        }
+    }
+}
+
+internal interface VideoFrameSource {
+    fun setDataSource(path: String)
+    fun durationMillis(): Long?
+    fun frameAtTime(timeMicros: Long): Bitmap?
+    fun release()
+}
+
+private class MediaMetadataVideoFrameSource : VideoFrameSource {
+    private val retriever = MediaMetadataRetriever()
+
+    override fun setDataSource(path: String) {
+        retriever.setDataSource(path)
+    }
+
+    override fun durationMillis(): Long? {
+        return retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            ?.toLongOrNull()
+            ?.coerceAtLeast(0L)
+    }
+
+    override fun frameAtTime(timeMicros: Long): Bitmap? {
+        return retriever.getFrameAtTime(
+            timeMicros,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+        )
+    }
+
+    override fun release() {
+        retriever.release()
+    }
 }
 
 class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
+    private val sourceFactory: () -> VideoFrameSource
+
+    constructor() {
+        sourceFactory = { MediaMetadataVideoFrameSource() }
+    }
+
+    internal constructor(sourceFactory: () -> VideoFrameSource) {
+        this.sourceFactory = sourceFactory
+    }
+
     override fun signature(
         file: File,
         mediaScope: SimilarityMediaScope,
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
     ): String? {
+        return signatureWithMetadata(file, mediaScope, step, shouldContinue)?.signature
+    }
+
+    override fun signatureWithMetadata(
+        file: File,
+        mediaScope: SimilarityMediaScope,
+        step: ExactThumbnailHashStep,
+        shouldContinue: () -> Boolean
+    ): VideoFrameSignatureResult? {
         return when (mediaScope) {
-            SimilarityMediaScope.Video -> videoSignature(file, step, shouldContinue)
-            SimilarityMediaScope.Image -> imageSignature(file, step, shouldContinue)
+            SimilarityMediaScope.Video -> videoSignatureWithMetadata(file, step, shouldContinue)
+            SimilarityMediaScope.Image -> imageSignature(file, step, shouldContinue)?.let { signature ->
+                VideoFrameSignatureResult(signature = signature, durationMillis = null)
+            }
         }
     }
 
-    private fun videoSignature(
+    private fun videoSignatureWithMetadata(
         file: File,
         step: ExactThumbnailHashStep,
         shouldContinue: () -> Boolean
-    ): String? {
+    ): VideoFrameSignatureResult? {
         if (!shouldContinue()) return null
-        val retriever = MediaMetadataRetriever()
+        val source = sourceFactory()
         return try {
-            retriever.setDataSource(file.absolutePath)
+            source.setDataSource(file.absolutePath)
+            val durationMillis = runCatching { source.durationMillis() }.getOrNull()
             val frameSignatures = step.frameSeconds.map { second ->
                 if (!shouldContinue()) return null
-                val bitmap = retriever.getFrameAtTime(
-                    second * 1_000_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                ) ?: return null
+                val timeMicros = boundedVideoFrameTimeMicros(second, durationMillis)
+                val bitmap = source.frameAtTime(timeMicros) ?: return null
                 thumbnailSignature(bitmap, step)
             }
-            buildThumbnailSignature(SimilarityMediaScope.Video, step, frameSignatures)
-        } catch (e: RuntimeException) {
+            VideoFrameSignatureResult(
+                signature = buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures),
+                durationMillis = durationMillis
+            )
+        } catch (_: RuntimeException) {
             null
         } finally {
-            runCatching { retriever.release() }
+            runCatching { source.release() }
         }
     }
 
@@ -60,7 +131,7 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
         if (!shouldContinue()) return null
         return try {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
-            buildThumbnailSignature(
+            buildThumbnailHash(
                 mediaScope = SimilarityMediaScope.Image,
                 step = step,
                 frameSignatures = listOf(thumbnailSignature(bitmap, step))
@@ -71,11 +142,26 @@ class AndroidVideoFrameSignatureExtractor : VideoFrameSignatureExtractor {
     }
 }
 
+internal fun boundedVideoFrameTimeMicros(
+    frameSecond: Int,
+    durationMillis: Long?
+): Long {
+    val requestedMicros = frameSecond.coerceAtLeast(0).toLong() * MICROS_PER_SECOND
+    val maximumDurationMillis = Long.MAX_VALUE / MICROS_PER_MILLISECOND
+    val lastValidMicros = durationMillis
+        ?.coerceIn(0L, maximumDurationMillis)
+        ?.let { safeDurationMillis ->
+            (safeDurationMillis - 1L).coerceAtLeast(0L) * MICROS_PER_MILLISECOND
+        }
+    return lastValidMicros?.let { maximum -> requestedMicros.coerceAtMost(maximum) }
+        ?: requestedMicros
+}
+
 fun buildVideoFrameSignature(
     step: ExactThumbnailHashStep,
     frameSignatures: List<String>
 ): String {
-    return buildThumbnailSignature(SimilarityMediaScope.Video, step, frameSignatures)
+    return buildThumbnailHash(SimilarityMediaScope.Video, step, frameSignatures)
 }
 
 fun buildThumbnailSignature(
@@ -83,17 +169,7 @@ fun buildThumbnailSignature(
     step: ExactThumbnailHashStep,
     frameSignatures: List<String>
 ): String {
-    val mode = if (step.grayscale) "gray" else "color"
-    val quantization = step.quantizationLevels?.let { "q$it" } ?: "raw"
-    return listOf(
-        "thumb-v1",
-        mediaScope.name.lowercase(),
-        mode,
-        "${step.resizeWidthPx}x${step.resizeHeightPx}",
-        quantization,
-        step.frameSeconds.joinToString(","),
-        frameSignatures.joinToString("|")
-    ).joinToString(":")
+    return buildThumbnailHash(mediaScope, step, frameSignatures)
 }
 
 fun quantizeChannel(value: Int, levels: Int): Int {
@@ -146,3 +222,6 @@ private fun channelSignature(channel: Int, quantizationLevels: Int?): String {
 private fun quantizedChannelHexWidth(levels: Int): Int {
     return (levels.coerceAtLeast(2) - 1).toString(16).length
 }
+
+private const val MICROS_PER_MILLISECOND = 1_000L
+private const val MICROS_PER_SECOND = 1_000_000L

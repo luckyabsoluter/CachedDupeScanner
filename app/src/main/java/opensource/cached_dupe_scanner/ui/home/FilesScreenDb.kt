@@ -105,6 +105,10 @@ fun FilesScreenDb(
     }
 
     val settingsSnapshot = remember { settingsStore.load() }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState(
+        initialCollapsedClusterIds = settingsSnapshot.filesFilterCollapsedClusterIds,
+        onCollapsedClusterIdsChange = settingsStore::setFilesFilterCollapsedClusterIds
+    )
     val sortKey = remember {
         val key = runCatching { PagedFileRepository.SortKey.valueOf(settingsSnapshot.filesSortKey) }
             .getOrDefault(PagedFileRepository.SortKey.Name)
@@ -626,7 +630,8 @@ fun FilesScreenDb(
                 )
                 filterScreenOpen.value = false
                 resetAndLoad()
-            }
+            },
+            clusterExpansionState = filterClusterExpansionState
         )
     }
 }

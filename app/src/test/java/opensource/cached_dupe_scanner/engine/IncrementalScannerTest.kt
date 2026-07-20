@@ -7,17 +7,25 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CacheStore
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.PathNormalizer
+import opensource.cached_dupe_scanner.core.ScanResult
 import opensource.cached_dupe_scanner.storage.TrashPaths
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 class IncrementalScannerTest {
@@ -363,6 +371,75 @@ class IncrementalScannerTest {
         )
     }
 
+    @Test
+    fun configuredWorkerCountBoundsConcurrentHashing() {
+        repeat(6) { index ->
+            File(tempDir, "parallel-$index.txt").writeText("aa")
+        }
+        val hasher = BlockingParallelHasher(expectedConcurrent = 3)
+        val providerCalls = AtomicInteger(0)
+        val scanner = IncrementalScanner(
+            cacheStore = store,
+            fileHasher = hasher,
+            fileWalker = FileWalker(),
+            workerCountProvider = {
+                providerCalls.incrementAndGet()
+                3
+            }
+        )
+        val result = AtomicReference<ScanResult?>()
+        val failure = AtomicReference<Throwable?>()
+        val scanThread = Thread {
+            runCatching { scanner.scan(tempDir) }
+                .onSuccess(result::set)
+                .onFailure(failure::set)
+        }
+
+        scanThread.start()
+        val reachedConfiguredConcurrency = hasher.expectedWorkersEntered.await(5, TimeUnit.SECONDS)
+        hasher.releaseWorkers.countDown()
+        scanThread.join(10_000L)
+
+        assertTrue(reachedConfiguredConcurrency)
+        assertFalse(scanThread.isAlive)
+        failure.get()?.let { error -> throw AssertionError(error) }
+        assertEquals(1, providerCalls.get())
+        assertEquals(3, hasher.maxConcurrent.get())
+        assertEquals(6, hasher.hashCalls.get())
+        assertEquals(6, result.get()?.files?.size)
+        assertEquals(6, database.fileCacheDao().countAll())
+    }
+
+    @Test
+    fun parallelHashCancellationDoesNotPersistCompletedWorkers() {
+        repeat(4) { index ->
+            File(tempDir, "cancel-parallel-$index.txt").writeText("aa")
+        }
+        val allow = AtomicBoolean(true)
+        val hasher = BlockingCancellationHasher()
+        val scanner = IncrementalScanner(
+            cacheStore = store,
+            fileHasher = hasher,
+            fileWalker = FileWalker(),
+            workerCountProvider = { 3 }
+        )
+        val result = AtomicReference<ScanResult?>()
+        val scanThread = Thread {
+            result.set(scanner.scan(tempDir, shouldContinue = allow::get))
+        }
+
+        scanThread.start()
+        val workerEntered = hasher.workerEntered.await(5, TimeUnit.SECONDS)
+        allow.set(false)
+        hasher.releaseWorker.countDown()
+        scanThread.join(10_000L)
+
+        assertTrue(workerEntered)
+        assertFalse(scanThread.isAlive)
+        assertEquals(0, result.get()?.files?.size)
+        assertEquals(0, database.fileCacheDao().countAll())
+    }
+
     private class CountingHasher : FileHasher {
         private val counts = mutableMapOf<String, Int>()
 
@@ -389,6 +466,38 @@ class IncrementalScannerTest {
             } else {
                 null
             }
+        }
+    }
+
+    private class BlockingParallelHasher(expectedConcurrent: Int) : FileHasher {
+        val expectedWorkersEntered = CountDownLatch(expectedConcurrent)
+        val releaseWorkers = CountDownLatch(1)
+        val maxConcurrent = AtomicInteger(0)
+        val hashCalls = AtomicInteger(0)
+        private val active = AtomicInteger(0)
+
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
+            hashCalls.incrementAndGet()
+            val activeCount = active.incrementAndGet()
+            maxConcurrent.updateAndGet { previous -> maxOf(previous, activeCount) }
+            expectedWorkersEntered.countDown()
+            return try {
+                releaseWorkers.await(5, TimeUnit.SECONDS)
+                if (shouldContinue()) "hash-${file.name}" else null
+            } finally {
+                active.decrementAndGet()
+            }
+        }
+    }
+
+    private class BlockingCancellationHasher : FileHasher {
+        val workerEntered = CountDownLatch(1)
+        val releaseWorker = CountDownLatch(1)
+
+        override fun hash(file: File, shouldContinue: () -> Boolean): String? {
+            workerEntered.countDown()
+            releaseWorker.await(5, TimeUnit.SECONDS)
+            return if (shouldContinue()) "hash-${file.name}" else null
         }
     }
 

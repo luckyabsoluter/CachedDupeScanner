@@ -78,7 +78,7 @@ fun TrashScreen(
     appScope: CoroutineScope,
     taskCoordinator: TaskCoordinator,
     notificationController: TaskNotificationController,
-    onTrashChanged: (restoredOriginalPath: String?) -> Unit = { _ -> },
+    onTrashChanged: suspend (restoredOriginalPath: String?) -> Unit = { _ -> },
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {

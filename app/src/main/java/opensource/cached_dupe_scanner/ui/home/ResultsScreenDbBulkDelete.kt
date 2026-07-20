@@ -33,7 +33,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
@@ -42,7 +44,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
+import opensource.cached_dupe_scanner.core.AndroidVideoDurationExtractor
 import opensource.cached_dupe_scanner.core.FileMetadata
+import opensource.cached_dupe_scanner.core.VideoDurationExtractor
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.DuplicateGroupSortKey
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
@@ -58,18 +62,23 @@ import opensource.cached_dupe_scanner.ui.components.OptionButtonGrid
 import opensource.cached_dupe_scanner.ui.components.ScrollbarDefaults
 import opensource.cached_dupe_scanner.ui.components.Spacing
 import opensource.cached_dupe_scanner.ui.components.VerticalLazyScrollbar
+import java.io.File
 
 internal enum class ResultsBulkDeleteCommandType(
     val title: String,
     val description: String
 ) {
-    KeepOneNonMatch(
-        title = "Delete matches, keep 1 non-match",
-        description = "Find duplicate groups where exactly one file does not match the text rule, then delete the matching files."
+    KeepByText(
+        title = "Keep by text match",
+        description = "Keep an exact or minimum number of matching or non-matching files, then delete the opposite side."
     ),
     KeepByModified(
         title = "Keep by modified time",
-        description = "In each eligible duplicate group, choose whether to keep the oldest file or the newest file and delete the rest."
+        description = "In each eligible result group, choose whether to keep the oldest file or the newest file and delete the rest."
+    ),
+    KeepByDuration(
+        title = "Keep by video duration",
+        description = "In each eligible group, keep the shortest or longest video and use modified time to break equal-duration ties."
     )
 }
 
@@ -78,22 +87,44 @@ internal enum class ResultsBulkDeleteModifiedKeepMode(val label: String) {
     Newest("Keep newest")
 }
 
+internal enum class ResultsBulkDeleteDurationKeepMode(val label: String) {
+    Shortest("Keep shortest"),
+    Longest("Keep longest")
+}
+
 internal enum class ResultsBulkDeleteTextTarget(val label: String) {
     FileName("File name"),
     FullPath("Path")
 }
 
-internal data class KeepOneNonMatchBulkDeleteCommandConfig(
+internal enum class ResultsBulkDeleteTextKeepMode(val label: String) {
+    NonMatch("Keep non-match"),
+    Match("Keep match")
+}
+
+internal enum class ResultsBulkDeleteTextKeepCountMode(val label: String) {
+    ExactlyOne("Keep 1"),
+    OneOrMore("Keep 1+"),
+    ExactCount("Keep N")
+}
+
+internal data class KeepByTextBulkDeleteCommandConfig(
+    val keepMode: ResultsBulkDeleteTextKeepMode = ResultsBulkDeleteTextKeepMode.NonMatch,
+    val keepCountMode: ResultsBulkDeleteTextKeepCountMode = ResultsBulkDeleteTextKeepCountMode.ExactlyOne,
+    val keepCount: String = "2",
     val target: ResultsBulkDeleteTextTarget = ResultsBulkDeleteTextTarget.FileName,
     val operator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
     val phrase: String = ""
 )
 
-internal const val BULK_DELETE_PREVIEW_SAMPLE_LIMIT = 50
+internal data class KeepByDurationBulkDeleteCommandConfig(
+    val durationKeepMode: ResultsBulkDeleteDurationKeepMode = ResultsBulkDeleteDurationKeepMode.Shortest,
+    val tieKeepMode: ResultsBulkDeleteModifiedKeepMode = ResultsBulkDeleteModifiedKeepMode.Oldest
+)
 
 internal data class ResultsBulkDeleteCandidate(
     val group: DuplicateGroupEntity,
-    val survivor: FileMetadata,
+    val survivors: List<FileMetadata>,
     val deleteTargets: List<FileMetadata>
 )
 
@@ -103,7 +134,8 @@ internal data class ResultsBulkDeletePreview(
     val filterMatchedGroupCount: Int,
     val candidates: List<ResultsBulkDeleteCandidate>,
     val candidateGroupCount: Int = candidates.size,
-    val candidateFileCount: Int = candidates.sumOf { it.deleteTargets.size }
+    val candidateFileCount: Int = candidates.sumOf { it.deleteTargets.size },
+    val sourceSnapshotId: String = snapshotUpdatedAtMillis.toString()
 )
 
 internal data class ResultsBulkDeletePreviewProgress(
@@ -122,7 +154,8 @@ internal data class ResultsBulkDeleteTouchedGroupKey(
 internal data class ResultsBulkDeleteExecutionOutcome(
     val successCount: Int,
     val failedPaths: Set<String>,
-    val touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey> = emptySet()
+    val touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey> = emptySet(),
+    val touchedSourceIds: Set<Long> = emptySet()
 )
 
 internal data class ResultsBulkDeleteExecutionProgress(
@@ -132,12 +165,199 @@ internal data class ResultsBulkDeleteExecutionProgress(
     val currentPath: String? = null
 )
 
-internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
-    return candidateFileCount
+internal interface BulkDeleteOperations {
+    val totalGroupCount: Int
+    val snapshotAvailable: Boolean
+
+    suspend fun buildKeepByTextPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByTextBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview
+
+    suspend fun buildKeepModifiedPreview(
+        filterDefinition: ResultsFilterDefinition,
+        keepNewest: Boolean,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview
+
+    suspend fun buildKeepDurationPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview
+
+    suspend fun executeKeepByText(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByTextBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome
+
+    suspend fun executeKeepModified(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        keepNewest: Boolean,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome
+
+    suspend fun executeKeepDuration(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome
+
+    suspend fun hasSnapshotChanged(preview: ResultsBulkDeletePreview): Boolean
+
+    suspend fun refreshGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>)
 }
 
-internal fun ResultsBulkDeletePreview.hasCappedCandidates(): Boolean {
-    return candidateGroupCount > candidates.size
+internal class ResultsDbBulkDeleteOperations(
+    private val resultsRepo: ResultsDbRepository,
+    private val sortKey: DuplicateGroupSortKey,
+    private val snapshotUpdatedAtMillis: Long?,
+    override val totalGroupCount: Int,
+    private val durationExtractor: VideoDurationExtractor = AndroidVideoDurationExtractor()
+) : BulkDeleteOperations {
+    override val snapshotAvailable: Boolean
+        get() = snapshotUpdatedAtMillis != null
+
+    override suspend fun buildKeepByTextPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByTextBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview {
+        return buildKeepByTextBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = requireNotNull(snapshotUpdatedAtMillis),
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            config = config,
+            onProgress = onProgress
+        )
+    }
+
+    override suspend fun buildKeepModifiedPreview(
+        filterDefinition: ResultsFilterDefinition,
+        keepNewest: Boolean,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview {
+        return buildKeepModifiedBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = requireNotNull(snapshotUpdatedAtMillis),
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            keepNewest = keepNewest,
+            onProgress = onProgress
+        )
+    }
+
+    override suspend fun buildKeepDurationPreview(
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onProgress: (ResultsBulkDeletePreviewProgress) -> Unit
+    ): ResultsBulkDeletePreview {
+        return buildKeepDurationBulkDeletePreview(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = requireNotNull(snapshotUpdatedAtMillis),
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            config = config,
+            durationExtractor = durationExtractor,
+            onProgress = onProgress
+        )
+    }
+
+    override suspend fun executeKeepByText(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByTextBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome {
+        return executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = preview.snapshotUpdatedAtMillis,
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            onDeleteFile = onDeleteFile,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepByTextBulkDeleteCandidate(group, members, config)
+        }
+    }
+
+    override suspend fun executeKeepModified(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        keepNewest: Boolean,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome {
+        return executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = preview.snapshotUpdatedAtMillis,
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            onDeleteFile = onDeleteFile,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepModifiedBulkDeleteCandidate(group, members, keepNewest)
+        }
+    }
+
+    override suspend fun executeKeepDuration(
+        preview: ResultsBulkDeletePreview,
+        filterDefinition: ResultsFilterDefinition,
+        config: KeepByDurationBulkDeleteCommandConfig,
+        onDeleteFile: suspend (FileMetadata) -> Boolean,
+        onProgress: (ResultsBulkDeleteExecutionProgress) -> Unit
+    ): ResultsBulkDeleteExecutionOutcome {
+        return executeBulkDeleteCommand(
+            resultsRepo = resultsRepo,
+            sortKey = sortKey,
+            snapshotUpdatedAtMillis = preview.snapshotUpdatedAtMillis,
+            totalGroupCount = totalGroupCount,
+            filterDefinition = filterDefinition,
+            totalDeleteTargetCount = preview.candidateFileCount,
+            onDeleteFile = onDeleteFile,
+            onProgress = onProgress
+        ) { group, members ->
+            buildKeepDurationBulkDeleteCandidate(
+                group = group,
+                members = resolveVideoDurations(members, durationExtractor),
+                config = config
+            )
+        }
+    }
+
+    override suspend fun hasSnapshotChanged(preview: ResultsBulkDeletePreview): Boolean {
+        return resultsRepo.hasSnapshotChanged(preview.snapshotUpdatedAtMillis)
+    }
+
+    override suspend fun refreshGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>) {
+        touchedGroups.forEach { group ->
+            resultsRepo.refreshSingleGroup(
+                sizeBytes = group.sizeBytes,
+                hashHex = group.hashHex
+            )
+        }
+    }
+}
+
+internal fun ResultsBulkDeletePreview.deleteTargetCount(): Int {
+    return candidateFileCount
 }
 
 internal fun ResultsBulkDeletePreview.readyMessage(): String {
@@ -210,15 +430,73 @@ internal fun buildKeepModifiedBulkDeleteCandidate(
 
     return ResultsBulkDeleteCandidate(
         group = group,
-        survivor = survivor,
+        survivors = listOf(survivor),
         deleteTargets = deleteTargets
     )
 }
 
-internal fun buildKeepOneNonMatchBulkDeleteCandidate(
+internal fun buildKeepDurationBulkDeleteCandidate(
     group: DuplicateGroupEntity,
     members: List<FileMetadata>,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepByDurationBulkDeleteCommandConfig
+): ResultsBulkDeleteCandidate? {
+    if (members.size <= 1 || members.any { member -> (member.durationMillis ?: -1L) < 0L }) return null
+
+    val targetDuration = when (config.durationKeepMode) {
+        ResultsBulkDeleteDurationKeepMode.Shortest -> members.minOf { member ->
+            requireNotNull(member.durationMillis)
+        }
+        ResultsBulkDeleteDurationKeepMode.Longest -> members.maxOf { member ->
+            requireNotNull(member.durationMillis)
+        }
+    }
+    val tiedMembers = members.filter { member -> member.durationMillis == targetDuration }
+        .sortedWith(
+            compareBy<FileMetadata> { member -> member.lastModifiedMillis }
+                .thenBy { member -> member.normalizedPath }
+        )
+    val survivor = when (config.tieKeepMode) {
+        ResultsBulkDeleteModifiedKeepMode.Oldest -> tiedMembers.first()
+        ResultsBulkDeleteModifiedKeepMode.Newest -> tiedMembers.last()
+    }
+    val deleteTargets = members.filterNot { member ->
+        member.normalizedPath == survivor.normalizedPath
+    }
+    if (deleteTargets.isEmpty()) return null
+
+    return ResultsBulkDeleteCandidate(
+        group = group,
+        survivors = listOf(survivor),
+        deleteTargets = deleteTargets
+    )
+}
+
+internal fun resolveVideoDurations(
+    members: List<FileMetadata>,
+    durationExtractor: VideoDurationExtractor
+): List<FileMetadata> {
+    val shouldContinue = { !Thread.currentThread().isInterrupted }
+    return members.map { member ->
+        val storedDuration = member.durationMillis?.takeIf { value -> value >= 0L }
+        if (storedDuration != null || !shouldContinue()) {
+            member.copy(durationMillis = storedDuration)
+        } else {
+            val file = File(member.path.ifBlank { member.normalizedPath })
+            val resolvedDuration = if (file.exists()) {
+                durationExtractor.durationMillis(file, shouldContinue)
+                    ?.takeIf { value -> value >= 0L }
+            } else {
+                null
+            }
+            member.copy(durationMillis = resolvedDuration)
+        }
+    }
+}
+
+internal fun buildKeepByTextBulkDeleteCandidate(
+    group: DuplicateGroupEntity,
+    members: List<FileMetadata>,
+    config: KeepByTextBulkDeleteCommandConfig
 ): ResultsBulkDeleteCandidate? {
     val phrase = config.phrase.trim()
     if (phrase.isEmpty() || members.isEmpty()) return null
@@ -226,28 +504,52 @@ internal fun buildKeepOneNonMatchBulkDeleteCandidate(
     val matching = mutableListOf<FileMetadata>()
     val nonMatching = mutableListOf<FileMetadata>()
     members.forEach { member ->
-        if (matchesKeepOneNonMatchCommand(member, config)) {
+        if (matchesKeepByTextCommand(member, config)) {
             matching += member
         } else {
             nonMatching += member
         }
     }
-    if (matching.isEmpty() || nonMatching.size != 1) return null
+    val survivorCandidates = when (config.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> nonMatching
+        ResultsBulkDeleteTextKeepMode.Match -> matching
+    }
+    val deleteTargets = when (config.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> matching
+        ResultsBulkDeleteTextKeepMode.Match -> nonMatching
+    }
+    if (!config.matchesKeepCount(survivorCandidates.size) || deleteTargets.isEmpty()) return null
 
     return ResultsBulkDeleteCandidate(
         group = group,
-        survivor = nonMatching.single(),
-        deleteTargets = matching
+        survivors = survivorCandidates,
+        deleteTargets = deleteTargets
     )
 }
 
-internal fun collectKeepOneNonMatchBulkDeleteCandidates(
+internal fun KeepByTextBulkDeleteCommandConfig.hasValidKeepCount(): Boolean {
+    return keepCountMode != ResultsBulkDeleteTextKeepCountMode.ExactCount ||
+        keepCount.trim().toIntOrNull()?.let { value -> value > 0 } == true
+}
+
+private fun KeepByTextBulkDeleteCommandConfig.matchesKeepCount(actualCount: Int): Boolean {
+    return when (keepCountMode) {
+        ResultsBulkDeleteTextKeepCountMode.ExactlyOne -> actualCount == 1
+        ResultsBulkDeleteTextKeepCountMode.OneOrMore -> actualCount >= 1
+        ResultsBulkDeleteTextKeepCountMode.ExactCount -> {
+            val expectedCount = keepCount.trim().toIntOrNull()?.takeIf { value -> value > 0 }
+            actualCount == expectedCount
+        }
+    }
+}
+
+internal fun collectKeepByTextBulkDeleteCandidates(
     groupsWithMembers: List<Pair<DuplicateGroupEntity, List<FileMetadata>>>,
     filterDefinition: ResultsFilterDefinition,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepByTextBulkDeleteCommandConfig
 ): List<ResultsBulkDeleteCandidate> {
     return collectBulkDeleteCandidates(groupsWithMembers, filterDefinition) { group, members ->
-        buildKeepOneNonMatchBulkDeleteCandidate(
+        buildKeepByTextBulkDeleteCandidate(
             group = group,
             members = members,
             config = config
@@ -283,13 +585,13 @@ private fun collectBulkDeleteCandidates(
     }
 }
 
-internal suspend fun buildKeepOneNonMatchBulkDeletePreview(
+internal suspend fun buildKeepByTextBulkDeletePreview(
     resultsRepo: ResultsDbRepository,
     sortKey: DuplicateGroupSortKey,
     snapshotUpdatedAtMillis: Long,
     totalGroupCount: Int,
     filterDefinition: ResultsFilterDefinition,
-    config: KeepOneNonMatchBulkDeleteCommandConfig,
+    config: KeepByTextBulkDeleteCommandConfig,
     sourcePageSize: Int = 100,
     onProgress: (ResultsBulkDeletePreviewProgress) -> Unit = {}
 ): ResultsBulkDeletePreview {
@@ -302,7 +604,7 @@ internal suspend fun buildKeepOneNonMatchBulkDeletePreview(
         sourcePageSize = sourcePageSize,
         onProgress = onProgress
     ) { group, members ->
-        buildKeepOneNonMatchBulkDeleteCandidate(
+        buildKeepByTextBulkDeleteCandidate(
             group = group,
             members = members,
             config = config
@@ -333,6 +635,34 @@ internal suspend fun buildKeepModifiedBulkDeletePreview(
             group = group,
             members = members,
             keepNewest = keepNewest
+        )
+    }
+}
+
+internal suspend fun buildKeepDurationBulkDeletePreview(
+    resultsRepo: ResultsDbRepository,
+    sortKey: DuplicateGroupSortKey,
+    snapshotUpdatedAtMillis: Long,
+    totalGroupCount: Int,
+    filterDefinition: ResultsFilterDefinition,
+    config: KeepByDurationBulkDeleteCommandConfig,
+    durationExtractor: VideoDurationExtractor,
+    sourcePageSize: Int = 100,
+    onProgress: (ResultsBulkDeletePreviewProgress) -> Unit = {}
+): ResultsBulkDeletePreview {
+    return buildBulkDeletePreview(
+        resultsRepo = resultsRepo,
+        sortKey = sortKey,
+        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
+        totalGroupCount = totalGroupCount,
+        filterDefinition = filterDefinition,
+        sourcePageSize = sourcePageSize,
+        onProgress = onProgress
+    ) { group, members ->
+        buildKeepDurationBulkDeleteCandidate(
+            group = group,
+            members = resolveVideoDurations(members, durationExtractor),
+            config = config
         )
     }
 }
@@ -387,19 +717,18 @@ private suspend fun buildBulkDeletePreview(
                 )
             }
             if (matchesFilter) {
-                val members = withContext(Dispatchers.IO) {
-                    resultsRepo.listAllGroupMembers(
+                val candidate = withContext(Dispatchers.IO) {
+                    val members = resultsRepo.listAllGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex
                     )
+                    buildCandidate(group, members)
                 }
                 filterMatchedGroupCount += 1
-                buildCandidate(group, members)?.let { candidate ->
+                candidate?.let { matchedCandidate ->
                     candidateGroupCount += 1
-                    candidateFileCount += candidate.deleteTargets.size
-                    if (candidates.size < BULK_DELETE_PREVIEW_SAMPLE_LIMIT) {
-                        candidates += candidate
-                    }
+                    candidateFileCount += matchedCandidate.deleteTargets.size
+                    candidates += matchedCandidate
                 }
             }
         }
@@ -483,18 +812,19 @@ internal suspend fun executeBulkDeleteCommand(
                 )
             }
             if (matchesFilter) {
-                val members = withContext(Dispatchers.IO) {
-                    resultsRepo.listAllGroupMembers(
+                val candidate = withContext(Dispatchers.IO) {
+                    val members = resultsRepo.listAllGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex
                     )
+                    buildCandidate(group, members)
                 }
-                buildCandidate(group, members)?.let { candidate ->
+                candidate?.let { matchedCandidate ->
                     touchedGroups += ResultsBulkDeleteTouchedGroupKey(
-                        sizeBytes = candidate.group.sizeBytes,
-                        hashHex = candidate.group.hashHex
+                        sizeBytes = matchedCandidate.group.sizeBytes,
+                        hashHex = matchedCandidate.group.hashHex
                     )
-                    candidate.deleteTargets.forEach { file ->
+                    matchedCandidate.deleteTargets.forEach { file ->
                         val deleted = runCatching { onDeleteFile(file) }.getOrDefault(false)
                         processed += 1
                         if (deleted) {
@@ -678,7 +1008,9 @@ internal fun ResultsBulkDeleteCatalogScreen(
         Box {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(Spacing.screenPadding),
+                modifier = Modifier
+                    .testTag("bulk-delete-catalog-list")
+                    .padding(Spacing.screenPadding),
                 contentPadding = PaddingValues(
                     end = ScrollbarDefaults.ThumbWidth + 8.dp,
                     bottom = 24.dp
@@ -755,11 +1087,8 @@ internal fun ResultsBulkDeleteCatalogScreen(
 }
 
 @Composable
-internal fun KeepOneNonMatchBulkDeleteScreen(
-    resultsRepo: ResultsDbRepository,
-    sortKey: DuplicateGroupSortKey,
-    snapshotUpdatedAtMillis: Long?,
-    totalGroupCount: Int,
+internal fun KeepByTextBulkDeleteScreen(
+    operations: BulkDeleteOperations,
     appliedFilter: ResultsFilterDefinition,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
@@ -770,11 +1099,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
-    onResultsChanged: () -> Unit
+    onResultsChanged: (ResultsBulkDeleteExecutionOutcome) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    val config = remember { mutableStateOf(KeepOneNonMatchBulkDeleteCommandConfig()) }
+    val totalGroupCount = operations.totalGroupCount
+    val config = remember { mutableStateOf(KeepByTextBulkDeleteCommandConfig()) }
     val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
     val progress = remember {
         mutableStateOf(
@@ -786,28 +1116,42 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
     val confirmExecute = remember { mutableStateOf(false) }
     val message = remember { mutableStateOf<String?>(null) }
 
-    fun updateConfig(updated: KeepOneNonMatchBulkDeleteCommandConfig) {
+    fun updateConfig(updated: KeepByTextBulkDeleteCommandConfig) {
         config.value = updated
         preview.value = null
         progress.value = ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
         message.value = null
     }
 
-    fun refreshTouchedGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>) {
-        touchedGroups.forEach { group ->
-            resultsRepo.refreshSingleGroup(
-                sizeBytes = group.sizeBytes,
-                hashHex = group.hashHex
-            )
-        }
-    }
-
     val currentPreview = preview.value
     val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
+    val deletedPartitionLabel = when (config.value.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> "matching"
+        ResultsBulkDeleteTextKeepMode.Match -> "non-matching"
+    }
+    val keptPartitionLabel = when (config.value.keepMode) {
+        ResultsBulkDeleteTextKeepMode.NonMatch -> "non-matching"
+        ResultsBulkDeleteTextKeepMode.Match -> "matching"
+    }
+    val keepRequirementDescription = when (config.value.keepCountMode) {
+        ResultsBulkDeleteTextKeepCountMode.ExactlyOne ->
+            "The group must contain exactly 1 $keptPartitionLabel file to keep."
+        ResultsBulkDeleteTextKeepCountMode.OneOrMore ->
+            "The group must contain at least 1 $keptPartitionLabel file to keep."
+        ResultsBulkDeleteTextKeepCountMode.ExactCount -> {
+            val count = config.value.keepCount.trim().toIntOrNull()?.takeIf { value -> value > 0 }
+            if (count == null) {
+                "Enter a positive number of $keptPartitionLabel files to keep."
+            } else {
+                "The group must contain exactly $count $keptPartitionLabel files to keep."
+            }
+        }
+    }
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
         config.value.phrase.trim().isNotEmpty() &&
-        snapshotUpdatedAtMillis != null &&
+        config.value.hasValidKeepCount() &&
+        operations.snapshotAvailable &&
         totalGroupCount > 0
     val canExecute = !isPreviewLoading.value &&
         !isExecuting.value &&
@@ -822,7 +1166,9 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
         Box {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(Spacing.screenPadding),
+                modifier = Modifier
+                    .testTag("bulk-delete-keep-text-list")
+                    .padding(Spacing.screenPadding),
                 contentPadding = PaddingValues(
                     end = ScrollbarDefaults.ThumbWidth + 8.dp,
                     bottom = 24.dp
@@ -830,11 +1176,11 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    AppTopBar(title = "Delete matches, keep 1 non-match", onBack = onBack)
+                    AppTopBar(title = "Keep by text match", onBack = onBack)
                 }
                 item {
                     Text(
-                        text = "Scan the current DB snapshot, keep the one file that does not match your rule, and delete the matching files from eligible duplicate groups.",
+                        text = "Choose which side of the text rule to keep, require one, one or more, or an exact file count, and delete the opposite side from eligible groups.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -870,8 +1216,45 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text("Command rule", style = MaterialTheme.typography.titleMedium)
+                            Text("Match result to keep")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteTextKeepMode.entries,
+                                selected = config.value.keepMode,
+                                label = { it.label },
+                                onSelect = { keepMode ->
+                                    updateConfig(config.value.copy(keepMode = keepMode))
+                                }
+                            )
+                            Text("Number to keep")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteTextKeepCountMode.entries,
+                                selected = config.value.keepCountMode,
+                                label = { it.label },
+                                onSelect = { keepCountMode ->
+                                    updateConfig(config.value.copy(keepCountMode = keepCountMode))
+                                }
+                            )
+                            if (config.value.keepCountMode == ResultsBulkDeleteTextKeepCountMode.ExactCount) {
+                                OutlinedTextField(
+                                    value = config.value.keepCount,
+                                    onValueChange = { keepCount ->
+                                        updateConfig(
+                                            config.value.copy(
+                                                keepCount = keepCount.filter(Char::isDigit)
+                                            )
+                                        )
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("bulk-delete-text-keep-count"),
+                                    label = { Text("Exact file count") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    isError = !config.value.hasValidKeepCount()
+                                )
+                            }
                             Text(
-                                text = "Matching files are deleted only when exactly one non-matching file remains in the group.",
+                                text = "$keepRequirementDescription All $deletedPartitionLabel files are deleted.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -898,7 +1281,9 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 onValueChange = { phrase ->
                                     updateConfig(config.value.copy(phrase = phrase))
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("bulk-delete-text-phrase"),
                                 label = { Text("Text") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(
@@ -908,10 +1293,10 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                         }
                     }
                 }
-                if (snapshotUpdatedAtMillis == null || totalGroupCount <= 0) {
+                if (!operations.snapshotAvailable || totalGroupCount <= 0) {
                     item {
                         Text(
-                            text = "No duplicate-group snapshot is available yet.",
+                            text = "No result-group snapshot is available yet.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -920,7 +1305,6 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
-                                val snapshot = snapshotUpdatedAtMillis ?: return@Button
                                 message.value = null
                                 preview.value = null
                                 isPreviewLoading.value = true
@@ -929,11 +1313,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 )
                                 scope.launch {
                                     try {
-                                        val builtPreview = buildKeepOneNonMatchBulkDeletePreview(
-                                            resultsRepo = resultsRepo,
-                                            sortKey = sortKey,
-                                            snapshotUpdatedAtMillis = snapshot,
-                                            totalGroupCount = totalGroupCount,
+                                        val builtPreview = operations.buildKeepByTextPreview(
                                             filterDefinition = appliedFilter,
                                             config = config.value,
                                             onProgress = { updated ->
@@ -1029,13 +1409,12 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                 onClick = { confirmExecute.value = true },
                                 enabled = canExecute
                             ) {
-                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
-                            }
-                            if (builtPreview.hasCappedCandidates()) {
                                 Text(
-                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    if (isExecuting.value) {
+                                        "Deleting..."
+                                    } else {
+                                        "Delete $deletedPartitionLabel files"
+                                    }
                                 )
                             }
                         }
@@ -1071,7 +1450,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount $deletedPartitionLabel files will be deleted."
                 )
             },
             confirmButton = {
@@ -1086,29 +1465,19 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                             taskCoordinator = taskCoordinator,
                             notificationController = notificationController,
                             executeDelete = { executionProgress ->
-                                executeBulkDeleteCommand(
-                                    resultsRepo = resultsRepo,
-                                    sortKey = sortKey,
-                                    snapshotUpdatedAtMillis = currentPreview.snapshotUpdatedAtMillis,
-                                    totalGroupCount = totalGroupCount,
+                                operations.executeKeepByText(
+                                    preview = currentPreview,
                                     filterDefinition = appliedFilter,
-                                    sourcePageSize = 100,
-                                    totalDeleteTargetCount = currentPreview.candidateFileCount,
+                                    config = config.value,
                                     onDeleteFile = handler,
                                     onProgress = executionProgress
-                                ) { group, members ->
-                                    buildKeepOneNonMatchBulkDeleteCandidate(
-                                        group = group,
-                                        members = members,
-                                        config = config.value
-                                    )
-                                }
+                                )
                             },
                             onSnapshotChanged = {
-                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                                operations.hasSnapshotChanged(currentPreview)
                             },
                             onRefreshGroups = { touchedGroups ->
-                                refreshTouchedGroups(touchedGroups)
+                                operations.refreshGroups(touchedGroups)
                             },
                             onSuccess = { outcome ->
                                 preview.value = null
@@ -1116,7 +1485,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
                                 message.value = outcome.message()
-                                onResultsChanged()
+                                onResultsChanged(outcome)
                             },
                             onSnapshotStale = {
                                 preview.value = null
@@ -1152,10 +1521,7 @@ internal fun KeepOneNonMatchBulkDeleteScreen(
 
 @Composable
 internal fun KeepByModifiedBulkDeleteScreen(
-    resultsRepo: ResultsDbRepository,
-    sortKey: DuplicateGroupSortKey,
-    snapshotUpdatedAtMillis: Long?,
-    totalGroupCount: Int,
+    operations: BulkDeleteOperations,
     appliedFilter: ResultsFilterDefinition,
     imageLoader: ImageLoader,
     keepLoadedThumbnailsInMemory: Boolean,
@@ -1166,10 +1532,11 @@ internal fun KeepByModifiedBulkDeleteScreen(
     notificationController: TaskNotificationController,
     onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
     onBack: () -> Unit,
-    onResultsChanged: () -> Unit
+    onResultsChanged: (ResultsBulkDeleteExecutionOutcome) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val totalGroupCount = operations.totalGroupCount
     val keepMode = remember { mutableStateOf(ResultsBulkDeleteModifiedKeepMode.Oldest) }
     val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
     val progress = remember {
@@ -1189,20 +1556,11 @@ internal fun KeepByModifiedBulkDeleteScreen(
         message.value = null
     }
 
-    fun refreshTouchedGroups(touchedGroups: Set<ResultsBulkDeleteTouchedGroupKey>) {
-        touchedGroups.forEach { group ->
-            resultsRepo.refreshSingleGroup(
-                sizeBytes = group.sizeBytes,
-                hashHex = group.hashHex
-            )
-        }
-    }
-
     val currentPreview = preview.value
     val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
     val canBuildPreview = !isPreviewLoading.value &&
         !isExecuting.value &&
-        snapshotUpdatedAtMillis != null &&
+        operations.snapshotAvailable &&
         totalGroupCount > 0
     val canExecute = !isPreviewLoading.value &&
         !isExecuting.value &&
@@ -1217,7 +1575,9 @@ internal fun KeepByModifiedBulkDeleteScreen(
         Box {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(Spacing.screenPadding),
+                modifier = Modifier
+                    .testTag("bulk-delete-keep-modified-list")
+                    .padding(Spacing.screenPadding),
                 contentPadding = PaddingValues(
                     end = ScrollbarDefaults.ThumbWidth + 8.dp,
                     bottom = 24.dp
@@ -1229,7 +1589,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                 }
                 item {
                     Text(
-                        text = "Scan the current DB snapshot, keep either the oldest file or the newest file in each eligible duplicate group, and delete the rest.",
+                        text = "Scan the current results snapshot, keep either the oldest file or the newest file in each eligible result group, and delete the rest.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -1286,10 +1646,10 @@ internal fun KeepByModifiedBulkDeleteScreen(
                         }
                     }
                 }
-                if (snapshotUpdatedAtMillis == null || totalGroupCount <= 0) {
+                if (!operations.snapshotAvailable || totalGroupCount <= 0) {
                     item {
                         Text(
-                            text = "No duplicate-group snapshot is available yet.",
+                            text = "No result-group snapshot is available yet.",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -1298,7 +1658,6 @@ internal fun KeepByModifiedBulkDeleteScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
-                                val snapshot = snapshotUpdatedAtMillis ?: return@Button
                                 message.value = null
                                 preview.value = null
                                 isPreviewLoading.value = true
@@ -1307,11 +1666,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                 )
                                 scope.launch {
                                     try {
-                                        val builtPreview = buildKeepModifiedBulkDeletePreview(
-                                            resultsRepo = resultsRepo,
-                                            sortKey = sortKey,
-                                            snapshotUpdatedAtMillis = snapshot,
-                                            totalGroupCount = totalGroupCount,
+                                        val builtPreview = operations.buildKeepModifiedPreview(
                                             filterDefinition = appliedFilter,
                                             keepNewest = keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest,
                                             onProgress = { updated ->
@@ -1409,13 +1764,6 @@ internal fun KeepByModifiedBulkDeleteScreen(
                             ) {
                                 Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
                             }
-                            if (builtPreview.hasCappedCandidates()) {
-                                Text(
-                                    text = "Only the first ${BULK_DELETE_PREVIEW_SAMPLE_LIMIT} candidate groups are shown. Execution will rescan and delete all matching files.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
@@ -1449,7 +1797,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
             title = { Text("Run bulk delete?") },
             text = {
                 Text(
-                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted. The list shows only a preview sample."
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
                 )
             },
             confirmButton = {
@@ -1464,29 +1812,19 @@ internal fun KeepByModifiedBulkDeleteScreen(
                             taskCoordinator = taskCoordinator,
                             notificationController = notificationController,
                             executeDelete = { executionProgress ->
-                                executeBulkDeleteCommand(
-                                    resultsRepo = resultsRepo,
-                                    sortKey = sortKey,
-                                    snapshotUpdatedAtMillis = currentPreview.snapshotUpdatedAtMillis,
-                                    totalGroupCount = totalGroupCount,
+                                operations.executeKeepModified(
+                                    preview = currentPreview,
                                     filterDefinition = appliedFilter,
-                                    sourcePageSize = 100,
-                                    totalDeleteTargetCount = currentPreview.candidateFileCount,
+                                    keepNewest = keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest,
                                     onDeleteFile = handler,
                                     onProgress = executionProgress
-                                ) { group, members ->
-                                    buildKeepModifiedBulkDeleteCandidate(
-                                        group = group,
-                                        members = members,
-                                        keepNewest = keepMode.value == ResultsBulkDeleteModifiedKeepMode.Newest
-                                    )
-                                }
+                                )
                             },
                             onSnapshotChanged = {
-                                resultsRepo.hasSnapshotChanged(currentPreview.snapshotUpdatedAtMillis)
+                                operations.hasSnapshotChanged(currentPreview)
                             },
                             onRefreshGroups = { touchedGroups ->
-                                refreshTouchedGroups(touchedGroups)
+                                operations.refreshGroups(touchedGroups)
                             },
                             onSuccess = { outcome ->
                                 preview.value = null
@@ -1494,7 +1832,7 @@ internal fun KeepByModifiedBulkDeleteScreen(
                                     totalGroupCount = totalGroupCount.coerceAtLeast(0)
                                 )
                                 message.value = outcome.message()
-                                onResultsChanged()
+                                onResultsChanged(outcome)
                             },
                             onSnapshotStale = {
                                 preview.value = null
@@ -1529,6 +1867,397 @@ internal fun KeepByModifiedBulkDeleteScreen(
 }
 
 @Composable
+internal fun KeepByDurationBulkDeleteScreen(
+    operations: BulkDeleteOperations,
+    appliedFilter: ResultsFilterDefinition,
+    imageLoader: ImageLoader,
+    keepLoadedThumbnailsInMemory: Boolean,
+    thumbnailSizeScale: Float,
+    rememberedPreviewCache: MutableMap<String, ImageBitmap>,
+    taskScope: CoroutineScope,
+    taskCoordinator: TaskCoordinator,
+    notificationController: TaskNotificationController,
+    onDeleteFile: (suspend (FileMetadata) -> Boolean)?,
+    onBack: () -> Unit,
+    onResultsChanged: (ResultsBulkDeleteExecutionOutcome) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val totalGroupCount = operations.totalGroupCount
+    val config = remember { mutableStateOf(KeepByDurationBulkDeleteCommandConfig()) }
+    val preview = remember { mutableStateOf<ResultsBulkDeletePreview?>(null) }
+    val progress = remember {
+        mutableStateOf(
+            ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
+        )
+    }
+    val isPreviewLoading = remember { mutableStateOf(false) }
+    val isExecuting = remember { mutableStateOf(false) }
+    val confirmExecute = remember { mutableStateOf(false) }
+    val message = remember { mutableStateOf<String?>(null) }
+
+    fun updateConfig(updated: KeepByDurationBulkDeleteCommandConfig) {
+        config.value = updated
+        preview.value = null
+        progress.value = ResultsBulkDeletePreviewProgress(totalGroupCount = totalGroupCount.coerceAtLeast(0))
+        message.value = null
+    }
+
+    val currentPreview = preview.value
+    val previewDeleteCount = currentPreview?.deleteTargetCount() ?: 0
+    val canBuildPreview = !isPreviewLoading.value &&
+        !isExecuting.value &&
+        operations.snapshotAvailable &&
+        totalGroupCount > 0
+    val canExecute = !isPreviewLoading.value &&
+        !isExecuting.value &&
+        onDeleteFile != null &&
+        currentPreview != null &&
+        currentPreview.candidateFileCount > 0
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .testTag("bulk-delete-keep-duration-list")
+                    .padding(Spacing.screenPadding),
+                contentPadding = PaddingValues(
+                    end = ScrollbarDefaults.ThumbWidth + 8.dp,
+                    bottom = 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    AppTopBar(title = "Keep by video duration", onBack = onBack)
+                }
+                item {
+                    Text(
+                        text = "Scan the current results snapshot, keep the shortest or longest video in each eligible group, and delete the rest.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                if (appliedFilter.hasActiveRules()) {
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Current filter applies", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = summarizeResultsFilter(appliedFilter),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "Groups outside the active result filter are excluded from preview and execution.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Command rule", style = MaterialTheme.typography.titleMedium)
+                            Text("Duration to keep")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteDurationKeepMode.entries,
+                                selected = config.value.durationKeepMode,
+                                label = { mode -> mode.label },
+                                onSelect = { mode ->
+                                    updateConfig(config.value.copy(durationKeepMode = mode))
+                                }
+                            )
+                            Text("Equal-duration fallback")
+                            OptionButtonGrid(
+                                options = ResultsBulkDeleteModifiedKeepMode.entries,
+                                selected = config.value.tieKeepMode,
+                                label = { mode -> mode.label },
+                                onSelect = { mode ->
+                                    updateConfig(config.value.copy(tieKeepMode = mode))
+                                }
+                            )
+                            Text(
+                                text = durationBulkDeleteRuleSummary(config.value),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "A group is skipped unless every member has a readable video duration.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                if (!operations.snapshotAvailable || totalGroupCount <= 0) {
+                    item {
+                        Text(
+                            text = "No result-group snapshot is available yet.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                message.value = null
+                                preview.value = null
+                                isPreviewLoading.value = true
+                                progress.value = ResultsBulkDeletePreviewProgress(
+                                    totalGroupCount = totalGroupCount.coerceAtLeast(0)
+                                )
+                                scope.launch {
+                                    try {
+                                        val builtPreview = operations.buildKeepDurationPreview(
+                                            filterDefinition = appliedFilter,
+                                            config = config.value,
+                                            onProgress = { updated ->
+                                                progress.value = updated
+                                            }
+                                        )
+                                        preview.value = builtPreview
+                                        message.value = builtPreview.readyMessage()
+                                    } catch (_: Exception) {
+                                        message.value = "Failed to build the bulk delete preview."
+                                    } finally {
+                                        isPreviewLoading.value = false
+                                    }
+                                }
+                            },
+                            enabled = canBuildPreview
+                        ) {
+                            Text(if (isPreviewLoading.value) "Building preview..." else "Build preview")
+                        }
+                        OutlinedButton(onClick = onBack, enabled = !isExecuting.value) {
+                            Text("Back")
+                        }
+                    }
+                }
+                if (isPreviewLoading.value) {
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Scanning", style = MaterialTheme.typography.titleMedium)
+                                progress.value.progressLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                currentPreview?.let { builtPreview ->
+                    item {
+                        Card {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Preview summary", style = MaterialTheme.typography.titleMedium)
+                                builtPreview.progressSummaryLines().forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                message.value?.let { currentMessage ->
+                    item {
+                        Text(
+                            text = currentMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                currentPreview?.let { builtPreview ->
+                    if (builtPreview.candidates.isNotEmpty()) {
+                        item {
+                            Text("Preview list", style = MaterialTheme.typography.titleMedium)
+                        }
+                        items(
+                            items = builtPreview.candidates,
+                            key = { candidate -> "${candidate.group.sizeBytes}:${candidate.group.hashHex}" }
+                        ) { candidate ->
+                            ResultsBulkDeleteCandidateCard(
+                                candidate = candidate,
+                                imageLoader = imageLoader,
+                                keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                                thumbnailSizeScale = thumbnailSizeScale,
+                                rememberedPreviewCache = rememberedPreviewCache
+                            )
+                        }
+                        item {
+                            Button(
+                                onClick = { confirmExecute.value = true },
+                                enabled = canExecute
+                            ) {
+                                Text(if (isExecuting.value) "Deleting..." else "Delete matching files")
+                            }
+                        }
+                    }
+                }
+                if (onDeleteFile == null) {
+                    item {
+                        Text(
+                            text = "Delete action is unavailable in this session.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+            VerticalLazyScrollbar(
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+            )
+        }
+    }
+
+    if (confirmExecute.value && currentPreview != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isExecuting.value) {
+                    confirmExecute.value = false
+                }
+            },
+            title = { Text("Run bulk delete?") },
+            text = {
+                Text(
+                    "${currentPreview.candidateGroupCount} groups and $previewDeleteCount matching files will be deleted."
+                )
+            },
+            confirmButton = {
+                OutlinedButton(
+                    onClick = {
+                        val handler = onDeleteFile ?: return@OutlinedButton
+                        isExecuting.value = true
+                        message.value = null
+                        startBulkDeleteTask(
+                            preview = currentPreview,
+                            scope = taskScope,
+                            taskCoordinator = taskCoordinator,
+                            notificationController = notificationController,
+                            executeDelete = { executionProgress ->
+                                operations.executeKeepDuration(
+                                    preview = currentPreview,
+                                    filterDefinition = appliedFilter,
+                                    config = config.value,
+                                    onDeleteFile = handler,
+                                    onProgress = executionProgress
+                                )
+                            },
+                            onSnapshotChanged = {
+                                operations.hasSnapshotChanged(currentPreview)
+                            },
+                            onRefreshGroups = { touchedGroups ->
+                                operations.refreshGroups(touchedGroups)
+                            },
+                            onSuccess = { outcome ->
+                                preview.value = null
+                                progress.value = ResultsBulkDeletePreviewProgress(
+                                    totalGroupCount = totalGroupCount.coerceAtLeast(0)
+                                )
+                                message.value = outcome.message()
+                                onResultsChanged(outcome)
+                            },
+                            onSnapshotStale = {
+                                preview.value = null
+                                message.value = "The results snapshot changed. Build the preview again."
+                            },
+                            onFailure = {
+                                message.value = "Bulk delete failed."
+                            },
+                            onFinished = {
+                                isExecuting.value = false
+                                confirmExecute.value = false
+                            }
+                        )
+                    },
+                    enabled = !isExecuting.value
+                ) {
+                    Text(if (isExecuting.value) "Deleting..." else "Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { confirmExecute.value = false },
+                    enabled = !isExecuting.value
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    BackHandler(onBack = onBack)
+}
+
+internal fun durationBulkDeleteRuleSummary(
+    config: KeepByDurationBulkDeleteCommandConfig
+): String {
+    val duration = when (config.durationKeepMode) {
+        ResultsBulkDeleteDurationKeepMode.Shortest -> "shortest-duration"
+        ResultsBulkDeleteDurationKeepMode.Longest -> "longest-duration"
+    }
+    val modified = when (config.tieKeepMode) {
+        ResultsBulkDeleteModifiedKeepMode.Oldest -> "oldest modified"
+        ResultsBulkDeleteModifiedKeepMode.Newest -> "newest modified"
+    }
+    return "The $duration video survives. Equal durations keep the $modified file."
+}
+
+internal fun bulkDeleteCandidateFileLine(
+    action: String,
+    file: FileMetadata
+): String {
+    val duration = file.durationMillis?.coerceAtLeast(0L)?.let { value ->
+        val seconds = value / 1_000L
+        val millis = value % 1_000L
+        if (millis == 0L) {
+            "${seconds}s"
+        } else {
+            "$seconds.${millis.toString().padStart(3, '0')}s"
+        }
+    }
+    return if (duration == null) {
+        "$action: ${file.normalizedPath}"
+    } else {
+        "$action: $duration | ${file.normalizedPath}"
+    }
+}
+
+@Composable
 private fun ResultsBulkDeleteCandidateCard(
     candidate: ResultsBulkDeleteCandidate,
     imageLoader: ImageLoader,
@@ -1538,9 +2267,7 @@ private fun ResultsBulkDeleteCandidateCard(
 ) {
     val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
     val thumbnailSizeDp = 72.dp * normalizedThumbnailScale
-    val previewFiles = remember(candidate.group.sizeBytes, candidate.group.hashHex) {
-        listOf(candidate.survivor) + candidate.deleteTargets
-    }
+    val previewFiles = candidate.survivors + candidate.deleteTargets
     val previewCandidates = remember(previewFiles) {
         mediaPreviewCandidates(
             files = previewFiles,
@@ -1580,13 +2307,15 @@ private fun ResultsBulkDeleteCandidateCard(
                     text = "${candidate.group.fileCount} files · Total ${formatBytes(candidate.group.totalBytes)}",
                     style = MaterialTheme.typography.titleMedium
                 )
-                Text(
-                    text = "Keep: ${candidate.survivor.normalizedPath}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                candidate.survivors.forEach { survivor ->
+                    Text(
+                        text = bulkDeleteCandidateFileLine("Keep", survivor),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
                 candidate.deleteTargets.forEach { target ->
                     Text(
-                        text = "Delete: ${target.normalizedPath}",
+                        text = bulkDeleteCandidateFileLine("Delete", target),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -1598,9 +2327,9 @@ private fun ResultsBulkDeleteCandidateCard(
     }
 }
 
-private fun matchesKeepOneNonMatchCommand(
+private fun matchesKeepByTextCommand(
     file: FileMetadata,
-    config: KeepOneNonMatchBulkDeleteCommandConfig
+    config: KeepByTextBulkDeleteCommandConfig
 ): Boolean {
     val source = when (config.target) {
         ResultsBulkDeleteTextTarget.FileName -> fileNameFromPath(file.normalizedPath)

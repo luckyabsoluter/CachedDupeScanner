@@ -132,6 +132,10 @@ fun ResultsScreenDb(
     val bulkDeleteCatalogOpen = remember { mutableStateOf(false) }
     val bulkDeleteCommand = remember { mutableStateOf<ResultsBulkDeleteCommandType?>(null) }
     val settingsSnapshot = remember { settingsStore.load() }
+    val filterClusterExpansionState = rememberFilterClusterExpansionState(
+        initialCollapsedClusterIds = settingsSnapshot.resultsFilterCollapsedClusterIds,
+        onCollapsedClusterIdsChange = settingsStore::setResultsFilterCollapsedClusterIds
+    )
     val showFullPaths = remember { mutableStateOf(settingsSnapshot.showFullPaths) }
     val initialFilterDefinition = remember(settingsSnapshot.resultsFilterDefinitionJson) {
         resultsFilterDefinitionFromJson(settingsSnapshot.resultsFilterDefinitionJson)
@@ -957,7 +961,8 @@ fun ResultsScreenDb(
                 )
                 filterDialogOpen.value = false
                 refresh(reset = true, rebuild = false)
-            }
+            },
+            clusterExpansionState = filterClusterExpansionState
         )
     }
 
@@ -975,12 +980,14 @@ fun ResultsScreenDb(
 
     bulkDeleteCommand.value?.let { command ->
         when (command) {
-            ResultsBulkDeleteCommandType.KeepOneNonMatch -> {
-                KeepOneNonMatchBulkDeleteScreen(
-                    resultsRepo = resultsRepo,
-                    sortKey = mapSort(sortKey.value, sortDirection.value),
-                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
-                    totalGroupCount = totalGroupCount.value,
+            ResultsBulkDeleteCommandType.KeepByText -> {
+                KeepByTextBulkDeleteScreen(
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
@@ -993,7 +1000,7 @@ fun ResultsScreenDb(
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
-                    onResultsChanged = {
+                    onResultsChanged = { _ ->
                         refresh(reset = true, rebuild = false)
                     }
                 )
@@ -1001,10 +1008,12 @@ fun ResultsScreenDb(
 
             ResultsBulkDeleteCommandType.KeepByModified -> {
                 KeepByModifiedBulkDeleteScreen(
-                    resultsRepo = resultsRepo,
-                    sortKey = mapSort(sortKey.value, sortDirection.value),
-                    snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
-                    totalGroupCount = totalGroupCount.value,
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
                     appliedFilter = appliedFilter.value,
                     imageLoader = imageLoader,
                     keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
@@ -1017,7 +1026,33 @@ fun ResultsScreenDb(
                     onBack = {
                         bulkDeleteCommand.value = null
                     },
-                    onResultsChanged = {
+                    onResultsChanged = { _ ->
+                        refresh(reset = true, rebuild = false)
+                    }
+                )
+            }
+
+            ResultsBulkDeleteCommandType.KeepByDuration -> {
+                KeepByDurationBulkDeleteScreen(
+                    operations = ResultsDbBulkDeleteOperations(
+                        resultsRepo = resultsRepo,
+                        sortKey = mapSort(sortKey.value, sortDirection.value),
+                        snapshotUpdatedAtMillis = snapshotUpdatedAtMillis.value,
+                        totalGroupCount = totalGroupCount.value
+                    ),
+                    appliedFilter = appliedFilter.value,
+                    imageLoader = imageLoader,
+                    keepLoadedThumbnailsInMemory = keepLoadedThumbnailsInMemory,
+                    thumbnailSizeScale = thumbnailSizeScale,
+                    rememberedPreviewCache = rememberedPreviewCache,
+                    taskScope = taskScope,
+                    taskCoordinator = taskCoordinator,
+                    notificationController = notificationController,
+                    onDeleteFile = onBulkDeleteFile,
+                    onBack = {
+                        bulkDeleteCommand.value = null
+                    },
+                    onResultsChanged = { _ ->
                         refresh(reset = true, rebuild = false)
                     }
                 )

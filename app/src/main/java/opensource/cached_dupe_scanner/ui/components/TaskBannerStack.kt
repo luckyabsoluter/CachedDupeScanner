@@ -273,8 +273,10 @@ private fun List<TaskSnapshot>.toCollapsedBubbleSegments(
         val progress = when {
             task == null -> 1f
             task.bubbleIndeterminate -> 0f
-            (task.bubbleTotal ?: 0) <= 0 -> 0f
-            else -> ((task.bubbleProcessed ?: 0).toFloat() / task.bubbleTotal!!.toFloat()).coerceIn(0f, 1f)
+            else -> boundedProgressFraction(
+                processed = task.bubbleProcessed,
+                total = task.bubbleTotal
+            )
         }
         CollapsedBubbleSegment(area = area, progress = progress)
     }

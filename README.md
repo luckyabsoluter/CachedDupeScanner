@@ -21,28 +21,29 @@ CachedDupeScanner is an **Android-first** duplicate file scanner. It scans very 
 
 - **Incremental scans**: unchanged files are not re-hashed; cache is reused.
 - **Deferred hashing**: SHA-256 is computed only when size collisions exist.
-- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite).
+- **Persistent cache**: metadata stored in scan-cache.db (Room/SQLite), with stable numeric file identities, indexed 32-byte SHA-256 storage shared by derived data, and user-approved blocking upgrades before the app opens its data screens.
 - **Target management**: save multiple scan targets; run per-target or batch scans.
 - **Duplicate grouping**: database-backed result browsing with infinite scrolling for large datasets.
 - **Trash flow**: move to .CachedDupeScanner/trashbin with restore/permanent delete. default exclusion avoids re-scanning the bin.
 - **Manage duplicates**: group-detail views with multi-select, select-all, and specific delete tracking.
 - **Scan reports**: timings, phase durations, hash candidate counts.
 - **Export**: JSON/CSV utilities for results.
-- **System-wide task monitoring**: floating banners and draggable bubble UI to track long-running operations (scans, DB, trash) across screens.
+- **System-wide task monitoring**: floating banners, notifications, and a draggable bubble UI track long-running operations across screens, with live processing speed, elapsed time, and estimated remaining time.
 - **Background reliability**: Uses partial WakeLocks to ensure tasks run smoothly without interruption.
-- **Performance controls**: optional memory usage overlay, shared RAM thumbnail retention, and configurable thumbnail/timeline preview sizing for heavy workloads.
+- **Performance controls**: separate configurable 1-32 worker limits for scan hashing and similarity feature calculation, optional memory usage overlay, shared RAM thumbnail retention, and configurable thumbnail/timeline preview sizing for heavy workloads.
 - **Rich media previews**: Timeline video preview mode with a dedicated RAM cache policy, width snapping, and multi-line frame rows.
-- **Smart filters**: Saved filters, filter editing, "same-folder" duplicate rules, and modified-time rules that persist across sessions.
-- **Advanced bulk delete**: "Keep-oldest" and "keep-newest" configurable commands mapped to a preview flow with thumbnails.
-- **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to detected duplicate groups. Actionable via notification-backed execution.
-- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; new entries start enabled and include persistent sort options plus progress-tracked Update/Rebuild actions for scan-cache catch-up or full recalculation.
+- **Smart filters**: Saved filters, per-rule any/all member matching, same-folder and same-size group rules, similarity same-resolution and average-duration rules, and modified-time rules that persist across sessions.
+- **Advanced bulk delete**: Full-candidate previews support keeping exactly one, at least one, or an exact custom count of matching or non-matching files by text rule, or keeping the oldest, newest, shortest-duration, or longest-duration file, with modified-time fallback for equal video durations.
+- **DB maintenance**: purge missing files, re-hash stale or missing entries, rebuild duplicate groups, and scope maintenance to all cached files, detected duplicate-result groups, or generated similarity groups. Actionable via notification-backed execution.
+- **Similarity**: configure and browse named video/image similarity clustering generated from scan-cache data after scans; exact reduced thumbnails are grouped by indexed 32-byte SHA-256 values, while numeric file-ID joins, bounded parallel media feature extraction, persistent sort options, and progress-tracked Update/Rebuild actions keep large result sets practical.
+- **Legacy similarity recovery**: version 21 cache upgrades build and verify a compact replacement database while preserving readable settings, clusters, members, durations, reports, and cache rows; exact features are reconstructed from stored cluster identities without reading oversized legacy payload tables.
 
 ## How scanning works
 
 1. **Collect files**: `FileWalker` gathers file metadata.
 2. **Select candidates**: only size-collision files become hash candidates.
 3. **Cache lookup**: `CacheStore` checks FRESH/STALE/MISS state.
-4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates.
+4. **Hash only when needed**: compute SHA-256 for uncached or stale candidates through the configured bounded worker pool.
 5. **Group results**: duplicates are grouped by hash and persisted.
 
 ## Cache policy (current)
@@ -78,7 +79,7 @@ Room database (scan-cache.db) core tables:
 - **scan_reports**: scan summary (durations, counts, targets)
 - **trash_entries**: trash records (origin/trashed path, size, timestamps)
 - **dupe_groups**: materialized snapshot of duplicate groups for fast paginated browsing
-- **similarity_settings / similarity_setting_files / method-specific feature tables / similarity_clusters / similarity_cluster_members**: configured similarity methods, file state, separated feature storage, and sidecar member links for similarity-based duplicate candidates
+- **similarity_settings / similarity_setting_files / method-specific feature tables / similarity_clusters / similarity_cluster_members**: configured similarity methods, file state, compact method-specific feature storage including binary thumbnail hashes, and sidecar member links for similarity-based duplicate candidates
 
 
 ## Module map

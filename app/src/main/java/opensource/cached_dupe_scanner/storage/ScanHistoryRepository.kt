@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.FileCacheDao
+import opensource.cached_dupe_scanner.cache.StoredHash
 import opensource.cached_dupe_scanner.cache.toCachedFileEntity
 import opensource.cached_dupe_scanner.cache.toFileMetadata
 import opensource.cached_dupe_scanner.core.FileMetadata
@@ -114,7 +115,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
@@ -137,7 +138,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 updated += 1
@@ -155,7 +156,7 @@ class ScanHistoryRepository(
             val file = File(path)
             if (!file.exists()) return@forEach
             val hash = requireNotNull(hashFile(file) { true })
-            val updatedEntity = entity.copy(hashHex = hash)
+            val updatedEntity = entity.copy(hashBytes = StoredHash.fromExternalString(hash))
             upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
             updated += 1
         }
@@ -166,14 +167,14 @@ class ScanHistoryRepository(
         deleteMissing: Boolean,
         rehashStale: Boolean,
         rehashMissing: Boolean,
-        onlyDuplicateDetected: Boolean = false,
+        scope: DbMaintenanceScope = DbMaintenanceScope.AllCachedFiles,
         shouldContinue: () -> Boolean,
         onProgress: (DbMaintenanceProgress) -> Unit
     ): DbMaintenanceSummary {
-        val total = if (onlyDuplicateDetected) {
-            dao.countDuplicateMembersFromCache()
-        } else {
-            dao.countAll()
+        val total = when (scope) {
+            DbMaintenanceScope.AllCachedFiles -> dao.countAll()
+            DbMaintenanceScope.DuplicateResultGroups -> dao.countDuplicateMembersFromCache()
+            DbMaintenanceScope.SimilarityGroups -> dao.countSimilarityGroupMembersFromCache()
         }
         var processed = 0
         var deleted = 0
@@ -241,7 +242,7 @@ class ScanHistoryRepository(
                 val updatedEntity = entity.copy(
                     sizeBytes = size,
                     lastModifiedMillis = modified,
-                    hashHex = hash
+                    hashBytes = StoredHash.fromExternalString(hash)
                 )
                 upsertEntityAndRefreshGroups(before = entity, after = updatedEntity)
                 if (shouldRehashStale) {
@@ -266,7 +267,7 @@ class ScanHistoryRepository(
             return null
         }
 
-        if (onlyDuplicateDetected) {
+        if (scope == DbMaintenanceScope.DuplicateResultGroups) {
             var groupKeyPage = dao.listDuplicateGroupKeysFromCachePage(limit = batchSize)
             while (groupKeyPage.isNotEmpty()) {
                 for (groupKey in groupKeyPage) {
@@ -338,6 +339,45 @@ class ScanHistoryRepository(
             )
         }
 
+        if (scope == DbMaintenanceScope.SimilarityGroups) {
+            var afterFileId = 0L
+            while (true) {
+                if (!shouldContinue()) {
+                    return DbMaintenanceSummary(
+                        total = total,
+                        processed = processed,
+                        deleted = deleted,
+                        rehashed = rehashed,
+                        missingHashed = missingHashed,
+                        cancelled = true,
+                        currentPath = currentPath
+                    )
+                }
+                val batch = dao.listSimilarityGroupMembersAfterFileId(
+                    afterFileId = afterFileId,
+                    limit = batchSize
+                )
+                if (batch.isEmpty()) break
+                for (entity in batch) {
+                    val cancelledSummary = applyMaintenanceToEntity(entity)
+                    if (cancelledSummary != null) {
+                        return cancelledSummary
+                    }
+                    afterFileId = entity.fileId
+                }
+            }
+
+            return DbMaintenanceSummary(
+                total = total,
+                processed = processed,
+                deleted = deleted,
+                rehashed = rehashed,
+                missingHashed = missingHashed,
+                cancelled = false,
+                currentPath = currentPath
+            )
+        }
+
         while (true) {
             if (!shouldContinue()) break
             val batch = dao.getPageAfter(lastPath, batchSize)
@@ -384,8 +424,8 @@ class ScanHistoryRepository(
             if (batch.isEmpty()) break
             val paths = batch.map { it.normalizedPath }
             runInConsistencyTransaction {
-                dao.deleteByNormalizedPaths(paths)
                 cacheMutationObserver?.onCachedFilesChanged(paths)
+                dao.deleteByNormalizedPaths(paths)
             }
             clearedFiles += batch.size
             processed += batch.size
@@ -442,17 +482,14 @@ class ScanHistoryRepository(
         )
     }
 
-    fun deleteByNormalizedPath(
-        normalizedPath: String,
-        notifyCacheMutationObserver: Boolean = true
-    ) {
+    fun deleteByNormalizedPath(normalizedPath: String) {
         runInConsistencyTransaction {
             val before = dao.getByNormalizedPath(normalizedPath)
-            dao.deleteByNormalizedPath(normalizedPath)
-            refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
-            if (before != null && notifyCacheMutationObserver) {
+            if (before != null) {
                 cacheMutationObserver?.onCachedFilesChanged(listOf(normalizedPath))
             }
+            dao.deleteByNormalizedPath(normalizedPath)
+            refreshGroupsLocked(touchedGroupKeys(before = before, after = null))
         }
     }
 
@@ -469,9 +506,9 @@ class ScanHistoryRepository(
 
     private fun deleteEntityAndRefreshGroup(entity: CachedFileEntity) {
         runInConsistencyTransaction {
+            cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
             dao.deleteByNormalizedPath(entity.normalizedPath)
             refreshGroupsLocked(touchedGroupKeys(before = entity, after = null))
-            cacheMutationObserver?.onCachedFilesChanged(listOf(entity.normalizedPath))
         }
     }
 

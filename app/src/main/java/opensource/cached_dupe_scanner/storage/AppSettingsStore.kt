@@ -2,12 +2,16 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
+import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 
 internal const val DEFAULT_PREVIEW_SIZE_PERCENT = 100
 
 data class AppSettings(
     val skipZeroSizeInDb: Boolean,
     val skipTrashBinContentsInScan: Boolean,
+    val scanWorkerCount: Int,
+    val similarityWorkerCount: Int,
     val hideZeroSizeInResults: Boolean,
     val showMemoryOverlay: Boolean,
     val keepLoadedThumbnailsInMemory: Boolean,
@@ -23,6 +27,10 @@ data class AppSettings(
     val showFullPaths: Boolean,
     val resultsFilterDefinitionJson: String,
     val filesFilterDefinitionJson: String,
+    val similarityFilterDefinitionJson: String = "",
+    val resultsFilterCollapsedClusterIds: Set<String> = emptySet(),
+    val filesFilterCollapsedClusterIds: Set<String> = emptySet(),
+    val similarityFilterCollapsedClusterIds: Set<String> = emptySet(),
     val filesSortKey: String,
     val filesSortDirection: String,
     val similarityClusterSortKey: String = "FileCount",
@@ -45,6 +53,14 @@ class AppSettingsStore(context: Context) {
 
     fun setSkipTrashBinContentsInScan(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, enabled).apply()
+    }
+
+    fun setScanWorkerCount(value: Int) {
+        prefs.edit().putInt(KEY_SCAN_WORKER_COUNT, sanitizeScanWorkerCount(value)).apply()
+    }
+
+    fun setSimilarityWorkerCount(value: Int) {
+        prefs.edit().putInt(KEY_SIMILARITY_WORKER_COUNT, sanitizeScanWorkerCount(value)).apply()
     }
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
@@ -117,6 +133,28 @@ class AppSettingsStore(context: Context) {
         prefs.edit().putString(KEY_FILES_FILTER_DEFINITION_JSON, value).apply()
     }
 
+    fun setSimilarityFilterDefinitionJson(value: String) {
+        prefs.edit().putString(KEY_SIMILARITY_FILTER_DEFINITION_JSON, value).apply()
+    }
+
+    fun setResultsFilterCollapsedClusterIds(value: Set<String>) {
+        prefs.edit()
+            .putStringSet(KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS, sanitizeCollapsedClusterIds(value))
+            .apply()
+    }
+
+    fun setFilesFilterCollapsedClusterIds(value: Set<String>) {
+        prefs.edit()
+            .putStringSet(KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS, sanitizeCollapsedClusterIds(value))
+            .apply()
+    }
+
+    fun setSimilarityFilterCollapsedClusterIds(value: Set<String>) {
+        prefs.edit()
+            .putStringSet(KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS, sanitizeCollapsedClusterIds(value))
+            .apply()
+    }
+
     fun setFilesSortKey(value: String) {
         prefs.edit().putString(KEY_FILES_SORT_KEY, value).apply()
     }
@@ -162,6 +200,12 @@ class AppSettingsStore(context: Context) {
             skipTrashBinContentsInScan = prefs.getBoolean(
                 KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
                 DEFAULT_SETTINGS.skipTrashBinContentsInScan
+            ),
+            scanWorkerCount = sanitizeScanWorkerCount(
+                prefs.getInt(KEY_SCAN_WORKER_COUNT, DEFAULT_SETTINGS.scanWorkerCount)
+            ),
+            similarityWorkerCount = sanitizeScanWorkerCount(
+                prefs.getInt(KEY_SIMILARITY_WORKER_COUNT, DEFAULT_SETTINGS.similarityWorkerCount)
             ),
             hideZeroSizeInResults = prefs.getBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
@@ -213,6 +257,28 @@ class AppSettingsStore(context: Context) {
                 KEY_FILES_FILTER_DEFINITION_JSON,
                 DEFAULT_SETTINGS.filesFilterDefinitionJson
             ) ?: DEFAULT_SETTINGS.filesFilterDefinitionJson,
+            similarityFilterDefinitionJson = prefs.getString(
+                KEY_SIMILARITY_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.similarityFilterDefinitionJson
+            ) ?: DEFAULT_SETTINGS.similarityFilterDefinitionJson,
+            resultsFilterCollapsedClusterIds = sanitizeCollapsedClusterIds(
+                prefs.getStringSet(
+                    KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS,
+                    DEFAULT_SETTINGS.resultsFilterCollapsedClusterIds
+                ) ?: DEFAULT_SETTINGS.resultsFilterCollapsedClusterIds
+            ),
+            filesFilterCollapsedClusterIds = sanitizeCollapsedClusterIds(
+                prefs.getStringSet(
+                    KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS,
+                    DEFAULT_SETTINGS.filesFilterCollapsedClusterIds
+                ) ?: DEFAULT_SETTINGS.filesFilterCollapsedClusterIds
+            ),
+            similarityFilterCollapsedClusterIds = sanitizeCollapsedClusterIds(
+                prefs.getStringSet(
+                    KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS,
+                    DEFAULT_SETTINGS.similarityFilterCollapsedClusterIds
+                ) ?: DEFAULT_SETTINGS.similarityFilterCollapsedClusterIds
+            ),
             filesSortKey = prefs.getString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey)
                 ?: DEFAULT_SETTINGS.filesSortKey,
             filesSortDirection = prefs.getString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection)
@@ -246,6 +312,12 @@ class AppSettingsStore(context: Context) {
             skipTrashBinContentsInScan = obj.optBoolean(
                 KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN,
                 DEFAULT_SETTINGS.skipTrashBinContentsInScan
+            ),
+            scanWorkerCount = sanitizeScanWorkerCount(
+                obj.optInt(KEY_SCAN_WORKER_COUNT, DEFAULT_SETTINGS.scanWorkerCount)
+            ),
+            similarityWorkerCount = sanitizeScanWorkerCount(
+                obj.optInt(KEY_SIMILARITY_WORKER_COUNT, DEFAULT_SETTINGS.similarityWorkerCount)
             ),
             hideZeroSizeInResults = obj.optBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
@@ -295,6 +367,25 @@ class AppSettingsStore(context: Context) {
                 KEY_FILES_FILTER_DEFINITION_JSON,
                 DEFAULT_SETTINGS.filesFilterDefinitionJson
             ),
+            similarityFilterDefinitionJson = obj.optString(
+                KEY_SIMILARITY_FILTER_DEFINITION_JSON,
+                DEFAULT_SETTINGS.similarityFilterDefinitionJson
+            ),
+            resultsFilterCollapsedClusterIds = collapsedClusterIdsFromJson(
+                obj = obj,
+                key = KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS,
+                defaultValue = DEFAULT_SETTINGS.resultsFilterCollapsedClusterIds
+            ),
+            filesFilterCollapsedClusterIds = collapsedClusterIdsFromJson(
+                obj = obj,
+                key = KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS,
+                defaultValue = DEFAULT_SETTINGS.filesFilterCollapsedClusterIds
+            ),
+            similarityFilterCollapsedClusterIds = collapsedClusterIdsFromJson(
+                obj = obj,
+                key = KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS,
+                defaultValue = DEFAULT_SETTINGS.similarityFilterCollapsedClusterIds
+            ),
             filesSortKey = obj.optString(KEY_FILES_SORT_KEY, DEFAULT_SETTINGS.filesSortKey),
             filesSortDirection = obj.optString(KEY_FILES_SORT_DIR, DEFAULT_SETTINGS.filesSortDirection),
             similarityClusterSortKey = obj.optString(
@@ -324,6 +415,8 @@ class AppSettingsStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
+            .putInt(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
+            .putInt(KEY_SIMILARITY_WORKER_COUNT, settings.similarityWorkerCount)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -339,6 +432,19 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .putString(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .putString(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
+            .putString(KEY_SIMILARITY_FILTER_DEFINITION_JSON, settings.similarityFilterDefinitionJson)
+            .putStringSet(
+                KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS,
+                settings.resultsFilterCollapsedClusterIds
+            )
+            .putStringSet(
+                KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS,
+                settings.filesFilterCollapsedClusterIds
+            )
+            .putStringSet(
+                KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS,
+                settings.similarityFilterCollapsedClusterIds
+            )
             .putString(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .putString(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .putString(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
@@ -356,6 +462,8 @@ class AppSettingsStore(context: Context) {
         return org.json.JSONObject()
             .put(KEY_SKIP_ZERO_SIZE_DB, settings.skipZeroSizeInDb)
             .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
+            .put(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
+            .put(KEY_SIMILARITY_WORKER_COUNT, settings.similarityWorkerCount)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -371,6 +479,19 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SHOW_FULL_PATHS, settings.showFullPaths)
             .put(KEY_RESULTS_FILTER_DEFINITION_JSON, settings.resultsFilterDefinitionJson)
             .put(KEY_FILES_FILTER_DEFINITION_JSON, settings.filesFilterDefinitionJson)
+            .put(KEY_SIMILARITY_FILTER_DEFINITION_JSON, settings.similarityFilterDefinitionJson)
+            .put(
+                KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS,
+                collapsedClusterIdsToJson(settings.resultsFilterCollapsedClusterIds)
+            )
+            .put(
+                KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS,
+                collapsedClusterIdsToJson(settings.filesFilterCollapsedClusterIds)
+            )
+            .put(
+                KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS,
+                collapsedClusterIdsToJson(settings.similarityFilterCollapsedClusterIds)
+            )
             .put(KEY_FILES_SORT_KEY, settings.filesSortKey)
             .put(KEY_FILES_SORT_DIR, settings.filesSortDirection)
             .put(KEY_SIMILARITY_CLUSTER_SORT_KEY, settings.similarityClusterSortKey)
@@ -378,6 +499,35 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SIMILARITY_MEMBER_SORT_KEY, settings.similarityMemberSortKey)
             .put(KEY_SIMILARITY_MEMBER_SORT_DIR, settings.similarityMemberSortDirection)
             .put(KEY_SIMILARITY_DURATION_MEMBER_SORT_DIR, settings.similarityDurationMemberSortDirection)
+    }
+
+    private fun collapsedClusterIdsFromJson(
+        obj: org.json.JSONObject,
+        key: String,
+        defaultValue: Set<String>
+    ): Set<String> {
+        val array = obj.optJSONArray(key) ?: return defaultValue
+        return sanitizeCollapsedClusterIds(
+            buildList {
+                repeat(array.length()) { index ->
+                    add(array.optString(index, ""))
+                }
+            }
+        )
+    }
+
+    private fun collapsedClusterIdsToJson(values: Set<String>): org.json.JSONArray {
+        return org.json.JSONArray().apply {
+            sanitizeCollapsedClusterIds(values).forEach { clusterId -> put(clusterId) }
+        }
+    }
+
+    private fun sanitizeCollapsedClusterIds(values: Iterable<String>): Set<String> {
+        return values
+            .asSequence()
+            .map { value -> value.trim() }
+            .filter { value -> value.isNotEmpty() }
+            .toSortedSet()
     }
 
     private fun sanitizePreviewSizePercent(value: Int): Int {
@@ -392,6 +542,8 @@ class AppSettingsStore(context: Context) {
         private val DEFAULT_SETTINGS = AppSettings(
             skipZeroSizeInDb = true,
             skipTrashBinContentsInScan = true,
+            scanWorkerCount = defaultScanWorkerCount(),
+            similarityWorkerCount = defaultScanWorkerCount(),
             hideZeroSizeInResults = false,
             showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
@@ -407,6 +559,10 @@ class AppSettingsStore(context: Context) {
             showFullPaths = false,
             resultsFilterDefinitionJson = "",
             filesFilterDefinitionJson = "",
+            similarityFilterDefinitionJson = "",
+            resultsFilterCollapsedClusterIds = emptySet(),
+            filesFilterCollapsedClusterIds = emptySet(),
+            similarityFilterCollapsedClusterIds = emptySet(),
             filesSortKey = "Name",
             filesSortDirection = "Asc",
             similarityClusterSortKey = "FileCount",
@@ -418,6 +574,8 @@ class AppSettingsStore(context: Context) {
         private const val PREFS_NAME = "cached_dupe_scanner"
         private const val KEY_SKIP_ZERO_SIZE_DB = "skip_zero_size_db"
         private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
+        private const val KEY_SCAN_WORKER_COUNT = "scan_worker_count"
+        private const val KEY_SIMILARITY_WORKER_COUNT = "similarity_worker_count"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"
@@ -433,6 +591,13 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SHOW_FULL_PATHS = "show_full_paths"
         private const val KEY_RESULTS_FILTER_DEFINITION_JSON = "results_filter_definition_json"
         private const val KEY_FILES_FILTER_DEFINITION_JSON = "files_filter_definition_json"
+        private const val KEY_SIMILARITY_FILTER_DEFINITION_JSON = "similarity_filter_definition_json"
+        private const val KEY_RESULTS_FILTER_COLLAPSED_CLUSTER_IDS =
+            "results_filter_collapsed_cluster_ids"
+        private const val KEY_FILES_FILTER_COLLAPSED_CLUSTER_IDS =
+            "files_filter_collapsed_cluster_ids"
+        private const val KEY_SIMILARITY_FILTER_COLLAPSED_CLUSTER_IDS =
+            "similarity_filter_collapsed_cluster_ids"
         private const val KEY_FILES_SORT_KEY = "files_sort_key"
         private const val KEY_FILES_SORT_DIR = "files_sort_dir"
         private const val KEY_SIMILARITY_CLUSTER_SORT_KEY = "similarity_cluster_sort_key"

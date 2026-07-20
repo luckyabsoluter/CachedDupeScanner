@@ -10,6 +10,10 @@ import opensource.cached_dupe_scanner.storage.DbMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.RebuildGroupsPhase
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
+import opensource.cached_dupe_scanner.storage.SimilarityClearMode
+import opensource.cached_dupe_scanner.storage.SimilarityClearPhase
+import opensource.cached_dupe_scanner.storage.SimilarityClearProgress
+import opensource.cached_dupe_scanner.storage.SimilarityClearSummary
 import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceProgress
 import opensource.cached_dupe_scanner.storage.SimilarityMaintenanceSummary
 import opensource.cached_dupe_scanner.storage.TrashProgress
@@ -141,4 +145,33 @@ fun similarityGenerationCompletedDetail(summary: SimilarityMaintenanceSummary): 
 fun similarityGenerationCancelledDetail(summary: SimilarityMaintenanceSummary): String {
     val totalText = if (summary.candidateCount > 0) summary.candidateCount.toString() else "?"
     return "Cancelled after ${summary.processedCount}/$totalText candidates."
+}
+
+fun similarityClearTaskTitle(mode: SimilarityClearMode): String {
+    return when (mode) {
+        SimilarityClearMode.Standard -> "Clearing similarity results"
+        SimilarityClearMode.Incremental -> "Incrementally clearing similarity"
+    }
+}
+
+fun similarityClearTaskDetail(progress: SimilarityClearProgress): String {
+    val phase = when (progress.phase) {
+        SimilarityClearPhase.Preparing -> "Preparing clear"
+        SimilarityClearPhase.ClusterMembers -> "Clearing cluster members"
+        SimilarityClearPhase.Clusters -> "Clearing clusters"
+        SimilarityClearPhase.FilesAndFeatures -> "Clearing files and features"
+        SimilarityClearPhase.OrphanFeatures -> "Clearing remaining features"
+        SimilarityClearPhase.History -> "Clearing maintenance history"
+    }
+    val totalText = if (progress.total > 0) progress.total.toString() else "?"
+    return "$phase • ${progress.processed}/$totalText • Remaining ${progress.remaining}"
+}
+
+fun similarityClearCompletedDetail(summary: SimilarityClearSummary): String {
+    return "Cleared ${summary.processed} generated rows."
+}
+
+fun similarityClearCancelledDetail(summary: SimilarityClearSummary): String {
+    val totalText = if (summary.total > 0) summary.total.toString() else "?"
+    return "Stopped after ${summary.processed}/$totalText • Remaining ${summary.remaining}"
 }

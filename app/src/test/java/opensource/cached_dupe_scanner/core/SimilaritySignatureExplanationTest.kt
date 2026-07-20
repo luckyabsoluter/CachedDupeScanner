@@ -6,8 +6,8 @@ import org.junit.Test
 
 class SimilaritySignatureExplanationTest {
     @Test
-    fun exactThumbnailExplanationParsesBuiltSignature() {
-        val signature = buildThumbnailSignature(
+    fun exactThumbnailBuilderHashesCanonicalPixelPayload() {
+        val hash = buildThumbnailSignature(
             mediaScope = SimilarityMediaScope.Video,
             step = ExactThumbnailHashStep(
                 frameSeconds = listOf(0, 1),
@@ -19,14 +19,37 @@ class SimilaritySignatureExplanationTest {
             frameSignatures = listOf("0f0f0f,000000", "ffffff,101010")
         )
 
-        val explanation = requireNotNull(exactThumbnailClusterExplanation(signature))
+        assertEquals(
+            "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744",
+            hash
+        )
+    }
+
+    @Test
+    fun exactThumbnailExplanationParsesHashedClusterKeyWithoutPixelPayload() {
+        val step = ExactThumbnailHashStep(
+            frameSeconds = listOf(0, 1),
+            resizeWidthPx = 2,
+            resizeHeightPx = 1,
+            quantizationLevels = 16,
+            grayscale = false
+        )
+        val hash = "f95cabe9951dcab34f51672a22fc4045c14ed62fc263e671a12f796654053744"
+        val clusterKey = buildThumbnailHashClusterKey(
+            mediaScope = SimilarityMediaScope.Video,
+            step = step,
+            thumbnailHashHex = hash
+        )
+
+        val explanation = requireNotNull(exactThumbnailClusterExplanation(clusterKey))
 
         assertEquals("video", explanation.mediaScope)
         assertEquals("color", explanation.colorMode)
         assertEquals("2x1", explanation.resize)
         assertEquals("q16", explanation.quantization)
         assertEquals(listOf("0", "1"), explanation.frameSeconds)
-        assertEquals(listOf("0f0f0f,000000", "ffffff,101010"), explanation.sampleSignatures)
+        assertEquals(emptyList<String>(), explanation.sampleSignatures)
+        assertEquals(hash, explanation.thumbnailHashHex)
     }
 
     @Test

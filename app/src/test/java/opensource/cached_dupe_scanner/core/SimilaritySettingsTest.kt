@@ -195,7 +195,7 @@ class SimilaritySettingsTest {
     }
 
     @Test
-    fun videoFrameSignatureMarksDisabledQuantizationAsRaw() {
+    fun videoFrameSignatureHashesRawThumbnailPayload() {
         val signature = buildVideoFrameSignature(
             step = ExactThumbnailHashStep(
                 frameSeconds = listOf(0),
@@ -207,7 +207,10 @@ class SimilaritySettingsTest {
             frameSignatures = listOf("ff00aa")
         )
 
-        assertTrue(signature.contains(":raw:"))
+        assertEquals(
+            "f8e7a2e657cc59e22c4fd123956bc2f345ad4d3e1c9a34562d8300e3b617ffe2",
+            signature
+        )
     }
 
     @Test

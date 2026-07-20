@@ -5,6 +5,34 @@ import org.junit.Test
 
 class ScrollbarLogicTest {
     @Test
+    fun currentPointerYRemainsAtTrackEndWhenThumbGeometryChanges() {
+        val initialOffset = thumbOffsetForPointerY(
+            pointerY = 400f,
+            thumbHeightPx = 160f,
+            maxThumbOffsetPx = 240f
+        )
+        val resizedOffset = thumbOffsetForPointerY(
+            pointerY = 400f,
+            thumbHeightPx = 64f,
+            maxThumbOffsetPx = 336f
+        )
+
+        assertEquals(240f, initialOffset, 0.001f)
+        assertEquals(336f, resizedOffset, 0.001f)
+    }
+
+    @Test
+    fun currentPointerYCentersThumbWithoutAccumulatedDragDelta() {
+        val offset = thumbOffsetForPointerY(
+            pointerY = 125f,
+            thumbHeightPx = 50f,
+            maxThumbOffsetPx = 300f
+        )
+
+        assertEquals(100f, offset, 0.001f)
+    }
+
+    @Test
     fun estimateLazyListScrollTargetMapsThumbOffsetToListPosition() {
         val target = estimateLazyListScrollTarget(
             targetThumbOffsetPx = 50f,
@@ -19,7 +47,7 @@ class ScrollbarLogicTest {
     }
 
     @Test
-    fun estimateLazyListScrollTargetClampsToLastItem() {
+    fun estimateLazyListScrollTargetClampsBeyondTrackEndToLastItem() {
         val target = estimateLazyListScrollTarget(
             targetThumbOffsetPx = 120f,
             maxThumbOffsetPx = 100f,
@@ -29,6 +57,20 @@ class ScrollbarLogicTest {
         )
 
         assertEquals(19, target.index)
-        assertEquals(50, target.scrollOffsetPx)
+        assertEquals(0, target.scrollOffsetPx)
+    }
+
+    @Test
+    fun estimateLazyListScrollTargetMapsExactTrackEndToLastItem() {
+        val target = estimateLazyListScrollTarget(
+            targetThumbOffsetPx = 100f,
+            maxThumbOffsetPx = 100f,
+            maxScrollPx = 600f,
+            typicalItemSizePx = 50f,
+            totalItems = 20
+        )
+
+        assertEquals(19, target.index)
+        assertEquals(0, target.scrollOffsetPx)
     }
 }

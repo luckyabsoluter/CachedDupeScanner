@@ -2,8 +2,9 @@ package opensource.cached_dupe_scanner.cache
 
 import androidx.room.Dao
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 
 /**
  * DAO for `cached_files`.
@@ -11,7 +12,8 @@ import androidx.room.Query
  * Query groups:
  * - Point lookups and counts (`getByNormalizedPath`, `countAll`).
  * - Cursor paging for file manager and maintenance (`getPageAfter`, `getPageBy*`).
- * - Duplicate-member listing by (`sizeBytes`, `hashHex`).
+ * - Duplicate-member listing by (`sizeBytes`, `hashBytes`).
+ * - Similarity-group maintenance paging by numeric file identity.
  * - Mutations (`upsert`, `upsertAll`, `deleteByNormalizedPath`, `clear`).
  * - Projection helpers used by scanner/group synchronization (`countBySizes`, `findSizesByPaths`, `findGroupKeysByPaths`).
  */
@@ -136,7 +138,7 @@ interface FileCacheDao {
         SELECT *
         FROM cached_files AS candidate
         WHERE candidate.normalizedPath > :afterPath
-          AND (candidate.hashHex IS NULL OR candidate.hashHex = '')
+          AND candidate.hashBytes IS NULL
           AND EXISTS (
               SELECT 1
               FROM cached_files AS peer
@@ -156,7 +158,7 @@ interface FileCacheDao {
         """
         SELECT COUNT(*)
         FROM cached_files AS candidate
-        WHERE (candidate.hashHex IS NULL OR candidate.hashHex = '')
+        WHERE candidate.hashBytes IS NULL
           AND EXISTS (
               SELECT 1
               FROM cached_files AS peer
@@ -232,33 +234,64 @@ interface FileCacheDao {
     @Query(
         """
         SELECT * FROM cached_files
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes
         ORDER BY normalizedPath ASC
         LIMIT :limit
         """
     )
-    fun listMembersBySizeAndHash(sizeBytes: Long, hashHex: String, limit: Int): List<CachedFileEntity>
+    fun listMembersBySizeAndStoredHash(
+        sizeBytes: Long,
+        hashBytes: StoredHash,
+        limit: Int
+    ): List<CachedFileEntity>
+
+    fun listMembersBySizeAndHash(
+        sizeBytes: Long,
+        hashHex: String,
+        limit: Int
+    ): List<CachedFileEntity> {
+        return listMembersBySizeAndStoredHash(sizeBytes, StoredHash.fromExternalString(hashHex), limit)
+    }
 
     @Query(
         """
         SELECT * FROM cached_files
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex AND normalizedPath > :afterPath
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes AND normalizedPath > :afterPath
         ORDER BY normalizedPath ASC
         LIMIT :limit
         """
     )
-    fun listMembersBySizeAndHashAfter(sizeBytes: Long, hashHex: String, afterPath: String, limit: Int): List<CachedFileEntity>
+    fun listMembersBySizeAndStoredHashAfter(
+        sizeBytes: Long,
+        hashBytes: StoredHash,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity>
+
+    fun listMembersBySizeAndHashAfter(
+        sizeBytes: Long,
+        hashHex: String,
+        afterPath: String,
+        limit: Int
+    ): List<CachedFileEntity> {
+        return listMembersBySizeAndStoredHashAfter(
+            sizeBytes,
+            StoredHash.fromExternalString(hashHex),
+            afterPath,
+            limit
+        )
+    }
 
     @Query(
         """
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex
+            hashBytes as hashBytes
         FROM cached_files
-        WHERE hashHex IS NOT NULL
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes IS NOT NULL
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         """
     )
     fun listDuplicateGroupKeysFromCache(): List<DuplicateGroupKeyRow>
@@ -267,12 +300,12 @@ interface FileCacheDao {
         """
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex
+            hashBytes as hashBytes
         FROM cached_files
-        WHERE hashHex IS NOT NULL
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes IS NOT NULL
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit
         """
     )
@@ -282,24 +315,36 @@ interface FileCacheDao {
         """
         SELECT
             sizeBytes as sizeBytes,
-            hashHex as hashHex
+            hashBytes as hashBytes
         FROM cached_files
-        WHERE hashHex IS NOT NULL
-        GROUP BY sizeBytes, hashHex
+        WHERE hashBytes IS NOT NULL
+        GROUP BY sizeBytes, hashBytes
         HAVING COUNT(*) > 1
            AND (
                sizeBytes > :afterSizeBytes
-               OR (sizeBytes = :afterSizeBytes AND hashHex > :afterHashHex)
+               OR (sizeBytes = :afterSizeBytes AND hashBytes > :afterHashBytes)
            )
-        ORDER BY sizeBytes ASC, hashHex ASC
+        ORDER BY sizeBytes ASC, hashBytes ASC
         LIMIT :limit
         """
     )
+    fun listDuplicateGroupKeysFromCachePageAfterStoredHash(
+        afterSizeBytes: Long,
+        afterHashBytes: StoredHash,
+        limit: Int
+    ): List<DuplicateGroupKeyRow>
+
     fun listDuplicateGroupKeysFromCachePageAfter(
         afterSizeBytes: Long,
         afterHashHex: String,
         limit: Int
-    ): List<DuplicateGroupKeyRow>
+    ): List<DuplicateGroupKeyRow> {
+        return listDuplicateGroupKeysFromCachePageAfterStoredHash(
+            afterSizeBytes,
+            StoredHash.fromExternalString(afterHashHex),
+            limit
+        )
+    }
 
     @Query(
         """
@@ -307,8 +352,8 @@ interface FileCacheDao {
         FROM (
             SELECT COUNT(*) as groupCount
             FROM cached_files
-            WHERE hashHex IS NOT NULL
-            GROUP BY sizeBytes, hashHex
+            WHERE hashBytes IS NOT NULL
+            GROUP BY sizeBytes, hashBytes
             HAVING COUNT(*) > 1
         )
         """
@@ -317,18 +362,85 @@ interface FileCacheDao {
 
     @Query(
         """
-        SELECT COUNT(*)
-        FROM cached_files
-        WHERE sizeBytes = :sizeBytes AND hashHex = :hashHex
+        SELECT COUNT(DISTINCT file.fileId)
+        FROM cached_files AS file
+        INNER JOIN similarity_cluster_members AS member
+            ON member.fileId = file.fileId
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        WHERE cluster.fileCount > 1
         """
     )
-    fun countBySizeAndHash(sizeBytes: Long, hashHex: String): Int
+    fun countSimilarityGroupMembersFromCache(): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsert(entity: CachedFileEntity)
+    @Query(
+        """
+        SELECT DISTINCT file.*
+        FROM cached_files AS file
+        INNER JOIN similarity_cluster_members AS member
+            ON member.fileId = file.fileId
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        WHERE cluster.fileCount > 1
+          AND file.fileId > :afterFileId
+        ORDER BY file.fileId ASC
+        LIMIT :limit
+        """
+    )
+    fun listSimilarityGroupMembersAfterFileId(
+        afterFileId: Long,
+        limit: Int
+    ): List<CachedFileEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun upsertAll(entities: List<CachedFileEntity>)
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM cached_files
+        WHERE sizeBytes = :sizeBytes AND hashBytes = :hashBytes
+        """
+    )
+    fun countBySizeAndStoredHash(sizeBytes: Long, hashBytes: StoredHash): Int
+
+    fun countBySizeAndHash(sizeBytes: Long, hashHex: String): Int {
+        return countBySizeAndStoredHash(sizeBytes, StoredHash.fromExternalString(hashHex))
+    }
+
+    @Query("SELECT fileId, normalizedPath FROM cached_files WHERE normalizedPath IN (:normalizedPaths)")
+    fun findFileIdsByPaths(normalizedPaths: List<String>): List<CachedFileIdRow>
+
+    @Insert
+    fun insertAll(entities: List<CachedFileEntity>)
+
+    @Update
+    fun updateAll(entities: List<CachedFileEntity>)
+
+    @Transaction
+    fun upsert(entity: CachedFileEntity) {
+        upsertAll(listOf(entity))
+    }
+
+    @Transaction
+    fun upsertAll(entities: List<CachedFileEntity>) {
+        if (entities.isEmpty()) return
+        val latestByPath = linkedMapOf<String, CachedFileEntity>()
+        entities.forEach { entity -> latestByPath[entity.normalizedPath] = entity }
+        val existingIdsByPath = latestByPath.keys
+            .chunked(FILE_ID_LOOKUP_BIND_LIMIT)
+            .flatMap(::findFileIdsByPaths)
+            .associate { row -> row.normalizedPath to row.fileId }
+        val inserts = mutableListOf<CachedFileEntity>()
+        val updates = mutableListOf<CachedFileEntity>()
+        latestByPath.values.forEach { entity ->
+            val existingId = existingIdsByPath[entity.normalizedPath]
+            if (existingId == null) {
+                inserts += entity.copy(fileId = 0L)
+            } else {
+                updates += entity.copy(fileId = existingId)
+            }
+        }
+        if (inserts.isNotEmpty()) insertAll(inserts)
+        if (updates.isNotEmpty()) updateAll(updates)
+    }
 
     @Query("DELETE FROM cached_files WHERE normalizedPath = :normalizedPath")
     fun deleteByNormalizedPath(normalizedPath: String)
@@ -348,7 +460,7 @@ interface FileCacheDao {
         FROM cached_files
         WHERE normalizedPath > :afterPath
           AND sizeBytes IN (:sizes)
-          AND (hashHex IS NULL OR hashHex = '')
+          AND hashBytes IS NULL
         ORDER BY normalizedPath ASC
         LIMIT :limit
         """
@@ -367,7 +479,7 @@ interface FileCacheDao {
 
     @Query(
         """
-        SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes, hashHex as hashHex
+        SELECT normalizedPath as normalizedPath, sizeBytes as sizeBytes, hashBytes as hashBytes
         FROM cached_files
         WHERE normalizedPath IN (:paths)
         """
@@ -377,5 +489,15 @@ interface FileCacheDao {
 
 data class DuplicateGroupKeyRow(
     val sizeBytes: Long,
+    val hashBytes: StoredHash
+) {
     val hashHex: String
+        get() = hashBytes.toExternalString()
+}
+
+data class CachedFileIdRow(
+    val fileId: Long,
+    val normalizedPath: String
 )
+
+private const val FILE_ID_LOOKUP_BIND_LIMIT = 900

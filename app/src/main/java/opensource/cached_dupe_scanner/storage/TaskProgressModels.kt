@@ -1,5 +1,11 @@
 package opensource.cached_dupe_scanner.storage
 
+enum class DbMaintenanceScope {
+    AllCachedFiles,
+    DuplicateResultGroups,
+    SimilarityGroups
+}
+
 data class DbMaintenanceProgress(
     val total: Int,
     val processed: Int,

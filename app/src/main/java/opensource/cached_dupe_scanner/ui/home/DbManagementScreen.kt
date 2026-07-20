@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +21,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +31,7 @@ import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.notifications.TaskNotificationController
 import opensource.cached_dupe_scanner.storage.ClearCacheProgress
 import opensource.cached_dupe_scanner.storage.ClearCacheSummary
+import opensource.cached_dupe_scanner.storage.DbMaintenanceScope
 import opensource.cached_dupe_scanner.storage.RebuildGroupsProgress
 import opensource.cached_dupe_scanner.storage.RebuildGroupsSummary
 import opensource.cached_dupe_scanner.storage.ResultsDbRepository
@@ -67,7 +72,7 @@ fun DbManagementScreen(
     val deleteMissing = remember { mutableStateOf(true) }
     val rehashStale = remember { mutableStateOf(false) }
     val rehashMissing = remember { mutableStateOf(false) }
-    val onlyDuplicateDetected = remember { mutableStateOf(false) }
+    val maintenanceScope = remember { mutableStateOf(DbMaintenanceScope.AllCachedFiles) }
     val clearDialogOpen = remember { mutableStateOf(false) }
     val activeTask = taskCoordinator.activeTask(TaskArea.Db)
 
@@ -211,13 +216,16 @@ fun DbManagementScreen(
                             Spacer(modifier = Modifier.width(Spacing.inlineGap))
                             Text("Compute hash for missing entries")
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = onlyDuplicateDetected.value,
-                                onCheckedChange = { onlyDuplicateDetected.value = it }
+                        Text(
+                            text = "Maintenance scope",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        DbMaintenanceScope.entries.forEach { scope ->
+                            DbMaintenanceScopeOption(
+                                scope = scope,
+                                selected = maintenanceScope.value,
+                                onSelect = { maintenanceScope.value = scope }
                             )
-                            Spacer(modifier = Modifier.width(Spacing.inlineGap))
-                            Text("Check only entries currently detected as duplicates")
                         }
                     }
 
@@ -232,7 +240,7 @@ fun DbManagementScreen(
                                 deleteMissing = deleteMissing.value,
                                 rehashStale = rehashStale.value,
                                 rehashMissing = rehashMissing.value,
-                                onlyDuplicateDetected = onlyDuplicateDetected.value,
+                                scope = maintenanceScope.value,
                                 onMaintenanceApplied = onMaintenanceApplied,
                                 refreshOverview = refreshOverview
                             )
@@ -526,7 +534,7 @@ internal fun startDbMaintenanceTask(
     deleteMissing: Boolean,
     rehashStale: Boolean,
     rehashMissing: Boolean,
-    onlyDuplicateDetected: Boolean = false,
+    scope: DbMaintenanceScope = DbMaintenanceScope.AllCachedFiles,
     onMaintenanceApplied: () -> Unit,
     refreshOverview: () -> Unit
 ) {
@@ -559,7 +567,7 @@ internal fun startDbMaintenanceTask(
                     deleteMissing = deleteMissing,
                     rehashStale = rehashStale,
                     rehashMissing = rehashMissing,
-                    onlyDuplicateDetected = onlyDuplicateDetected,
+                    scope = scope,
                     shouldContinue = { !cancelRequested.get() }
                 ) { progress ->
                     uiState.applyMaintenanceProgress(progress)
@@ -607,6 +615,40 @@ internal fun startDbMaintenanceTask(
                 detail = "The maintenance run did not finish."
             )?.let(notificationController::showTerminal)
         }
+    }
+}
+
+@Composable
+private fun DbMaintenanceScopeOption(
+    scope: DbMaintenanceScope,
+    selected: DbMaintenanceScope,
+    onSelect: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = scope == selected,
+                onClick = onSelect,
+                role = Role.RadioButton
+            )
+            .testTag("db-maintenance-scope:${scope.name}"),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = scope == selected,
+            onClick = null
+        )
+        Spacer(modifier = Modifier.width(Spacing.inlineGap))
+        Text(scope.displayName())
+    }
+}
+
+private fun DbMaintenanceScope.displayName(): String {
+    return when (this) {
+        DbMaintenanceScope.AllCachedFiles -> "All cached files"
+        DbMaintenanceScope.DuplicateResultGroups -> "Result duplicate groups"
+        DbMaintenanceScope.SimilarityGroups -> "Similarity groups"
     }
 }
 

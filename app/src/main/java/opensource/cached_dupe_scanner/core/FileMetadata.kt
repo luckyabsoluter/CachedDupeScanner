@@ -7,7 +7,10 @@ data class FileMetadata(
     val normalizedPath: String,
     val sizeBytes: Long,
     val lastModifiedMillis: Long,
-    val hashHex: String? = null
+    val hashHex: String? = null,
+    val durationMillis: Long? = null,
+    val widthPixels: Int? = null,
+    val heightPixels: Int? = null
 ) {
     companion object {
         fun fromFile(file: File, hashHex: String? = null): FileMetadata {

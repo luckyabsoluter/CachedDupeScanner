@@ -11,14 +11,24 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
+import opensource.cached_dupe_scanner.tasks.formatProgressMetrics
+import opensource.cached_dupe_scanner.tasks.progressMetrics
 import opensource.cached_dupe_scanner.tasks.TaskSnapshot
 
 @Composable
@@ -99,6 +109,12 @@ fun TaskProgressContent(
             }
         }
         extraContent()
+        val nowMillis = rememberProgressNowMillis(task.startedAt)
+        Text(
+            text = formatProgressMetrics(task.progressMetrics(nowMillis)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         task.currentPath?.let { path ->
             Text(
                 text = currentPathText(path),
@@ -110,6 +126,18 @@ fun TaskProgressContent(
         }
         TaskProgressIndicator(task = task)
     }
+}
+
+@Composable
+private fun rememberProgressNowMillis(startedAt: Long): Long {
+    var nowMillis by remember(startedAt) { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAt) {
+        while (true) {
+            delay(PROGRESS_METRICS_REFRESH_MILLIS)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    return nowMillis
 }
 
 enum class TaskProgressCancelButton {
@@ -156,22 +184,43 @@ private fun taskProgressErrorButtonColors(): ButtonColors {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun TaskProgressIndicator(task: TaskSnapshot) {
     if (task.indeterminate) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     } else {
         LinearProgressIndicator(
             progress = { task.progressFraction() },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            gapSize = ProgressIndicatorDefaults.LinearIndicatorTrackGapSize,
+            drawStopIndicator = {}
         )
     }
 }
 
 internal fun TaskSnapshot.progressFraction(): Float {
-    val totalValue = total ?: 0
-    return if (totalValue > 0) {
-        ((processed ?: 0).toFloat() / totalValue.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
+    return boundedProgressFraction(processed = processed, total = total)
+}
+
+internal fun boundedProgressFraction(processed: Int?, total: Int?): Float {
+    return boundedProgressFraction(
+        processed = processed?.toLong(),
+        total = total?.toLong()
+    )
+}
+
+internal fun boundedProgressFraction(processed: Long?, total: Long?): Float {
+    val processedValue = processed ?: 0L
+    val totalValue = total ?: 0L
+    return when {
+        totalValue <= 0L || processedValue <= 0L -> 0f
+        processedValue >= totalValue -> 1f
+        else -> {
+            val fraction = (processedValue.toDouble() / totalValue.toDouble()).toFloat()
+            minOf(fraction, MAX_INCOMPLETE_PROGRESS)
+        }
     }
 }
+
+private val MAX_INCOMPLETE_PROGRESS = Math.nextDown(1f)
+private const val PROGRESS_METRICS_REFRESH_MILLIS = 1_000L
