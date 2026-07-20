@@ -22,6 +22,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Changed
 
+- Project documentation now reflects current task behavior, cache eligibility, storage permissions, local data handling, and Android/JDK build requirements.
 - Database upgrades now require explicit confirmation on a blocking startup screen, report migration progress, and keep data screens unavailable until migration completes.
 - Similarity data is maintained alongside the active file cache, so scan completion, Trash restore or deletion, and DB maintenance update persisted Similarity results while active result snapshots remain stable.
 - Filter editor clusters now use persistent collapsible headers, target-labeled accordion rows, and dropdown target selection while retaining rule logic, enablement, and open editor state.
