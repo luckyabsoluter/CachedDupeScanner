@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-21
+
 ### Added
 
 - Named video and image similarity management with exact-thumbnail SHA-256 grouping, duration-only groups, duration-neighbor lists, independent parameterized entries, automatic scan-completion generation, and manual Update, Rebuild, and Clear controls.
