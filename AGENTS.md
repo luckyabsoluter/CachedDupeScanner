@@ -4,14 +4,13 @@ This document is the operational guide for AI agents working on CachedDupeScanne
 
 ## Mission
 
-Build a high-performance duplicate file scanner with a persistent cache that speeds up subsequent scans. Every change must be test-driven and milestone-aligned.
+Build a high-performance duplicate file scanner with a persistent cache that speeds up subsequent scans. Every change must be test-driven and focused on the requested scope.
 
 ## Ground Rules
 
 - Do not skip tests.
 - Do not make unrelated refactors.
 - Keep commits small and scoped.
-- Use the milestones in README as the roadmap.
 - If a requirement is unclear, inspect the codebase before asking questions.
 - Optimize large-scale operations with bounded batching/chunking and avoid unnecessary global rebuilds in runtime paths.
 - For large mutations, apply transaction boundaries that keep source data and derived data consistent per batch, so interruptions still leave committed batches in a valid state.
@@ -20,13 +19,12 @@ Build a high-performance duplicate file scanner with a persistent cache that spe
 
 ## Required Workflow
 
-1. Read README milestones.
-2. Identify the smallest next deliverable.
-3. Implement only that deliverable.
-4. Add or update tests.
-5. Run tests and confirm they pass.
-6. Update CHANGELOG.md to reflect the changes.
-7. Commit with a Conventional Commit message.
+1. Identify the smallest next deliverable.
+2. Implement only that deliverable.
+3. Add or update tests.
+4. Run tests and confirm they pass.
+5. Update CHANGELOG.md to reflect the changes.
+6. Commit with a Conventional Commit message.
 
 ## Definitions
 
@@ -45,13 +43,12 @@ Build a high-performance duplicate file scanner with a persistent cache that spe
 - Single purpose per commit.
 - Tests included for new behaviors.
 - CHANGELOG.md updated to reflect the changes.
-- README milestones updated if scope changes.
 
 ## Scope Boundaries
 
 Agents must not:
 
-- Introduce new architecture without a milestone update.
+- Introduce new architecture without an explicit plan.
 - Add external services or analytics.
 - Remove or rename public APIs without a plan.
 
