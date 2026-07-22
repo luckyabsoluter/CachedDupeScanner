@@ -10,6 +10,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - File-name and folder-path filter rules now support `Not` for starts-with, ends-with, contains, and equals comparisons.
 
+### Performance
+
+- Cached average-duration Similarity filters now scan candidates in bounded 500-cluster batches while retaining small reads when duration metadata still needs extraction.
+
 ## [1.5.0] - 2026-07-21
 
 ### Added

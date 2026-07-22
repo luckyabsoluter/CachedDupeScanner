@@ -1196,7 +1196,7 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
-    fun durationAverageFilterUsesKeysetAfterFirstSelectiveSourcePage() {
+    fun cachedDurationAverageFilterBatchesSelectiveSourceScan() {
         val groups = (0 until 8).map { groupIndex ->
             listOf(
                 videoFile("selective-duration-$groupIndex-a.mp4"),
@@ -1265,9 +1265,76 @@ class SimilaritySettingsRepositoryTest {
         val keysetQueries = sourceQueries.filter { sqlQuery ->
             normalizedSql(sqlQuery).contains("clusterkey > ?")
         }
+        val durationAggregateQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("sum(duration.durationmillis) as durationsummillis")
+        }
         assertEquals(1, filtered.clusters.size)
+        assertEquals(groups.size, filtered.nextSourceOffset)
+        assertTrue(filtered.exhausted)
         assertEquals(1, offsetQueries.size)
-        assertTrue(sourceQueries.joinToString(separator = "\n"), keysetQueries.isNotEmpty())
+        assertTrue(sourceQueries.joinToString(separator = "\n"), keysetQueries.isEmpty())
+        assertEquals(sourceQueries.joinToString(separator = "\n"), 1, sourceQueries.size)
+        assertEquals(
+            durationAggregateQueries.joinToString(separator = "\n"),
+            1,
+            durationAggregateQueries.size
+        )
+    }
+
+    @Test
+    fun uncachedDurationAverageFilterDoesNotOverreadSourceBatch() {
+        val groups = (0 until 4).map { groupIndex ->
+            listOf(
+                videoFile("uncached-duration-$groupIndex-a.mp4"),
+                videoFile("uncached-duration-$groupIndex-b.mp4")
+            )
+        }
+        val files = groups.flatten()
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val durationExtractor = CountingDurationExtractor(
+            files.associate { file -> file.absolutePath to 10_000L }
+        )
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureExtractor(
+                groups.flatMapIndexed { groupIndex, groupFiles ->
+                    val signature = (groupIndex + 1).toString(16).padStart(64, '0')
+                    groupFiles.map { file -> file.absolutePath to signature }
+                }.toMap()
+            ),
+            durationExtractor = durationExtractor,
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = durationAverageFilterDefinition(idSuffix = "uncached-batch"),
+            startOffset = 0,
+            minMatches = 1,
+            sourcePageSize = 1
+        )
+
+        assertEquals(1, filtered.clusters.size)
+        assertEquals(1, filtered.nextSourceOffset)
+        assertFalse(filtered.exhausted)
+        assertEquals(groups.first().size, durationExtractor.extractionCalls.get())
     }
 
     @Test

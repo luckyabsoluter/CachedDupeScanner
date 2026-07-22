@@ -12,6 +12,7 @@ import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 
 private const val SIMILARITY_FILTER_PROGRESS_UPDATE_INTERVAL = 16
+private const val SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE = 500
 
 internal data class FilteredSimilarityClustersPage(
     val clusters: List<SimilarityClusterEntity>,
@@ -59,6 +60,11 @@ internal fun loadFilteredSimilarityClustersPage(
         target == ResultsFilterTarget.DurationFromAverage ||
             !definition.hasActiveTarget(target, SIMILARITY_FILTER_TARGETS)
     }
+    var sourceReadBatchSize = if (durationOnlyFilter) {
+        maxOf(sourcePageSize, SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE)
+    } else {
+        sourcePageSize
+    }
     var resolutionProcessed = 0
     var resolutionTotal = 0
     var initialResolutionWorkPublished = false
@@ -99,11 +105,12 @@ internal fun loadFilteredSimilarityClustersPage(
         minMatches = minMatches,
         loadPage = { cursor ->
             val afterCluster = cursor.afterCluster
-            val clusters = if (afterCluster == null) {
+            val queryLimit = sourceReadBatchSize
+            val queriedClusters = if (afterCluster == null) {
                 repository.listClustersPage(
                     settingId = settingId,
                     offset = cursor.offset,
-                    limit = sourcePageSize,
+                    limit = queryLimit,
                     sortColumn = sortColumn,
                     direction = sortDirection
                 )
@@ -111,16 +118,40 @@ internal fun loadFilteredSimilarityClustersPage(
                 repository.listClustersPageAfter(
                     settingId = settingId,
                     afterCluster = afterCluster,
-                    limit = sourcePageSize,
+                    limit = queryLimit,
                     sortColumn = sortColumn,
                     direction = sortDirection
                 )
             }
-            val clusterIds = clusters.map { cluster -> cluster.clusterId }
-            val initialDurationStats = if (durationOnlyFilter && clusterIds.isNotEmpty()) {
-                repository.listFilterDurationStatsForClusters(settingId, clusterIds)
+            val queriedClusterIds = queriedClusters.map { cluster -> cluster.clusterId }
+            val queriedDurationStats = if (durationOnlyFilter && queriedClusterIds.isNotEmpty()) {
+                repository.listFilterDurationStatsForClusters(settingId, queriedClusterIds)
             } else {
                 emptyList()
+            }
+            val queriedDurationStatsByClusterId = queriedDurationStats.associateBy { stats ->
+                stats.clusterId
+            }
+            val queriedDurationsCached = durationOnlyFilter && queriedClusters.all { cluster ->
+                val stats = queriedDurationStatsByClusterId[cluster.clusterId]
+                stats != null &&
+                    stats.memberCount == cluster.fileCount.toLong() &&
+                    stats.checkedCount == stats.memberCount
+            }
+            val clusters = if (
+                durationOnlyFilter &&
+                !queriedDurationsCached &&
+                queriedClusters.size > sourcePageSize
+            ) {
+                sourceReadBatchSize = sourcePageSize
+                queriedClusters.take(sourcePageSize)
+            } else {
+                queriedClusters
+            }
+            val clusterIds = clusters.map { cluster -> cluster.clusterId }
+            val selectedClusterIds = clusterIds.toHashSet()
+            val initialDurationStats = queriedDurationStats.filter { stats ->
+                selectedClusterIds.contains(stats.clusterId)
             }
             val addedResolutionWork = if (durationOnlyFilter) {
                 initialDurationStats.sumOf { stats ->
@@ -182,7 +213,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     offset = cursor.offset + clusters.size,
                     afterCluster = clusters.lastOrNull() ?: cursor.afterCluster
                 ),
-                exhausted = clusters.isEmpty() || clusters.size < sourcePageSize
+                exhausted = clusters.size == queriedClusters.size &&
+                    (queriedClusters.isEmpty() || queriedClusters.size < queryLimit)
             )
         },
         transformMatch = { cluster ->
