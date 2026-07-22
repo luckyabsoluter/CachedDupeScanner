@@ -1456,9 +1456,24 @@ class SimilaritySettingsRepositoryTest {
             normalizedSql(sqlQuery).contains("file.hashbytes as hashbytes") &&
                 normalizedSql(sqlQuery).contains("setting_file.durationchecked as durationchecked")
         }
+        val singleDurationDeleteQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains(
+                "delete from similarity_duration_features where settingid = ? and fileid = ?"
+            )
+        }
+        val batchedDurationDeleteQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains(
+                "delete from similarity_duration_features where settingid = ? and fileid in ("
+            )
+        }
         assertEquals(1, filtered.clusters.size)
         assertEquals(files.size, durationExtractor.extractionCalls.get())
-        assertEquals(2, resolutionQueries.size)
+        assertEquals(1, resolutionQueries.size)
+        assertTrue(
+            singleDurationDeleteQueries.joinToString(separator = "\n"),
+            singleDurationDeleteQueries.isEmpty()
+        )
+        assertEquals(1, batchedDurationDeleteQueries.size)
         assertTrue(progress.size.toString(), progress.size <= 16)
         assertEquals(files.size, progress.last().processed)
         assertTrue(

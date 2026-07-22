@@ -13,6 +13,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Performance
 
 - Cached average-duration Similarity filters now scan candidates in bounded 500-cluster batches while retaining small reads when duration metadata still needs extraction.
+- First-time duration metadata resolution now uses bounded 500-file batches and clears stale duration features once per batch instead of once per file.
 
 ## [1.5.0] - 2026-07-21
 

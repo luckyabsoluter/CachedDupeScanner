@@ -321,14 +321,6 @@ interface SimilaritySettingsDao {
         fileIds: List<Long>
     ): List<SimilarityReusableDimensionsRow>
 
-    @Query(
-        """
-        DELETE FROM similarity_duration_features
-        WHERE settingId = :settingId AND fileId = :fileId
-        """
-    )
-    fun deleteDurationFeature(settingId: Long, fileId: Long)
-
     @Query("SELECT COUNT(*) FROM similarity_setting_files WHERE settingId = :settingId")
     fun countSettingFiles(settingId: Long): Int
 

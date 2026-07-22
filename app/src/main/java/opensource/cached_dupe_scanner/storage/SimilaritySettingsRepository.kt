@@ -2033,6 +2033,7 @@ class SimilaritySettingsRepository(
         if (resolved.isEmpty()) return rows
 
         val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
+        val updatedFileIds = mutableListOf<Long>()
         val acceptedDurations = mutableListOf<SimilarityDurationFeatureEntity>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
@@ -2047,7 +2048,7 @@ class SimilaritySettingsRepository(
                     updatedAtMillis = updatedAtMillis
                 )
                 if (updated > 0) {
-                    similarityDao.deleteDurationFeature(row.settingId, row.fileId)
+                    updatedFileIds += row.fileId
                     if (durationMillis != null) {
                         acceptedDurations += SimilarityDurationFeatureEntity(
                             settingId = row.settingId,
@@ -2073,6 +2074,9 @@ class SimilaritySettingsRepository(
                         )
                     }
                 }
+            }
+            if (updatedFileIds.isNotEmpty()) {
+                similarityDao.deleteDurationFeaturesForSettingByIds(settingId, updatedFileIds)
             }
             if (acceptedDurations.isNotEmpty()) {
                 similarityDao.upsertDurationFeatures(acceptedDurations)
@@ -2351,7 +2355,7 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 }
 
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
-private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 200
+private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 500
 private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 200
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
