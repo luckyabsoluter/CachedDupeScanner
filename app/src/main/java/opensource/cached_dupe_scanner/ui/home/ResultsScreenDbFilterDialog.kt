@@ -604,6 +604,7 @@ private fun ResultsFilterRuleEditor(
                             target = target,
                             value = "",
                             textOperator = ResultsFilterTextOperator.Contains,
+                            textNegated = false,
                             countOperator = ResultsFilterCountOperator.AtLeast,
                             timeOperator = ResultsFilterTimeOperator.OnOrAfter,
                             durationToleranceSeconds = "",
@@ -710,6 +711,18 @@ private fun ResultsFilterRuleEditor(
                 )
             } else {
                 Text("Operator")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = rule.textNegated,
+                        onCheckedChange = { negated ->
+                            onRuleChange(rule.copy(textNegated = negated))
+                        },
+                        modifier = Modifier.testTag("filter-text-not:${rule.id}")
+                    )
+                    Text("Not")
+                }
                 OptionButtonGrid(
                     options = ResultsFilterTextOperator.entries,
                     selected = rule.textOperator,

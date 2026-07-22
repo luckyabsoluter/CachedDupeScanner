@@ -38,6 +38,39 @@ class FilesScreenDbFiltersTest {
     }
 
     @Test
+    fun matchesFileFilterAppliesTextNotToFileNameAndFolderRules() {
+        val definition = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Exclude temporary files",
+                    mode = ResultsFilterClusterMode.All,
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            textOperator = ResultsFilterTextOperator.EndsWith,
+                            textNegated = true,
+                            value = ".tmp"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_2",
+                            target = ResultsFilterTarget.FolderPath,
+                            textOperator = ResultsFilterTextOperator.Contains,
+                            textNegated = true,
+                            value = "cache"
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(matchesFileFilter(definition, file("/storage/Camera/keep.jpg")))
+        assertFalse(matchesFileFilter(definition, file("/storage/Camera/remove.tmp")))
+        assertFalse(matchesFileFilter(definition, file("/storage/Cache/keep.jpg")))
+    }
+
+    @Test
     fun fileFilterSummaryIgnoresUnsupportedTargets() {
         val definition = ResultsFilterDefinition(
             clusters = listOf(
