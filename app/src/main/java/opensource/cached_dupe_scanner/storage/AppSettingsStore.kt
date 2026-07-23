@@ -2,6 +2,8 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import opensource.cached_dupe_scanner.cache.DEFAULT_SQLITE_PAGE_CACHE_MIB
+import opensource.cached_dupe_scanner.cache.sanitizeSqlitePageCacheMiB
 import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
 import opensource.cached_dupe_scanner.core.sanitizeScanWorkerCount
 
@@ -37,7 +39,8 @@ data class AppSettings(
     val similarityClusterSortDirection: String = "Desc",
     val similarityMemberSortKey: String = "Path",
     val similarityMemberSortDirection: String = "Asc",
-    val similarityDurationMemberSortDirection: String = "Asc"
+    val similarityDurationMemberSortDirection: String = "Asc",
+    val sqlitePageCacheMiB: Int = DEFAULT_SQLITE_PAGE_CACHE_MIB
 )
 
 class AppSettingsStore(context: Context) {
@@ -61,6 +64,12 @@ class AppSettingsStore(context: Context) {
 
     fun setSimilarityWorkerCount(value: Int) {
         prefs.edit().putInt(KEY_SIMILARITY_WORKER_COUNT, sanitizeScanWorkerCount(value)).apply()
+    }
+
+    fun setSqlitePageCacheMiB(value: Int) {
+        prefs.edit()
+            .putInt(KEY_SQLITE_PAGE_CACHE_MIB, sanitizeSqlitePageCacheMiB(value))
+            .apply()
     }
 
     fun setHideZeroSizeInResults(enabled: Boolean) {
@@ -207,6 +216,9 @@ class AppSettingsStore(context: Context) {
             similarityWorkerCount = sanitizeScanWorkerCount(
                 prefs.getInt(KEY_SIMILARITY_WORKER_COUNT, DEFAULT_SETTINGS.similarityWorkerCount)
             ),
+            sqlitePageCacheMiB = sanitizeSqlitePageCacheMiB(
+                prefs.getInt(KEY_SQLITE_PAGE_CACHE_MIB, DEFAULT_SETTINGS.sqlitePageCacheMiB)
+            ),
             hideZeroSizeInResults = prefs.getBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -319,6 +331,9 @@ class AppSettingsStore(context: Context) {
             similarityWorkerCount = sanitizeScanWorkerCount(
                 obj.optInt(KEY_SIMILARITY_WORKER_COUNT, DEFAULT_SETTINGS.similarityWorkerCount)
             ),
+            sqlitePageCacheMiB = sanitizeSqlitePageCacheMiB(
+                obj.optInt(KEY_SQLITE_PAGE_CACHE_MIB, DEFAULT_SETTINGS.sqlitePageCacheMiB)
+            ),
             hideZeroSizeInResults = obj.optBoolean(
                 KEY_HIDE_ZERO_SIZE_RESULTS,
                 DEFAULT_SETTINGS.hideZeroSizeInResults
@@ -417,6 +432,7 @@ class AppSettingsStore(context: Context) {
             .putBoolean(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .putInt(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
             .putInt(KEY_SIMILARITY_WORKER_COUNT, settings.similarityWorkerCount)
+            .putInt(KEY_SQLITE_PAGE_CACHE_MIB, settings.sqlitePageCacheMiB)
             .putBoolean(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .putBoolean(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .putBoolean(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -464,6 +480,7 @@ class AppSettingsStore(context: Context) {
             .put(KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN, settings.skipTrashBinContentsInScan)
             .put(KEY_SCAN_WORKER_COUNT, settings.scanWorkerCount)
             .put(KEY_SIMILARITY_WORKER_COUNT, settings.similarityWorkerCount)
+            .put(KEY_SQLITE_PAGE_CACHE_MIB, settings.sqlitePageCacheMiB)
             .put(KEY_HIDE_ZERO_SIZE_RESULTS, settings.hideZeroSizeInResults)
             .put(KEY_SHOW_MEMORY_OVERLAY, settings.showMemoryOverlay)
             .put(KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY, settings.keepLoadedThumbnailsInMemory)
@@ -544,6 +561,7 @@ class AppSettingsStore(context: Context) {
             skipTrashBinContentsInScan = true,
             scanWorkerCount = defaultScanWorkerCount(),
             similarityWorkerCount = defaultScanWorkerCount(),
+            sqlitePageCacheMiB = DEFAULT_SQLITE_PAGE_CACHE_MIB,
             hideZeroSizeInResults = false,
             showMemoryOverlay = false,
             keepLoadedThumbnailsInMemory = false,
@@ -576,6 +594,7 @@ class AppSettingsStore(context: Context) {
         private const val KEY_SKIP_TRASH_BIN_CONTENTS_IN_SCAN = "skip_trash_bin_contents_in_scan"
         private const val KEY_SCAN_WORKER_COUNT = "scan_worker_count"
         private const val KEY_SIMILARITY_WORKER_COUNT = "similarity_worker_count"
+        private const val KEY_SQLITE_PAGE_CACHE_MIB = "sqlite_page_cache_mib"
         private const val KEY_HIDE_ZERO_SIZE_RESULTS = "hide_zero_size_results"
         private const val KEY_SHOW_MEMORY_OVERLAY = "show_memory_overlay"
         private const val KEY_KEEP_LOADED_THUMBNAILS_IN_MEMORY = "keep_loaded_thumbnails_in_memory"

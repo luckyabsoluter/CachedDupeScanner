@@ -9,6 +9,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Added
 
 - File-name and folder-path filter rules now support `Not` for starts-with, ends-with, contains, and equals comparisons.
+- Settings now provide a per-connection SQLite page-cache target with no preset upper limit, defaulting to 100 MiB and applied after restarting the app.
 
 ### Performance
 

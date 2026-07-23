@@ -2,6 +2,7 @@ package opensource.cached_dupe_scanner.storage
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import opensource.cached_dupe_scanner.cache.DEFAULT_SQLITE_PAGE_CACHE_MIB
 import opensource.cached_dupe_scanner.core.MAX_SCAN_WORKER_COUNT
 import opensource.cached_dupe_scanner.core.MIN_SCAN_WORKER_COUNT
 import opensource.cached_dupe_scanner.core.defaultScanWorkerCount
@@ -42,6 +43,7 @@ class AppSettingsStoreTest {
         assertFalse(settings.snapVideoPreviewFramesToWidth)
         assertEquals(defaultScanWorkerCount(), settings.scanWorkerCount)
         assertEquals(defaultScanWorkerCount(), settings.similarityWorkerCount)
+        assertEquals(DEFAULT_SQLITE_PAGE_CACHE_MIB, settings.sqlitePageCacheMiB)
         assertEquals(1, settings.videoPreviewLineCount)
         assertEquals(100, settings.thumbnailSizePercent)
         assertEquals(100, settings.videoPreviewSizePercent)
@@ -96,6 +98,9 @@ class AppSettingsStoreTest {
 
         store.setSimilarityWorkerCount(5)
         assertEquals(5, store.load().similarityWorkerCount)
+
+        store.setSqlitePageCacheMiB(256)
+        assertEquals(256, store.load().sqlitePageCacheMiB)
 
         store.setVideoPreviewLineCount(3)
         assertEquals(3, store.load().videoPreviewLineCount)
@@ -187,6 +192,7 @@ class AppSettingsStoreTest {
         assertFalse(imported.snapVideoPreviewFramesToWidth)
         assertEquals(defaultScanWorkerCount(), imported.scanWorkerCount)
         assertEquals(defaultScanWorkerCount(), imported.similarityWorkerCount)
+        assertEquals(DEFAULT_SQLITE_PAGE_CACHE_MIB, imported.sqlitePageCacheMiB)
         assertEquals(1, imported.videoPreviewLineCount)
         assertEquals(100, imported.thumbnailSizePercent)
         assertEquals(100, imported.videoPreviewSizePercent)
@@ -219,6 +225,7 @@ class AppSettingsStoreTest {
         store.setSnapVideoPreviewFramesToWidth(true)
         store.setScanWorkerCount(7)
         store.setSimilarityWorkerCount(8)
+        store.setSqlitePageCacheMiB(192)
         store.setVideoPreviewLineCount(4)
         store.setThumbnailSizePercent(125)
         store.setVideoPreviewSizePercent(80)
@@ -255,6 +262,7 @@ class AppSettingsStoreTest {
         assertTrue(imported.snapVideoPreviewFramesToWidth)
         assertEquals(7, imported.scanWorkerCount)
         assertEquals(8, imported.similarityWorkerCount)
+        assertEquals(192, imported.sqlitePageCacheMiB)
         assertEquals(4, imported.videoPreviewLineCount)
         assertEquals(125, imported.thumbnailSizePercent)
         assertEquals(80, imported.videoPreviewSizePercent)
@@ -331,6 +339,24 @@ class AppSettingsStoreTest {
 
         val importedSimilarityHigh = store.importFromJson("{\"similarity_worker_count\":999}")
         assertEquals(MAX_SCAN_WORKER_COUNT, importedSimilarityHigh.similarityWorkerCount)
+    }
+
+    @Test
+    fun sqlitePageCacheSizeKeepsRequestedNonnegativeValueWhenStoredOrImported() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = AppSettingsStore(context)
+
+        store.setSqlitePageCacheMiB(0)
+        assertEquals(0, store.load().sqlitePageCacheMiB)
+
+        store.setSqlitePageCacheMiB(Int.MAX_VALUE)
+        assertEquals(Int.MAX_VALUE, store.load().sqlitePageCacheMiB)
+
+        val importedLow = store.importFromJson("{\"sqlite_page_cache_mib\":0}")
+        assertEquals(0, importedLow.sqlitePageCacheMiB)
+
+        val importedHigh = store.importFromJson("{\"sqlite_page_cache_mib\":9999}")
+        assertEquals(9999, importedHigh.sqlitePageCacheMiB)
     }
 
     private fun clearSettings() {

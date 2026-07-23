@@ -93,12 +93,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             CachedDupeScannerTheme {
                 val context = LocalContext.current
+                val settingsStore = remember { AppSettingsStore(context) }
+                val startupSettings = remember { settingsStore.load() }
                 val database = cacheDatabaseStartupGate(
                     inspect = { inspectCacheDatabaseStartup(context) },
                     openDatabase = { plan, onProgress ->
                         openCacheDatabaseForStartup(
                             context = context,
                             plan = plan,
+                            sqlitePageCacheMiB = startupSettings.sqlitePageCacheMiB,
                             onProgress = onProgress
                         )
                     },
@@ -119,7 +122,6 @@ class MainActivity : ComponentActivity() {
                 val similarityShowVideoPreviews = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewDurations = rememberSaveable { mutableStateOf(false) }
                 val similarityShowVideoPreviewResolutions = rememberSaveable { mutableStateOf(false) }
-                val settingsStore = remember { AppSettingsStore(context) }
                 val settingsSnapshot = remember(settingsVersion.value) { settingsStore.load() }
                 val rememberedThumbnailCache = remember { mutableStateMapOf<String, ImageBitmap>() }
                 val rememberedVideoPreviewCache = remember { mutableStateMapOf<String, ImageBitmap>() }
