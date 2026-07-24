@@ -33,6 +33,7 @@ import opensource.cached_dupe_scanner.core.VideoFrameSignatureExtractor
 import opensource.cached_dupe_scanner.core.VideoFrameSignatureResult
 import opensource.cached_dupe_scanner.ui.home.FilteredSimilarityClustersPage
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterCluster
+import opensource.cached_dupe_scanner.ui.home.ResultsFilterCountOperator
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterDefinition
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterRule
 import opensource.cached_dupe_scanner.ui.home.ResultsFilterTarget
@@ -1362,6 +1363,165 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun cachedSimilarityFiltersBatch250ClustersWithoutUnusedMetadataQueries() {
+        val groups = (0 until 250).map { groupIndex ->
+            val prefix = if (groupIndex == 249) "filter-target" else "ordinary"
+            listOf(
+                videoFile("$prefix-$groupIndex-a.mp4"),
+                videoFile("$prefix-$groupIndex-b.mp4")
+            )
+        }
+        val files = groups.flatten()
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val repository = repository(
+            signatures = groups.flatMapIndexed { groupIndex, groupFiles ->
+                val signature = (groupIndex + 1).toString(16).padStart(64, '0')
+                groupFiles.map { file -> file.absolutePath to signature }
+            }.toMap()
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        val noGroupMatches = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster-group-count-250",
+                    name = "No group matches",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule-group-count-250",
+                            target = ResultsFilterTarget.GroupItemCount,
+                            countOperator = ResultsFilterCountOperator.AtMost,
+                            value = "1"
+                        )
+                    )
+                )
+            )
+        )
+        executedQueries.clear()
+
+        val groupFiltered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = noGroupMatches,
+            startOffset = 0,
+            minMatches = 50,
+            sourcePageSize = 50
+        )
+
+        val groupSourceQueries = similarityFilterSourceQueries()
+        val groupResolutionCountQueries = similarityFilterResolutionCountQueries()
+        assertTrue(groupFiltered.clusters.isEmpty())
+        assertTrue(groupFiltered.exhausted)
+        assertEquals(2, groupSourceQueries.size)
+        assertTrue(
+            groupResolutionCountQueries.joinToString(separator = "\n"),
+            groupResolutionCountQueries.isEmpty()
+        )
+
+        val allGroupMatches = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster-all-group-count-250",
+                    name = "All group matches",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule-all-group-count-250",
+                            target = ResultsFilterTarget.GroupItemCount,
+                            countOperator = ResultsFilterCountOperator.AtLeast,
+                            value = "2"
+                        )
+                    )
+                )
+            )
+        )
+        executedQueries.clear()
+
+        val broadlyFiltered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = allGroupMatches,
+            startOffset = 0,
+            minMatches = 50,
+            sourcePageSize = 50
+        )
+
+        assertEquals(50, broadlyFiltered.clusters.size)
+        assertFalse(broadlyFiltered.exhausted)
+        assertEquals(1, similarityFilterSourceQueries().size)
+        assertTrue(similarityFilterResolutionCountQueries().isEmpty())
+
+        val targetFileName = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster-file-name-250",
+                    name = "Last cluster only",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule-file-name-250",
+                            target = ResultsFilterTarget.FileName,
+                            value = "filter-target"
+                        )
+                    )
+                )
+            )
+        )
+        executedQueries.clear()
+
+        val memberFiltered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = targetFileName,
+            startOffset = 0,
+            minMatches = 50,
+            sourcePageSize = 50
+        )
+
+        val memberSourceQueries = similarityFilterSourceQueries()
+        val memberResolutionCountQueries = similarityFilterResolutionCountQueries()
+        val memberQueries = executedQueries.filter { sqlQuery ->
+            val sql = normalizedSql(sqlQuery)
+            sql.contains("from similarity_cluster_members as member") &&
+                sql.contains("member.position as position")
+        }
+        assertEquals(1, memberFiltered.clusters.size)
+        assertTrue(memberFiltered.exhausted)
+        assertEquals(2, memberSourceQueries.size)
+        assertTrue(
+            memberResolutionCountQueries.joinToString(separator = "\n"),
+            memberResolutionCountQueries.isEmpty()
+        )
+        assertEquals(2, memberQueries.size)
+        assertTrue(
+            memberQueries.joinToString(separator = "\n"),
+            memberQueries.none { sqlQuery ->
+                normalizedSql(sqlQuery).contains("similarity_duration_features")
+            }
+        )
+        assertTrue(
+            memberQueries.joinToString(separator = "\n"),
+            memberQueries.none { sqlQuery ->
+                normalizedSql(sqlQuery).contains("similarity_clusters as cluster")
+            }
+        )
+    }
+
+    @Test
     fun uncachedDurationAverageFilterDoesNotOverreadSourceBatch() {
         val groups = (0 until 4).map { groupIndex ->
             listOf(
@@ -1771,6 +1931,7 @@ class SimilaritySettingsRepositoryTest {
             )
         )
         val progress = mutableListOf<SimilarityFilterResolutionProgress>()
+        executedQueries.clear()
 
         val filtered = loadFilteredSimilarityClustersPage(
             repository = filteringRepository,
@@ -1785,7 +1946,22 @@ class SimilaritySettingsRepositoryTest {
             onResolutionProgress = progress::add
         )
 
+        val metadataResolutionQueries = executedQueries.filter { sqlQuery ->
+            val sql = normalizedSql(sqlQuery)
+            sql.contains("from similarity_cluster_members as member") &&
+                sql.contains("file.hashbytes as hashbytes")
+        }
         assertEquals(1, filtered.clusters.size)
+        assertTrue(
+            metadataResolutionQueries.joinToString(separator = "\n"),
+            metadataResolutionQueries.isNotEmpty()
+        )
+        assertTrue(
+            metadataResolutionQueries.joinToString(separator = "\n"),
+            metadataResolutionQueries.none { sqlQuery ->
+                normalizedSql(sqlQuery).contains("similarity_duration_features")
+            }
+        )
         assertEquals(0, progress.first().processed)
         assertEquals(2, progress.first().total)
         assertEquals(2, progress.last().processed)
@@ -2579,6 +2755,20 @@ class SimilaritySettingsRepositoryTest {
 
     private fun normalizedSql(sqlQuery: String): String {
         return sqlQuery.lowercase().replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun similarityFilterSourceQueries(): List<String> {
+        return executedQueries.filter { sqlQuery ->
+            val sql = normalizedSql(sqlQuery)
+            sql.contains("from similarity_clusters where settingid = ? and filecount > 1") &&
+                sql.contains("order by filecount desc, totalbytes desc, clusterkey asc")
+        }
+    }
+
+    private fun similarityFilterResolutionCountQueries(): List<String> {
+        return executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("as dimensioncount")
+        }
     }
 
     private fun repository(

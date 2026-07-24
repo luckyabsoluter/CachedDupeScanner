@@ -576,7 +576,7 @@ class SimilaritySettingsRepository(
         resolveDurations: Boolean
     ): Int {
         val distinctClusterIds = clusterIds.distinct()
-        if (distinctClusterIds.isEmpty()) return 0
+        if (distinctClusterIds.isEmpty() || (!resolveDimensions && !resolveDurations)) return 0
         var count = 0L
         distinctClusterIds.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { clusterIdChunk ->
             val work = similarityDao.countFilterResolutionWorkForClusters(
@@ -604,16 +604,27 @@ class SimilaritySettingsRepository(
             var afterPosition = -1
             var afterFileId = -1L
             while (!Thread.currentThread().isInterrupted) {
-                val queriedRows = similarityDao.listUncheckedFilterMetadataMembersForClusters(
-                    settingId = settingId,
-                    clusterIds = clusterIdChunk,
-                    resolveDimensions = resolveDimensions,
-                    resolveDurations = resolveDurations,
-                    afterClusterId = afterClusterId,
-                    afterPosition = afterPosition,
-                    afterFileId = afterFileId,
-                    limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
-                )
+                val queriedRows = if (resolveDurations) {
+                    similarityDao.listUncheckedFilterMetadataMembersForClusters(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk,
+                        resolveDimensions = resolveDimensions,
+                        resolveDurations = true,
+                        afterClusterId = afterClusterId,
+                        afterPosition = afterPosition,
+                        afterFileId = afterFileId,
+                        limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
+                    )
+                } else {
+                    similarityDao.listUncheckedFilterDimensionMembersForClusters(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk,
+                        afterClusterId = afterClusterId,
+                        afterPosition = afterPosition,
+                        afterFileId = afterFileId,
+                        limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
+                    )
+                }
                 val uncheckedRows = queriedRows
                     .distinctBy { row -> row.fileId }
                     .map(SimilarityFilterMetadataResolutionRow::toMemberFileRow)
@@ -639,6 +650,7 @@ class SimilaritySettingsRepository(
         settingId: Long,
         clusterIds: List<Long>,
         pageSize: Int,
+        includeDurations: Boolean,
         onPage: (List<SimilarityClusterFilterMemberRow>) -> Set<Long>
     ) {
         val safePageSize = pageSize.coerceIn(1, SIMILARITY_FILTER_MEMBER_BATCH_SIZE)
@@ -650,14 +662,25 @@ class SimilaritySettingsRepository(
                 var afterPosition = -1
                 var afterFileId = -1L
                 while (remainingClusterIds.isNotEmpty() && !Thread.currentThread().isInterrupted) {
-                    val rows = similarityDao.listFilterMembersForClustersPage(
-                        settingId = settingId,
-                        clusterIds = remainingClusterIds.toList(),
-                        afterClusterId = afterClusterId,
-                        afterPosition = afterPosition,
-                        afterFileId = afterFileId,
-                        limit = safePageSize
-                    )
+                    val rows = if (includeDurations) {
+                        similarityDao.listFilterMembersForClustersPage(
+                            settingId = settingId,
+                            clusterIds = remainingClusterIds.toList(),
+                            afterClusterId = afterClusterId,
+                            afterPosition = afterPosition,
+                            afterFileId = afterFileId,
+                            limit = safePageSize
+                        )
+                    } else {
+                        similarityDao.listFilterMembersWithoutDurationForClustersPage(
+                            settingId = settingId,
+                            clusterIds = remainingClusterIds.toList(),
+                            afterClusterId = afterClusterId,
+                            afterPosition = afterPosition,
+                            afterFileId = afterFileId,
+                            limit = safePageSize
+                        )
+                    }
                     if (rows.isEmpty()) break
                     remainingClusterIds.removeAll(onPage(rows))
                     val last = rows.last()
@@ -2424,7 +2447,7 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
 private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 500
-private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 200
+private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 500
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS = 2

@@ -12,7 +12,7 @@ import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 
 private const val SIMILARITY_FILTER_PROGRESS_UPDATE_INTERVAL = 16
-private const val SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE = 500
+private const val SIMILARITY_FILTER_SOURCE_BATCH_SIZE = 500
 
 internal data class FilteredSimilarityClustersPage(
     val clusters: List<SimilarityClusterEntity>,
@@ -41,7 +41,7 @@ internal fun loadFilteredSimilarityClustersPage(
     startOffset: Int,
     minMatches: Int,
     sourcePageSize: Int,
-    memberPageSize: Int = 200,
+    memberPageSize: Int = 500,
     onResolutionProgress: (SimilarityFilterResolutionProgress) -> Unit = {}
 ): FilteredSimilarityClustersPage {
     if (sourcePageSize <= 0 || memberPageSize <= 0) {
@@ -61,7 +61,7 @@ internal fun loadFilteredSimilarityClustersPage(
             !definition.hasActiveTarget(target, SIMILARITY_FILTER_TARGETS)
     }
     var sourceReadBatchSize = if (durationOnlyFilter) {
-        maxOf(sourcePageSize, SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE)
+        maxOf(sourcePageSize, SIMILARITY_FILTER_SOURCE_BATCH_SIZE)
     } else {
         sourcePageSize
     }
@@ -124,7 +124,7 @@ internal fun loadFilteredSimilarityClustersPage(
                 )
             }
             val queriedClusterIds = queriedClusters.map { cluster -> cluster.clusterId }
-            val queriedDurationStats = if (durationOnlyFilter && queriedClusterIds.isNotEmpty()) {
+            val queriedDurationStats = if (resolveDurations && queriedClusterIds.isNotEmpty()) {
                 repository.listFilterDurationStatsForClusters(settingId, queriedClusterIds)
             } else {
                 emptyList()
@@ -132,15 +132,33 @@ internal fun loadFilteredSimilarityClustersPage(
             val queriedDurationStatsByClusterId = queriedDurationStats.associateBy { stats ->
                 stats.clusterId
             }
-            val queriedDurationsCached = durationOnlyFilter && queriedClusters.all { cluster ->
-                val stats = queriedDurationStatsByClusterId[cluster.clusterId]
-                stats != null &&
-                    stats.memberCount == cluster.fileCount.toLong() &&
-                    stats.checkedCount == stats.memberCount
+            val queriedDurationResolutionWork = if (resolveDurations) {
+                durationResolutionWork(
+                    clusters = queriedClusters,
+                    statsByClusterId = queriedDurationStatsByClusterId
+                )
+            } else {
+                0
             }
+            val queriedDimensionResolutionWork = if (
+                resolveDimensions &&
+                queriedClusterIds.isNotEmpty()
+            ) {
+                repository.countFilterResolutionWorkForClusters(
+                    settingId = settingId,
+                    clusterIds = queriedClusterIds,
+                    resolveDimensions = true,
+                    resolveDurations = false
+                )
+            } else {
+                0
+            }
+            val queriedResolutionWork = addResolutionWork(
+                queriedDurationResolutionWork,
+                queriedDimensionResolutionWork
+            )
             val clusters = if (
-                durationOnlyFilter &&
-                !queriedDurationsCached &&
+                queriedResolutionWork > 0 &&
                 queriedClusters.size > sourcePageSize
             ) {
                 sourceReadBatchSize = sourcePageSize
@@ -153,18 +171,30 @@ internal fun loadFilteredSimilarityClustersPage(
             val initialDurationStats = queriedDurationStats.filter { stats ->
                 selectedClusterIds.contains(stats.clusterId)
             }
-            val addedResolutionWork = if (durationOnlyFilter) {
-                initialDurationStats.sumOf { stats ->
-                    (stats.memberCount - stats.checkedCount).coerceAtLeast(0L)
-                }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val durationResolutionWork = if (resolveDurations) {
+                durationResolutionWork(
+                    clusters = clusters,
+                    statsByClusterId = queriedDurationStatsByClusterId
+                )
+            } else {
+                0
+            }
+            val dimensionResolutionWork = if (!resolveDimensions) {
+                0
+            } else if (clusters.size == queriedClusters.size) {
+                queriedDimensionResolutionWork
             } else {
                 repository.countFilterResolutionWorkForClusters(
                     settingId = settingId,
                     clusterIds = clusterIds,
-                    resolveDimensions = resolveDimensions,
-                    resolveDurations = resolveDurations
+                    resolveDimensions = true,
+                    resolveDurations = false
                 )
             }
+            val addedResolutionWork = addResolutionWork(
+                durationResolutionWork,
+                dimensionResolutionWork
+            )
             if (addedResolutionWork > 0) {
                 resolutionTotal = (resolutionTotal.toLong() + addedResolutionWork)
                     .coerceAtMost(Int.MAX_VALUE.toLong())
@@ -203,9 +233,13 @@ internal fun loadFilteredSimilarityClustersPage(
                     settingId = settingId,
                     clusters = clusters,
                     definition = definition,
-                    memberPageSize = memberPageSize
+                    memberPageSize = memberPageSize,
+                    includeDurations = resolveDurations
                 )
                 else -> emptyMap()
+            }
+            if (addedResolutionWork == 0 && sourceReadBatchSize == sourcePageSize) {
+                sourceReadBatchSize = maxOf(sourcePageSize, SIMILARITY_FILTER_SOURCE_BATCH_SIZE)
             }
             SourcePage(
                 items = clusters,
@@ -240,6 +274,24 @@ internal fun loadFilteredSimilarityClustersPage(
     )
 }
 
+private fun durationResolutionWork(
+    clusters: List<SimilarityClusterEntity>,
+    statsByClusterId: Map<Long, SimilarityClusterDurationStatsRow>
+): Int {
+    return clusters.sumOf { cluster ->
+        val stats = statsByClusterId[cluster.clusterId]
+        if (stats == null || stats.memberCount != cluster.fileCount.toLong()) {
+            cluster.fileCount.coerceAtLeast(0).toLong()
+        } else {
+            (stats.memberCount - stats.checkedCount).coerceAtLeast(0L)
+        }
+    }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+}
+
+private fun addResolutionWork(first: Int, second: Int): Int {
+    return (first.toLong() + second.toLong()).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+}
+
 private fun matchSimilarityClustersFromDurationStats(
     clusters: List<SimilarityClusterEntity>,
     definition: ResultsFilterDefinition,
@@ -271,7 +323,8 @@ private fun matchSimilarityClustersFromMemberPages(
     settingId: Long,
     clusters: List<SimilarityClusterEntity>,
     definition: ResultsFilterDefinition,
-    memberPageSize: Int
+    memberPageSize: Int,
+    includeDurations: Boolean
 ): Map<Long, Boolean> {
     val matchers = clusters.associate { cluster ->
         cluster.clusterId to ResultsFilterPagedMatcher(
@@ -287,6 +340,7 @@ private fun matchSimilarityClustersFromMemberPages(
         settingId = settingId,
         clusterIds = unresolvedClusterIds.toList(),
         pageSize = memberPageSize,
+        includeDurations = includeDurations,
         onPage = { rows ->
             val resolvedClusterIds = linkedSetOf<Long>()
             rows.groupBy { row -> row.clusterId }.forEach { (clusterId, clusterRows) ->
