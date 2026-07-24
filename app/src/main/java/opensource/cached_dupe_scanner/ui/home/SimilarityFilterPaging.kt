@@ -12,7 +12,7 @@ import opensource.cached_dupe_scanner.storage.SimilarityMemberResolutionKind
 import opensource.cached_dupe_scanner.storage.SimilaritySettingsRepository
 
 private const val SIMILARITY_FILTER_PROGRESS_UPDATE_INTERVAL = 16
-private const val SIMILARITY_FILTER_SOURCE_BATCH_SIZE = 500
+private const val SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE = 500
 
 internal data class FilteredSimilarityClustersPage(
     val clusters: List<SimilarityClusterEntity>,
@@ -61,7 +61,7 @@ internal fun loadFilteredSimilarityClustersPage(
             !definition.hasActiveTarget(target, SIMILARITY_FILTER_TARGETS)
     }
     var sourceReadBatchSize = if (durationOnlyFilter) {
-        maxOf(sourcePageSize, SIMILARITY_FILTER_SOURCE_BATCH_SIZE)
+        maxOf(sourcePageSize, SIMILARITY_DURATION_FILTER_SOURCE_BATCH_SIZE)
     } else {
         sourcePageSize
     }
@@ -237,9 +237,6 @@ internal fun loadFilteredSimilarityClustersPage(
                     includeDurations = resolveDurations
                 )
                 else -> emptyMap()
-            }
-            if (addedResolutionWork == 0 && sourceReadBatchSize == sourcePageSize) {
-                sourceReadBatchSize = maxOf(sourcePageSize, SIMILARITY_FILTER_SOURCE_BATCH_SIZE)
             }
             SourcePage(
                 items = clusters,

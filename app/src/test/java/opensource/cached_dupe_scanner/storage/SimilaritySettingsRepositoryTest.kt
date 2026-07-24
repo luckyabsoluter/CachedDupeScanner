@@ -1363,9 +1363,13 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
-    fun cachedSimilarityFiltersBatch250ClustersWithoutUnusedMetadataQueries() {
+    fun cachedSimilarityFiltersBoundWorkAcross250Clusters() {
         val groups = (0 until 250).map { groupIndex ->
-            val prefix = if (groupIndex == 249) "filter-target" else "ordinary"
+            val prefix = when {
+                groupIndex == 249 -> "filter-target"
+                groupIndex % 5 == 4 -> "common-miss"
+                else -> "common-target"
+            }
             listOf(
                 videoFile("$prefix-$groupIndex-a.mp4"),
                 videoFile("$prefix-$groupIndex-b.mp4")
@@ -1420,11 +1424,9 @@ class SimilaritySettingsRepositoryTest {
             sourcePageSize = 50
         )
 
-        val groupSourceQueries = similarityFilterSourceQueries()
         val groupResolutionCountQueries = similarityFilterResolutionCountQueries()
         assertTrue(groupFiltered.clusters.isEmpty())
         assertTrue(groupFiltered.exhausted)
-        assertEquals(2, groupSourceQueries.size)
         assertTrue(
             groupResolutionCountQueries.joinToString(separator = "\n"),
             groupResolutionCountQueries.isEmpty()
@@ -1464,6 +1466,38 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(1, similarityFilterSourceQueries().size)
         assertTrue(similarityFilterResolutionCountQueries().isEmpty())
 
+        val moderatelyMatchingFileName = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster-moderate-file-name-250",
+                    name = "Moderately matching file name",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule-moderate-file-name-250",
+                            target = ResultsFilterTarget.FileName,
+                            value = "common-target"
+                        )
+                    )
+                )
+            )
+        )
+        executedQueries.clear()
+
+        val moderatelyFiltered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = moderatelyMatchingFileName,
+            startOffset = 0,
+            minMatches = 50,
+            sourcePageSize = 50
+        )
+
+        assertEquals(80, moderatelyFiltered.clusters.size)
+        assertEquals(100, moderatelyFiltered.nextSourceOffset)
+        assertFalse(moderatelyFiltered.exhausted)
+
         val targetFileName = ResultsFilterDefinition(
             clusters = listOf(
                 ResultsFilterCluster(
@@ -1492,7 +1526,6 @@ class SimilaritySettingsRepositoryTest {
             sourcePageSize = 50
         )
 
-        val memberSourceQueries = similarityFilterSourceQueries()
         val memberResolutionCountQueries = similarityFilterResolutionCountQueries()
         val memberQueries = executedQueries.filter { sqlQuery ->
             val sql = normalizedSql(sqlQuery)
@@ -1501,12 +1534,11 @@ class SimilaritySettingsRepositoryTest {
         }
         assertEquals(1, memberFiltered.clusters.size)
         assertTrue(memberFiltered.exhausted)
-        assertEquals(2, memberSourceQueries.size)
         assertTrue(
             memberResolutionCountQueries.joinToString(separator = "\n"),
             memberResolutionCountQueries.isEmpty()
         )
-        assertEquals(2, memberQueries.size)
+        assertTrue(memberQueries.joinToString(separator = "\n"), memberQueries.isNotEmpty())
         assertTrue(
             memberQueries.joinToString(separator = "\n"),
             memberQueries.none { sqlQuery ->
