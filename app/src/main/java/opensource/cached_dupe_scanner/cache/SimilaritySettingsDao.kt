@@ -472,9 +472,14 @@ interface SimilaritySettingsDao {
         """
         SELECT
             member.clusterId AS clusterId,
+            cluster.updatedAtMillis AS clusterUpdatedAtMillis,
             COUNT(*) AS memberCount,
             SUM(
-                CASE WHEN setting_file.durationChecked = 1 THEN 1 ELSE 0 END
+                CASE
+                    WHEN setting_file.fileId IS NULL OR setting_file.durationChecked = 1
+                    THEN 1
+                    ELSE 0
+                END
             ) AS checkedCount,
             COUNT(duration.durationMillis) AS durationCount,
             SUM(duration.durationMillis) AS durationSumMillis,
@@ -483,22 +488,67 @@ interface SimilaritySettingsDao {
         FROM similarity_cluster_members AS member
         INNER JOIN similarity_clusters AS cluster
             ON cluster.clusterId = member.clusterId
-        INNER JOIN similarity_setting_files AS setting_file
+        LEFT JOIN similarity_setting_files AS setting_file
             ON setting_file.settingId = cluster.settingId
            AND setting_file.fileId = member.fileId
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = cluster.settingId
            AND duration.fileId = member.fileId
+           AND setting_file.durationChecked = 1
         WHERE cluster.settingId = :settingId
           AND member.clusterId IN (:clusterIds)
-        GROUP BY member.clusterId
+        GROUP BY member.clusterId, cluster.updatedAtMillis
         ORDER BY member.clusterId ASC
         """
     )
-    fun listDurationStatsForClusters(
+    fun calculateDurationStatsForClusters(
         settingId: Long,
         clusterIds: List<Long>
     ): List<SimilarityClusterDurationStatsRow>
+
+    @Query(
+        """
+        SELECT
+            stats.clusterId AS clusterId,
+            stats.clusterUpdatedAtMillis AS clusterUpdatedAtMillis,
+            stats.memberCount AS memberCount,
+            stats.checkedCount AS checkedCount,
+            stats.durationCount AS durationCount,
+            stats.durationSumMillis AS durationSumMillis,
+            stats.minimumDurationMillis AS minimumDurationMillis,
+            stats.maximumDurationMillis AS maximumDurationMillis
+        FROM similarity_cluster_duration_stats AS stats
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = stats.clusterId
+        WHERE cluster.settingId = :settingId
+          AND stats.clusterId IN (:clusterIds)
+          AND stats.clusterUpdatedAtMillis = cluster.updatedAtMillis
+          AND stats.memberCount = cluster.fileCount
+        ORDER BY stats.clusterId ASC
+        """
+    )
+    fun listCachedDurationStatsForClusters(
+        settingId: Long,
+        clusterIds: List<Long>
+    ): List<SimilarityClusterDurationStatsRow>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertClusterDurationStats(stats: List<SimilarityClusterDurationStatsEntity>)
+
+    @Query("DELETE FROM similarity_cluster_duration_stats WHERE clusterId IN (:clusterIds)")
+    fun deleteClusterDurationStatsByIds(clusterIds: List<Long>): Int
+
+    @Query(
+        """
+        DELETE FROM similarity_cluster_duration_stats
+        WHERE clusterId IN (
+            SELECT clusterId
+            FROM similarity_cluster_members
+            WHERE fileId IN (:fileIds)
+        )
+        """
+    )
+    fun deleteClusterDurationStatsForMemberFileIds(fileIds: List<Long>): Int
 
     @Query("SELECT COUNT(*) FROM similarity_exact_thumbnail_features WHERE settingId = :settingId")
     fun countExactThumbnailFeatures(settingId: Long): Int

@@ -469,6 +469,7 @@ private fun copyVersion21SimilarityTables(
            AND duration.fileId = member.fileId
         """.trimIndent()
     )
+    rebuildSimilarityClusterDurationStats(target)
 }
 
 private fun rebuildExactFeaturesFromClusters(target: SupportSQLiteDatabase) {

@@ -79,6 +79,7 @@ data class SimilarityFilterMetadataResolutionRow(
 
 data class SimilarityClusterDurationStatsRow(
     val clusterId: Long,
+    val clusterUpdatedAtMillis: Long,
     val memberCount: Long,
     val checkedCount: Long,
     val durationCount: Long,

@@ -1192,6 +1192,77 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_24_25 = object : Migration(24, 25) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            createSimilarityClusterDurationStatsTable(db)
+            rebuildSimilarityClusterDurationStats(db)
+        }
+    }
+
+}
+
+internal fun createSimilarityClusterDurationStatsTable(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS similarity_cluster_duration_stats (
+            clusterId INTEGER NOT NULL,
+            clusterUpdatedAtMillis INTEGER NOT NULL,
+            memberCount INTEGER NOT NULL,
+            checkedCount INTEGER NOT NULL,
+            durationCount INTEGER NOT NULL,
+            durationSumMillis INTEGER,
+            minimumDurationMillis INTEGER,
+            maximumDurationMillis INTEGER,
+            PRIMARY KEY(clusterId),
+            FOREIGN KEY(clusterId) REFERENCES similarity_clusters(clusterId)
+                ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+        """.trimIndent()
+    )
+}
+
+internal fun rebuildSimilarityClusterDurationStats(db: SupportSQLiteDatabase) {
+    db.execSQL("DELETE FROM similarity_cluster_duration_stats")
+    db.execSQL(
+        """
+        INSERT INTO similarity_cluster_duration_stats (
+            clusterId,
+            clusterUpdatedAtMillis,
+            memberCount,
+            checkedCount,
+            durationCount,
+            durationSumMillis,
+            minimumDurationMillis,
+            maximumDurationMillis
+        )
+        SELECT
+            member.clusterId,
+            cluster.updatedAtMillis,
+            COUNT(*),
+            SUM(
+                CASE
+                    WHEN setting_file.fileId IS NULL OR setting_file.durationChecked = 1
+                    THEN 1
+                    ELSE 0
+                END
+            ),
+            COUNT(duration.durationMillis),
+            SUM(duration.durationMillis),
+            MIN(duration.durationMillis),
+            MAX(duration.durationMillis)
+        FROM similarity_cluster_members AS member
+        INNER JOIN similarity_clusters AS cluster
+            ON cluster.clusterId = member.clusterId
+        LEFT JOIN similarity_setting_files AS setting_file
+            ON setting_file.settingId = cluster.settingId
+           AND setting_file.fileId = member.fileId
+        LEFT JOIN similarity_duration_features AS duration
+            ON duration.settingId = cluster.settingId
+           AND duration.fileId = member.fileId
+           AND setting_file.durationChecked = 1
+        GROUP BY member.clusterId, cluster.updatedAtMillis
+        """.trimIndent()
+    )
 }
 
 private fun copyCachedFileHashesToBlob(db: SupportSQLiteDatabase) {

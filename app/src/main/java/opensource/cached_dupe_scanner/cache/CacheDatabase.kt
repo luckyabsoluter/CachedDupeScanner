@@ -4,7 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-const val CACHE_DATABASE_VERSION = 24
+const val CACHE_DATABASE_VERSION = 25
 
 /**
  * Room database for scan cache, duplicate-group snapshot, reports, and trash metadata.
@@ -16,6 +16,7 @@ const val CACHE_DATABASE_VERSION = 24
  * - `trash_entries`: application trash ledger for restore/delete operations.
  * - `similarity_settings`: configured similarity methods maintained alongside the file cache.
  * - `similarity_cluster_members`: sidecar links between similarity clusters and cached files.
+ * - `similarity_cluster_duration_stats`: persisted duration aggregates for repeated cluster filtering.
  */
 @Database(
     entities = [
@@ -29,6 +30,7 @@ const val CACHE_DATABASE_VERSION = 24
         SimilarityDurationFeatureEntity::class,
         SimilarityClusterEntity::class,
         SimilarityClusterMemberEntity::class,
+        SimilarityClusterDurationStatsEntity::class,
         SimilarityMaintenanceRunEntity::class
     ],
     version = CACHE_DATABASE_VERSION,

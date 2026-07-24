@@ -1182,13 +1182,20 @@ class SimilaritySettingsRepositoryTest {
         val durationAggregateQueries = executedQueries.filter { sqlQuery ->
             normalizedSql(sqlQuery).contains("sum(duration.durationmillis) as durationsummillis")
         }
+        val cachedDurationStatsQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("from similarity_cluster_duration_stats as stats")
+        }
         val separateResolutionCountQueries = executedQueries.filter { sqlQuery ->
             normalizedSql(sqlQuery).contains("as dimensioncount")
         }
         assertEquals(3, cached.clusters.size)
         assertTrue(perClusterMemberQueries.joinToString(separator = "\n"), perClusterMemberQueries.isEmpty())
         assertTrue(streamedMemberQueries.joinToString(separator = "\n"), streamedMemberQueries.isEmpty())
-        assertEquals(1, durationAggregateQueries.size)
+        assertTrue(
+            durationAggregateQueries.joinToString(separator = "\n"),
+            durationAggregateQueries.isEmpty()
+        )
+        assertEquals(1, cachedDurationStatsQueries.size)
         assertTrue(
             separateResolutionCountQueries.joinToString(separator = "\n"),
             separateResolutionCountQueries.isEmpty()
@@ -1274,10 +1281,83 @@ class SimilaritySettingsRepositoryTest {
         assertEquals(1, offsetQueries.size)
         assertTrue(sourceQueries.joinToString(separator = "\n"), keysetQueries.isEmpty())
         assertEquals(sourceQueries.joinToString(separator = "\n"), 1, sourceQueries.size)
-        assertEquals(
+        assertTrue(
             durationAggregateQueries.joinToString(separator = "\n"),
-            1,
-            durationAggregateQueries.size
+            durationAggregateQueries.isEmpty()
+        )
+    }
+
+    @Test
+    fun cachedDurationAverageFilterReads250ClusterStatsWithoutMemberAggregation() {
+        val groups = (0 until 250).map { groupIndex ->
+            listOf(
+                videoFile("cached-duration-250-$groupIndex-a.mp4"),
+                videoFile("cached-duration-250-$groupIndex-b.mp4")
+            )
+        }
+        val files = groups.flatten()
+        database.fileCacheDao().upsertAll(files.map(::entity))
+        val signatures = groups.flatMapIndexed { groupIndex, groupFiles ->
+            val signature = (groupIndex + 1).toString(16).padStart(64, '0')
+            groupFiles.map { file -> file.absolutePath to signature }
+        }.toMap()
+        val durations = groups.flatMapIndexed { groupIndex, groupFiles ->
+            val durationMillis = 10_000L + groupIndex
+            groupFiles.map { file -> file.absolutePath to durationMillis }
+        }.toMap()
+        val repository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = database.similaritySettingsDao(),
+            frameSignatureExtractor = FakeSignatureMetadataExtractor(signatures, durations),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = FakeMediaDimensionsExtractor(emptyMap())
+        )
+        val setting = repository.createExactThumbnailSetting(
+            mediaScope = SimilarityMediaScope.Video,
+            minSizeBytes = 1L,
+            step = exactStep(width = 1, height = 1),
+            enabled = true
+        )
+        repository.runSettingMaintenance(
+            settingId = setting.settingId,
+            rebuild = true,
+            shouldContinue = { true },
+            onProgress = {}
+        )
+        executedQueries.clear()
+
+        val filtered = loadFilteredSimilarityClustersPage(
+            repository = repository,
+            settingId = setting.settingId,
+            sortColumn = SimilarityClusterSortColumn.FileCount,
+            sortDirection = SortDirection.Desc,
+            definition = durationAverageFilterDefinition(idSuffix = "cached-250"),
+            startOffset = 0,
+            minMatches = 50,
+            sourcePageSize = 50
+        )
+
+        val durationAggregateQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("sum(duration.durationmillis) as durationsummillis")
+        }
+        val cachedDurationStatsQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("from similarity_cluster_duration_stats as stats")
+        }
+        val streamedMemberQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("member.position as position")
+        }
+        assertEquals(250, filtered.clusters.size)
+        assertEquals(250, filtered.nextSourceOffset)
+        assertTrue(filtered.exhausted)
+        assertTrue(
+            durationAggregateQueries.joinToString(separator = "\n"),
+            durationAggregateQueries.isEmpty()
+        )
+        assertEquals(1, cachedDurationStatsQueries.size)
+        assertTrue(
+            streamedMemberQueries.joinToString(separator = "\n"),
+            streamedMemberQueries.isEmpty()
         )
     }
 
