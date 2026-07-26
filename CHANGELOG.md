@@ -13,11 +13,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Performance
 
-- Similarity member filters now anchor paged joins to a covering cluster-member cursor index, avoiding repeated full setting-file scans and per-page temporary sorting.
-- Similarity filters now keep general candidate reads to the visible page, batch member reads up to 500 rows, skip unused metadata checks, and omit duration-table joins unless duration is active.
-- Average-duration Similarity filters now read persisted per-cluster duration aggregates and recalculate only clusters whose members or duration metadata changed.
-- Cached average-duration Similarity filters now scan candidates in bounded 500-cluster batches while retaining small reads when duration metadata still needs extraction.
-- First-time duration metadata resolution now uses bounded 500-file batches and clears stale duration features once per batch instead of once per file.
+- Similarity member filters now use indexed, bounded database queries that avoid repeated scans and unnecessary metadata or duration lookups.
+- Average-duration Similarity filters now reuse cached per-cluster summaries and batch uncached metadata processing, reducing repeated database work while keeping media extraction bounded.
 
 ## [1.5.0] - 2026-07-21
 
