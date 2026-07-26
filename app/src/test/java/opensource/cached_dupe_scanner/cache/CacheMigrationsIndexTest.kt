@@ -1074,6 +1074,66 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration25to26ReplacesMemberCursorIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "member-index-${UUID.randomUUID().toString().take(8)}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(25) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE similarity_cluster_members (
+                                clusterId INTEGER NOT NULL,
+                                fileId INTEGER NOT NULL,
+                                position INTEGER NOT NULL,
+                                PRIMARY KEY(clusterId, fileId)
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            CREATE INDEX index_similarity_cluster_members_clusterId_position
+                            ON similarity_cluster_members(clusterId, position)
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int
+                    ) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_25_26.migrate(db)
+
+            val indexName = "index_similarity_cluster_members_clusterId_position_fileId"
+            assertTrue(hasIndex(db, "similarity_cluster_members", indexName))
+            assertFalse(
+                hasIndex(
+                    db,
+                    "similarity_cluster_members",
+                    "index_similarity_cluster_members_clusterId_position"
+                )
+            )
+            assertEquals(
+                listOf("clusterId", "position", "fileId"),
+                indexColumns(db, indexName)
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion22HashTextTables(db: SupportSQLiteDatabase) {
         createVersion21FileIdMigrationTables(db, seedData = false)
         CacheMigrations.MIGRATION_21_22.migrate(db)

@@ -4,7 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-const val CACHE_DATABASE_VERSION = 25
+const val CACHE_DATABASE_VERSION = 26
 
 /**
  * Room database for scan cache, duplicate-group snapshot, reports, and trash metadata.

@@ -1554,6 +1554,85 @@ class SimilaritySettingsRepositoryTest {
     }
 
     @Test
+    fun similarityMemberFilterQueriesUseCoveringClusterCursorIndex() {
+        val dao = database.similaritySettingsDao()
+        executedQueries.clear()
+
+        dao.countFilterResolutionWorkForClusters(
+            settingId = 1L,
+            clusterIds = listOf(1L),
+            resolveDimensions = true,
+            resolveDurations = true
+        )
+        dao.listUncheckedFilterMetadataMembersForClusters(
+            settingId = 1L,
+            clusterIds = listOf(1L),
+            resolveDimensions = true,
+            resolveDurations = true,
+            afterClusterId = -1L,
+            afterPosition = -1,
+            afterFileId = -1L,
+            limit = 1
+        )
+        dao.listUncheckedFilterDimensionMembersForClusters(
+            settingId = 1L,
+            clusterIds = listOf(1L),
+            afterClusterId = -1L,
+            afterPosition = -1,
+            afterFileId = -1L,
+            limit = 1
+        )
+        dao.listFilterMembersForClustersPage(
+            settingId = 1L,
+            clusterIds = listOf(1L),
+            afterClusterId = -1L,
+            afterPosition = -1,
+            afterFileId = -1L,
+            limit = 1
+        )
+        dao.listFilterMembersWithoutDurationForClustersPage(
+            settingId = 1L,
+            clusterIds = listOf(1L),
+            afterClusterId = -1L,
+            afterPosition = -1,
+            afterFileId = -1L,
+            limit = 1
+        )
+
+        val memberQueries = executedQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("from similarity_cluster_members as member")
+        }
+        assertEquals(5, memberQueries.size)
+        memberQueries.forEach { sqlQuery ->
+            val sql = normalizedSql(sqlQuery)
+            assertTrue(
+                sqlQuery,
+                sql.contains(
+                    "indexed by index_similarity_cluster_members_clusterid_position_fileid"
+                )
+            )
+            assertTrue(sqlQuery, sql.contains("cross join similarity_setting_files as setting_file"))
+        }
+        val fileQueries = memberQueries.filter { sqlQuery ->
+            normalizedSql(sqlQuery).contains("file.normalizedpath as normalizedpath")
+        }
+        assertEquals(4, fileQueries.size)
+        fileQueries.forEach { sqlQuery ->
+            val sql = normalizedSql(sqlQuery)
+            assertTrue(
+                sqlQuery,
+                sql.contains("cross join cached_files as file")
+            )
+            assertTrue(
+                sqlQuery,
+                sql.contains(
+                    "order by member.clusterid asc, member.position asc, member.fileid asc"
+                )
+            )
+        }
+    }
+
+    @Test
     fun uncachedDurationAverageFilterDoesNotOverreadSourceBatch() {
         val groups = (0 until 4).map { groupIndex ->
             listOf(

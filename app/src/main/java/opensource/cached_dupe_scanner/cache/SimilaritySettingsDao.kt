@@ -340,10 +340,11 @@ interface SimilaritySettingsDao {
                 END
             ) AS durationCount
         FROM similarity_cluster_members AS member
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = :settingId
-           AND setting_file.fileId = member.fileId
+            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+        CROSS JOIN similarity_setting_files AS setting_file
         WHERE member.clusterId IN (:clusterIds)
+          AND setting_file.settingId = :settingId
+          AND setting_file.fileId = member.fileId
         """
     )
     fun countFilterResolutionWorkForClusters(
@@ -371,16 +372,17 @@ interface SimilaritySettingsDao {
             setting_file.dimensionsChecked AS dimensionsChecked,
             setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = :settingId
-           AND setting_file.fileId = member.fileId
-        INNER JOIN cached_files AS file
-            ON file.fileId = member.fileId
+            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+        CROSS JOIN similarity_setting_files AS setting_file
+        CROSS JOIN cached_files AS file
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = :settingId
            AND duration.fileId = member.fileId
            AND setting_file.durationChecked = 1
         WHERE member.clusterId IN (:clusterIds)
+          AND setting_file.settingId = :settingId
+          AND setting_file.fileId = member.fileId
+          AND file.fileId = member.fileId
           AND (
               (:resolveDimensions = 1 AND setting_file.dimensionsChecked = 0)
                OR (:resolveDurations = 1 AND setting_file.durationChecked = 0)
@@ -430,12 +432,13 @@ interface SimilaritySettingsDao {
             setting_file.dimensionsChecked AS dimensionsChecked,
             setting_file.durationChecked AS durationChecked
         FROM similarity_cluster_members AS member
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = :settingId
-           AND setting_file.fileId = member.fileId
-        INNER JOIN cached_files AS file
-            ON file.fileId = member.fileId
+            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+        CROSS JOIN similarity_setting_files AS setting_file
+        CROSS JOIN cached_files AS file
         WHERE member.clusterId IN (:clusterIds)
+          AND setting_file.settingId = :settingId
+          AND setting_file.fileId = member.fileId
+          AND file.fileId = member.fileId
           AND setting_file.dimensionsChecked = 0
           AND (
               member.clusterId > :afterClusterId
@@ -476,16 +479,17 @@ interface SimilaritySettingsDao {
             CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.widthPixels END AS widthPixels,
             CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.heightPixels END AS heightPixels
         FROM similarity_cluster_members AS member
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = :settingId
-           AND setting_file.fileId = member.fileId
-        INNER JOIN cached_files AS file
-            ON file.fileId = member.fileId
+            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+        CROSS JOIN similarity_setting_files AS setting_file
+        CROSS JOIN cached_files AS file
         LEFT JOIN similarity_duration_features AS duration
             ON duration.settingId = :settingId
            AND duration.fileId = member.fileId
            AND setting_file.durationChecked = 1
         WHERE member.clusterId IN (:clusterIds)
+          AND setting_file.settingId = :settingId
+          AND setting_file.fileId = member.fileId
+          AND file.fileId = member.fileId
           AND (
               member.clusterId > :afterClusterId
                OR (
@@ -525,12 +529,13 @@ interface SimilaritySettingsDao {
             CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.widthPixels END AS widthPixels,
             CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.heightPixels END AS heightPixels
         FROM similarity_cluster_members AS member
-        INNER JOIN similarity_setting_files AS setting_file
-            ON setting_file.settingId = :settingId
-           AND setting_file.fileId = member.fileId
-        INNER JOIN cached_files AS file
-            ON file.fileId = member.fileId
+            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+        CROSS JOIN similarity_setting_files AS setting_file
+        CROSS JOIN cached_files AS file
         WHERE member.clusterId IN (:clusterIds)
+          AND setting_file.settingId = :settingId
+          AND setting_file.fileId = member.fileId
+          AND file.fileId = member.fileId
           AND (
               member.clusterId > :afterClusterId
                OR (

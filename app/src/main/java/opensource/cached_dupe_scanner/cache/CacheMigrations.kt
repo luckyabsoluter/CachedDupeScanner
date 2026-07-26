@@ -1199,6 +1199,20 @@ object CacheMigrations {
         }
     }
 
+    val MIGRATION_25_26 = object : Migration(25, 26) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE INDEX index_similarity_cluster_members_clusterId_position_fileId
+                ON similarity_cluster_members(clusterId, position, fileId)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "DROP INDEX IF EXISTS index_similarity_cluster_members_clusterId_position"
+            )
+        }
+    }
+
 }
 
 internal fun createSimilarityClusterDurationStatsTable(db: SupportSQLiteDatabase) {
