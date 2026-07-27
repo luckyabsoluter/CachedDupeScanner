@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-27
+
 ### Added
 
 - File-name and folder-path filter rules now support `Not` for starts-with, ends-with, contains, and equals comparisons.
