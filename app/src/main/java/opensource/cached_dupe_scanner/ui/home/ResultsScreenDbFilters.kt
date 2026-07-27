@@ -59,6 +59,7 @@ internal data class ResultsFilterRule(
     val target: ResultsFilterTarget = ResultsFilterTarget.FileName,
     val memberMatchMode: ResultsFilterMemberMatchMode = ResultsFilterMemberMatchMode.Any,
     val textOperator: ResultsFilterTextOperator = ResultsFilterTextOperator.Contains,
+    val textNegated: Boolean = false,
     val countOperator: ResultsFilterCountOperator = ResultsFilterCountOperator.AtLeast,
     val timeOperator: ResultsFilterTimeOperator = ResultsFilterTimeOperator.OnOrAfter,
     val value: String = "",
@@ -435,7 +436,8 @@ private class ResultFilterRuleProgress(
                         matchesTextOperator(
                             source = fileNameFromPath(member.normalizedPath),
                             expected = rule.value,
-                            operator = rule.textOperator
+                            operator = rule.textOperator,
+                            negated = rule.textNegated
                         )
                     )
                 }
@@ -444,7 +446,8 @@ private class ResultFilterRuleProgress(
                         matchesTextOperator(
                             source = folderPathFromPath(member.normalizedPath),
                             expected = rule.value,
-                            operator = rule.textOperator
+                            operator = rule.textOperator,
+                            negated = rule.textNegated
                         )
                     )
                 }
@@ -683,7 +686,8 @@ private fun matchesResultsFilterRule(
                 matchesTextOperator(
                     source = fileNameFromPath(member.normalizedPath),
                     expected = rule.value,
-                    operator = rule.textOperator
+                    operator = rule.textOperator,
+                    negated = rule.textNegated
                 )
             }
         }
@@ -692,7 +696,8 @@ private fun matchesResultsFilterRule(
                 matchesTextOperator(
                     source = folderPathFromPath(member.normalizedPath),
                     expected = rule.value,
-                    operator = rule.textOperator
+                    operator = rule.textOperator,
+                    negated = rule.textNegated
                 )
             }
         }
@@ -826,16 +831,18 @@ private fun FileMetadata.mediaResolution(): Pair<Int, Int>? {
 internal fun matchesTextOperator(
     source: String,
     expected: String,
-    operator: ResultsFilterTextOperator
+    operator: ResultsFilterTextOperator,
+    negated: Boolean = false
 ): Boolean {
     val term = expected.trim()
     if (term.isEmpty()) return false
-    return when (operator) {
+    val matches = when (operator) {
         ResultsFilterTextOperator.StartsWith -> source.startsWith(term, ignoreCase = true)
         ResultsFilterTextOperator.EndsWith -> source.endsWith(term, ignoreCase = true)
         ResultsFilterTextOperator.Contains -> source.contains(term, ignoreCase = true)
         ResultsFilterTextOperator.Equals -> source.equals(term, ignoreCase = true)
     }
+    return if (negated) !matches else matches
 }
 
 internal fun matchesFileFilter(
@@ -858,7 +865,8 @@ internal fun matchesFileFilter(
                     matchesTextOperator(
                         source = fileNameFromPath(file.normalizedPath),
                         expected = rule.value,
-                        operator = rule.textOperator
+                        operator = rule.textOperator,
+                        negated = rule.textNegated
                     )
                 }
 
@@ -866,7 +874,8 @@ internal fun matchesFileFilter(
                     matchesTextOperator(
                         source = folderPathFromPath(file.normalizedPath),
                         expected = rule.value,
-                        operator = rule.textOperator
+                        operator = rule.textOperator,
+                        negated = rule.textNegated
                     )
                 }
 
@@ -965,7 +974,8 @@ internal fun resultsFilterDefinitionToJson(definition: ResultsFilterDefinition):
                         rule.timeOperator.name,
                         encodeFilterToken(rule.durationToleranceSeconds),
                         encodeFilterToken(rule.durationToleranceMilliseconds),
-                        rule.memberMatchMode.name
+                        rule.memberMatchMode.name,
+                        rule.textNegated.toString()
                     ).joinToString("\t")
                 )
                 append('\n')
@@ -1030,7 +1040,8 @@ internal fun resultsFilterDefinitionFromJson(json: String?): ResultsFilterDefini
                                 timeOperator = parseResultsFilterTimeOperator(parts.getOrNull(8).orEmpty()),
                                 durationToleranceSeconds = decodeFilterToken(parts.getOrNull(9).orEmpty()),
                                 durationToleranceMilliseconds = decodeFilterToken(parts.getOrNull(10).orEmpty()),
-                                memberMatchMode = parseResultsFilterMemberMatchMode(parts.getOrNull(11).orEmpty())
+                                memberMatchMode = parseResultsFilterMemberMatchMode(parts.getOrNull(11).orEmpty()),
+                                textNegated = parts.getOrNull(12)?.toBooleanStrictOrNull() ?: false
                             )
                         )
                 }

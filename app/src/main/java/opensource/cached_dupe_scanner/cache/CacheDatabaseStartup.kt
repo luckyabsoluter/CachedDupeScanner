@@ -54,12 +54,14 @@ fun openCacheDatabaseForStartup(
     context: Context,
     databaseName: String = CACHE_DATABASE_NAME,
     plan: CacheDatabaseStartupPlan,
+    sqlitePageCacheMiB: Int = DEFAULT_SQLITE_PAGE_CACHE_MIB,
     onProgress: (CacheDatabaseStartupProgress) -> Unit = {}
 ): CacheDatabase {
     return when (plan) {
         is CacheDatabaseStartupPlan.OpenCurrent -> openRoomDatabase(
             context = context,
             databaseName = databaseName,
+            sqlitePageCacheMiB = sqlitePageCacheMiB,
             onProgress = onProgress
         )
         is CacheDatabaseStartupPlan.UpgradeRequired -> {
@@ -67,12 +69,14 @@ fun openCacheDatabaseForStartup(
                 recoverVersion21Database(
                     context = context,
                     databaseName = databaseName,
+                    sqlitePageCacheMiB = sqlitePageCacheMiB,
                     onProgress = onProgress
                 )
             } else {
                 openRoomDatabase(
                     context = context,
                     databaseName = databaseName,
+                    sqlitePageCacheMiB = sqlitePageCacheMiB,
                     onProgress = onProgress
                 )
             }
@@ -86,10 +90,15 @@ fun openCacheDatabaseForStartup(
 private fun openRoomDatabase(
     context: Context,
     databaseName: String,
+    sqlitePageCacheMiB: Int,
     onProgress: (CacheDatabaseStartupProgress) -> Unit
 ): CacheDatabase {
     onProgress(CacheDatabaseStartupProgress(stage = "Opening database"))
-    val database = buildCacheDatabase(context, databaseName)
+    val database = buildCacheDatabase(
+        context = context,
+        databaseName = databaseName,
+        sqlitePageCacheMiB = sqlitePageCacheMiB
+    )
     return try {
         database.openHelper.writableDatabase
         database
@@ -102,6 +111,7 @@ private fun openRoomDatabase(
 private fun recoverVersion21Database(
     context: Context,
     databaseName: String,
+    sqlitePageCacheMiB: Int,
     onProgress: (CacheDatabaseStartupProgress) -> Unit
 ): CacheDatabase {
     val sourceFile = context.getDatabasePath(databaseName)
@@ -119,7 +129,11 @@ private fun recoverVersion21Database(
         SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
         PRESERVE_CORRUPT_DATABASE_HANDLER
     )
-    val targetDatabase = buildCacheDatabase(context, upgradeName)
+    val targetDatabase = buildCacheDatabase(
+        context = context,
+        databaseName = upgradeName,
+        sqlitePageCacheMiB = sqlitePageCacheMiB
+    )
     try {
         val target = targetDatabase.openHelper.writableDatabase
         onProgress(CacheDatabaseStartupProgress(stage = "Counting database rows"))
@@ -152,7 +166,12 @@ private fun recoverVersion21Database(
         backupName = backupName
     )
     return try {
-        val database = openRoomDatabase(context, databaseName, onProgress)
+        val database = openRoomDatabase(
+            context = context,
+            databaseName = databaseName,
+            sqlitePageCacheMiB = sqlitePageCacheMiB,
+            onProgress = onProgress
+        )
         context.deleteDatabase(backupName)
         database
     } catch (error: Exception) {
@@ -450,6 +469,7 @@ private fun copyVersion21SimilarityTables(
            AND duration.fileId = member.fileId
         """.trimIndent()
     )
+    rebuildSimilarityClusterDurationStats(target)
 }
 
 private fun rebuildExactFeaturesFromClusters(target: SupportSQLiteDatabase) {

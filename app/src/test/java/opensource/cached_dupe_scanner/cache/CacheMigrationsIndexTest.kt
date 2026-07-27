@@ -1003,6 +1003,137 @@ class CacheMigrationsIndexTest {
         }
     }
 
+    @Test
+    fun migration24to25CachesSimilarityClusterDurationStats() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "cluster-duration-stats-24-25-${UUID.randomUUID()}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(24) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createVersion22HashTextTables(db)
+                        CacheMigrations.MIGRATION_23_24.migrate(db)
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int
+                    ) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_24_25.migrate(db)
+
+            assertTrue(hasTable(db, "similarity_cluster_duration_stats"))
+            assertEquals(
+                1,
+                firstInt(
+                    db,
+                    "SELECT memberCount FROM similarity_cluster_duration_stats WHERE clusterId = 1"
+                )
+            )
+            assertEquals(
+                1,
+                firstInt(
+                    db,
+                    "SELECT checkedCount FROM similarity_cluster_duration_stats WHERE clusterId = 1"
+                )
+            )
+            assertEquals(
+                1,
+                firstInt(
+                    db,
+                    "SELECT durationCount FROM similarity_cluster_duration_stats WHERE clusterId = 1"
+                )
+            )
+            assertEquals(
+                1000L,
+                firstLong(
+                    db,
+                    "SELECT durationSumMillis FROM similarity_cluster_duration_stats WHERE clusterId = 1"
+                )
+            )
+            assertTrue(
+                hasCascadeForeignKey(
+                    db = db,
+                    tableName = "similarity_cluster_duration_stats",
+                    referencedTable = "similarity_clusters",
+                    fromColumn = "clusterId",
+                    toColumn = "clusterId"
+                )
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun migration25to26ReplacesMemberCursorIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "member-index-${UUID.randomUUID().toString().take(8)}.db"
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(25) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE similarity_cluster_members (
+                                clusterId INTEGER NOT NULL,
+                                fileId INTEGER NOT NULL,
+                                position INTEGER NOT NULL,
+                                PRIMARY KEY(clusterId, fileId)
+                            )
+                            """.trimIndent()
+                        )
+                        db.execSQL(
+                            """
+                            CREATE INDEX index_similarity_cluster_members_clusterId_position
+                            ON similarity_cluster_members(clusterId, position)
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int
+                    ) = Unit
+                }
+            )
+            .build()
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(config)
+        val db = helper.writableDatabase
+        try {
+            CacheMigrations.MIGRATION_25_26.migrate(db)
+
+            val indexName = "index_similarity_cluster_members_clusterId_position_fileId"
+            assertTrue(hasIndex(db, "similarity_cluster_members", indexName))
+            assertFalse(
+                hasIndex(
+                    db,
+                    "similarity_cluster_members",
+                    "index_similarity_cluster_members_clusterId_position"
+                )
+            )
+            assertEquals(
+                listOf("clusterId", "position", "fileId"),
+                indexColumns(db, indexName)
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createVersion22HashTextTables(db: SupportSQLiteDatabase) {
         createVersion21FileIdMigrationTables(db, seedData = false)
         CacheMigrations.MIGRATION_21_22.migrate(db)
@@ -1410,6 +1541,22 @@ class CacheMigrationsIndexTest {
     }
 
     private fun hasCascadeFileIdForeignKey(db: SupportSQLiteDatabase, tableName: String): Boolean {
+        return hasCascadeForeignKey(
+            db = db,
+            tableName = tableName,
+            referencedTable = "cached_files",
+            fromColumn = "fileId",
+            toColumn = "fileId"
+        )
+    }
+
+    private fun hasCascadeForeignKey(
+        db: SupportSQLiteDatabase,
+        tableName: String,
+        referencedTable: String,
+        fromColumn: String,
+        toColumn: String
+    ): Boolean {
         db.query("PRAGMA foreign_key_list('$tableName')").use { cursor ->
             val tableIdx = cursor.getColumnIndexOrThrow("table")
             val fromIdx = cursor.getColumnIndexOrThrow("from")
@@ -1417,9 +1564,9 @@ class CacheMigrationsIndexTest {
             val onDeleteIdx = cursor.getColumnIndexOrThrow("on_delete")
             while (cursor.moveToNext()) {
                 if (
-                    cursor.getString(tableIdx) == "cached_files" &&
-                    cursor.getString(fromIdx) == "fileId" &&
-                    cursor.getString(toIdx) == "fileId" &&
+                    cursor.getString(tableIdx) == referencedTable &&
+                    cursor.getString(fromIdx) == fromColumn &&
+                    cursor.getString(toIdx) == toColumn &&
                     cursor.getString(onDeleteIdx) == "CASCADE"
                 ) {
                     return true

@@ -48,6 +48,7 @@ class SettingsScreenTest {
     fun dedicatedControlSectionsDoNotExposeToggleBindings() {
         val sections = listOf(
             workerSettingsSection(),
+            sqlitePageCacheSettingsSection(),
             thumbnailSizeSettingsSection(),
             videoPreviewSizeSettingsSection(),
             videoPreviewLineCountSettingsSection(),

@@ -54,6 +54,7 @@ fun SettingsScreen(
     val message = remember { mutableStateOf<String?>(null) }
     val zeroSizeSection = zeroSizeSettingsSection(settings.value)
     val workerSection = workerSettingsSection()
+    val sqlitePageCacheSection = sqlitePageCacheSettingsSection()
     val trashScanSection = trashScanSettingsSection(settings.value)
     val memoryOverlaySection = memoryOverlaySection(settings.value)
     val thumbnailMemorySection = thumbnailMemorySettingsSection(settings.value)
@@ -135,6 +136,17 @@ fun SettingsScreen(
                     onCountSelected = { count ->
                         settingsStore.setSimilarityWorkerCount(count)
                         settings.value = settings.value.copy(similarityWorkerCount = count)
+                        onSettingsChanged?.invoke()
+                    }
+                )
+            }
+
+            SettingsSectionCard(section = sqlitePageCacheSection) {
+                SqlitePageCacheSettingControl(
+                    selectedMiB = settings.value.sqlitePageCacheMiB,
+                    onMiBSelected = { cacheMiB ->
+                        settingsStore.setSqlitePageCacheMiB(cacheMiB)
+                        settings.value = settings.value.copy(sqlitePageCacheMiB = cacheMiB)
                         onSettingsChanged?.invoke()
                     }
                 )
@@ -510,6 +522,35 @@ private fun WorkerCountSettingControl(
 }
 
 @Composable
+private fun SqlitePageCacheSettingControl(
+    selectedMiB: Int,
+    onMiBSelected: (Int) -> Unit
+) {
+    val inputValue = remember(selectedMiB) { mutableStateOf(selectedMiB.toString()) }
+
+    DraftNumberSettingControl(
+        currentValue = selectedMiB,
+        currentText = "$selectedMiB MiB per connection",
+        inputValue = inputValue.value,
+        inputLabel = "Cache per connection (MiB)",
+        stepLabels = listOf("-100" to -100, "-10" to -10, "+10" to 10, "+100" to 100),
+        minValue = 0,
+        onInputValueChange = { inputValue.value = sanitizeNumberDraftInput(it) },
+        onStep = { delta ->
+            inputValue.value = adjustedDraftInput(
+                input = inputValue.value,
+                fallback = selectedMiB,
+                delta = delta,
+                minValue = 0
+            )
+        },
+        onApply = onMiBSelected,
+        inputTestTag = "sqlite-page-cache-input",
+        applyTestTag = "sqlite-page-cache-apply"
+    )
+}
+
+@Composable
 private fun DraftNumberSettingControl(
     currentValue: Int,
     currentText: String,
@@ -648,6 +689,13 @@ internal fun workerSettingsSection(): SettingsSectionModel {
     return SettingsSectionModel(
         title = "Worker threads",
         description = "Set separate 1 to 32 worker limits for SHA-256 scan hashing and similarity feature calculation. Changes apply when the next task starts."
+    )
+}
+
+internal fun sqlitePageCacheSettingsSection(): SettingsSectionModel {
+    return SettingsSectionModel(
+        title = "SQLite page cache",
+        description = "Set the page-cache target for each SQLite connection with no configured upper limit. The default is 100 MiB. WAL may open multiple connections, so total SQLite cache use can be higher. Changes apply after restarting the app."
     )
 }
 

@@ -4,6 +4,7 @@ import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
 import opensource.cached_dupe_scanner.cache.SimilarityClusterEntity
+import opensource.cached_dupe_scanner.cache.SimilarityClusterDurationStatsEntity
 import opensource.cached_dupe_scanner.cache.SimilarityClusterDurationStatsRow
 import opensource.cached_dupe_scanner.cache.SimilarityClusterFilterMemberRow
 import opensource.cached_dupe_scanner.cache.SimilarityClusterMemberEntity
@@ -575,7 +576,7 @@ class SimilaritySettingsRepository(
         resolveDurations: Boolean
     ): Int {
         val distinctClusterIds = clusterIds.distinct()
-        if (distinctClusterIds.isEmpty()) return 0
+        if (distinctClusterIds.isEmpty() || (!resolveDimensions && !resolveDurations)) return 0
         var count = 0L
         distinctClusterIds.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { clusterIdChunk ->
             val work = similarityDao.countFilterResolutionWorkForClusters(
@@ -603,16 +604,27 @@ class SimilaritySettingsRepository(
             var afterPosition = -1
             var afterFileId = -1L
             while (!Thread.currentThread().isInterrupted) {
-                val queriedRows = similarityDao.listUncheckedFilterMetadataMembersForClusters(
-                    settingId = settingId,
-                    clusterIds = clusterIdChunk,
-                    resolveDimensions = resolveDimensions,
-                    resolveDurations = resolveDurations,
-                    afterClusterId = afterClusterId,
-                    afterPosition = afterPosition,
-                    afterFileId = afterFileId,
-                    limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
-                )
+                val queriedRows = if (resolveDurations) {
+                    similarityDao.listUncheckedFilterMetadataMembersForClusters(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk,
+                        resolveDimensions = resolveDimensions,
+                        resolveDurations = true,
+                        afterClusterId = afterClusterId,
+                        afterPosition = afterPosition,
+                        afterFileId = afterFileId,
+                        limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
+                    )
+                } else {
+                    similarityDao.listUncheckedFilterDimensionMembersForClusters(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk,
+                        afterClusterId = afterClusterId,
+                        afterPosition = afterPosition,
+                        afterFileId = afterFileId,
+                        limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE
+                    )
+                }
                 val uncheckedRows = queriedRows
                     .distinctBy { row -> row.fileId }
                     .map(SimilarityFilterMetadataResolutionRow::toMemberFileRow)
@@ -638,6 +650,7 @@ class SimilaritySettingsRepository(
         settingId: Long,
         clusterIds: List<Long>,
         pageSize: Int,
+        includeDurations: Boolean,
         onPage: (List<SimilarityClusterFilterMemberRow>) -> Set<Long>
     ) {
         val safePageSize = pageSize.coerceIn(1, SIMILARITY_FILTER_MEMBER_BATCH_SIZE)
@@ -649,14 +662,25 @@ class SimilaritySettingsRepository(
                 var afterPosition = -1
                 var afterFileId = -1L
                 while (remainingClusterIds.isNotEmpty() && !Thread.currentThread().isInterrupted) {
-                    val rows = similarityDao.listFilterMembersForClustersPage(
-                        settingId = settingId,
-                        clusterIds = remainingClusterIds.toList(),
-                        afterClusterId = afterClusterId,
-                        afterPosition = afterPosition,
-                        afterFileId = afterFileId,
-                        limit = safePageSize
-                    )
+                    val rows = if (includeDurations) {
+                        similarityDao.listFilterMembersForClustersPage(
+                            settingId = settingId,
+                            clusterIds = remainingClusterIds.toList(),
+                            afterClusterId = afterClusterId,
+                            afterPosition = afterPosition,
+                            afterFileId = afterFileId,
+                            limit = safePageSize
+                        )
+                    } else {
+                        similarityDao.listFilterMembersWithoutDurationForClustersPage(
+                            settingId = settingId,
+                            clusterIds = remainingClusterIds.toList(),
+                            afterClusterId = afterClusterId,
+                            afterPosition = afterPosition,
+                            afterFileId = afterFileId,
+                            limit = safePageSize
+                        )
+                    }
                     if (rows.isEmpty()) break
                     remainingClusterIds.removeAll(onPage(rows))
                     val last = rows.last()
@@ -672,11 +696,57 @@ class SimilaritySettingsRepository(
         settingId: Long,
         clusterIds: List<Long>
     ): List<SimilarityClusterDurationStatsRow> {
-        return clusterIds.distinct()
+        return clusterIds.distinct().chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).flatMap { clusterIdChunk ->
+            val cachedRows = similarityDao.listCachedDurationStatsForClusters(
+                settingId = settingId,
+                clusterIds = clusterIdChunk
+            )
+            val cachedByClusterId = cachedRows.associateBy { row -> row.clusterId }
+            val uncachedClusterIds = clusterIdChunk.filterNot(cachedByClusterId::containsKey)
+            val refreshedRows = if (uncachedClusterIds.isEmpty()) {
+                emptyList()
+            } else {
+                database.runInTransaction<List<SimilarityClusterDurationStatsRow>> {
+                    calculateAndStoreDurationStatsForClusters(
+                        settingId = settingId,
+                        clusterIds = uncachedClusterIds
+                    )
+                }
+            }
+            val rowsByClusterId = (cachedRows + refreshedRows).associateBy { row -> row.clusterId }
+            clusterIdChunk.mapNotNull(rowsByClusterId::get)
+        }
+    }
+
+    private fun calculateAndStoreDurationStatsForClusters(
+        settingId: Long,
+        clusterIds: List<Long>
+    ): List<SimilarityClusterDurationStatsRow> {
+        val rows = clusterIds.distinct()
             .chunked(SIMILARITY_DB_BIND_CHUNK_SIZE)
             .flatMap { clusterIdChunk ->
-                similarityDao.listDurationStatsForClusters(settingId, clusterIdChunk)
+                similarityDao.calculateDurationStatsForClusters(
+                    settingId = settingId,
+                    clusterIds = clusterIdChunk
+                )
             }
+        if (rows.isNotEmpty()) {
+            similarityDao.upsertClusterDurationStats(
+                rows.map { row ->
+                    SimilarityClusterDurationStatsEntity(
+                        clusterId = row.clusterId,
+                        clusterUpdatedAtMillis = row.clusterUpdatedAtMillis,
+                        memberCount = row.memberCount,
+                        checkedCount = row.checkedCount,
+                        durationCount = row.durationCount,
+                        durationSumMillis = row.durationSumMillis,
+                        minimumDurationMillis = row.minimumDurationMillis,
+                        maximumDurationMillis = row.maximumDurationMillis
+                    )
+                }
+            )
+        }
+        return rows
     }
 
     fun generateEnabledResults(
@@ -733,6 +803,9 @@ class SimilaritySettingsRepository(
                     restoredFile.durationFeature?.let { durationFeature ->
                         similarityDao.upsertDurationFeatures(listOf(durationFeature))
                     }
+                    similarityDao.deleteClusterDurationStatsForMemberFileIds(
+                        listOf(restoredFile.settingFile.fileId)
+                    )
                 }
 
                 replaceClusters(setting, buildClusters(setting))
@@ -763,6 +836,9 @@ class SimilaritySettingsRepository(
         if (normalizedPaths.isEmpty()) return
         normalizedPaths.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { chunk ->
             val affectedClusterIds = similarityDao.listClusterIdsForMemberPaths(chunk)
+            if (affectedClusterIds.isNotEmpty()) {
+                similarityDao.deleteClusterDurationStatsByIds(affectedClusterIds)
+            }
             similarityDao.deleteSettingFilesByPaths(chunk)
             similarityDao.deleteExactThumbnailFeaturesByPaths(chunk)
             similarityDao.deleteDurationFeaturesByPaths(chunk)
@@ -1017,6 +1093,9 @@ class SimilaritySettingsRepository(
             if (preparedFiles.isNotEmpty()) {
                 database.runInTransaction {
                     similarityDao.upsertSettingFiles(preparedFiles.map { prepared -> prepared.settingFile })
+                    similarityDao.deleteClusterDurationStatsForMemberFileIds(
+                        preparedFiles.map { prepared -> prepared.settingFile.fileId }
+                    )
                     val exactFeatures = preparedFiles.mapNotNull { prepared -> prepared.exactFeature }
                     val durationFeatures = preparedFiles.mapNotNull { prepared -> prepared.durationFeature }
                     val replacedDurationFileIds = preparedFiles.mapNotNull { prepared ->
@@ -1457,6 +1536,7 @@ class SimilaritySettingsRepository(
                     similarityDao.deleteClustersByIds(ids)
                 }
             }
+            val refreshedClusterIds = ArrayList<Long>(drafts.size)
             drafts.forEach { draft ->
                 val totalBytes = draft.members.sumOf { member -> member.sizeBytes }
                 val existing = existingByKey[draft.clusterKey]
@@ -1476,6 +1556,8 @@ class SimilaritySettingsRepository(
                         requireNotNull(similarityDao.getClusterByKey(settingId, draft.clusterKey)).clusterId
                     }
                 }
+                refreshedClusterIds += clusterId
+                similarityDao.deleteClusterDurationStatsByIds(listOf(clusterId))
                 similarityDao.updateCluster(
                     clusterId = clusterId,
                     fileCount = draft.members.size,
@@ -1493,6 +1575,10 @@ class SimilaritySettingsRepository(
                     }
                 )
             }
+            calculateAndStoreDurationStatsForClusters(
+                settingId = settingId,
+                clusterIds = refreshedClusterIds
+            )
             true
         }
     }
@@ -1500,6 +1586,7 @@ class SimilaritySettingsRepository(
     private fun repairStoredClusters(clusterIds: List<Long>) {
         if (clusterIds.isEmpty()) return
         clusterIds.distinct().chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { ids ->
+            similarityDao.deleteClusterDurationStatsByIds(ids)
             similarityDao.listClusterRepairRows(ids).forEach { row ->
                 if (row.fileCount <= 1) {
                     similarityDao.deleteClusterMembersByIds(listOf(row.clusterId))
@@ -1617,6 +1704,7 @@ class SimilaritySettingsRepository(
             var clearedRows = 0
             database.runInTransaction {
                 val cluster = similarityDao.getClusterForClear(clusterId)
+                similarityDao.deleteClusterDurationStatsByIds(listOf(clusterId))
                 val clearedBytes = similarityDao.sumClusterMemberBytesForClear(clusterId, fileIds)
                 val clearedMembers = similarityDao.deleteClusterMemberIdsForClear(clusterId, fileIds)
                 clearedRows += clearedMembers
@@ -2033,6 +2121,7 @@ class SimilaritySettingsRepository(
         if (resolved.isEmpty()) return rows
 
         val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
+        val updatedFileIds = mutableListOf<Long>()
         val acceptedDurations = mutableListOf<SimilarityDurationFeatureEntity>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
@@ -2047,7 +2136,7 @@ class SimilaritySettingsRepository(
                     updatedAtMillis = updatedAtMillis
                 )
                 if (updated > 0) {
-                    similarityDao.deleteDurationFeature(row.settingId, row.fileId)
+                    updatedFileIds += row.fileId
                     if (durationMillis != null) {
                         acceptedDurations += SimilarityDurationFeatureEntity(
                             settingId = row.settingId,
@@ -2074,8 +2163,14 @@ class SimilaritySettingsRepository(
                     }
                 }
             }
+            if (updatedFileIds.isNotEmpty()) {
+                similarityDao.deleteDurationFeaturesForSettingByIds(settingId, updatedFileIds)
+            }
             if (acceptedDurations.isNotEmpty()) {
                 similarityDao.upsertDurationFeatures(acceptedDurations)
+            }
+            if (updatedFileIds.isNotEmpty()) {
+                similarityDao.deleteClusterDurationStatsForMemberFileIds(updatedFileIds)
             }
         }
         return rows.map { row -> updatedRows[row.fileId] ?: row }
@@ -2351,8 +2446,8 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 }
 
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
-private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 200
-private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 200
+private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 500
+private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 500
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS = 2

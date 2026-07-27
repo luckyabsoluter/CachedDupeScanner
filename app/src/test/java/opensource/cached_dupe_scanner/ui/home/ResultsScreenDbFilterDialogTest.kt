@@ -213,6 +213,60 @@ class ResultsScreenDbFilterDialogTest {
 
     @Test
     @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
+    fun fileNameAndFolderRulesExposeTextNotToggle() {
+        val initial = ResultsFilterDefinition(
+            clusters = listOf(
+                ResultsFilterCluster(
+                    id = "cluster_1",
+                    name = "Paths",
+                    rules = listOf(
+                        ResultsFilterRule(
+                            id = "rule_1",
+                            target = ResultsFilterTarget.FileName,
+                            value = "skip"
+                        ),
+                        ResultsFilterRule(
+                            id = "rule_2",
+                            target = ResultsFilterTarget.FolderPath,
+                            value = "archive"
+                        )
+                    )
+                )
+            )
+        )
+        var updated = initial
+        composeRule.setContent {
+            val definition = remember { mutableStateOf(initial) }
+            ResultsFilterScreen(
+                definition = definition.value,
+                onDefinitionChange = { value ->
+                    definition.value = value
+                    updated = value
+                },
+                onBack = {},
+                onApply = {}
+            )
+        }
+
+        composeRule.onNodeWithTag("filter-rule:rule_1").performClick()
+        composeRule.onNodeWithTag("filter-text-not:rule_1")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle {
+            assertTrue(updated.clusters.single().rules.first().textNegated)
+        }
+
+        composeRule.onNodeWithTag("filter-rule:rule_2").performClick()
+        composeRule.onNodeWithTag("filter-text-not:rule_2")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle {
+            assertTrue(updated.clusters.single().rules.last().textNegated)
+        }
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w600dp-h3000dp")
     fun targetChoicesOpenOnlyAfterClickingCurrentTarget() {
         val initial = ResultsFilterDefinition(
             clusters = listOf(

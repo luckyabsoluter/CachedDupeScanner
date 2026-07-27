@@ -17,8 +17,8 @@ import androidx.room.Index
     ],
     indices = [
         Index(
-            value = ["clusterId", "position"],
-            name = "index_similarity_cluster_members_clusterId_position"
+            value = ["clusterId", "position", "fileId"],
+            name = "index_similarity_cluster_members_clusterId_position_fileId"
         ),
         Index(value = ["fileId"], name = "index_similarity_cluster_members_fileId")
     ]
@@ -79,6 +79,7 @@ data class SimilarityFilterMetadataResolutionRow(
 
 data class SimilarityClusterDurationStatsRow(
     val clusterId: Long,
+    val clusterUpdatedAtMillis: Long,
     val memberCount: Long,
     val checkedCount: Long,
     val durationCount: Long,

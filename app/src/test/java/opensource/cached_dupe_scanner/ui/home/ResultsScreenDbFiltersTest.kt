@@ -94,6 +94,59 @@ class ResultsScreenDbFiltersTest {
     }
 
     @Test
+    fun textNotNegatesFileNameAndFolderRules() {
+        data class NegatedRuleCase(
+            val rule: ResultsFilterRule,
+            val matchingMember: FileMetadata,
+            val rejectedMember: FileMetadata
+        )
+
+        val cases = listOf(
+            NegatedRuleCase(
+                rule = ResultsFilterRule(
+                    id = "rule_name_not",
+                    target = ResultsFilterTarget.FileName,
+                    textOperator = ResultsFilterTextOperator.Contains,
+                    textNegated = true,
+                    value = "skip"
+                ),
+                matchingMember = file("/camera/keep.jpg"),
+                rejectedMember = file("/camera/skip.jpg")
+            ),
+            NegatedRuleCase(
+                rule = ResultsFilterRule(
+                    id = "rule_folder_not",
+                    target = ResultsFilterTarget.FolderPath,
+                    textOperator = ResultsFilterTextOperator.Contains,
+                    textNegated = true,
+                    value = "archive"
+                ),
+                matchingMember = file("/camera/keep.jpg"),
+                rejectedMember = file("/archive/keep.jpg")
+            )
+        )
+
+        cases.forEach { case ->
+            val definition = memberRuleDefinition(case.rule)
+
+            assertTrue(
+                matchesResultsFilter(
+                    definition = definition,
+                    group = group(fileCount = 1),
+                    members = listOf(case.matchingMember)
+                )
+            )
+            assertFalse(
+                matchesResultsFilter(
+                    definition = definition,
+                    group = group(fileCount = 1),
+                    members = listOf(case.rejectedMember)
+                )
+            )
+        }
+    }
+
+    @Test
     fun memberRulesDistinguishAnyAndAllGroupMembers() {
         data class MemberRuleCase(
             val rule: ResultsFilterRule,
@@ -229,6 +282,37 @@ class ResultsScreenDbFiltersTest {
         assertEquals(1, anyPages)
         assertFalse(allResult)
         assertEquals(2, allPages)
+    }
+
+    @Test
+    fun pagedMemberFilterAppliesTextNotBeforeAllMemberMatching() {
+        val definition = memberRuleDefinition(
+            ResultsFilterRule(
+                id = "rule_name_not",
+                target = ResultsFilterTarget.FileName,
+                memberMatchMode = ResultsFilterMemberMatchMode.All,
+                textOperator = ResultsFilterTextOperator.Contains,
+                textNegated = true,
+                value = "skip"
+            )
+        )
+        var pagesRead = 0
+
+        val result = matchesResultsFilterPagedMembers(
+            definition = definition,
+            group = group(fileCount = 2),
+            memberPages = {
+                sequence {
+                    pagesRead += 1
+                    yield(listOf(file("/camera/keep.jpg")))
+                    pagesRead += 1
+                    yield(listOf(file("/camera/skip.jpg")))
+                }
+            }
+        )
+
+        assertFalse(result)
+        assertEquals(2, pagesRead)
     }
 
     @Test
@@ -974,6 +1058,7 @@ class ResultsScreenDbFiltersTest {
                             target = ResultsFilterTarget.FileName,
                             memberMatchMode = ResultsFilterMemberMatchMode.All,
                             textOperator = ResultsFilterTextOperator.EndsWith,
+                            textNegated = true,
                             value = ".jpg"
                         ),
                         ResultsFilterRule(
@@ -1021,7 +1106,11 @@ class ResultsScreenDbFiltersTest {
             )
         )
         val legacy = current.lineSequence().joinToString("\n") { line ->
-            if (line.startsWith("rule\t")) line.substringBeforeLast('\t') else line
+            if (line.startsWith("rule\t")) {
+                line.split('\t').take(11).joinToString("\t")
+            } else {
+                line
+            }
         }
 
         val restored = resultsFilterDefinitionFromJson(legacy)
@@ -1030,6 +1119,28 @@ class ResultsScreenDbFiltersTest {
             ResultsFilterMemberMatchMode.Any,
             restored.clusters.single().rules.single().memberMatchMode
         )
+    }
+
+    @Test
+    fun legacyFilterDefinitionDefaultsTextNotToOff() {
+        val current = resultsFilterDefinitionToJson(
+            memberRuleDefinition(
+                ResultsFilterRule(
+                    id = "rule_legacy_not",
+                    target = ResultsFilterTarget.FolderPath,
+                    memberMatchMode = ResultsFilterMemberMatchMode.All,
+                    textNegated = true,
+                    value = "archive"
+                )
+            )
+        )
+        val legacy = current.lineSequence().joinToString("\n") { line ->
+            if (line.startsWith("rule\t")) line.substringBeforeLast('\t') else line
+        }
+
+        val restored = resultsFilterDefinitionFromJson(legacy)
+
+        assertFalse(restored.clusters.single().rules.single().textNegated)
     }
 
     @Test

@@ -6,6 +6,16 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- File-name and folder-path filter rules now support `Not` for starts-with, ends-with, contains, and equals comparisons.
+- Settings now provide a per-connection SQLite page-cache target with no preset upper limit, defaulting to 100 MiB and applied after restarting the app.
+
+### Performance
+
+- Similarity member filters now use indexed, bounded database queries that avoid repeated scans and unnecessary metadata or duration lookups.
+- Average-duration Similarity filters now reuse cached per-cluster summaries and batch uncached metadata processing, reducing repeated database work while keeping media extraction bounded.
+
 ## [1.5.0] - 2026-07-21
 
 ### Added
