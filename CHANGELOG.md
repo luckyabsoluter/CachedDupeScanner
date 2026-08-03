@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Fixed
+
+- Replaced or hidden Files, Results, Reports, Trash, and Similarity list requests now cancel in-flight database and metadata work, preventing stale results or delayed errors after navigation, refresh, filtering, or sorting.
+
 ## [1.6.0] - 2026-07-27
 
 ### Added

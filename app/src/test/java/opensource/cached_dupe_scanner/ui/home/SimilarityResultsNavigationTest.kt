@@ -405,6 +405,79 @@ class SimilarityResultsNavigationTest {
     }
 
     @Test
+    fun hidingGroupsScreenInterruptsFilterMetadataLoadingWithoutLateError() {
+        val fixture = createSimilarityFixture()
+        val similarityDao = database.similaritySettingsDao()
+        listOf(fixture.firstFile, fixture.secondFile).forEach { file ->
+            val fileId = requireNotNull(
+                database.fileCacheDao().getByNormalizedPath(file.normalizedPathForTest())
+            ).fileId
+            val stored = requireNotNull(similarityDao.getSettingFile(fixture.settingId, fileId))
+            similarityDao.upsertSettingFiles(
+                listOf(
+                    stored.copy(
+                        widthPixels = null,
+                        heightPixels = null,
+                        dimensionsChecked = false
+                    )
+                )
+            )
+        }
+        val dimensionsExtractor = BlockingMediaDimensionsExtractor()
+        val filteringRepository = SimilaritySettingsRepository(
+            database = database,
+            fileDao = database.fileCacheDao(),
+            similarityDao = similarityDao,
+            frameSignatureExtractor = FakeSignatureExtractor(emptyMap()),
+            durationExtractor = FakeDurationExtractor(emptyMap()),
+            mediaDimensionsExtractor = dimensionsExtractor
+        )
+        val settingsStore = AppSettingsStore(context)
+        settingsStore.setSimilarityFilterDefinitionJson(
+            resultsFilterDefinitionToJson(
+                ResultsFilterDefinition(
+                    clusters = listOf(
+                        createResultsFilterCluster().copy(
+                            rules = listOf(createResultsFilterRule(ResultsFilterTarget.SameResolution))
+                        )
+                    )
+                )
+            )
+        )
+        val active = mutableStateOf(true)
+
+        composeRule.setContent {
+            SimilaritySettingGroupsScreen(
+                repository = filteringRepository,
+                settingsStore = settingsStore,
+                keepLoadedThumbnailsInMemory = false,
+                thumbnailSizeScale = 1f,
+                rememberedPreviewCache = mutableStateMapOf(),
+                showFullPaths = false,
+                deletedPaths = emptySet(),
+                settingId = fixture.settingId,
+                refreshVersion = 0,
+                active = active.value,
+                onBack = {},
+                onOpenCluster = { _, _ -> },
+                modifier = Modifier.height(1_200.dp)
+            )
+        }
+
+        composeRule.waitUntil(5_000) {
+            dimensionsExtractor.firstExtractionEntered.count == 0L
+        }
+        composeRule.runOnIdle { active.value = false }
+        composeRule.waitUntil(5_000) {
+            dimensionsExtractor.interrupted.count == 0L
+        }
+        composeRule.onNodeWithText(
+            "Similarity results could not be loaded",
+            substring = true
+        ).assertDoesNotExist()
+    }
+
+    @Test
     fun similarityFilterEditorUsesOneDurationInputWithAUnitSelector() {
         var editedRule: ResultsFilterRule? = null
 
@@ -1018,6 +1091,7 @@ class SimilarityResultsNavigationTest {
     private class BlockingMediaDimensionsExtractor : MediaDimensionsExtractor {
         val firstExtractionEntered = CountDownLatch(1)
         val releaseFirstExtraction = CountDownLatch(1)
+        val interrupted = CountDownLatch(1)
 
         override fun dimensions(
             file: File,
@@ -1025,7 +1099,12 @@ class SimilarityResultsNavigationTest {
             shouldContinue: () -> Boolean
         ): MediaDimensions? {
             firstExtractionEntered.countDown()
-            check(releaseFirstExtraction.await(5, TimeUnit.SECONDS))
+            try {
+                check(releaseFirstExtraction.await(5, TimeUnit.SECONDS))
+            } catch (cancelled: InterruptedException) {
+                interrupted.countDown()
+                throw cancelled
+            }
             return MediaDimensions(widthPixels = 1920, heightPixels = 1080)
         }
     }

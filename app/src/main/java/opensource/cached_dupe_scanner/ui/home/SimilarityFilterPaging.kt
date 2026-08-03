@@ -42,7 +42,8 @@ internal fun loadFilteredSimilarityClustersPage(
     minMatches: Int,
     sourcePageSize: Int,
     memberPageSize: Int = 500,
-    onResolutionProgress: (SimilarityFilterResolutionProgress) -> Unit = {}
+    onResolutionProgress: (SimilarityFilterResolutionProgress) -> Unit = {},
+    shouldContinue: () -> Boolean = { true }
 ): FilteredSimilarityClustersPage {
     if (sourcePageSize <= 0 || memberPageSize <= 0) {
         return FilteredSimilarityClustersPage(emptyList(), startOffset, exhausted = true)
@@ -70,6 +71,7 @@ internal fun loadFilteredSimilarityClustersPage(
     var initialResolutionWorkPublished = false
     var currentPageMatches = emptyMap<Long, Boolean>()
     val publishResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = { event ->
+        ensureUiListLoadContinues(shouldContinue)
         if (!event.completed && !initialResolutionWorkPublished) {
             initialResolutionWorkPublished = true
             onResolutionProgress(
@@ -104,6 +106,7 @@ internal fun loadFilteredSimilarityClustersPage(
         ),
         minMatches = minMatches,
         loadPage = { cursor ->
+            ensureUiListLoadContinues(shouldContinue)
             val afterCluster = cursor.afterCluster
             val queryLimit = sourceReadBatchSize
             val queriedClusters = if (afterCluster == null) {
@@ -124,6 +127,7 @@ internal fun loadFilteredSimilarityClustersPage(
                 )
             }
             val queriedClusterIds = queriedClusters.map { cluster -> cluster.clusterId }
+            ensureUiListLoadContinues(shouldContinue)
             val queriedDurationStats = if (resolveDurations && queriedClusterIds.isNotEmpty()) {
                 repository.listFilterDurationStatsForClusters(settingId, queriedClusterIds)
             } else {
@@ -209,6 +213,7 @@ internal fun loadFilteredSimilarityClustersPage(
                 )
             }
             if (addedResolutionWork > 0) {
+                ensureUiListLoadContinues(shouldContinue)
                 repository.resolveFilterMetadataForClusters(
                     settingId = settingId,
                     clusterIds = clusterIds,
@@ -216,6 +221,7 @@ internal fun loadFilteredSimilarityClustersPage(
                     resolveDurations = resolveDurations,
                     onResolutionEvent = publishResolutionEvent
                 )
+                ensureUiListLoadContinues(shouldContinue)
             }
             val resolvedDurationStats = if (durationOnlyFilter && addedResolutionWork > 0) {
                 repository.listFilterDurationStatsForClusters(settingId, clusterIds)
@@ -234,7 +240,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     clusters = clusters,
                     definition = definition,
                     memberPageSize = memberPageSize,
-                    includeDurations = resolveDurations
+                    includeDurations = resolveDurations,
+                    shouldContinue = shouldContinue
                 )
                 else -> emptyMap()
             }
@@ -262,7 +269,8 @@ internal fun loadFilteredSimilarityClustersPage(
             }
             cluster.takeIf { matched }
         },
-        trimToMinMatches = false
+        trimToMinMatches = false,
+        shouldContinue = shouldContinue
     )
     return FilteredSimilarityClustersPage(
         clusters = page.items,
@@ -321,7 +329,8 @@ private fun matchSimilarityClustersFromMemberPages(
     clusters: List<SimilarityClusterEntity>,
     definition: ResultsFilterDefinition,
     memberPageSize: Int,
-    includeDurations: Boolean
+    includeDurations: Boolean,
+    shouldContinue: () -> Boolean
 ): Map<Long, Boolean> {
     val matchers = clusters.associate { cluster ->
         cluster.clusterId to ResultsFilterPagedMatcher(
@@ -339,6 +348,7 @@ private fun matchSimilarityClustersFromMemberPages(
         pageSize = memberPageSize,
         includeDurations = includeDurations,
         onPage = { rows ->
+            ensureUiListLoadContinues(shouldContinue)
             val resolvedClusterIds = linkedSetOf<Long>()
             rows.groupBy { row -> row.clusterId }.forEach { (clusterId, clusterRows) ->
                 val matcher = matchers.getValue(clusterId)
@@ -350,6 +360,7 @@ private fun matchSimilarityClustersFromMemberPages(
             resolvedClusterIds
         }
     )
+    ensureUiListLoadContinues(shouldContinue)
     return matchers.mapValues { (_, matcher) -> matcher.finish() }
 }
 

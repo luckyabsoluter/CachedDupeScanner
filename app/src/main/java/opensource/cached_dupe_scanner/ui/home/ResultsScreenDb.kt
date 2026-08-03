@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -54,13 +55,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.core.ResultSortKey
@@ -195,6 +197,9 @@ fun ResultsScreenDb(
     val loadError = remember { mutableStateOf<String?>(null) }
     val snapshotUpdatedAtMillis = remember { mutableStateOf<Long?>(null) }
     val queryCoordinator = remember { ResultsScreenDbQueryCoordinator() }
+    val listLoadController = remember { UiListLoadController() }
+    val resumeCancelledListLoad = remember { mutableStateOf(false) }
+    val pendingListRefresh = remember { mutableStateOf(false) }
     val filteredSourceOffset = remember { mutableStateOf(0) }
     val filteredSourceExhausted = remember { mutableStateOf(false) }
 
@@ -215,6 +220,10 @@ fun ResultsScreenDb(
     val normalizedThumbnailScale = thumbnailSizeScale.coerceAtLeast(0f)
     val groupCardThumbnailSizeDp = 72.dp * normalizedThumbnailScale
     val groupDetailPreviewHeightDp = 180.dp * normalizedThumbnailScale
+    val listSurfaceActive = selectedGroupIndex == null &&
+        !filterDialogOpen.value &&
+        !bulkDeleteCatalogOpen.value &&
+        bulkDeleteCommand.value == null
 
     fun mapSort(key: ResultSortKey, direction: SortDirection): DuplicateGroupSortKey {
         val normalizedKey = normalizeDbSortKey(key)
@@ -268,13 +277,27 @@ fun ResultsScreenDb(
         )
     }
 
+    fun pauseListLoading() {
+        resumeCancelledListLoad.value =
+            resumeCancelledListLoad.value || listLoadController.hasActiveLoad
+        listLoadController.cancel()
+        isRefreshing.value = false
+        isPaging.value = false
+    }
+
     fun refresh(
         reset: Boolean,
         rebuild: Boolean,
         preserveScroll: Boolean = false,
         preservedAnchor: GroupListScrollAnchor? = null
     ) {
-        if (isRefreshing.value) return
+        if (!listSurfaceActive) {
+            pendingListRefresh.value = true
+            pauseListLoading()
+            return
+        }
+        pendingListRefresh.value = false
+        resumeCancelledListLoad.value = false
         val anchorIndex = if (preserveScroll) preservedAnchor?.index ?: listState.firstVisibleItemIndex else 0
         val anchorOffset = if (preserveScroll) preservedAnchor?.offset ?: listState.firstVisibleItemScrollOffset else 0
         val anchorKey = if (preserveScroll) {
@@ -282,51 +305,39 @@ fun ResultsScreenDb(
         } else {
             null
         }
-        if (reset && !preserveScroll) {
-            groups.value = emptyList()
-            visibleCount.value = 0
-            topVisibleGroupIndex.value = 0
-            snapshotUpdatedAtMillis.value = null
-            groupCount.value = 0
-            totalGroupCount.value = 0
-            filteredSourceOffset.value = 0
-            filteredSourceExhausted.value = false
+        val normalizedSortKey = normalizeDbSortKey(sortKey.value)
+        if (normalizedSortKey != sortKey.value) {
+            sortKey.value = normalizedSortKey
+            settingsStore.setResultSortKey(normalizedSortKey.name)
         }
-        scope.launch {
-            isRefreshing.value = true
-            loadError.value = null
-            val requestToken = queryCoordinator.beginRefresh(reset = reset)
+        val sortForQuery = mapSort(normalizedSortKey, sortDirection.value)
+        val queryFilter = appliedFilter.value
+        val queryHasFilters = queryFilter.hasActiveRules()
+        val firstPageLimit = if (reset && preserveScroll) {
+            visibleCount.value.coerceAtLeast(pageSize)
+        } else {
+            pageSize
+        }
+        val filteredTarget = if (reset && preserveScroll) {
+            visibleCount.value.coerceAtLeast(pageSize)
+        } else {
+            pageSize
+        }
+        isRefreshing.value = true
+        isPaging.value = false
+        loadError.value = null
+        val requestToken = queryCoordinator.beginRefresh(reset = reset)
+        listLoadController.replace(scope) {
             try {
-                val normalizedSortKey = normalizeDbSortKey(sortKey.value)
-                if (normalizedSortKey != sortKey.value) {
-                    sortKey.value = normalizedSortKey
-                    settingsStore.setResultSortKey(normalizedSortKey.name)
-                }
-                val sortForQuery = mapSort(normalizedSortKey, sortDirection.value)
-                val firstPageLimit = if (reset && preserveScroll) {
-                    visibleCount.value.coerceAtLeast(pageSize)
-                } else {
-                    pageSize
-                }
-                val snapshot = withContext(Dispatchers.IO) {
-                    resultsRepo.loadInitialSnapshot(
+                val (snapshot, filteredPage) = runInterruptibleUiListLoad { shouldContinue ->
+                    val loadedSnapshot = resultsRepo.loadInitialSnapshot(
                         sortKey = sortForQuery,
                         limit = firstPageLimit,
                         rebuild = rebuild
                     )
-                }
-                if (!queryCoordinator.isRefreshTokenValid(requestToken)) return@launch
-                fileCount.value = snapshot.fileCount
-                totalGroupCount.value = snapshot.groupCount
-                snapshotUpdatedAtMillis.value = snapshot.updatedAtMillis
-                if (filtersActive()) {
-                    val filteredTarget = if (reset && preserveScroll) {
-                        visibleCount.value.coerceAtLeast(pageSize)
-                    } else {
-                        pageSize
-                    }
-                    val filteredPage = withContext(Dispatchers.IO) {
-                        if (snapshot.updatedAtMillis == null) {
+                    ensureUiListLoadContinues(shouldContinue)
+                    val loadedFilteredPage = if (queryHasFilters) {
+                        if (loadedSnapshot.updatedAtMillis == null) {
                             FilteredGroupsPage(
                                 matchedGroups = emptyList(),
                                 previewMembersByGroupKey = emptyMap(),
@@ -337,33 +348,44 @@ fun ResultsScreenDb(
                             loadFilteredGroupsPage(
                                 resultsRepo = resultsRepo,
                                 sortKey = sortForQuery,
-                                snapshotUpdatedAtMillis = snapshot.updatedAtMillis,
-                                definition = appliedFilter.value,
+                                snapshotUpdatedAtMillis = loadedSnapshot.updatedAtMillis,
+                                definition = queryFilter,
                                 startOffset = 0,
                                 minMatches = filteredTarget,
-                                sourcePageSize = pageSize
+                                sourcePageSize = pageSize,
+                                shouldContinue = shouldContinue
                             )
                         }
-                    }
-                    if (!queryCoordinator.isRefreshTokenValid(requestToken)) return@launch
-                    filteredSourceOffset.value = filteredPage.nextSourceOffset
-                    filteredSourceExhausted.value = filteredPage.exhausted
-                    groups.value = filteredPage.matchedGroups
-                    groupCount.value = filteredPage.matchedGroups.size
-                    visibleCount.value = if (filteredPage.exhausted) {
-                        filteredPage.matchedGroups.size
                     } else {
-                        filteredTarget.coerceAtMost(filteredPage.matchedGroups.size)
+                        null
                     }
-                    seedPreviewMembers(filteredPage.previewMembersByGroupKey)
+                    ensureUiListLoadContinues(shouldContinue)
+                    loadedSnapshot to loadedFilteredPage
+                }
+                if (!isCurrent || !queryCoordinator.isRefreshTokenValid(requestToken)) return@replace
+                fileCount.value = snapshot.fileCount
+                totalGroupCount.value = snapshot.groupCount
+                snapshotUpdatedAtMillis.value = snapshot.updatedAtMillis
+                if (queryHasFilters) {
+                    val page = checkNotNull(filteredPage)
+                    filteredSourceOffset.value = page.nextSourceOffset
+                    filteredSourceExhausted.value = page.exhausted
+                    groups.value = page.matchedGroups
+                    groupCount.value = page.matchedGroups.size
+                    visibleCount.value = if (page.exhausted) {
+                        page.matchedGroups.size
+                    } else {
+                        filteredTarget.coerceAtMost(page.matchedGroups.size)
+                    }
+                    seedPreviewMembers(page.previewMembersByGroupKey)
                     if (preserveScroll) {
                         val targetIndex = findIndexByGroupKeyOrFallback(
-                            groups = filteredPage.matchedGroups,
+                            groups = page.matchedGroups,
                             key = anchorKey,
                             fallbackIndex = anchorIndex
                         )
                         topVisibleGroupIndex.value = targetIndex
-                        if (filteredPage.matchedGroups.isNotEmpty()) {
+                        if (page.matchedGroups.isNotEmpty()) {
                             val targetOffset = if (targetIndex == anchorIndex) anchorOffset.coerceAtLeast(0) else 0
                             listState.scrollToItem(targetIndex, targetOffset)
                         }
@@ -391,65 +413,87 @@ fun ResultsScreenDb(
                         topVisibleGroupIndex.value = 0
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                loadError.value = "결과를 불러오지 못했습니다. 다시 시도해 주세요."
+                if (isCurrent && queryCoordinator.isRefreshTokenValid(requestToken)) {
+                    loadError.value = "결과를 불러오지 못했습니다. 다시 시도해 주세요."
+                }
             } finally {
-                isRefreshing.value = false
+                if (isCurrent) {
+                    isRefreshing.value = false
+                }
             }
         }
     }
 
     fun loadMoreIfNeeded() {
-        if (isRefreshing.value || isPaging.value) return
+        if (!listSurfaceActive || listLoadController.hasActiveLoad || isRefreshing.value || isPaging.value) return
         val snapshotUpdatedAt = snapshotUpdatedAtMillis.value ?: return
         if (filtersActive()) {
             val needed = visibleCount.value.coerceAtLeast(0)
             if (groups.value.size >= needed) return
             if (filteredSourceExhausted.value) return
-            scope.launch {
-                isPaging.value = true
-                loadError.value = null
-                val requestToken = queryCoordinator.beginPaging()
+            val querySort = mapSort(sortKey.value, sortDirection.value)
+            val queryFilter = appliedFilter.value
+            val queryOffset = filteredSourceOffset.value
+            val queryMinMatches = (needed - groups.value.size).coerceAtLeast(1)
+            isPaging.value = true
+            loadError.value = null
+            val requestToken = queryCoordinator.beginPaging()
+            val job = listLoadController.launchIfIdle(scope) {
                 var needsRefresh = false
                 try {
-                    val snapshotChangedBeforePaging = withContext(Dispatchers.IO) {
-                        resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                    val next = runInterruptibleUiListLoad { shouldContinue ->
+                        if (resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)) {
+                            null
+                        } else {
+                            ensureUiListLoadContinues(shouldContinue)
+                            loadFilteredGroupsPage(
+                                resultsRepo = resultsRepo,
+                                sortKey = querySort,
+                                snapshotUpdatedAtMillis = snapshotUpdatedAt,
+                                definition = queryFilter,
+                                startOffset = queryOffset,
+                                minMatches = queryMinMatches,
+                                sourcePageSize = pageSize,
+                                shouldContinue = shouldContinue
+                            )
+                        }
                     }
-                    if (snapshotChangedBeforePaging) {
+                    if (!isCurrent || !queryCoordinator.isPagingTokenValid(requestToken)) return@launchIfIdle
+                    if (next == null) {
                         needsRefresh = true
-                        return@launch
+                    } else {
+                        val existingKeys = groups.value.mapTo(hashSetOf()) { groupStableKey(it) }
+                        val toAppend = next.matchedGroups.filterNot { group ->
+                            existingKeys.contains(groupStableKey(group))
+                        }
+                        if (toAppend.isNotEmpty()) {
+                            groups.value = groups.value + toAppend
+                        }
+                        filteredSourceOffset.value = next.nextSourceOffset
+                        filteredSourceExhausted.value = next.exhausted
+                        groupCount.value = groups.value.size
+                        seedPreviewMembers(next.previewMembersByGroupKey)
                     }
-                    val next = withContext(Dispatchers.IO) {
-                        loadFilteredGroupsPage(
-                            resultsRepo = resultsRepo,
-                            sortKey = mapSort(sortKey.value, sortDirection.value),
-                            snapshotUpdatedAtMillis = snapshotUpdatedAt,
-                            definition = appliedFilter.value,
-                            startOffset = filteredSourceOffset.value,
-                            minMatches = (needed - groups.value.size).coerceAtLeast(1),
-                            sourcePageSize = pageSize
-                        )
-                    }
-                    if (!queryCoordinator.isPagingTokenValid(requestToken)) return@launch
-                    val existingKeys = groups.value.mapTo(hashSetOf()) { groupStableKey(it) }
-                    val toAppend = next.matchedGroups.filterNot { group ->
-                        existingKeys.contains(groupStableKey(group))
-                    }
-                    if (toAppend.isNotEmpty()) {
-                        groups.value = groups.value + toAppend
-                    }
-                    filteredSourceOffset.value = next.nextSourceOffset
-                    filteredSourceExhausted.value = next.exhausted
-                    groupCount.value = groups.value.size
-                    seedPreviewMembers(next.previewMembersByGroupKey)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
-                    loadError.value = "필터가 적용된 결과를 이어서 불러오지 못했습니다. 새로고침해 주세요."
+                    if (isCurrent && queryCoordinator.isPagingTokenValid(requestToken)) {
+                        loadError.value = "필터가 적용된 결과를 이어서 불러오지 못했습니다. 새로고침해 주세요."
+                    }
                 } finally {
-                    isPaging.value = false
-                    if (needsRefresh && !isRefreshing.value) {
-                        refresh(reset = true, rebuild = false)
+                    if (isCurrent) {
+                        isPaging.value = false
                     }
                 }
+                if (needsRefresh && isCurrent) {
+                    refresh(reset = true, rebuild = false)
+                }
+            }
+            if (job == null) {
+                isPaging.value = false
             }
             return
         }
@@ -458,57 +502,91 @@ fun ResultsScreenDb(
         val offset = groups.value.size
         val limit = needed - offset
         if (limit <= 0) return
-        scope.launch {
-            isPaging.value = true
-            loadError.value = null
-            val requestToken = queryCoordinator.beginPaging()
+        val overlap = offset.coerceAtMost(pageSize)
+        val queryOffset = (offset - overlap).coerceAtLeast(0)
+        val queryLimit = limit + overlap
+        val querySort = mapSort(sortKey.value, sortDirection.value)
+        val existingGroups = groups.value
+        isPaging.value = true
+        loadError.value = null
+        val requestToken = queryCoordinator.beginPaging()
+        val job = listLoadController.launchIfIdle(scope) {
             var needsRefresh = false
             try {
-                val snapshotChangedBeforePaging = withContext(Dispatchers.IO) {
-                    resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                val (snapshotChanged, next) = runInterruptibleUiListLoad { shouldContinue ->
+                    if (resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)) {
+                        true to emptyList()
+                    } else {
+                        ensureUiListLoadContinues(shouldContinue)
+                        val loaded = resultsRepo.loadPageAtSnapshot(
+                            sortKey = querySort,
+                            snapshotUpdatedAtMillis = snapshotUpdatedAt,
+                            offset = queryOffset,
+                            limit = queryLimit
+                        )
+                        ensureUiListLoadContinues(shouldContinue)
+                        val hasNoNewGroups = loaded.isEmpty() || uniqueGroupsToAppend(
+                            existing = existingGroups,
+                            fetched = loaded,
+                            maxAppend = limit
+                        ).isEmpty()
+                        val changedAfterPaging = hasNoNewGroups &&
+                            resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                        changedAfterPaging to loaded
+                    }
                 }
-                if (snapshotChangedBeforePaging) {
+                if (!isCurrent || !queryCoordinator.isPagingTokenValid(requestToken)) return@launchIfIdle
+                if (snapshotChanged) {
                     needsRefresh = true
-                    return@launch
-                }
-                val overlap = offset.coerceAtMost(pageSize)
-                val queryOffset = (offset - overlap).coerceAtLeast(0)
-                val queryLimit = limit + overlap
-                val next = withContext(Dispatchers.IO) {
-                    resultsRepo.loadPageAtSnapshot(
-                        sortKey = mapSort(sortKey.value, sortDirection.value),
-                        snapshotUpdatedAtMillis = snapshotUpdatedAt,
-                        offset = queryOffset,
-                        limit = queryLimit
+                } else if (offset == groups.value.size) {
+                    val toAppend = uniqueGroupsToAppend(
+                        existing = groups.value,
+                        fetched = next,
+                        maxAppend = limit
                     )
-                }
-                if (!queryCoordinator.isPagingTokenValid(requestToken)) return@launch
-                if (offset != groups.value.size) return@launch
-                val toAppend = uniqueGroupsToAppend(
-                    existing = groups.value,
-                    fetched = next,
-                    maxAppend = limit
-                )
-                if (next.isEmpty() || toAppend.isEmpty()) {
-                    val snapshotChangedAfterPaging = withContext(Dispatchers.IO) {
-                        resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
-                    }
-                    if (snapshotChangedAfterPaging) {
-                        needsRefresh = true
-                        return@launch
+                    if (toAppend.isNotEmpty()) {
+                        groups.value = groups.value + toAppend
                     }
                 }
-                if (toAppend.isNotEmpty()) {
-                    groups.value = groups.value + toAppend
-                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                loadError.value = "목록을 이어서 불러오지 못했습니다. 새로고침해 주세요."
+                if (isCurrent && queryCoordinator.isPagingTokenValid(requestToken)) {
+                    loadError.value = "목록을 이어서 불러오지 못했습니다. 새로고침해 주세요."
+                }
             } finally {
-                isPaging.value = false
-                if (needsRefresh && !isRefreshing.value) {
-                    refresh(reset = true, rebuild = false)
+                if (isCurrent) {
+                    isPaging.value = false
                 }
             }
+            if (needsRefresh && isCurrent) {
+                refresh(reset = true, rebuild = false)
+            }
+        }
+        if (job == null) {
+            isPaging.value = false
+        }
+    }
+
+    fun resumeListLoading() {
+        if (!listSurfaceActive) return
+        if (pendingListRefresh.value || resumeCancelledListLoad.value) {
+            val preserveScroll = groups.value.isNotEmpty()
+            val anchor = if (preserveScroll) captureCurrentGroupListAnchor() else null
+            refresh(
+                reset = true,
+                rebuild = false,
+                preserveScroll = preserveScroll,
+                preservedAnchor = anchor
+            )
+        }
+    }
+
+    LaunchedEffect(listSurfaceActive) {
+        if (listSurfaceActive) {
+            resumeListLoading()
+        } else {
+            pauseListLoading()
         }
     }
 
@@ -518,17 +596,17 @@ fun ResultsScreenDb(
 
     LaunchedEffect(refreshVersion) {
         if (refreshVersion <= 0) return@LaunchedEffect
-        while (isRefreshing.value) {
-            delay(100)
-        }
         refresh(reset = true, rebuild = false)
     }
 
-    LaunchedEffect(visibleCount.value, groupCount.value, groups.value.size) {
-        loadMoreIfNeeded()
+    LaunchedEffect(visibleCount.value, groupCount.value, groups.value.size, listSurfaceActive) {
+        if (listSurfaceActive) {
+            loadMoreIfNeeded()
+        }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(listSurfaceActive) {
+        if (!listSurfaceActive) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect { topVisibleGroupIndex.value = it }
@@ -558,7 +636,8 @@ fun ResultsScreenDb(
     }
 
     // Auto-load next page as user scrolls (legacy behavior).
-    LaunchedEffect(groupCount.value, groups.value.size) {
+    LaunchedEffect(groupCount.value, groups.value.size, listSurfaceActive) {
+        if (!listSurfaceActive) return@LaunchedEffect
         if (!filtersActive() && groupCount.value <= 0) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
@@ -738,6 +817,7 @@ fun ResultsScreenDb(
                         previewThumbnailSizeDp = groupCardThumbnailSizeDp,
                         rememberedPreviewCache = rememberedPreviewCache,
                         membersCache = membersCache,
+                        active = listSurfaceActive,
                         onOpen = {
                             val handler = onOpenGroup ?: return@DuplicateGroupCardDb
                             handler(index)
@@ -1072,24 +1152,28 @@ private fun DuplicateGroupCardDb(
     previewThumbnailSizeDp: Dp,
     rememberedPreviewCache: MutableMap<String, ImageBitmap>,
     membersCache: MutableMap<String, MembersCacheEntry>,
+    active: Boolean,
     onOpen: () -> Unit
 ) {
     val context = LocalContext.current
     val cacheKey = remember(group.sizeBytes, group.hashHex) { "${group.sizeBytes}:${group.hashHex}" }
     val entry = remember(cacheKey) { membersCache.getOrPut(cacheKey) { MembersCacheEntry() } }
 
-    LaunchedEffect(group.sizeBytes, group.hashHex) {
+    LaunchedEffect(group.sizeBytes, group.hashHex, active) {
+        if (!active) return@LaunchedEffect
         // Only do the initial DB hit once per group key.
         if (entry.members.isNotEmpty() || entry.isLoading.value) return@LaunchedEffect
         entry.isLoading.value = true
         try {
-            val members = withContext(Dispatchers.IO) {
-                resultsRepo.listGroupMembers(
+            val members = runInterruptibleUiListLoad { shouldContinue ->
+                val loaded = resultsRepo.listGroupMembers(
                     sizeBytes = group.sizeBytes,
                     hashHex = group.hashHex,
                     afterPath = null,
                     limit = 10
                 )
+                ensureUiListLoadContinues(shouldContinue)
+                loaded
             }
             entry.members.clear()
             entry.members.addAll(members)
@@ -1208,33 +1292,43 @@ private fun GroupDetailDb(
     val isBulkDeleting = remember(group.sizeBytes, group.hashHex) { mutableStateOf(false) }
     val bulkDeleteMessage = remember(group.sizeBytes, group.hashHex) { mutableStateOf<String?>(null) }
     val entry = cacheEntry ?: remember(group.sizeBytes, group.hashHex) { MembersCacheEntry() }
+    val memberLoadController = remember(group.sizeBytes, group.hashHex) { UiListLoadController() }
+    DisposableEffect(memberLoadController) {
+        onDispose {
+            memberLoadController.cancel()
+            entry.isLoading.value = false
+        }
+    }
     val pageSize = 200
     val cursor = entry.cursor
     val selectionMode = lazySelection.isSelectionMode
     val allSelectedAcrossGroup = lazySelection.allSelectedAcrossGroup
 
     fun loadMore(reset: Boolean) {
-        if (entry.isLoading.value) return
+        if (!reset && (memberLoadController.hasActiveLoad || entry.isLoading.value)) return
         if (!reset && entry.isComplete.value) return
-        scope.launch {
-            entry.isLoading.value = true
+        val afterPath = if (reset) null else cursor.value
+        if (reset) {
+            cursor.value = null
+            entry.members.clear()
+            entry.missingPaths.clear()
+            entry.isComplete.value = false
+            lazySelection.clear()
+        }
+        entry.isLoading.value = true
+        val load: suspend UiListLoadRequest.() -> Unit = memberLoad@{
             try {
-                if (reset) {
-                    cursor.value = null
-                    entry.members.clear()
-                    entry.missingPaths.clear()
-                    entry.isComplete.value = false
-                    lazySelection.clear()
-                }
-                val (next, nextMissingPaths) = withContext(Dispatchers.IO) {
+                val (next, nextMissingPaths) = runInterruptibleUiListLoad { shouldContinue ->
                     val loaded = resultsRepo.listGroupMembers(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex,
-                        afterPath = cursor.value,
+                        afterPath = afterPath,
                         limit = pageSize
                     )
+                    ensureUiListLoadContinues(shouldContinue)
                     loaded to missingFilePaths(loaded)
                 }
+                if (!isCurrent) return@memberLoad
                 if (next.isNotEmpty()) {
                     entry.members.addAll(next)
                     next.forEach { file ->
@@ -1251,8 +1345,18 @@ private fun GroupDetailDb(
                     entry.isComplete.value = true
                 }
             } finally {
-                entry.isLoading.value = false
+                if (isCurrent) {
+                    entry.isLoading.value = false
+                }
             }
+        }
+        val job = if (reset) {
+            memberLoadController.replace(scope, load)
+        } else {
+            memberLoadController.launchIfIdle(scope, load)
+        }
+        if (job == null) {
+            entry.isLoading.value = memberLoadController.hasActiveLoad
         }
     }
 
@@ -1282,7 +1386,10 @@ private fun GroupDetailDb(
             }
         }
         // Continue loading when entering detail, even if preview members were already cached.
-        if (entry.isLoading.value || entry.isComplete.value) return@LaunchedEffect
+        snapshotFlow { entry.isLoading.value }
+            .filter { loading -> !loading }
+            .first()
+        if (entry.isComplete.value) return@LaunchedEffect
         loadMore(reset = entry.members.isEmpty())
     }
     LaunchedEffect(selectionMode) {
@@ -1831,7 +1938,8 @@ internal fun loadFilteredGroupsPage(
     definition: ResultsFilterDefinition,
     startOffset: Int,
     minMatches: Int,
-    sourcePageSize: Int
+    sourcePageSize: Int,
+    shouldContinue: () -> Boolean = { true }
 ): FilteredGroupsPage {
     if (sourcePageSize <= 0) {
         return FilteredGroupsPage(
@@ -1873,7 +1981,8 @@ internal fun loadFilteredGroupsPage(
                     },
                     onPreviewMembers = { previewMembers ->
                         previewMembersByGroupKey[groupStableKey(group)] = previewMembers
-                    }
+                    },
+                    shouldContinue = shouldContinue
                 )
                 if (matched) group else null
             } else if (matchesResultsFilter(definition, group, emptyList())) {
@@ -1882,7 +1991,8 @@ internal fun loadFilteredGroupsPage(
                 null
             }
         },
-        trimToMinMatches = false
+        trimToMinMatches = false,
+        shouldContinue = shouldContinue
     )
 
     return FilteredGroupsPage(

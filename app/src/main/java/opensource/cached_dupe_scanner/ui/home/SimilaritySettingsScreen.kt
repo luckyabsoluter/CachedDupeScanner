@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
 import coil.decode.VideoFrameDecoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -142,6 +144,7 @@ class SimilarityClusterDetailMemoryCache internal constructor() {
     internal val membersExhausted = mutableStateOf(false)
     internal val clusterLoaded = mutableStateOf(false)
     internal val clusterLoadError = mutableStateOf<String?>(null)
+    internal val resumeMemberLoad = mutableStateOf(false)
 }
 
 private const val SIMILARITY_CLUSTER_DETAIL_AUTO_LOAD_THRESHOLD_ITEMS = 3
@@ -166,15 +169,21 @@ fun SimilaritySettingsScreen(
     val scope = rememberCoroutineScope()
     val settings = remember { mutableStateListOf<SimilaritySettingEntity>() }
     val clusterSummariesBySetting = remember { mutableStateMapOf<Long, SimilarityClusterSummary>() }
+    val loadController = remember { UiListLoadController() }
 
     fun refresh() {
-        scope.launch {
-            val loaded = withContext(Dispatchers.IO) { repository.listSettings() }
-            val clusterRows = withContext(Dispatchers.IO) {
-                loaded.associate { setting ->
+        loadController.replace(scope) {
+            val (loaded, clusterRows) = runInterruptibleUiListLoad { shouldContinue ->
+                val loadedSettings = repository.listSettings()
+                ensureUiListLoadContinues(shouldContinue)
+                val loadedSummaries = loadedSettings.associate { setting ->
+                    ensureUiListLoadContinues(shouldContinue)
                     setting.settingId to repository.getClusterSummary(setting.settingId)
                 }
+                ensureUiListLoadContinues(shouldContinue)
+                loadedSettings to loadedSummaries
             }
+            if (!isCurrent) return@replace
             settings.clear()
             settings.addAll(loaded)
             clusterSummariesBySetting.clear()
@@ -465,12 +474,18 @@ fun SimilaritySettingDetailScreen(
     var lastLoadedDisplayName by remember(settingId) { mutableStateOf<String?>(null) }
     var pendingClearMode by remember { mutableStateOf<SimilarityClearMode?>(null) }
     var confirmDeleteSetting by remember { mutableStateOf(false) }
+    val loadController = remember(settingId) { UiListLoadController() }
     fun refresh() {
-        scope.launch {
-            val loadedSetting = withContext(Dispatchers.IO) {
-                repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+        loadController.replace(scope) {
+            val (loadedSetting, loadedSummary) = runInterruptibleUiListLoad { shouldContinue ->
+                val currentSetting = repository.listSettings()
+                    .firstOrNull { candidate -> candidate.settingId == settingId }
+                ensureUiListLoadContinues(shouldContinue)
+                val currentSummary = repository.getClusterSummary(settingId)
+                ensureUiListLoadContinues(shouldContinue)
+                currentSetting to currentSummary
             }
-            val loadedSummary = withContext(Dispatchers.IO) { repository.getClusterSummary(settingId) }
+            if (!isCurrent) return@replace
             setting = loadedSetting
             if (loadedSetting != null) {
                 val previousLoadedDisplayName = lastLoadedDisplayName
@@ -697,6 +712,9 @@ fun SimilaritySettingResultsScreen(
             memoryDeletedClusterIds = memoryDeletedClusterIds,
             settingId = settingId,
             refreshVersion = refreshVersion,
+            active = selectedClusterId == null &&
+                !bulkDeleteCatalogOpen &&
+                bulkDeleteCommand == null,
             onBack = onBack,
             onOpenCluster = { _, clusterId ->
                 detailCaches.getOrPut(clusterId) { SimilarityClusterDetailMemoryCache() }
@@ -851,6 +869,7 @@ fun SimilaritySettingGroupsScreen(
     memoryDeletedClusterIds: Set<Long> = emptySet(),
     settingId: Long,
     refreshVersion: Int,
+    active: Boolean = true,
     onBack: () -> Unit,
     onOpenCluster: (Long, Long) -> Unit,
     onOpenBulkDelete: ((Int) -> Unit)? = null,
@@ -890,6 +909,7 @@ fun SimilaritySettingGroupsScreen(
     var filterResolutionTask by remember(settingId) { mutableStateOf<TaskSnapshot?>(null) }
     var groupsLoadError by remember(settingId) { mutableStateOf<String?>(null) }
     var pendingClusterResetIndex by remember(settingId) { mutableStateOf<Int?>(null) }
+    var resumeCancelledClusterLoad by remember(settingId) { mutableStateOf(false) }
     var pendingClusterScrollIndex by remember(settingId) { mutableStateOf<Int?>(null) }
     var clusterOffset by remember(settingId) { mutableStateOf(0) }
     var clustersExhausted by remember(settingId) { mutableStateOf(false) }
@@ -905,14 +925,18 @@ fun SimilaritySettingGroupsScreen(
                 .getOrDefault(SortDirection.Desc)
         )
     }
+    val clusterLoadController = remember(settingId) { UiListLoadController() }
+    val listSurfaceActive = active && !filterScreenOpen
 
     fun loadClusterPage(reset: Boolean, restoredFirstVisibleIndex: Int = groupListState.firstVisibleItemIndex) {
-        if (clusterLoading) {
-            if (reset) {
+        if (!listSurfaceActive) {
+            if (reset || clusterLoadController.hasActiveLoad) {
                 pendingClusterResetIndex = restoredFirstVisibleIndex
             }
             return
         }
+        if (!reset && (clusterLoadController.hasActiveLoad || clusterLoading)) return
+        resumeCancelledClusterLoad = false
         clusterLoading = true
         filterResolutionTask = null
         val filterResolutionStartedAt = System.currentTimeMillis()
@@ -931,55 +955,68 @@ fun SimilaritySettingGroupsScreen(
         }
         val sortColumn = clusterSortColumn(clusterSortKey)
         val sortDirection = clusterSortDirection
-        scope.launch {
+        val queryFilter = appliedFilter
+        val queryHasFilters = queryFilter.hasActiveRules()
+        val existingSetting = setting
+        val existingSummary = clusterSummary
+        val load: suspend UiListLoadRequest.() -> Unit = clusterLoad@{
             try {
-                val loadedSetting = if (reset) {
-                    withContext(Dispatchers.IO) {
-                        repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
+                val (loadedSetting, loadedSummary, loadedPage) =
+                    runInterruptibleUiListLoad { shouldContinue ->
+                        val currentSetting = if (reset) {
+                            repository.listSettings()
+                                .firstOrNull { candidate -> candidate.settingId == settingId }
+                        } else {
+                            existingSetting
+                        }
+                        ensureUiListLoadContinues(shouldContinue)
+                        val currentSummary = if (reset) {
+                            repository.getClusterSummary(settingId)
+                        } else {
+                            existingSummary
+                        }
+                        ensureUiListLoadContinues(shouldContinue)
+                        val currentPage = if (queryHasFilters) {
+                            loadFilteredSimilarityClustersPage(
+                                repository = repository,
+                                settingId = settingId,
+                                sortColumn = sortColumn,
+                                sortDirection = sortDirection,
+                                definition = queryFilter,
+                                startOffset = pageOffset,
+                                minMatches = pageLimit,
+                                sourcePageSize = SIMILARITY_CLUSTER_GROUP_PAGE_SIZE,
+                                onResolutionProgress = { progress ->
+                                    ensureUiListLoadContinues(shouldContinue)
+                                    val task = progress.toFilterResolutionTask(
+                                        startedAt = filterResolutionStartedAt
+                                    )
+                                    if (isCurrent) {
+                                        Snapshot.withMutableSnapshot {
+                                            filterResolutionTask = task
+                                        }
+                                    }
+                                },
+                                shouldContinue = shouldContinue
+                            )
+                        } else {
+                            val loadedClusters = repository.listClustersPage(
+                                settingId = settingId,
+                                offset = pageOffset,
+                                limit = pageLimit,
+                                sortColumn = sortColumn,
+                                direction = sortDirection
+                            )
+                            FilteredSimilarityClustersPage(
+                                clusters = loadedClusters,
+                                nextSourceOffset = pageOffset + loadedClusters.size,
+                                exhausted = loadedClusters.size < pageLimit
+                            )
+                        }
+                        ensureUiListLoadContinues(shouldContinue)
+                        Triple(currentSetting, currentSummary, currentPage)
                     }
-                } else {
-                    setting
-                }
-                val loadedSummary = if (reset) {
-                    withContext(Dispatchers.IO) { repository.getClusterSummary(settingId) }
-                } else {
-                    clusterSummary
-                }
-                val loadedPage = withContext(Dispatchers.IO) {
-                    if (appliedFilter.hasActiveRules()) {
-                        loadFilteredSimilarityClustersPage(
-                            repository = repository,
-                            settingId = settingId,
-                            sortColumn = sortColumn,
-                            sortDirection = sortDirection,
-                            definition = appliedFilter,
-                            startOffset = pageOffset,
-                            minMatches = pageLimit,
-                            sourcePageSize = SIMILARITY_CLUSTER_GROUP_PAGE_SIZE,
-                            onResolutionProgress = { progress ->
-                                val task = progress.toFilterResolutionTask(
-                                    startedAt = filterResolutionStartedAt
-                                )
-                                Snapshot.withMutableSnapshot {
-                                    filterResolutionTask = task
-                                }
-                            }
-                        )
-                    } else {
-                        val loadedClusters = repository.listClustersPage(
-                            settingId = settingId,
-                            offset = pageOffset,
-                            limit = pageLimit,
-                            sortColumn = sortColumn,
-                            direction = sortDirection
-                        )
-                        FilteredSimilarityClustersPage(
-                            clusters = loadedClusters,
-                            nextSourceOffset = pageOffset + loadedClusters.size,
-                            exhausted = loadedClusters.size < pageLimit
-                        )
-                    }
-                }
+                if (!isCurrent) return@clusterLoad
                 if (reset) {
                     setting = loadedSetting
                     clusterSummary = loadedSummary
@@ -994,37 +1031,83 @@ fun SimilaritySettingGroupsScreen(
                 if (reset && restoredFirstVisibleIndex <= 0) {
                     pendingClusterScrollIndex = 0
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                groupsLoadError = if (reset) {
-                    "Similarity results could not be loaded. Retry, or rebuild this similarity."
-                } else {
-                    "More similarity results could not be loaded. Retry from the top."
-                }
-                if (reset) {
-                    clusters.clear()
-                    clusterSummary = SimilarityClusterSummary()
-                    clusterOffset = 0
-                    clustersExhausted = true
-                    groupsLoaded = true
+                if (isCurrent) {
+                    groupsLoadError = if (reset) {
+                        "Similarity results could not be loaded. Retry, or rebuild this similarity."
+                    } else {
+                        "More similarity results could not be loaded. Retry from the top."
+                    }
+                    if (reset) {
+                        clusters.clear()
+                        clusterSummary = SimilarityClusterSummary()
+                        clusterOffset = 0
+                        clustersExhausted = true
+                        groupsLoaded = true
+                    }
                 }
             } finally {
-                clusterLoading = false
-                filterResolutionTask = null
-                pendingClusterResetIndex?.let { pendingIndex ->
-                    pendingClusterResetIndex = null
-                    loadClusterPage(reset = true, restoredFirstVisibleIndex = pendingIndex)
+                if (isCurrent) {
+                    clusterLoading = false
+                    filterResolutionTask = null
                 }
             }
+        }
+        val job = if (reset) {
+            clusterLoadController.replace(scope, load)
+        } else {
+            clusterLoadController.launchIfIdle(scope, load)
+        }
+        if (job == null) {
+            clusterLoading = clusterLoadController.hasActiveLoad
+        }
+    }
+
+    fun pauseClusterLoading() {
+        resumeCancelledClusterLoad =
+            resumeCancelledClusterLoad || clusterLoadController.hasActiveLoad
+        clusterLoadController.cancel()
+        clusterLoading = false
+        filterResolutionTask = null
+    }
+
+    fun resumeClusterLoading() {
+        if (!listSurfaceActive) return
+        val pendingIndex = pendingClusterResetIndex
+        if (pendingIndex != null || resumeCancelledClusterLoad) {
+            pendingClusterResetIndex = null
+            resumeCancelledClusterLoad = false
+            loadClusterPage(
+                reset = true,
+                restoredFirstVisibleIndex = pendingIndex ?: groupListState.firstVisibleItemIndex
+            )
         }
     }
 
     LaunchedEffect(settingId, refreshVersion) {
-        loadClusterPage(reset = true)
+        if (listSurfaceActive) {
+            loadClusterPage(reset = true)
+        } else {
+            pendingClusterResetIndex = groupListState.firstVisibleItemIndex
+        }
     }
 
-    LaunchedEffect(settingId, deletedPaths) {
-        deletedClusterIds = withContext(Dispatchers.IO) {
-            repository.clusterIdsContainingPaths(deletedPaths)
+    LaunchedEffect(listSurfaceActive) {
+        if (listSurfaceActive) {
+            resumeClusterLoading()
+        } else {
+            pauseClusterLoading()
+        }
+    }
+
+    LaunchedEffect(settingId, deletedPaths, listSurfaceActive) {
+        if (!listSurfaceActive) return@LaunchedEffect
+        deletedClusterIds = runInterruptibleUiListLoad { shouldContinue ->
+            val loaded = repository.clusterIdsContainingPaths(deletedPaths)
+            ensureUiListLoadContinues(shouldContinue)
+            loaded
         }
     }
 
@@ -1035,7 +1118,8 @@ fun SimilaritySettingGroupsScreen(
         groupListState.scrollToItem(targetIndex)
     }
 
-    LaunchedEffect(settingId, groupListState) {
+    LaunchedEffect(settingId, groupListState, listSurfaceActive) {
+        if (!listSurfaceActive) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = groupListState.layoutInfo
             if (!groupsLoaded || setting == null) {
@@ -1209,6 +1293,7 @@ fun SimilaritySettingGroupsScreen(
                             showFullPaths = showFullPaths,
                             deleted = memoryDeletedClusterIds.contains(cluster.clusterId) ||
                                 deletedClusterIds.contains(cluster.clusterId),
+                            active = listSurfaceActive,
                             onOpenCluster = { onOpenCluster(settingId, cluster.clusterId) }
                         )
                     }
@@ -1321,6 +1406,7 @@ fun SimilarityClusterDetailScreen(
     var selectedFile by remember { mutableStateOf<FileMetadata?>(null) }
     var clusterLoaded by detailMemory.clusterLoaded
     var clusterLoadError by detailMemory.clusterLoadError
+    var resumeMemberLoad by detailMemory.resumeMemberLoad
     var clusterReloadToken by remember(settingId, clusterId) { mutableStateOf(0) }
     var memberSortKey by remember {
         mutableStateOf(
@@ -1345,13 +1431,26 @@ fun SimilarityClusterDetailScreen(
     var confirmDeleteSelected by remember(clusterId) { mutableStateOf(false) }
     var isDeletingSelected by remember(clusterId) { mutableStateOf(false) }
     var deleteSelectedMessage by remember(clusterId) { mutableStateOf<String?>(null) }
+    val memberLoadController = remember(settingId, clusterId) { UiListLoadController() }
+    DisposableEffect(memberLoadController) {
+        onDispose {
+            if (memberLoadController.hasActiveLoad) {
+                resumeMemberLoad = true
+            }
+            memberLoadController.cancel()
+            memberLoading = false
+        }
+    }
 
     fun isDurationNeighborSetting(): Boolean {
         return setting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
     }
 
-    fun loadMoreMembers(directionOverride: SortDirection? = null) {
-        if (memberLoading || membersExhausted) return
+    fun loadMoreMembers(
+        directionOverride: SortDirection? = null,
+        replaceCurrent: Boolean = false
+    ) {
+        if (!replaceCurrent && (memberLoadController.hasActiveLoad || memberLoading || membersExhausted)) return
         memberLoading = true
         val durationMode = isDurationNeighborSetting()
         val pageSortColumn = if (durationMode) {
@@ -1364,18 +1463,22 @@ fun SimilarityClusterDetailScreen(
         } else {
             memberSortDirection
         }
-        scope.launch {
+        val pageOffset = memberOffset
+        resumeMemberLoad = false
+        val load: suspend UiListLoadRequest.() -> Unit = memberPageLoad@{
             try {
-                val (nextMembers, nextMissingPaths) = withContext(Dispatchers.IO) {
+                val (nextMembers, nextMissingPaths) = runInterruptibleUiListLoad { shouldContinue ->
                     val loaded = repository.listClusterMembersPage(
                         clusterId = clusterId,
-                        offset = memberOffset,
+                        offset = pageOffset,
                         limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
                         sortColumn = pageSortColumn,
                         direction = pageDirection
                     )
+                    ensureUiListLoadContinues(shouldContinue)
                     loaded to missingFilePaths(loaded.map { member -> member.metadata })
                 }
+                if (!isCurrent) return@memberPageLoad
                 members.addAll(nextMembers)
                 nextMembers.forEach { member ->
                     val path = member.metadata.normalizedPath
@@ -1385,15 +1488,32 @@ fun SimilarityClusterDetailScreen(
                         missingMemberPaths.remove(path)
                     }
                 }
-                memberOffset += nextMembers.size
+                memberOffset = pageOffset + nextMembers.size
                 membersExhausted = nextMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
                     memberOffset >= (cluster?.fileCount ?: Int.MAX_VALUE)
                 clusterLoadError = null
+            } catch (cancelled: CancellationException) {
+                if (isCurrent) {
+                    resumeMemberLoad = true
+                }
+                throw cancelled
             } catch (_: Exception) {
-                clusterLoadError = "More similarity result members could not be loaded. Retry this result."
+                if (isCurrent) {
+                    clusterLoadError = "More similarity result members could not be loaded. Retry this result."
+                }
             } finally {
-                memberLoading = false
+                if (isCurrent) {
+                    memberLoading = false
+                }
             }
+        }
+        val job = if (replaceCurrent) {
+            memberLoadController.replace(scope, load)
+        } else {
+            memberLoadController.launchIfIdle(scope, load)
+        }
+        if (job == null) {
+            memberLoading = memberLoadController.hasActiveLoad
         }
     }
 
@@ -1403,6 +1523,10 @@ fun SimilarityClusterDetailScreen(
 
     LaunchedEffect(settingId, clusterId, clusterReloadToken) {
         if (clusterReloadToken == 0 && clusterLoaded) {
+            if (resumeMemberLoad && !membersExhausted) {
+                resumeMemberLoad = false
+                loadMoreMembers()
+            }
             return@LaunchedEffect
         }
         memberLoading = true
@@ -1414,52 +1538,84 @@ fun SimilarityClusterDetailScreen(
         missingMemberPaths.clear()
         memberOffset = 0
         membersExhausted = false
+        resumeMemberLoad = false
         selectionState.clear()
-        try {
-            val loadedSetting = withContext(Dispatchers.IO) {
-                repository.listSettings().firstOrNull { candidate -> candidate.settingId == settingId }
-            }
-            val loadedCluster = withContext(Dispatchers.IO) {
-                repository.getCluster(settingId = settingId, clusterId = clusterId)
-            }
-            val (firstMembers, firstMissingPaths) = withContext(Dispatchers.IO) {
-                val durationMode = loadedSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
-                val loaded = repository.listClusterMembersPage(
-                    clusterId = clusterId,
-                    offset = 0,
-                    limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
-                    sortColumn = if (durationMode) {
-                        SimilarityMemberSortColumn.Position
-                    } else {
-                        similarityMemberSortColumn(memberSortKey)
-                    },
-                    direction = if (durationMode) {
-                        durationMemberSortDirection
-                    } else {
-                        memberSortDirection
+        val initialMemberSortKey = memberSortKey
+        val initialMemberSortDirection = memberSortDirection
+        val initialDurationSortDirection = durationMemberSortDirection
+        memberLoadController.replace(scope) {
+            var completed = false
+            try {
+                val (loadedSetting, loadedCluster, firstPage) =
+                    runInterruptibleUiListLoad { shouldContinue ->
+                        val currentSetting = repository.listSettings()
+                            .firstOrNull { candidate -> candidate.settingId == settingId }
+                        ensureUiListLoadContinues(shouldContinue)
+                        val currentCluster = repository.getCluster(
+                            settingId = settingId,
+                            clusterId = clusterId
+                        )
+                        ensureUiListLoadContinues(shouldContinue)
+                        val durationMode =
+                            currentSetting?.methodId == SIMILARITY_METHOD_DURATION_NEIGHBOR_LIST
+                        val loadedMembers = repository.listClusterMembersPage(
+                            clusterId = clusterId,
+                            offset = 0,
+                            limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
+                            sortColumn = if (durationMode) {
+                                SimilarityMemberSortColumn.Position
+                            } else {
+                                similarityMemberSortColumn(initialMemberSortKey)
+                            },
+                            direction = if (durationMode) {
+                                initialDurationSortDirection
+                            } else {
+                                initialMemberSortDirection
+                            }
+                        )
+                        ensureUiListLoadContinues(shouldContinue)
+                        val missingPaths = missingFilePaths(
+                            loadedMembers.map { member -> member.metadata }
+                        )
+                        ensureUiListLoadContinues(shouldContinue)
+                        Triple(currentSetting, currentCluster, loadedMembers to missingPaths)
                     }
-                )
-                loaded to missingFilePaths(loaded.map { member -> member.metadata })
+                if (!isCurrent) return@replace
+                val (firstMembers, firstMissingPaths) = firstPage
+                setting = loadedSetting
+                cluster = loadedCluster
+                members.clear()
+                members.addAll(firstMembers)
+                missingMemberPaths.clear()
+                firstMissingPaths.forEach { path -> missingMemberPaths[path] = true }
+                memberOffset = firstMembers.size
+                membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
+                    firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
+                completed = true
+            } catch (cancelled: CancellationException) {
+                if (isCurrent) {
+                    resumeMemberLoad = true
+                }
+                throw cancelled
+            } catch (_: Exception) {
+                if (isCurrent) {
+                    clusterLoadError =
+                        "This similarity result could not be loaded. Retry, or rebuild this similarity."
+                    completed = true
+                }
+            } finally {
+                if (isCurrent) {
+                    memberLoading = false
+                    if (completed) {
+                        clusterLoaded = true
+                    }
+                }
             }
-            setting = loadedSetting
-            cluster = loadedCluster
-            members.clear()
-            members.addAll(firstMembers)
-            missingMemberPaths.clear()
-            firstMissingPaths.forEach { path -> missingMemberPaths[path] = true }
-            memberOffset = firstMembers.size
-            membersExhausted = firstMembers.size < SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE ||
-                firstMembers.size >= (loadedCluster?.fileCount ?: Int.MAX_VALUE)
-        } catch (_: Exception) {
-            clusterLoadError = "This similarity result could not be loaded. Retry, or rebuild this similarity."
-        } finally {
-            memberLoading = false
-            clusterLoaded = true
         }
     }
 
     fun applyDurationMemberSortDirection(direction: SortDirection) {
-        if (durationMemberSortDirection == direction || memberLoading) return
+        if (durationMemberSortDirection == direction) return
         durationMemberSortDirection = direction
         settingsStore.setSimilarityDurationMemberSortDirection(direction.name)
         members.clear()
@@ -1468,11 +1624,11 @@ fun SimilarityClusterDetailScreen(
         membersExhausted = false
         selectedFile = null
         selectionState.clear()
-        loadMoreMembers(directionOverride = direction)
+        loadMoreMembers(directionOverride = direction, replaceCurrent = true)
     }
 
     fun applyMemberSort(key: ResultGroupMemberSortKey, direction: SortDirection) {
-        if ((memberSortKey == key && memberSortDirection == direction) || memberLoading) return
+        if (memberSortKey == key && memberSortDirection == direction) return
         memberSortKey = key
         memberSortDirection = direction
         settingsStore.setSimilarityMemberSortKey(key.name)
@@ -1483,7 +1639,7 @@ fun SimilarityClusterDetailScreen(
         membersExhausted = false
         selectedFile = null
         selectionState.clear()
-        loadMoreMembers()
+        loadMoreMembers(replaceCurrent = true)
     }
 
     LaunchedEffect(clusterId, memberListState) {
@@ -2533,6 +2689,7 @@ private fun SimilarityClusterListCard(
     previewThumbnailSize: Dp,
     showFullPaths: Boolean,
     deleted: Boolean,
+    active: Boolean,
     onOpenCluster: () -> Unit
 ) {
     val previewMembers = remember(cluster.clusterId) { mutableStateListOf<SimilarityClusterMember>() }
@@ -2542,18 +2699,24 @@ private fun SimilarityClusterListCard(
     val durationNeighborExplanation = durationNeighborClusterExplanation(cluster.clusterKey)
     val durationMillisByNormalizedPath = similarityMemberDurationMap(previewMembers)
 
-    LaunchedEffect(cluster.clusterId) {
+    LaunchedEffect(cluster.clusterId, active) {
+        if (!active) return@LaunchedEffect
         previewLoading = true
-        val loadedMembers = withContext(Dispatchers.IO) {
-            repository.listClusterMembersPage(
-                clusterId = cluster.clusterId,
-                offset = 0,
-                limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT
-            )
+        try {
+            val loadedMembers = runInterruptibleUiListLoad { shouldContinue ->
+                val loaded = repository.listClusterMembersPage(
+                    clusterId = cluster.clusterId,
+                    offset = 0,
+                    limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT
+                )
+                ensureUiListLoadContinues(shouldContinue)
+                loaded
+            }
+            previewMembers.clear()
+            previewMembers.addAll(loadedMembers)
+        } finally {
+            previewLoading = false
         }
-        previewMembers.clear()
-        previewMembers.addAll(loadedMembers)
-        previewLoading = false
     }
 
     Card(

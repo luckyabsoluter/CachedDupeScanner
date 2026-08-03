@@ -18,7 +18,8 @@ internal fun <Source, Match, Cursor> loadFilteredSourcePage(
     minMatches: Int,
     loadPage: (Cursor) -> SourcePage<Source, Cursor>,
     transformMatch: (Source) -> Match?,
-    trimToMinMatches: Boolean = true
+    trimToMinMatches: Boolean = true,
+    shouldContinue: () -> Boolean = { true }
 ): FilteredSourcePage<Match, Cursor> {
     val matchedItems = mutableListOf<Match>()
     var sourceLoaded = 0
@@ -26,8 +27,10 @@ internal fun <Source, Match, Cursor> loadFilteredSourcePage(
     var exhausted = false
 
     while (matchedItems.size < minMatches && !exhausted) {
+        ensureUiListLoadContinues(shouldContinue)
         val currentCursor = nextCursor ?: startCursor
         val page = loadPage(currentCursor)
+        ensureUiListLoadContinues(shouldContinue)
         if (page.items.isEmpty()) {
             exhausted = page.exhausted
             nextCursor = page.nextCursor
@@ -35,11 +38,13 @@ internal fun <Source, Match, Cursor> loadFilteredSourcePage(
         }
         sourceLoaded += page.items.size
         page.items.forEach { source ->
+            ensureUiListLoadContinues(shouldContinue)
             transformMatch(source)?.let { match -> matchedItems += match }
         }
         nextCursor = page.nextCursor
         exhausted = page.exhausted
     }
+    ensureUiListLoadContinues(shouldContinue)
 
     val returnedItems = if (trimToMinMatches) {
         matchedItems.take(minMatches)

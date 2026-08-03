@@ -35,7 +35,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -53,6 +52,11 @@ fun ReportsScreen(
     val totalCount = remember { mutableStateOf(0) }
     val cursor = remember { mutableStateOf<Pair<Long, String>?>(null) }
     val isLoading = remember { mutableStateOf(false) }
+    val loadController = remember { UiListLoadController() }
+    val resumeCancelledLoad = remember { mutableStateOf(false) }
+    val resumeCancelledReset = remember { mutableStateOf(false) }
+    val activeLoadIsReset = remember { mutableStateOf(false) }
+    val pendingRefresh = remember { mutableStateOf(false) }
     val selected = remember { mutableStateOf<ScanReport?>(null) }
     val selectedById = remember { mutableStateOf<ScanReport?>(null) }
     val pageSize = 50
@@ -60,40 +64,95 @@ fun ReportsScreen(
     val topVisibleIndex = remember { mutableStateOf(0) }
 
     fun resetAndLoad() {
-        scope.launch {
-            isLoading.value = true
-            val count = withContext(Dispatchers.IO) { reportRepo.countAll() }
-            val first = withContext(Dispatchers.IO) { reportRepo.getFirstPage(pageSize) }
-            totalCount.value = count
-            reports.value = first
-            cursor.value = first.lastOrNull()?.let { report -> report.startedAtMillis to report.id }
-            topVisibleIndex.value = 0
-            isLoading.value = false
+        resumeCancelledLoad.value = false
+        resumeCancelledReset.value = false
+        pendingRefresh.value = false
+        activeLoadIsReset.value = true
+        isLoading.value = true
+        loadController.replace(scope) {
+            try {
+                val count = reportRepo.countAll()
+                val first = reportRepo.getFirstPage(pageSize)
+                if (!isCurrent) return@replace
+                totalCount.value = count
+                reports.value = first
+                cursor.value = first.lastOrNull()?.let { report -> report.startedAtMillis to report.id }
+                topVisibleIndex.value = 0
+            } finally {
+                if (isCurrent) {
+                    activeLoadIsReset.value = false
+                    isLoading.value = false
+                }
+            }
         }
     }
 
     fun loadMore() {
-        if (isLoading.value || reports.value.size >= totalCount.value) return
+        if (selectedReportId != null) return
+        if (loadController.hasActiveLoad || isLoading.value || reports.value.size >= totalCount.value) return
         val before = cursor.value ?: return
-        scope.launch {
-            isLoading.value = true
-            val next = withContext(Dispatchers.IO) {
-                reportRepo.getPageBefore(
+        activeLoadIsReset.value = false
+        isLoading.value = true
+        val job = loadController.launchIfIdle(scope) {
+            try {
+                val next = reportRepo.getPageBefore(
                     beforeMillis = before.first,
                     beforeId = before.second,
                     limit = pageSize
                 )
+                if (!isCurrent) return@launchIfIdle
+                if (next.isNotEmpty()) {
+                    reports.value = reports.value + next
+                    cursor.value = next.last().let { report -> report.startedAtMillis to report.id }
+                }
+            } finally {
+                if (isCurrent) {
+                    isLoading.value = false
+                }
             }
-            if (next.isNotEmpty()) {
-                reports.value = reports.value + next
-                cursor.value = next.last().let { report -> report.startedAtMillis to report.id }
-            }
-            isLoading.value = false
+        }
+        if (job == null) {
+            isLoading.value = loadController.hasActiveLoad
+        }
+    }
+
+    fun pauseListLoading() {
+        val hadActiveLoad = loadController.hasActiveLoad
+        resumeCancelledLoad.value = hadActiveLoad
+        resumeCancelledReset.value = hadActiveLoad && activeLoadIsReset.value
+        loadController.cancel()
+        activeLoadIsReset.value = false
+        isLoading.value = false
+    }
+
+    fun resumeListLoading() {
+        if (
+            pendingRefresh.value ||
+            resumeCancelledReset.value ||
+            (reports.value.isEmpty() && !loadController.hasActiveLoad)
+        ) {
+            resetAndLoad()
+        } else if (resumeCancelledLoad.value) {
+            resumeCancelledLoad.value = false
+            resumeCancelledReset.value = false
+            loadMore()
         }
     }
 
     LaunchedEffect(refreshVersion) {
-        resetAndLoad()
+        if (selectedReportId == null) {
+            resetAndLoad()
+        } else {
+            pendingRefresh.value = true
+        }
+    }
+
+    LaunchedEffect(selectedReportId) {
+        if (selectedReportId == null) {
+            resumeListLoading()
+        } else {
+            pauseListLoading()
+        }
     }
 
     LaunchedEffect(selectedReportId, refreshVersion) {
@@ -126,7 +185,8 @@ fun ReportsScreen(
             }
     }
 
-    LaunchedEffect(totalCount.value, reports.value.size) {
+    LaunchedEffect(totalCount.value, reports.value.size, selectedReportId) {
+        if (selectedReportId != null) return@LaunchedEffect
         if (totalCount.value <= 0) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
@@ -267,4 +327,3 @@ private fun ReportDetail(report: ScanReport) {
     Text("Detecting: ${report.durations.detectingMillis} ms")
     Text("Hashing: ${report.durations.hashingMillis} ms")
 }
-

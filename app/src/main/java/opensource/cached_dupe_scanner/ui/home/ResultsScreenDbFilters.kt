@@ -246,7 +246,8 @@ internal fun matchesResultsFilterPagedMembers(
     group: DuplicateGroupEntity,
     supportedTargets: Set<ResultsFilterTarget> = RESULT_FILTER_TARGETS,
     memberPages: () -> Sequence<List<FileMetadata>>,
-    onPreviewMembers: (List<FileMetadata>) -> Unit = {}
+    onPreviewMembers: (List<FileMetadata>) -> Unit = {},
+    shouldContinue: () -> Boolean = { true }
 ): Boolean {
     val matcher = ResultsFilterPagedMatcher(
         definition = definition,
@@ -256,7 +257,8 @@ internal fun matchesResultsFilterPagedMembers(
     matcher.resolved()?.let { return it }
 
     val preview = mutableListOf<FileMetadata>()
-    memberPages().forEach { page ->
+    for (page in memberPages()) {
+        ensureUiListLoadContinues(shouldContinue)
         if (preview.size < 10) {
             preview += page.take(10 - preview.size)
         }
@@ -267,6 +269,7 @@ internal fun matchesResultsFilterPagedMembers(
         }
     }
 
+    ensureUiListLoadContinues(shouldContinue)
     if (preview.isNotEmpty()) onPreviewMembers(preview)
     return matcher.finish()
 }

@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.ui.home
 
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -130,5 +131,35 @@ class FilteredPagingTest {
         assertEquals(1, page.nextCursor)
         assertEquals(1, page.sourceLoadedCount)
         assertTrue(page.exhausted)
+    }
+
+    @Test
+    fun loadFilteredSourcePageStopsBeforeAnotherBatchWhenCancelled() {
+        var pageLoads = 0
+        var shouldContinue = true
+        var cancelled = false
+
+        try {
+            loadFilteredSourcePage(
+                startCursor = 0,
+                minMatches = 1,
+                loadPage = { cursor ->
+                    pageLoads += 1
+                    shouldContinue = false
+                    SourcePage(
+                        items = listOf("skip-$cursor"),
+                        nextCursor = cursor + 1,
+                        exhausted = false
+                    )
+                },
+                transformMatch = { null },
+                shouldContinue = { shouldContinue }
+            )
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+
+        assertTrue(cancelled)
+        assertEquals(1, pageLoads)
     }
 }

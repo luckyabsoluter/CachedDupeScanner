@@ -87,6 +87,7 @@ fun TrashScreen(
     val entries = remember { mutableStateOf<List<TrashEntryEntity>>(emptyList()) }
     val totalCount = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
+    val loadController = remember { UiListLoadController() }
     val cursor = remember { mutableStateOf<Pair<Long, String>?>(null) }
     val topVisibleIndex = remember { mutableStateOf(0) }
     val menuOpen = remember { mutableStateOf(false) }
@@ -108,31 +109,57 @@ fun TrashScreen(
     val buffer = 50
 
     fun resetAndLoad() {
-        scope.launch {
-            isLoading.value = true
-            val count = withContext(Dispatchers.IO) { trashRepo.countAll() }
-            val first = withContext(Dispatchers.IO) { trashRepo.getFirstPage(pageSize) }
-            totalCount.value = count
-            entries.value = first
-            cursor.value = first.lastOrNull()?.let { it.deletedAtMillis to it.id }
-            isLoading.value = false
+        isLoading.value = true
+        loadController.replace(scope) {
+            try {
+                val (count, first) = runInterruptibleUiListLoad { shouldContinue ->
+                    val loadedCount = trashRepo.countAll()
+                    ensureUiListLoadContinues(shouldContinue)
+                    val loadedEntries = trashRepo.getFirstPage(pageSize)
+                    ensureUiListLoadContinues(shouldContinue)
+                    loadedCount to loadedEntries
+                }
+                if (!isCurrent) return@replace
+                totalCount.value = count
+                entries.value = first
+                cursor.value = first.lastOrNull()?.let { it.deletedAtMillis to it.id }
+            } finally {
+                if (isCurrent) {
+                    isLoading.value = false
+                }
+            }
         }
     }
 
     fun loadMore() {
-        if (isLoading.value) return
+        if (loadController.hasActiveLoad || isLoading.value) return
         if (entries.value.size >= totalCount.value) return
         val before = cursor.value ?: return
-        scope.launch {
-            isLoading.value = true
-            val next = withContext(Dispatchers.IO) {
-                trashRepo.getPageBefore(beforeMillis = before.first, beforeId = before.second, limit = pageSize)
+        isLoading.value = true
+        val job = loadController.launchIfIdle(scope) {
+            try {
+                val next = runInterruptibleUiListLoad { shouldContinue ->
+                    val loaded = trashRepo.getPageBefore(
+                        beforeMillis = before.first,
+                        beforeId = before.second,
+                        limit = pageSize
+                    )
+                    ensureUiListLoadContinues(shouldContinue)
+                    loaded
+                }
+                if (!isCurrent) return@launchIfIdle
+                if (next.isNotEmpty()) {
+                    entries.value = entries.value + next
+                    cursor.value = next.last().deletedAtMillis to next.last().id
+                }
+            } finally {
+                if (isCurrent) {
+                    isLoading.value = false
+                }
             }
-            if (next.isNotEmpty()) {
-                entries.value = entries.value + next
-                cursor.value = next.last().deletedAtMillis to next.last().id
-            }
-            isLoading.value = false
+        }
+        if (job == null) {
+            isLoading.value = loadController.hasActiveLoad
         }
     }
 

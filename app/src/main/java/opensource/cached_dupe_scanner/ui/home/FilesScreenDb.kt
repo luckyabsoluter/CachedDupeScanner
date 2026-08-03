@@ -45,7 +45,6 @@ import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opensource.cached_dupe_scanner.core.FileMetadata
 import opensource.cached_dupe_scanner.storage.AppSettingsStore
@@ -140,6 +139,10 @@ fun FilesScreenDb(
     val filterSourceExhausted = remember { mutableStateOf(false) }
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
+    val loadController = remember { UiListLoadController() }
+    val resumeCancelledLoad = remember { mutableStateOf(false) }
+    val resumeCancelledReset = remember { mutableStateOf(false) }
+    val activeLoadIsReset = remember { mutableStateOf(false) }
     val selectedFile = remember { mutableStateOf<FileMetadata?>(null) }
     val deletedPaths = rememberSaveable { mutableStateOf(setOf<String>()) }
     val topVisibleIndex = remember { mutableStateOf(0) }
@@ -160,79 +163,145 @@ fun FilesScreenDb(
     fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules(FILE_FILTER_TARGETS)
 
     fun resetAndLoad() {
-        items.value = emptyList()
-        cursor.value = PagedFileRepository.Cursor.Start
-        filterSourceExhausted.value = false
-        visibleCount.value = 0
-        scope.launch {
-            isLoading.value = true
-            total.value = withContext(Dispatchers.IO) { fileRepo.countAll() }
-            val page = withContext(Dispatchers.IO) {
-                if (filtersActive()) {
-                    loadFilteredFilesPage(
-                        fileRepo = fileRepo,
-                        sortKey = sortKey.value,
-                        direction = sortDirection.value,
-                        cursor = PagedFileRepository.Cursor.Start,
-                        definition = appliedFilter.value,
-                        minMatches = pageSize,
-                        sourcePageSize = pageSize
-                    )
-                } else {
-                    FilteredFilesPage.fromUnfiltered(
-                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
-                    )
+        resumeCancelledLoad.value = false
+        resumeCancelledReset.value = false
+        activeLoadIsReset.value = true
+        isLoading.value = true
+        val querySortKey = sortKey.value
+        val queryDirection = sortDirection.value
+        val queryFilter = appliedFilter.value
+        val queryHasFilters = queryFilter.hasActiveRules(FILE_FILTER_TARGETS)
+        loadController.replace(scope) {
+            try {
+                val (loadedTotal, page) = runInterruptibleUiListLoad { shouldContinue ->
+                    val count = fileRepo.countAll()
+                    ensureUiListLoadContinues(shouldContinue)
+                    val loadedPage = if (queryHasFilters) {
+                        loadFilteredFilesPage(
+                            fileRepo = fileRepo,
+                            sortKey = querySortKey,
+                            direction = queryDirection,
+                            cursor = PagedFileRepository.Cursor.Start,
+                            definition = queryFilter,
+                            minMatches = pageSize,
+                            sourcePageSize = pageSize,
+                            shouldContinue = shouldContinue
+                        )
+                    } else {
+                        FilteredFilesPage.fromUnfiltered(
+                            fileRepo.loadPage(
+                                querySortKey,
+                                queryDirection,
+                                PagedFileRepository.Cursor.Start,
+                                pageSize
+                            )
+                        )
+                    }
+                    ensureUiListLoadContinues(shouldContinue)
+                    count to loadedPage
+                }
+                if (!isCurrent) return@replace
+                total.value = loadedTotal
+                items.value = page.items
+                cursor.value = page.nextCursor ?: PagedFileRepository.Cursor.Start
+                filterSourceExhausted.value = page.exhausted
+                filteredSourceLoadedCount.value = page.sourceLoadedCount
+                visibleCount.value = page.items.size
+                topVisibleIndex.value = 0
+                if (page.items.isNotEmpty()) {
+                    listState.scrollToItem(0)
+                }
+            } finally {
+                if (isCurrent) {
+                    activeLoadIsReset.value = false
+                    isLoading.value = false
                 }
             }
-            items.value = page.items
-            cursor.value = page.nextCursor ?: cursor.value
-            filterSourceExhausted.value = page.exhausted
-            filteredSourceLoadedCount.value = page.sourceLoadedCount
-            visibleCount.value = page.items.size
-            isLoading.value = false
         }
     }
 
     fun loadMore() {
-        if (isLoading.value) return
+        if (filterScreenOpen.value) return
+        if (loadController.hasActiveLoad || isLoading.value) return
         if (filtersActive() && filterSourceExhausted.value) return
-        scope.launch {
-            isLoading.value = true
-            val page = withContext(Dispatchers.IO) {
-                if (filtersActive()) {
-                    loadFilteredFilesPage(
-                        fileRepo = fileRepo,
-                        sortKey = sortKey.value,
-                        direction = sortDirection.value,
-                        cursor = cursor.value,
-                        definition = appliedFilter.value,
-                        minMatches = pageSize,
-                        sourcePageSize = pageSize
-                    )
-                } else {
-                    FilteredFilesPage.fromUnfiltered(
-                        fileRepo.loadPage(sortKey.value, sortDirection.value, cursor.value, pageSize)
-                    )
+        val querySortKey = sortKey.value
+        val queryDirection = sortDirection.value
+        val queryCursor = cursor.value
+        val queryFilter = appliedFilter.value
+        val queryHasFilters = queryFilter.hasActiveRules(FILE_FILTER_TARGETS)
+        activeLoadIsReset.value = false
+        isLoading.value = true
+        val job = loadController.launchIfIdle(scope) {
+            try {
+                val page = runInterruptibleUiListLoad { shouldContinue ->
+                    if (queryHasFilters) {
+                        loadFilteredFilesPage(
+                            fileRepo = fileRepo,
+                            sortKey = querySortKey,
+                            direction = queryDirection,
+                            cursor = queryCursor,
+                            definition = queryFilter,
+                            minMatches = pageSize,
+                            sourcePageSize = pageSize,
+                            shouldContinue = shouldContinue
+                        )
+                    } else {
+                        FilteredFilesPage.fromUnfiltered(
+                            fileRepo.loadPage(querySortKey, queryDirection, queryCursor, pageSize)
+                        )
+                    }
+                }
+                if (!isCurrent) return@launchIfIdle
+                if (queryHasFilters) {
+                    filteredSourceLoadedCount.value =
+                        (filteredSourceLoadedCount.value + page.sourceLoadedCount)
+                            .coerceAtMost(total.value)
+                }
+                if (page.items.isNotEmpty()) {
+                    items.value = items.value + page.items
+                    cursor.value = page.nextCursor ?: cursor.value
+                    visibleCount.value = items.value.size
+                }
+                filterSourceExhausted.value = page.exhausted
+            } finally {
+                if (isCurrent) {
+                    isLoading.value = false
                 }
             }
-            if (filtersActive()) {
-                filteredSourceLoadedCount.value =
-                    (filteredSourceLoadedCount.value + page.sourceLoadedCount)
-                        .coerceAtMost(total.value)
-            }
-            if (page.items.isNotEmpty()) {
-                items.value = items.value + page.items
-                cursor.value = page.nextCursor ?: cursor.value
-                visibleCount.value = items.value.size
-            }
-            filterSourceExhausted.value = page.exhausted
-            isLoading.value = false
+        }
+        if (job == null) {
+            isLoading.value = loadController.hasActiveLoad
         }
     }
 
-    LaunchedEffect(Unit) { resetAndLoad() }
+    fun pauseListLoading() {
+        val hadActiveLoad = loadController.hasActiveLoad
+        resumeCancelledLoad.value = hadActiveLoad
+        resumeCancelledReset.value = hadActiveLoad && activeLoadIsReset.value
+        loadController.cancel()
+        activeLoadIsReset.value = false
+        isLoading.value = false
+    }
+
+    fun resumeListLoading() {
+        if (!resumeCancelledLoad.value) return
+        val resumeReset = resumeCancelledReset.value
+        resumeCancelledLoad.value = false
+        resumeCancelledReset.value = false
+        if (resumeReset || items.value.isEmpty()) {
+            resetAndLoad()
+        } else {
+            loadMore()
+        }
+    }
+
     LaunchedEffect(refreshVersion) { resetAndLoad() }
     LaunchedEffect(clearVersion) {
+        loadController.cancel()
+        resumeCancelledLoad.value = false
+        resumeCancelledReset.value = false
+        activeLoadIsReset.value = false
+        isLoading.value = false
         items.value = emptyList()
         total.value = 0
         deletedPaths.value = emptySet()
@@ -268,7 +337,8 @@ fun FilesScreenDb(
     }
 
     // Auto-load next page on scroll (legacy behavior).
-    LaunchedEffect(total.value, items.value.size) {
+    LaunchedEffect(total.value, items.value.size, filterScreenOpen.value) {
+        if (filterScreenOpen.value) return@LaunchedEffect
         if (total.value <= 0) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = listState.layoutInfo
@@ -285,97 +355,99 @@ fun FilesScreenDb(
             }
     }
 
-    Box(modifier = modifier) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.padding(Spacing.screenPadding),
-            contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
-        ) {
-            item {
-                AppTopBar(
-                    title = "Files",
-                    onBack = onBack,
-                    actions = {
-                        IconButton(onClick = { menuExpanded.value = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
-                        }
-                        androidx.compose.material3.DropdownMenu(
-                            expanded = menuExpanded.value,
-                            onDismissRequest = { menuExpanded.value = false }
-                        ) {
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Refresh") },
-                                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded.value = false
-                                    resetAndLoad()
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Filter") },
-                                onClick = {
-                                    menuExpanded.value = false
-                                    draftFilter.value = if (appliedFilter.value.clusters.isEmpty()) {
-                                        ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
-                                    } else {
-                                        appliedFilter.value
+    if (!filterScreenOpen.value) {
+        Box(modifier = modifier) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.padding(Spacing.screenPadding),
+                contentPadding = PaddingValues(end = ScrollbarDefaults.ThumbWidth + 8.dp)
+            ) {
+                item {
+                    AppTopBar(
+                        title = "Files",
+                        onBack = onBack,
+                        actions = {
+                            IconButton(onClick = { menuExpanded.value = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                            }
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = menuExpanded.value,
+                                onDismissRequest = { menuExpanded.value = false }
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Refresh") },
+                                    leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        resetAndLoad()
                                     }
-                                    filterScreenOpen.value = true
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Sort") },
-                                onClick = {
-                                    menuExpanded.value = false
-                                    pendingSortKey.value = sortKey.value
-                                    pendingSortDirection.value = sortDirection.value
-                                    sortDialogOpen.value = true
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Video preview") },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = isVideoTimelinePreviewEnabled(),
-                                        onCheckedChange = null
-                                    )
-                                },
-                                onClick = {
-                                    previewMode.value = if (isVideoTimelinePreviewEnabled()) {
-                                        FilesPreviewMode.Compact.name
-                                    } else {
-                                        FilesPreviewMode.VideoTimeline.name
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Filter") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        draftFilter.value = if (appliedFilter.value.clusters.isEmpty()) {
+                                            ResultsFilterDefinition(clusters = listOf(createResultsFilterCluster()))
+                                        } else {
+                                            appliedFilter.value
+                                        }
+                                        pauseListLoading()
+                                        filterScreenOpen.value = true
                                     }
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Video duration") },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = showVideoPreviewDuration.value,
-                                        onCheckedChange = null
-                                    )
-                                },
-                                onClick = {
-                                    showVideoPreviewDuration.value = !showVideoPreviewDuration.value
-                                }
-                            )
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("Video resolution") },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = showVideoPreviewResolution.value,
-                                        onCheckedChange = null
-                                    )
-                                },
-                                onClick = {
-                                    showVideoPreviewResolution.value = !showVideoPreviewResolution.value
-                                }
-                            )
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Sort") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        pendingSortKey.value = sortKey.value
+                                        pendingSortDirection.value = sortDirection.value
+                                        sortDialogOpen.value = true
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Video preview") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = isVideoTimelinePreviewEnabled(),
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        previewMode.value = if (isVideoTimelinePreviewEnabled()) {
+                                            FilesPreviewMode.Compact.name
+                                        } else {
+                                            FilesPreviewMode.VideoTimeline.name
+                                        }
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Video duration") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = showVideoPreviewDuration.value,
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showVideoPreviewDuration.value = !showVideoPreviewDuration.value
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Video resolution") },
+                                    leadingIcon = {
+                                        Checkbox(
+                                            checked = showVideoPreviewResolution.value,
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        showVideoPreviewResolution.value = !showVideoPreviewResolution.value
+                                    }
+                                )
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
             item {
@@ -516,15 +588,16 @@ fun FilesScreenDb(
             }
         }
 
-        TopRightLoadIndicator(text = overlayText)
+            TopRightLoadIndicator(text = overlayText)
 
-        VerticalLazyScrollbar(
-            listState = listState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 4.dp)
-        )
+            VerticalLazyScrollbar(
+                listState = listState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+            )
+        }
     }
 
     selectedFile.value?.let { file ->
@@ -622,7 +695,10 @@ fun FilesScreenDb(
         FileFilterScreen(
             definition = draftFilter.value,
             onDefinitionChange = { draftFilter.value = it },
-            onBack = { filterScreenOpen.value = false },
+            onBack = {
+                filterScreenOpen.value = false
+                resumeListLoading()
+            },
             onApply = {
                 appliedFilter.value = draftFilter.value
                 settingsStore.setFilesFilterDefinitionJson(
@@ -661,7 +737,8 @@ internal fun loadFilteredFilesPage(
     cursor: PagedFileRepository.Cursor,
     definition: ResultsFilterDefinition,
     minMatches: Int,
-    sourcePageSize: Int
+    sourcePageSize: Int,
+    shouldContinue: () -> Boolean = { true }
 ): FilteredFilesPage {
     if (sourcePageSize <= 0 || minMatches <= 0) {
         return FilteredFilesPage(
@@ -690,7 +767,8 @@ internal fun loadFilteredFilesPage(
         },
         transformMatch = { file ->
             if (matchesFileFilter(definition, file)) file else null
-        }
+        },
+        shouldContinue = shouldContinue
     )
 
     return FilteredFilesPage(
