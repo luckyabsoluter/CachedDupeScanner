@@ -175,10 +175,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 val reportRepo = remember { ScanReportRepository(database.scanReportDao()) }
-                val trashRepo = remember { TrashRepository(database.trashDao()) }
+                val trashRepo = remember { TrashRepository(database) }
                 val trashController = remember { TrashController(context, database, historyRepo, trashRepo) }
-                val resultsRepo = remember { ResultsDbRepository(database.fileCacheDao(), database.duplicateGroupDao()) }
-                val fileRepo = remember { PagedFileRepository(database.fileCacheDao()) }
+                val resultsRepo = remember { ResultsDbRepository(database) }
+                val fileRepo = remember { PagedFileRepository(database) }
 
                 LaunchedEffect(Unit) {
                     // DB-backed screens load data on demand; avoid pulling the full cache into RAM on startup.

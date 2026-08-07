@@ -1,5 +1,7 @@
 package opensource.cached_dupe_scanner.storage
 
+import android.os.CancellationSignal
+import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.DuplicateGroupDao
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
@@ -21,11 +23,30 @@ class ResultsDbRepository(
     private val groupDao: DuplicateGroupDao,
     private val hashFile: (File, () -> Boolean) -> String? = { file, shouldContinue ->
         Hashing.sha256Hex(file, shouldContinue = shouldContinue)
-    }
+    },
+    private val database: CacheDatabase? = null
 ) {
-    fun countFiles(): Int = fileDao.countAll()
+    constructor(database: CacheDatabase) : this(
+        fileDao = database.fileCacheDao(),
+        groupDao = database.duplicateGroupDao(),
+        database = database
+    )
 
-    fun countGroups(): Int = groupDao.countGroups()
+    fun countFiles(cancellationSignal: CancellationSignal? = null): Int {
+        return readIntWithCancellation(
+            sql = "SELECT COUNT(*) FROM cached_files",
+            cancellationSignal = cancellationSignal,
+            fallback = fileDao::countAll
+        )
+    }
+
+    fun countGroups(cancellationSignal: CancellationSignal? = null): Int {
+        return readIntWithCancellation(
+            sql = "SELECT COUNT(*) FROM dupe_groups",
+            cancellationSignal = cancellationSignal,
+            fallback = groupDao::countGroups
+        )
+    }
 
     fun rebuildGroups(updatedAtMillis: Long = System.currentTimeMillis()) {
         rebuildGroups(updatedAtMillis = updatedAtMillis, shouldContinue = { true }) { }
@@ -213,22 +234,38 @@ class ResultsDbRepository(
         }
     }
 
-    fun latestSnapshotUpdatedAt(): Long? = groupDao.latestUpdatedAtMillis()
+    fun latestSnapshotUpdatedAt(cancellationSignal: CancellationSignal? = null): Long? {
+        val currentDatabase = database
+        if (currentDatabase == null || cancellationSignal == null) {
+            return groupDao.latestUpdatedAtMillis()
+        }
+        return currentDatabase.readRoomQueryWithCancellation(
+            sql = "SELECT MAX(updatedAtMillis) FROM dupe_groups",
+            cancellationSignal = cancellationSignal
+        ) { cursor ->
+            check(cursor.moveToFirst())
+            if (cursor.isNull(0)) null else cursor.getLong(0)
+        }
+    }
 
-    fun hasSnapshotChanged(snapshotUpdatedAtMillis: Long?): Boolean {
-        return groupDao.latestUpdatedAtMillis() != snapshotUpdatedAtMillis
+    fun hasSnapshotChanged(
+        snapshotUpdatedAtMillis: Long?,
+        cancellationSignal: CancellationSignal? = null
+    ): Boolean {
+        return latestSnapshotUpdatedAt(cancellationSignal) != snapshotUpdatedAtMillis
     }
 
     fun loadInitialSnapshot(
         sortKey: DuplicateGroupSortKey,
         limit: Int,
-        rebuild: Boolean
+        rebuild: Boolean,
+        cancellationSignal: CancellationSignal? = null
     ): ResultsSnapshot {
         if (rebuild) {
             rebuildGroups()
         }
-        val fileCount = countFiles()
-        val updatedAtMillis = groupDao.latestUpdatedAtMillis()
+        val fileCount = countFiles(cancellationSignal)
+        val updatedAtMillis = latestSnapshotUpdatedAt(cancellationSignal)
         if (updatedAtMillis == null) {
             return ResultsSnapshot(
                 fileCount = fileCount,
@@ -238,14 +275,15 @@ class ResultsDbRepository(
             )
         }
 
-        val groupCount = groupDao.countGroupsAt(updatedAtMillis)
+        val groupCount = countGroupsAt(updatedAtMillis, cancellationSignal)
         val safeLimit = limit.coerceAtLeast(0).coerceAtMost(groupCount)
         val firstPage = if (safeLimit > 0) {
             loadPageAtSnapshot(
                 sortKey = sortKey,
                 snapshotUpdatedAtMillis = updatedAtMillis,
                 offset = 0,
-                limit = safeLimit
+                limit = safeLimit,
+                cancellationSignal = cancellationSignal
             )
         } else {
             emptyList()
@@ -262,9 +300,18 @@ class ResultsDbRepository(
         sortKey: DuplicateGroupSortKey,
         snapshotUpdatedAtMillis: Long,
         offset: Int,
-        limit: Int
+        limit: Int,
+        cancellationSignal: CancellationSignal? = null
     ): List<DuplicateGroupEntity> {
         if (offset < 0 || limit <= 0) return emptyList()
+        val currentDatabase = database
+        if (currentDatabase != null && cancellationSignal != null) {
+            return currentDatabase.readDuplicateGroupsWithCancellation(
+                sql = "SELECT * FROM dupe_groups WHERE updatedAtMillis = ? ORDER BY ${snapshotOrderBy(sortKey)} LIMIT ? OFFSET ?",
+                bindArgs = arrayOf<Any?>(snapshotUpdatedAtMillis, limit, offset),
+                cancellationSignal = cancellationSignal
+            )
+        }
         return when (sortKey) {
             DuplicateGroupSortKey.CountDesc -> groupDao.listByCountDescAt(snapshotUpdatedAtMillis, limit, offset)
             DuplicateGroupSortKey.CountAsc -> groupDao.listByCountAscAt(snapshotUpdatedAtMillis, limit, offset)
@@ -297,8 +344,30 @@ class ResultsDbRepository(
         }
     }
 
-    fun listGroupMembers(sizeBytes: Long, hashHex: String, afterPath: String?, limit: Int): List<FileMetadata> {
-        val entities = if (afterPath == null) {
+    fun listGroupMembers(
+        sizeBytes: Long,
+        hashHex: String,
+        afterPath: String?,
+        limit: Int,
+        cancellationSignal: CancellationSignal? = null
+    ): List<FileMetadata> {
+        val currentDatabase = database
+        val entities = if (currentDatabase != null && cancellationSignal != null) {
+            val hashBytes = StoredHash.fromExternalString(hashHex).toStorageBytes()
+            if (afterPath == null) {
+                currentDatabase.readCachedFilesWithCancellation(
+                    sql = "SELECT * FROM cached_files WHERE sizeBytes = ? AND hashBytes = ? ORDER BY normalizedPath ASC LIMIT ?",
+                    bindArgs = arrayOf(sizeBytes, hashBytes, limit),
+                    cancellationSignal = cancellationSignal
+                )
+            } else {
+                currentDatabase.readCachedFilesWithCancellation(
+                    sql = "SELECT * FROM cached_files WHERE sizeBytes = ? AND hashBytes = ? AND normalizedPath > ? ORDER BY normalizedPath ASC LIMIT ?",
+                    bindArgs = arrayOf(sizeBytes, hashBytes, afterPath, limit),
+                    cancellationSignal = cancellationSignal
+                )
+            }
+        } else if (afterPath == null) {
             fileDao.listMembersBySizeAndHash(sizeBytes, hashHex, limit)
         } else {
             fileDao.listMembersBySizeAndHashAfter(sizeBytes, hashHex, afterPath, limit)
@@ -306,7 +375,12 @@ class ResultsDbRepository(
         return entities.map { it.toFileMetadata() }
     }
 
-    fun groupMemberPages(sizeBytes: Long, hashHex: String, pageSize: Int = 200): Sequence<List<FileMetadata>> {
+    fun groupMemberPages(
+        sizeBytes: Long,
+        hashHex: String,
+        pageSize: Int = 200,
+        cancellationSignal: CancellationSignal? = null
+    ): Sequence<List<FileMetadata>> {
         if (pageSize <= 0) return emptySequence()
         return sequence {
             var afterPath: String? = null
@@ -315,7 +389,8 @@ class ResultsDbRepository(
                     sizeBytes = sizeBytes,
                     hashHex = hashHex,
                     afterPath = afterPath,
-                    limit = pageSize
+                    limit = pageSize,
+                    cancellationSignal = cancellationSignal
                 )
                 if (page.isEmpty()) {
                     break
@@ -326,6 +401,51 @@ class ResultsDbRepository(
                 }
                 afterPath = page.last().normalizedPath
             }
+        }
+    }
+
+    private fun countGroupsAt(
+        updatedAtMillis: Long,
+        cancellationSignal: CancellationSignal?
+    ): Int {
+        val currentDatabase = database
+        if (currentDatabase == null || cancellationSignal == null) {
+            return groupDao.countGroupsAt(updatedAtMillis)
+        }
+        return currentDatabase.readRoomQueryWithCancellation(
+            sql = "SELECT COUNT(*) FROM dupe_groups WHERE updatedAtMillis = ?",
+            bindArgs = arrayOf(updatedAtMillis),
+            cancellationSignal = cancellationSignal
+        ) { cursor ->
+            check(cursor.moveToFirst())
+            cursor.getInt(0)
+        }
+    }
+
+    private fun readIntWithCancellation(
+        sql: String,
+        cancellationSignal: CancellationSignal?,
+        fallback: () -> Int
+    ): Int {
+        val currentDatabase = database
+        if (currentDatabase == null || cancellationSignal == null) return fallback()
+        return currentDatabase.readRoomQueryWithCancellation(
+            sql = sql,
+            cancellationSignal = cancellationSignal
+        ) { cursor ->
+            check(cursor.moveToFirst())
+            cursor.getInt(0)
+        }
+    }
+
+    private fun snapshotOrderBy(sortKey: DuplicateGroupSortKey): String {
+        return when (sortKey) {
+            DuplicateGroupSortKey.CountDesc -> "fileCount DESC, totalBytes DESC, sizeBytes DESC, hashBytes DESC"
+            DuplicateGroupSortKey.CountAsc -> "fileCount ASC, totalBytes ASC, sizeBytes ASC, hashBytes ASC"
+            DuplicateGroupSortKey.TotalBytesDesc -> "totalBytes DESC, fileCount DESC, sizeBytes DESC, hashBytes DESC"
+            DuplicateGroupSortKey.TotalBytesAsc -> "totalBytes ASC, fileCount ASC, sizeBytes ASC, hashBytes ASC"
+            DuplicateGroupSortKey.PerFileSizeDesc -> "sizeBytes DESC, fileCount DESC, totalBytes DESC, hashBytes DESC"
+            DuplicateGroupSortKey.PerFileSizeAsc -> "sizeBytes ASC, fileCount ASC, totalBytes ASC, hashBytes ASC"
         }
     }
 

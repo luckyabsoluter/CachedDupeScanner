@@ -104,4 +104,43 @@ class UiListLoadControllerTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun cancelSignalsDatabaseQueryEvenWhenBlockingWorkIgnoresThreadInterrupt() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val controller = UiListLoadController()
+        val queryEntered = CountDownLatch(1)
+        val queryCancellationReceived = CountDownLatch(1)
+        val releaseQuery = CountDownLatch(1)
+
+        try {
+            val job = controller.replace(scope) {
+                runInterruptibleUiListLoad { cancellation ->
+                    cancellation.queryCancellationSignal.setOnCancelListener {
+                        queryCancellationReceived.countDown()
+                    }
+                    queryEntered.countDown()
+                    while (releaseQuery.count > 0L) {
+                        try {
+                            releaseQuery.await(100, TimeUnit.MILLISECONDS)
+                        } catch (_: InterruptedException) {
+                            Thread.interrupted()
+                        }
+                    }
+                }
+            }
+
+            assertTrue(queryEntered.await(5, TimeUnit.SECONDS))
+            controller.cancel()
+
+            assertTrue(queryCancellationReceived.await(5, TimeUnit.SECONDS))
+            assertFalse(controller.hasActiveLoad)
+
+            releaseQuery.countDown()
+            job.join()
+        } finally {
+            releaseQuery.countDown()
+            scope.cancel()
+        }
+    }
 }

@@ -333,7 +333,8 @@ fun ResultsScreenDb(
                     val loadedSnapshot = resultsRepo.loadInitialSnapshot(
                         sortKey = sortForQuery,
                         limit = firstPageLimit,
-                        rebuild = rebuild
+                        rebuild = rebuild,
+                        cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                     )
                     ensureUiListLoadContinues(shouldContinue)
                     val loadedFilteredPage = if (queryHasFilters) {
@@ -353,7 +354,8 @@ fun ResultsScreenDb(
                                 startOffset = 0,
                                 minMatches = filteredTarget,
                                 sourcePageSize = pageSize,
-                                shouldContinue = shouldContinue
+                                shouldContinue = shouldContinue,
+                                cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                             )
                         }
                     } else {
@@ -445,7 +447,11 @@ fun ResultsScreenDb(
                 var needsRefresh = false
                 try {
                     val next = runInterruptibleUiListLoad { shouldContinue ->
-                        if (resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)) {
+                        if (resultsRepo.hasSnapshotChanged(
+                                snapshotUpdatedAt,
+                                shouldContinue.frameworkQueryCancellationSignal
+                            )
+                        ) {
                             null
                         } else {
                             ensureUiListLoadContinues(shouldContinue)
@@ -457,7 +463,8 @@ fun ResultsScreenDb(
                                 startOffset = queryOffset,
                                 minMatches = queryMinMatches,
                                 sourcePageSize = pageSize,
-                                shouldContinue = shouldContinue
+                                shouldContinue = shouldContinue,
+                                cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                             )
                         }
                     }
@@ -514,7 +521,11 @@ fun ResultsScreenDb(
             var needsRefresh = false
             try {
                 val (snapshotChanged, next) = runInterruptibleUiListLoad { shouldContinue ->
-                    if (resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)) {
+                    if (resultsRepo.hasSnapshotChanged(
+                            snapshotUpdatedAt,
+                            shouldContinue.frameworkQueryCancellationSignal
+                        )
+                    ) {
                         true to emptyList()
                     } else {
                         ensureUiListLoadContinues(shouldContinue)
@@ -522,7 +533,8 @@ fun ResultsScreenDb(
                             sortKey = querySort,
                             snapshotUpdatedAtMillis = snapshotUpdatedAt,
                             offset = queryOffset,
-                            limit = queryLimit
+                            limit = queryLimit,
+                            cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                         )
                         ensureUiListLoadContinues(shouldContinue)
                         val hasNoNewGroups = loaded.isEmpty() || uniqueGroupsToAppend(
@@ -531,7 +543,10 @@ fun ResultsScreenDb(
                             maxAppend = limit
                         ).isEmpty()
                         val changedAfterPaging = hasNoNewGroups &&
-                            resultsRepo.hasSnapshotChanged(snapshotUpdatedAt)
+                            resultsRepo.hasSnapshotChanged(
+                                snapshotUpdatedAt,
+                                shouldContinue.frameworkQueryCancellationSignal
+                            )
                         changedAfterPaging to loaded
                     }
                 }
@@ -1170,7 +1185,8 @@ private fun DuplicateGroupCardDb(
                     sizeBytes = group.sizeBytes,
                     hashHex = group.hashHex,
                     afterPath = null,
-                    limit = 10
+                    limit = 10,
+                    cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                 )
                 ensureUiListLoadContinues(shouldContinue)
                 loaded
@@ -1323,7 +1339,8 @@ private fun GroupDetailDb(
                         sizeBytes = group.sizeBytes,
                         hashHex = group.hashHex,
                         afterPath = afterPath,
-                        limit = pageSize
+                        limit = pageSize,
+                        cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                     )
                     ensureUiListLoadContinues(shouldContinue)
                     loaded to missingFilePaths(loaded)
@@ -1939,7 +1956,8 @@ internal fun loadFilteredGroupsPage(
     startOffset: Int,
     minMatches: Int,
     sourcePageSize: Int,
-    shouldContinue: () -> Boolean = { true }
+    shouldContinue: () -> Boolean = { true },
+    cancellationSignal: android.os.CancellationSignal? = null
 ): FilteredGroupsPage {
     if (sourcePageSize <= 0) {
         return FilteredGroupsPage(
@@ -1960,7 +1978,8 @@ internal fun loadFilteredGroupsPage(
                 sortKey = sortKey,
                 snapshotUpdatedAtMillis = snapshotUpdatedAtMillis,
                 offset = sourceOffset,
-                limit = sourcePageSize
+                limit = sourcePageSize,
+                cancellationSignal = cancellationSignal
             )
             SourcePage(
                 items = sourcePage,
@@ -1976,7 +1995,8 @@ internal fun loadFilteredGroupsPage(
                     memberPages = {
                         resultsRepo.groupMemberPages(
                             sizeBytes = group.sizeBytes,
-                            hashHex = group.hashHex
+                            hashHex = group.hashHex,
+                            cancellationSignal = cancellationSignal
                         )
                     },
                     onPreviewMembers = { previewMembers ->

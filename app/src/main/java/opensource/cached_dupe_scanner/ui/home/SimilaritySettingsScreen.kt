@@ -174,11 +174,14 @@ fun SimilaritySettingsScreen(
     fun refresh() {
         loadController.replace(scope) {
             val (loaded, clusterRows) = runInterruptibleUiListLoad { shouldContinue ->
-                val loadedSettings = repository.listSettings()
+                val loadedSettings = repository.listSettings(shouldContinue.frameworkQueryCancellationSignal)
                 ensureUiListLoadContinues(shouldContinue)
                 val loadedSummaries = loadedSettings.associate { setting ->
                     ensureUiListLoadContinues(shouldContinue)
-                    setting.settingId to repository.getClusterSummary(setting.settingId)
+                    setting.settingId to repository.getClusterSummary(
+                        setting.settingId,
+                        shouldContinue.frameworkQueryCancellationSignal
+                    )
                 }
                 ensureUiListLoadContinues(shouldContinue)
                 loadedSettings to loadedSummaries
@@ -478,10 +481,13 @@ fun SimilaritySettingDetailScreen(
     fun refresh() {
         loadController.replace(scope) {
             val (loadedSetting, loadedSummary) = runInterruptibleUiListLoad { shouldContinue ->
-                val currentSetting = repository.listSettings()
+                val currentSetting = repository.listSettings(shouldContinue.frameworkQueryCancellationSignal)
                     .firstOrNull { candidate -> candidate.settingId == settingId }
                 ensureUiListLoadContinues(shouldContinue)
-                val currentSummary = repository.getClusterSummary(settingId)
+                val currentSummary = repository.getClusterSummary(
+                    settingId,
+                    shouldContinue.frameworkQueryCancellationSignal
+                )
                 ensureUiListLoadContinues(shouldContinue)
                 currentSetting to currentSummary
             }
@@ -964,14 +970,17 @@ fun SimilaritySettingGroupsScreen(
                 val (loadedSetting, loadedSummary, loadedPage) =
                     runInterruptibleUiListLoad { shouldContinue ->
                         val currentSetting = if (reset) {
-                            repository.listSettings()
+                            repository.listSettings(shouldContinue.frameworkQueryCancellationSignal)
                                 .firstOrNull { candidate -> candidate.settingId == settingId }
                         } else {
                             existingSetting
                         }
                         ensureUiListLoadContinues(shouldContinue)
                         val currentSummary = if (reset) {
-                            repository.getClusterSummary(settingId)
+                            repository.getClusterSummary(
+                                settingId,
+                                shouldContinue.frameworkQueryCancellationSignal
+                            )
                         } else {
                             existingSummary
                         }
@@ -997,7 +1006,8 @@ fun SimilaritySettingGroupsScreen(
                                         }
                                     }
                                 },
-                                shouldContinue = shouldContinue
+                                shouldContinue = shouldContinue,
+                                cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                             )
                         } else {
                             val loadedClusters = repository.listClustersPage(
@@ -1005,7 +1015,8 @@ fun SimilaritySettingGroupsScreen(
                                 offset = pageOffset,
                                 limit = pageLimit,
                                 sortColumn = sortColumn,
-                                direction = sortDirection
+                                direction = sortDirection,
+                                cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                             )
                             FilteredSimilarityClustersPage(
                                 clusters = loadedClusters,
@@ -1105,7 +1116,10 @@ fun SimilaritySettingGroupsScreen(
     LaunchedEffect(settingId, deletedPaths, listSurfaceActive) {
         if (!listSurfaceActive) return@LaunchedEffect
         deletedClusterIds = runInterruptibleUiListLoad { shouldContinue ->
-            val loaded = repository.clusterIdsContainingPaths(deletedPaths)
+            val loaded = repository.clusterIdsContainingPaths(
+                deletedPaths,
+                shouldContinue.frameworkQueryCancellationSignal
+            )
             ensureUiListLoadContinues(shouldContinue)
             loaded
         }
@@ -1473,7 +1487,8 @@ fun SimilarityClusterDetailScreen(
                         offset = pageOffset,
                         limit = SIMILARITY_CLUSTER_DETAIL_MEMBER_PAGE_SIZE,
                         sortColumn = pageSortColumn,
-                        direction = pageDirection
+                        direction = pageDirection,
+                        cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                     )
                     ensureUiListLoadContinues(shouldContinue)
                     loaded to missingFilePaths(loaded.map { member -> member.metadata })
@@ -1548,12 +1563,15 @@ fun SimilarityClusterDetailScreen(
             try {
                 val (loadedSetting, loadedCluster, firstPage) =
                     runInterruptibleUiListLoad { shouldContinue ->
-                        val currentSetting = repository.listSettings()
+                        val currentSetting = repository.listSettings(
+                            shouldContinue.frameworkQueryCancellationSignal
+                        )
                             .firstOrNull { candidate -> candidate.settingId == settingId }
                         ensureUiListLoadContinues(shouldContinue)
                         val currentCluster = repository.getCluster(
                             settingId = settingId,
-                            clusterId = clusterId
+                            clusterId = clusterId,
+                            cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                         )
                         ensureUiListLoadContinues(shouldContinue)
                         val durationMode =
@@ -1571,7 +1589,8 @@ fun SimilarityClusterDetailScreen(
                                 initialDurationSortDirection
                             } else {
                                 initialMemberSortDirection
-                            }
+                            },
+                            cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                         )
                         ensureUiListLoadContinues(shouldContinue)
                         val missingPaths = missingFilePaths(
@@ -2707,7 +2726,8 @@ private fun SimilarityClusterListCard(
                 val loaded = repository.listClusterMembersPage(
                     clusterId = cluster.clusterId,
                     offset = 0,
-                    limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT
+                    limit = SIMILARITY_CLUSTER_PREVIEW_MEMBER_LOAD_LIMIT,
+                    cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                 )
                 ensureUiListLoadContinues(shouldContinue)
                 loaded

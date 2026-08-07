@@ -43,7 +43,8 @@ internal fun loadFilteredSimilarityClustersPage(
     sourcePageSize: Int,
     memberPageSize: Int = 500,
     onResolutionProgress: (SimilarityFilterResolutionProgress) -> Unit = {},
-    shouldContinue: () -> Boolean = { true }
+    shouldContinue: () -> Boolean = { true },
+    cancellationSignal: android.os.CancellationSignal? = null
 ): FilteredSimilarityClustersPage {
     if (sourcePageSize <= 0 || memberPageSize <= 0) {
         return FilteredSimilarityClustersPage(emptyList(), startOffset, exhausted = true)
@@ -115,7 +116,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     offset = cursor.offset,
                     limit = queryLimit,
                     sortColumn = sortColumn,
-                    direction = sortDirection
+                    direction = sortDirection,
+                    cancellationSignal = cancellationSignal
                 )
             } else {
                 repository.listClustersPageAfter(
@@ -123,13 +125,18 @@ internal fun loadFilteredSimilarityClustersPage(
                     afterCluster = afterCluster,
                     limit = queryLimit,
                     sortColumn = sortColumn,
-                    direction = sortDirection
+                    direction = sortDirection,
+                    cancellationSignal = cancellationSignal
                 )
             }
             val queriedClusterIds = queriedClusters.map { cluster -> cluster.clusterId }
             ensureUiListLoadContinues(shouldContinue)
             val queriedDurationStats = if (resolveDurations && queriedClusterIds.isNotEmpty()) {
-                repository.listFilterDurationStatsForClusters(settingId, queriedClusterIds)
+                repository.listFilterDurationStatsForClusters(
+                    settingId,
+                    queriedClusterIds,
+                    cancellationSignal
+                )
             } else {
                 emptyList()
             }
@@ -152,7 +159,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     settingId = settingId,
                     clusterIds = queriedClusterIds,
                     resolveDimensions = true,
-                    resolveDurations = false
+                    resolveDurations = false,
+                    cancellationSignal = cancellationSignal
                 )
             } else {
                 0
@@ -192,7 +200,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     settingId = settingId,
                     clusterIds = clusterIds,
                     resolveDimensions = true,
-                    resolveDurations = false
+                    resolveDurations = false,
+                    cancellationSignal = cancellationSignal
                 )
             }
             val addedResolutionWork = addResolutionWork(
@@ -219,12 +228,17 @@ internal fun loadFilteredSimilarityClustersPage(
                     clusterIds = clusterIds,
                     resolveDimensions = resolveDimensions,
                     resolveDurations = resolveDurations,
-                    onResolutionEvent = publishResolutionEvent
+                    onResolutionEvent = publishResolutionEvent,
+                    cancellationSignal = cancellationSignal
                 )
                 ensureUiListLoadContinues(shouldContinue)
             }
             val resolvedDurationStats = if (durationOnlyFilter && addedResolutionWork > 0) {
-                repository.listFilterDurationStatsForClusters(settingId, clusterIds)
+                repository.listFilterDurationStatsForClusters(
+                    settingId,
+                    clusterIds,
+                    cancellationSignal
+                )
             } else {
                 initialDurationStats
             }
@@ -241,7 +255,8 @@ internal fun loadFilteredSimilarityClustersPage(
                     definition = definition,
                     memberPageSize = memberPageSize,
                     includeDurations = resolveDurations,
-                    shouldContinue = shouldContinue
+                    shouldContinue = shouldContinue,
+                    cancellationSignal = cancellationSignal
                 )
                 else -> emptyMap()
             }
@@ -330,7 +345,8 @@ private fun matchSimilarityClustersFromMemberPages(
     definition: ResultsFilterDefinition,
     memberPageSize: Int,
     includeDurations: Boolean,
-    shouldContinue: () -> Boolean
+    shouldContinue: () -> Boolean,
+    cancellationSignal: android.os.CancellationSignal?
 ): Map<Long, Boolean> {
     val matchers = clusters.associate { cluster ->
         cluster.clusterId to ResultsFilterPagedMatcher(
@@ -358,7 +374,8 @@ private fun matchSimilarityClustersFromMemberPages(
                 }
             }
             resolvedClusterIds
-        }
+        },
+        cancellationSignal = cancellationSignal
     )
     ensureUiListLoadContinues(shouldContinue)
     return matchers.mapValues { (_, matcher) -> matcher.finish() }

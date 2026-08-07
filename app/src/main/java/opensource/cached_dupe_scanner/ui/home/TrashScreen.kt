@@ -113,9 +113,12 @@ fun TrashScreen(
         loadController.replace(scope) {
             try {
                 val (count, first) = runInterruptibleUiListLoad { shouldContinue ->
-                    val loadedCount = trashRepo.countAll()
+                    val loadedCount = trashRepo.countAll(shouldContinue.frameworkQueryCancellationSignal)
                     ensureUiListLoadContinues(shouldContinue)
-                    val loadedEntries = trashRepo.getFirstPage(pageSize)
+                    val loadedEntries = trashRepo.getFirstPage(
+                        pageSize,
+                        shouldContinue.frameworkQueryCancellationSignal
+                    )
                     ensureUiListLoadContinues(shouldContinue)
                     loadedCount to loadedEntries
                 }
@@ -142,7 +145,8 @@ fun TrashScreen(
                     val loaded = trashRepo.getPageBefore(
                         beforeMillis = before.first,
                         beforeId = before.second,
-                        limit = pageSize
+                        limit = pageSize,
+                        cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                     )
                     ensureUiListLoadContinues(shouldContinue)
                     loaded

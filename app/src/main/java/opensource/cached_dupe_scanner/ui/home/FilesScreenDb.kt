@@ -140,6 +140,7 @@ fun FilesScreenDb(
     val total = remember { mutableStateOf(0) }
     val isLoading = remember { mutableStateOf(false) }
     val loadController = remember { UiListLoadController() }
+    val handledClearVersion = rememberSaveable { mutableStateOf(0) }
     val resumeCancelledLoad = remember { mutableStateOf(false) }
     val resumeCancelledReset = remember { mutableStateOf(false) }
     val activeLoadIsReset = remember { mutableStateOf(false) }
@@ -174,7 +175,7 @@ fun FilesScreenDb(
         loadController.replace(scope) {
             try {
                 val (loadedTotal, page) = runInterruptibleUiListLoad { shouldContinue ->
-                    val count = fileRepo.countAll()
+                    val count = fileRepo.countAll(shouldContinue.frameworkQueryCancellationSignal)
                     ensureUiListLoadContinues(shouldContinue)
                     val loadedPage = if (queryHasFilters) {
                         loadFilteredFilesPage(
@@ -185,7 +186,8 @@ fun FilesScreenDb(
                             definition = queryFilter,
                             minMatches = pageSize,
                             sourcePageSize = pageSize,
-                            shouldContinue = shouldContinue
+                            shouldContinue = shouldContinue,
+                            cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                         )
                     } else {
                         FilteredFilesPage.fromUnfiltered(
@@ -193,7 +195,8 @@ fun FilesScreenDb(
                                 querySortKey,
                                 queryDirection,
                                 PagedFileRepository.Cursor.Start,
-                                pageSize
+                                pageSize,
+                                shouldContinue.frameworkQueryCancellationSignal
                             )
                         )
                     }
@@ -243,11 +246,18 @@ fun FilesScreenDb(
                             definition = queryFilter,
                             minMatches = pageSize,
                             sourcePageSize = pageSize,
-                            shouldContinue = shouldContinue
+                            shouldContinue = shouldContinue,
+                            cancellationSignal = shouldContinue.frameworkQueryCancellationSignal
                         )
                     } else {
                         FilteredFilesPage.fromUnfiltered(
-                            fileRepo.loadPage(querySortKey, queryDirection, queryCursor, pageSize)
+                            fileRepo.loadPage(
+                                querySortKey,
+                                queryDirection,
+                                queryCursor,
+                                pageSize,
+                                shouldContinue.frameworkQueryCancellationSignal
+                            )
                         )
                     }
                 }
@@ -295,19 +305,22 @@ fun FilesScreenDb(
         }
     }
 
-    LaunchedEffect(refreshVersion) { resetAndLoad() }
-    LaunchedEffect(clearVersion) {
-        loadController.cancel()
-        resumeCancelledLoad.value = false
-        resumeCancelledReset.value = false
-        activeLoadIsReset.value = false
-        isLoading.value = false
-        items.value = emptyList()
-        total.value = 0
-        deletedPaths.value = emptySet()
-        cursor.value = PagedFileRepository.Cursor.Start
-        visibleCount.value = 0
-        filteredSourceLoadedCount.value = 0
+    LaunchedEffect(clearVersion, refreshVersion) {
+        if (clearVersion != handledClearVersion.value) {
+            loadController.cancel()
+            resumeCancelledLoad.value = false
+            resumeCancelledReset.value = false
+            activeLoadIsReset.value = false
+            isLoading.value = false
+            items.value = emptyList()
+            total.value = 0
+            deletedPaths.value = emptySet()
+            cursor.value = PagedFileRepository.Cursor.Start
+            visibleCount.value = 0
+            filteredSourceLoadedCount.value = 0
+            handledClearVersion.value = clearVersion
+        }
+        resetAndLoad()
     }
 
     LaunchedEffect(Unit) {
@@ -738,7 +751,8 @@ internal fun loadFilteredFilesPage(
     definition: ResultsFilterDefinition,
     minMatches: Int,
     sourcePageSize: Int,
-    shouldContinue: () -> Boolean = { true }
+    shouldContinue: () -> Boolean = { true },
+    cancellationSignal: android.os.CancellationSignal? = null
 ): FilteredFilesPage {
     if (sourcePageSize <= 0 || minMatches <= 0) {
         return FilteredFilesPage(
@@ -757,7 +771,8 @@ internal fun loadFilteredFilesPage(
                 sortKey = sortKey,
                 direction = direction,
                 cursor = currentCursor,
-                limit = sourcePageSize
+                limit = sourcePageSize,
+                cancellationSignal = cancellationSignal
             )
             SourcePage(
                 items = sourcePage.items,

@@ -1,5 +1,6 @@
 package opensource.cached_dupe_scanner.storage
 
+import android.os.CancellationSignal
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.FileCacheDao
@@ -255,8 +256,13 @@ class SimilaritySettingsRepository(
         )
     }
 
-    fun listSettings(): List<SimilaritySettingEntity> {
-        return similarityDao.listSettings()
+    fun listSettings(cancellationSignal: CancellationSignal? = null): List<SimilaritySettingEntity> {
+        if (cancellationSignal == null) return similarityDao.listSettings()
+        return database.readSimilaritySettingsWithCancellation(
+            sql = "SELECT * FROM similarity_settings ORDER BY updatedAtMillis DESC, settingId DESC",
+            bindArgs = emptyArray(),
+            cancellationSignal = cancellationSignal
+        )
     }
 
     fun hasEnabledSettings(): Boolean {
@@ -340,11 +346,38 @@ class SimilaritySettingsRepository(
         return similarityDao.listActiveClusters(settingId)
     }
 
-    fun getCluster(settingId: Long, clusterId: Long): SimilarityClusterEntity? {
+    fun getCluster(
+        settingId: Long,
+        clusterId: Long,
+        cancellationSignal: CancellationSignal? = null
+    ): SimilarityClusterEntity? {
+        if (cancellationSignal != null) {
+            return database.readSimilarityClustersWithCancellation(
+                sql = "SELECT * FROM similarity_clusters WHERE settingId = ? AND clusterId = ? AND fileCount > 1 LIMIT 1",
+                bindArgs = arrayOf(settingId, clusterId),
+                cancellationSignal = cancellationSignal
+            ).firstOrNull()
+        }
         return similarityDao.getStoredCluster(settingId = settingId, clusterId = clusterId)
     }
 
-    fun getClusterSummary(settingId: Long): SimilarityClusterSummary {
+    fun getClusterSummary(
+        settingId: Long,
+        cancellationSignal: CancellationSignal? = null
+    ): SimilarityClusterSummary {
+        if (cancellationSignal != null) {
+            return database.readRoomQueryWithCancellation(
+                sql = "SELECT COUNT(*) AS clusterCount, COALESCE(SUM(fileCount), 0) AS fileCount FROM similarity_clusters WHERE settingId = ? AND fileCount > 1",
+                bindArgs = arrayOf(settingId),
+                cancellationSignal = cancellationSignal
+            ) { cursor ->
+                check(cursor.moveToFirst())
+                SimilarityClusterSummary(
+                    clusterCount = cursor.getInt(cursor.getColumnIndexOrThrow("clusterCount")),
+                    fileCount = cursor.getInt(cursor.getColumnIndexOrThrow("fileCount"))
+                )
+            }
+        }
         val row = similarityDao.storedClusterSummary(settingId)
         return SimilarityClusterSummary(
             clusterCount = row.clusterCount,
@@ -352,12 +385,27 @@ class SimilaritySettingsRepository(
         )
     }
 
-    fun clusterIdsContainingPaths(normalizedPaths: Set<String>): Set<Long> {
+    fun clusterIdsContainingPaths(
+        normalizedPaths: Set<String>,
+        cancellationSignal: CancellationSignal? = null
+    ): Set<Long> {
         if (normalizedPaths.isEmpty()) return emptySet()
         return normalizedPaths
             .chunked(SIMILARITY_DB_BIND_CHUNK_SIZE)
             .flatMapTo(linkedSetOf()) { chunk ->
-                similarityDao.listClusterIdsForMemberPaths(chunk)
+                if (cancellationSignal == null) {
+                    similarityDao.listClusterIdsForMemberPaths(chunk)
+                } else {
+                    database.readRoomQueryWithCancellation(
+                        sql = "SELECT DISTINCT clusterId FROM similarity_cluster_members WHERE fileId IN (SELECT fileId FROM cached_files WHERE normalizedPath IN (${sqlPlaceholders(chunk.size)}))",
+                        bindArgs = chunk.toTypedArray(),
+                        cancellationSignal = cancellationSignal
+                    ) { cursor ->
+                        buildList {
+                            while (cursor.moveToNext()) add(cursor.getLong(0))
+                        }
+                    }
+                }
             }
     }
 
@@ -366,10 +414,18 @@ class SimilaritySettingsRepository(
         offset: Int,
         limit: Int,
         sortColumn: SimilarityClusterSortColumn,
-        direction: SortDirection
+        direction: SortDirection,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterEntity> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
+        if (cancellationSignal != null) {
+            return database.readSimilarityClustersWithCancellation(
+                sql = "SELECT * FROM similarity_clusters WHERE settingId = ? AND fileCount > 1 ORDER BY ${similarityClusterOrderBy(sortColumn, direction)} LIMIT ? OFFSET ?",
+                bindArgs = arrayOf<Any?>(settingId, safeLimit, safeOffset),
+                cancellationSignal = cancellationSignal
+            )
+        }
         return when (sortColumn) {
             SimilarityClusterSortColumn.FileCount -> {
                 if (direction == SortDirection.Asc) {
@@ -409,9 +465,22 @@ class SimilaritySettingsRepository(
         afterCluster: SimilarityClusterEntity,
         limit: Int,
         sortColumn: SimilarityClusterSortColumn,
-        direction: SortDirection
+        direction: SortDirection,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterEntity> {
         val safeLimit = limit.coerceAtLeast(0)
+        if (cancellationSignal != null) {
+            val (condition, conditionArgs) = similarityClusterAfterCondition(
+                sortColumn = sortColumn,
+                direction = direction,
+                afterCluster = afterCluster
+            )
+            return database.readSimilarityClustersWithCancellation(
+                sql = "SELECT * FROM similarity_clusters WHERE settingId = ? AND fileCount > 1 AND ($condition) ORDER BY ${similarityClusterOrderBy(sortColumn, direction)} LIMIT ?",
+                bindArgs = arrayOf<Any?>(settingId, *conditionArgs, safeLimit),
+                cancellationSignal = cancellationSignal
+            )
+        }
         return when (sortColumn) {
             SimilarityClusterSortColumn.FileCount -> {
                 if (direction == SortDirection.Asc) {
@@ -506,11 +575,21 @@ class SimilaritySettingsRepository(
         direction: SortDirection = SortDirection.Asc,
         resolveDimensions: Boolean = false,
         resolveDurations: Boolean = false,
-        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = {}
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit = {},
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterMember> {
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceAtLeast(0)
-        val rows = when (sortColumn) {
+        val rows = if (cancellationSignal != null) {
+            database.readSimilarityClusterMembersWithCancellation(
+                sql = similarityClusterMemberPageSql(
+                    sortColumn = sortColumn,
+                    direction = direction
+                ),
+                bindArgs = arrayOf<Any?>(clusterId, safeLimit, safeOffset),
+                cancellationSignal = cancellationSignal
+            )
+        } else when (sortColumn) {
             SimilarityMemberSortColumn.Position -> {
                 if (direction == SortDirection.Desc) {
                     similarityDao.listStoredClusterMembersPageDescending(
@@ -559,33 +638,172 @@ class SimilaritySettingsRepository(
         }
         var resolvedRows = rows
         if (resolveDimensions) {
-            resolvedRows = resolveUncheckedDimensions(resolvedRows, onResolutionEvent)
+            resolvedRows = resolveUncheckedDimensions(
+                resolvedRows,
+                onResolutionEvent,
+                cancellationSignal
+            )
         }
         if (resolveDurations) {
-            resolvedRows = resolveUncheckedDurations(resolvedRows, onResolutionEvent)
+            resolvedRows = resolveUncheckedDurations(
+                resolvedRows,
+                onResolutionEvent,
+                cancellationSignal
+            )
         }
         return resolvedRows.map { row ->
             row.toClusterMember()
         }
     }
 
+    private fun similarityClusterOrderBy(
+        sortColumn: SimilarityClusterSortColumn,
+        direction: SortDirection
+    ): String {
+        return when (sortColumn) {
+            SimilarityClusterSortColumn.FileCount -> {
+                if (direction == SortDirection.Asc) {
+                    "fileCount ASC, totalBytes ASC, clusterKey ASC"
+                } else {
+                    "fileCount DESC, totalBytes DESC, clusterKey ASC"
+                }
+            }
+            SimilarityClusterSortColumn.TotalSize -> {
+                if (direction == SortDirection.Asc) {
+                    "totalBytes ASC, fileCount ASC, clusterKey ASC"
+                } else {
+                    "totalBytes DESC, fileCount DESC, clusterKey ASC"
+                }
+            }
+        }
+    }
+
+    private fun similarityClusterAfterCondition(
+        sortColumn: SimilarityClusterSortColumn,
+        direction: SortDirection,
+        afterCluster: SimilarityClusterEntity
+    ): Pair<String, Array<out Any?>> {
+        val comparison = if (direction == SortDirection.Asc) ">" else "<"
+        return when (sortColumn) {
+            SimilarityClusterSortColumn.FileCount -> {
+                "fileCount $comparison ? OR (fileCount = ? AND totalBytes $comparison ?) OR (fileCount = ? AND totalBytes = ? AND clusterKey > ?)" to
+                    arrayOf<Any?>(
+                        afterCluster.fileCount,
+                        afterCluster.fileCount,
+                        afterCluster.totalBytes,
+                        afterCluster.fileCount,
+                        afterCluster.totalBytes,
+                        afterCluster.clusterKey
+                    )
+            }
+            SimilarityClusterSortColumn.TotalSize -> {
+                "totalBytes $comparison ? OR (totalBytes = ? AND fileCount $comparison ?) OR (totalBytes = ? AND fileCount = ? AND clusterKey > ?)" to
+                    arrayOf<Any?>(
+                        afterCluster.totalBytes,
+                        afterCluster.totalBytes,
+                        afterCluster.fileCount,
+                        afterCluster.totalBytes,
+                        afterCluster.fileCount,
+                        afterCluster.clusterKey
+                    )
+            }
+        }
+    }
+
+    private fun similarityClusterMemberPageSql(
+        sortColumn: SimilarityMemberSortColumn,
+        direction: SortDirection
+    ): String {
+        val orderBy = when (sortColumn) {
+            SimilarityMemberSortColumn.Position -> {
+                if (direction == SortDirection.Desc) {
+                    "member.position DESC, member.fileId DESC"
+                } else {
+                    "member.position ASC, member.fileId ASC"
+                }
+            }
+            SimilarityMemberSortColumn.Path -> {
+                if (direction == SortDirection.Desc) "file.normalizedPath DESC" else "file.normalizedPath ASC"
+            }
+            SimilarityMemberSortColumn.Modified -> {
+                if (direction == SortDirection.Desc) {
+                    "setting_file.lastModifiedMillis DESC, member.fileId DESC"
+                } else {
+                    "setting_file.lastModifiedMillis ASC, member.fileId ASC"
+                }
+            }
+        }
+        return """
+            SELECT
+                cluster.settingId AS settingId,
+                member.fileId AS fileId,
+                file.normalizedPath AS normalizedPath,
+                file.path AS path,
+                setting_file.sizeBytes AS sizeBytes,
+                setting_file.lastModifiedMillis AS lastModifiedMillis,
+                file.hashBytes AS hashBytes,
+                CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
+                setting_file.widthPixels AS widthPixels,
+                setting_file.heightPixels AS heightPixels,
+                setting_file.dimensionsChecked AS dimensionsChecked,
+                setting_file.durationChecked AS durationChecked
+            FROM similarity_cluster_members AS member
+            INNER JOIN similarity_clusters AS cluster
+                ON cluster.clusterId = member.clusterId
+            INNER JOIN similarity_setting_files AS setting_file
+                ON setting_file.settingId = cluster.settingId
+               AND setting_file.fileId = member.fileId
+            INNER JOIN cached_files AS file
+                ON file.fileId = member.fileId
+            LEFT JOIN similarity_duration_features AS duration
+                ON duration.settingId = cluster.settingId
+               AND duration.fileId = member.fileId
+            WHERE member.clusterId = ?
+            ORDER BY $orderBy
+            LIMIT ? OFFSET ?
+        """.trimIndent()
+    }
+
     internal fun countFilterResolutionWorkForClusters(
         settingId: Long,
         clusterIds: List<Long>,
         resolveDimensions: Boolean,
-        resolveDurations: Boolean
+        resolveDurations: Boolean,
+        cancellationSignal: CancellationSignal? = null
     ): Int {
         val distinctClusterIds = clusterIds.distinct()
         if (distinctClusterIds.isEmpty() || (!resolveDimensions && !resolveDurations)) return 0
         var count = 0L
         distinctClusterIds.chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).forEach { clusterIdChunk ->
-            val work = similarityDao.countFilterResolutionWorkForClusters(
-                settingId = settingId,
-                clusterIds = clusterIdChunk,
-                resolveDimensions = resolveDimensions,
-                resolveDurations = resolveDurations
-            )
-            count += work.dimensionCount.toLong() + work.durationCount.toLong()
+            if (cancellationSignal == null) {
+                val work = similarityDao.countFilterResolutionWorkForClusters(
+                    settingId = settingId,
+                    clusterIds = clusterIdChunk,
+                    resolveDimensions = resolveDimensions,
+                    resolveDurations = resolveDurations
+                )
+                count += work.dimensionCount.toLong() + work.durationCount.toLong()
+            } else {
+                count += database.readRoomQueryWithCancellation(
+                    sql = """
+                        SELECT
+                            COUNT(DISTINCT CASE WHEN ${if (resolveDimensions) "setting_file.dimensionsChecked = 0" else "0"} THEN member.fileId END) AS dimensionCount,
+                            COUNT(DISTINCT CASE WHEN ${if (resolveDurations) "setting_file.durationChecked = 0" else "0"} THEN member.fileId END) AS durationCount
+                        FROM similarity_cluster_members AS member
+                            INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+                        CROSS JOIN similarity_setting_files AS setting_file
+                        WHERE member.clusterId IN (${sqlPlaceholders(clusterIdChunk.size)})
+                          AND setting_file.settingId = ?
+                          AND setting_file.fileId = member.fileId
+                    """.trimIndent(),
+                    bindArgs = arrayOf<Any?>(*clusterIdChunk.toTypedArray(), settingId),
+                    cancellationSignal = cancellationSignal
+                ) { cursor ->
+                    check(cursor.moveToFirst())
+                    cursor.getLong(cursor.getColumnIndexOrThrow("dimensionCount")) +
+                        cursor.getLong(cursor.getColumnIndexOrThrow("durationCount"))
+                }
+            }
         }
         return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
@@ -595,7 +813,8 @@ class SimilaritySettingsRepository(
         clusterIds: List<Long>,
         resolveDimensions: Boolean,
         resolveDurations: Boolean,
-        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit,
+        cancellationSignal: CancellationSignal? = null
     ) {
         val distinctClusterIds = clusterIds.distinct()
         if (distinctClusterIds.isEmpty() || (!resolveDimensions && !resolveDurations)) return
@@ -604,7 +823,19 @@ class SimilaritySettingsRepository(
             var afterPosition = -1
             var afterFileId = -1L
             while (!Thread.currentThread().isInterrupted) {
-                val queriedRows = if (resolveDurations) {
+                val queriedRows = if (cancellationSignal != null) {
+                    readUncheckedFilterMetadataMembers(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk,
+                        resolveDimensions = resolveDimensions,
+                        resolveDurations = resolveDurations,
+                        afterClusterId = afterClusterId,
+                        afterPosition = afterPosition,
+                        afterFileId = afterFileId,
+                        limit = SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE,
+                        cancellationSignal = cancellationSignal
+                    )
+                } else if (resolveDurations) {
                     similarityDao.listUncheckedFilterMetadataMembersForClusters(
                         settingId = settingId,
                         clusterIds = clusterIdChunk,
@@ -634,12 +865,20 @@ class SimilaritySettingsRepository(
                 afterPosition = lastQueriedRow.position
                 afterFileId = lastQueriedRow.fileId
                 val rowsWithDimensions = if (resolveDimensions) {
-                    resolveUncheckedDimensions(uncheckedRows, onResolutionEvent)
+                    resolveUncheckedDimensions(
+                        uncheckedRows,
+                        onResolutionEvent,
+                        cancellationSignal
+                    )
                 } else {
                     uncheckedRows
                 }
                 if (resolveDurations) {
-                    resolveUncheckedDurations(rowsWithDimensions, onResolutionEvent)
+                    resolveUncheckedDurations(
+                        rowsWithDimensions,
+                        onResolutionEvent,
+                        cancellationSignal
+                    )
                 }
                 if (queriedRows.size < SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE) break
             }
@@ -651,7 +890,8 @@ class SimilaritySettingsRepository(
         clusterIds: List<Long>,
         pageSize: Int,
         includeDurations: Boolean,
-        onPage: (List<SimilarityClusterFilterMemberRow>) -> Set<Long>
+        onPage: (List<SimilarityClusterFilterMemberRow>) -> Set<Long>,
+        cancellationSignal: CancellationSignal? = null
     ) {
         val safePageSize = pageSize.coerceIn(1, SIMILARITY_FILTER_MEMBER_BATCH_SIZE)
         clusterIds.distinct()
@@ -662,7 +902,18 @@ class SimilaritySettingsRepository(
                 var afterPosition = -1
                 var afterFileId = -1L
                 while (remainingClusterIds.isNotEmpty() && !Thread.currentThread().isInterrupted) {
-                    val rows = if (includeDurations) {
+                    val rows = if (cancellationSignal != null) {
+                        readFilterMembersPage(
+                            settingId = settingId,
+                            clusterIds = remainingClusterIds.toList(),
+                            afterClusterId = afterClusterId,
+                            afterPosition = afterPosition,
+                            afterFileId = afterFileId,
+                            limit = safePageSize,
+                            includeDurations = includeDurations,
+                            cancellationSignal = cancellationSignal
+                        )
+                    } else if (includeDurations) {
                         similarityDao.listFilterMembersForClustersPage(
                             settingId = settingId,
                             clusterIds = remainingClusterIds.toList(),
@@ -692,15 +943,184 @@ class SimilaritySettingsRepository(
             }
     }
 
+    private fun readUncheckedFilterMetadataMembers(
+        settingId: Long,
+        clusterIds: List<Long>,
+        resolveDimensions: Boolean,
+        resolveDurations: Boolean,
+        afterClusterId: Long,
+        afterPosition: Int,
+        afterFileId: Long,
+        limit: Int,
+        cancellationSignal: CancellationSignal
+    ): List<SimilarityFilterMetadataResolutionRow> {
+        val unresolvedConditions = buildList {
+            if (resolveDimensions) add("setting_file.dimensionsChecked = 0")
+            if (resolveDurations) add("setting_file.durationChecked = 0")
+        }.joinToString(separator = " OR ")
+        return database.readSimilarityFilterResolutionRowsWithCancellation(
+            sql = """
+                SELECT
+                    member.clusterId AS clusterId,
+                    member.position AS position,
+                    ? AS settingId,
+                    member.fileId AS fileId,
+                    file.normalizedPath AS normalizedPath,
+                    file.path AS path,
+                    setting_file.sizeBytes AS sizeBytes,
+                    setting_file.lastModifiedMillis AS lastModifiedMillis,
+                    file.hashBytes AS hashBytes,
+                    CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END AS durationMillis,
+                    setting_file.widthPixels AS widthPixels,
+                    setting_file.heightPixels AS heightPixels,
+                    setting_file.dimensionsChecked AS dimensionsChecked,
+                    setting_file.durationChecked AS durationChecked
+                FROM similarity_cluster_members AS member
+                    INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+                CROSS JOIN similarity_setting_files AS setting_file
+                CROSS JOIN cached_files AS file
+                LEFT JOIN similarity_duration_features AS duration
+                    ON duration.settingId = ?
+                   AND duration.fileId = member.fileId
+                   AND setting_file.durationChecked = 1
+                WHERE member.clusterId IN (${sqlPlaceholders(clusterIds.size)})
+                  AND setting_file.settingId = ?
+                  AND setting_file.fileId = member.fileId
+                  AND file.fileId = member.fileId
+                  AND ($unresolvedConditions)
+                  AND (
+                      member.clusterId > ?
+                       OR (member.clusterId = ? AND member.position > ?)
+                       OR (member.clusterId = ? AND member.position = ? AND member.fileId > ?)
+                  )
+                ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
+                LIMIT ?
+            """.trimIndent(),
+            bindArgs = arrayOf<Any?>(
+                settingId,
+                settingId,
+                *clusterIds.toTypedArray(),
+                settingId,
+                afterClusterId,
+                afterClusterId,
+                afterPosition,
+                afterClusterId,
+                afterPosition,
+                afterFileId,
+                limit
+            ),
+            cancellationSignal = cancellationSignal
+        )
+    }
+
+    private fun readFilterMembersPage(
+        settingId: Long,
+        clusterIds: List<Long>,
+        afterClusterId: Long,
+        afterPosition: Int,
+        afterFileId: Long,
+        limit: Int,
+        includeDurations: Boolean,
+        cancellationSignal: CancellationSignal
+    ): List<SimilarityClusterFilterMemberRow> {
+        val durationColumn = if (includeDurations) {
+            "CASE WHEN setting_file.durationChecked = 1 THEN duration.durationMillis END"
+        } else {
+            "CAST(NULL AS INTEGER)"
+        }
+        val durationJoin = if (includeDurations) {
+            """
+                LEFT JOIN similarity_duration_features AS duration
+                    ON duration.settingId = ?
+                   AND duration.fileId = member.fileId
+                   AND setting_file.durationChecked = 1
+            """.trimIndent()
+        } else {
+            ""
+        }
+        val bindArgs = buildList<Any?> {
+            if (includeDurations) add(settingId)
+            addAll(clusterIds)
+            add(settingId)
+            add(afterClusterId)
+            add(afterClusterId)
+            add(afterPosition)
+            add(afterClusterId)
+            add(afterPosition)
+            add(afterFileId)
+            add(limit)
+        }.toTypedArray()
+        return database.readSimilarityFilterMembersWithCancellation(
+            sql = """
+                SELECT
+                    member.clusterId AS clusterId,
+                    member.position AS position,
+                    member.fileId AS fileId,
+                    file.normalizedPath AS normalizedPath,
+                    file.path AS path,
+                    setting_file.sizeBytes AS sizeBytes,
+                    setting_file.lastModifiedMillis AS lastModifiedMillis,
+                    $durationColumn AS durationMillis,
+                    CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.widthPixels END AS widthPixels,
+                    CASE WHEN setting_file.dimensionsChecked = 1 THEN setting_file.heightPixels END AS heightPixels
+                FROM similarity_cluster_members AS member
+                    INDEXED BY index_similarity_cluster_members_clusterId_position_fileId
+                CROSS JOIN similarity_setting_files AS setting_file
+                CROSS JOIN cached_files AS file
+                $durationJoin
+                WHERE member.clusterId IN (${sqlPlaceholders(clusterIds.size)})
+                  AND setting_file.settingId = ?
+                  AND setting_file.fileId = member.fileId
+                  AND file.fileId = member.fileId
+                  AND (
+                      member.clusterId > ?
+                       OR (member.clusterId = ? AND member.position > ?)
+                       OR (member.clusterId = ? AND member.position = ? AND member.fileId > ?)
+                  )
+                ORDER BY member.clusterId ASC, member.position ASC, member.fileId ASC
+                LIMIT ?
+            """.trimIndent(),
+            bindArgs = bindArgs,
+            cancellationSignal = cancellationSignal
+        )
+    }
+
     internal fun listFilterDurationStatsForClusters(
         settingId: Long,
-        clusterIds: List<Long>
+        clusterIds: List<Long>,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterDurationStatsRow> {
         return clusterIds.distinct().chunked(SIMILARITY_DB_BIND_CHUNK_SIZE).flatMap { clusterIdChunk ->
-            val cachedRows = similarityDao.listCachedDurationStatsForClusters(
-                settingId = settingId,
-                clusterIds = clusterIdChunk
-            )
+            val cachedRows = if (cancellationSignal == null) {
+                similarityDao.listCachedDurationStatsForClusters(
+                    settingId = settingId,
+                    clusterIds = clusterIdChunk
+                )
+            } else {
+                database.readSimilarityDurationStatsWithCancellation(
+                    sql = """
+                        SELECT
+                            stats.clusterId AS clusterId,
+                            stats.clusterUpdatedAtMillis AS clusterUpdatedAtMillis,
+                            stats.memberCount AS memberCount,
+                            stats.checkedCount AS checkedCount,
+                            stats.durationCount AS durationCount,
+                            stats.durationSumMillis AS durationSumMillis,
+                            stats.minimumDurationMillis AS minimumDurationMillis,
+                            stats.maximumDurationMillis AS maximumDurationMillis
+                        FROM similarity_cluster_duration_stats AS stats
+                        INNER JOIN similarity_clusters AS cluster
+                            ON cluster.clusterId = stats.clusterId
+                        WHERE cluster.settingId = ?
+                          AND stats.clusterId IN (${sqlPlaceholders(clusterIdChunk.size)})
+                          AND stats.clusterUpdatedAtMillis = cluster.updatedAtMillis
+                          AND stats.memberCount = cluster.fileCount
+                        ORDER BY stats.clusterId ASC
+                    """.trimIndent(),
+                    bindArgs = arrayOf<Any?>(settingId, *clusterIdChunk.toTypedArray()),
+                    cancellationSignal = cancellationSignal
+                )
+            }
             val cachedByClusterId = cachedRows.associateBy { row -> row.clusterId }
             val uncachedClusterIds = clusterIdChunk.filterNot(cachedByClusterId::containsKey)
             val refreshedRows = if (uncachedClusterIds.isEmpty()) {
@@ -709,7 +1129,8 @@ class SimilaritySettingsRepository(
                 database.runInTransaction<List<SimilarityClusterDurationStatsRow>> {
                     calculateAndStoreDurationStatsForClusters(
                         settingId = settingId,
-                        clusterIds = uncachedClusterIds
+                        clusterIds = uncachedClusterIds,
+                        cancellationSignal = cancellationSignal
                     )
                 }
             }
@@ -720,16 +1141,50 @@ class SimilaritySettingsRepository(
 
     private fun calculateAndStoreDurationStatsForClusters(
         settingId: Long,
-        clusterIds: List<Long>
+        clusterIds: List<Long>,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterDurationStatsRow> {
         val rows = clusterIds.distinct()
             .chunked(SIMILARITY_DB_BIND_CHUNK_SIZE)
             .flatMap { clusterIdChunk ->
-                similarityDao.calculateDurationStatsForClusters(
-                    settingId = settingId,
-                    clusterIds = clusterIdChunk
-                )
+                if (cancellationSignal == null) {
+                    similarityDao.calculateDurationStatsForClusters(
+                        settingId = settingId,
+                        clusterIds = clusterIdChunk
+                    )
+                } else {
+                    database.readSimilarityDurationStatsWithCancellation(
+                        sql = """
+                            SELECT
+                                member.clusterId AS clusterId,
+                                cluster.updatedAtMillis AS clusterUpdatedAtMillis,
+                                COUNT(*) AS memberCount,
+                                SUM(CASE WHEN setting_file.fileId IS NULL OR setting_file.durationChecked = 1 THEN 1 ELSE 0 END) AS checkedCount,
+                                COUNT(duration.durationMillis) AS durationCount,
+                                SUM(duration.durationMillis) AS durationSumMillis,
+                                MIN(duration.durationMillis) AS minimumDurationMillis,
+                                MAX(duration.durationMillis) AS maximumDurationMillis
+                            FROM similarity_cluster_members AS member
+                            INNER JOIN similarity_clusters AS cluster
+                                ON cluster.clusterId = member.clusterId
+                            LEFT JOIN similarity_setting_files AS setting_file
+                                ON setting_file.settingId = cluster.settingId
+                               AND setting_file.fileId = member.fileId
+                            LEFT JOIN similarity_duration_features AS duration
+                                ON duration.settingId = cluster.settingId
+                               AND duration.fileId = member.fileId
+                               AND setting_file.durationChecked = 1
+                            WHERE cluster.settingId = ?
+                              AND member.clusterId IN (${sqlPlaceholders(clusterIdChunk.size)})
+                            GROUP BY member.clusterId, cluster.updatedAtMillis
+                            ORDER BY member.clusterId ASC
+                        """.trimIndent(),
+                        bindArgs = arrayOf<Any?>(settingId, *clusterIdChunk.toTypedArray()),
+                        cancellationSignal = cancellationSignal
+                    )
+                }
             }
+        cancellationSignal?.throwIfCanceled()
         if (rows.isNotEmpty()) {
             similarityDao.upsertClusterDurationStats(
                 rows.map { row ->
@@ -1965,8 +2420,10 @@ class SimilaritySettingsRepository(
 
     private fun resolveUncheckedDimensions(
         rows: List<SimilarityClusterMemberFileRow>,
-        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterMemberFileRow> {
+        cancellationSignal?.throwIfCanceled()
         val uncheckedRows = rows.filterNot { row -> row.dimensionsChecked }
         if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
         val settingId = uncheckedRows.first().settingId
@@ -1974,7 +2431,9 @@ class SimilaritySettingsRepository(
             ?.mediaScope
             ?.let { value -> runCatching { SimilarityMediaScope.valueOf(value) }.getOrNull() }
             ?: return rows
-        val shouldContinue = { !Thread.currentThread().isInterrupted }
+        val shouldContinue = {
+            !Thread.currentThread().isInterrupted && cancellationSignal?.isCanceled != true
+        }
         val reusableByFileId = similarityDao.listReusableDimensions(
             settingId = settingId,
             fileIds = uncheckedRows.map { row -> row.fileId }
@@ -2024,10 +2483,12 @@ class SimilaritySettingsRepository(
             }
         )
         if (resolved.isEmpty()) return rows
+        cancellationSignal?.throwIfCanceled()
 
         val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
+            cancellationSignal?.throwIfCanceled()
             resolved.forEach { pending ->
                 val row = pending.row
                 val dimensions = pending.value
@@ -2068,8 +2529,10 @@ class SimilaritySettingsRepository(
 
     private fun resolveUncheckedDurations(
         rows: List<SimilarityClusterMemberFileRow>,
-        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit
+        onResolutionEvent: (SimilarityMemberResolutionEvent) -> Unit,
+        cancellationSignal: CancellationSignal? = null
     ): List<SimilarityClusterMemberFileRow> {
+        cancellationSignal?.throwIfCanceled()
         val uncheckedRows = rows.filterNot { row -> row.durationChecked }
         if (uncheckedRows.isEmpty() || Thread.currentThread().isInterrupted) return rows
         val settingId = uncheckedRows.first().settingId
@@ -2077,7 +2540,9 @@ class SimilaritySettingsRepository(
             ?.mediaScope
             ?.let { value -> runCatching { SimilarityMediaScope.valueOf(value) }.getOrNull() }
             ?: return rows
-        val shouldContinue = { !Thread.currentThread().isInterrupted }
+        val shouldContinue = {
+            !Thread.currentThread().isInterrupted && cancellationSignal?.isCanceled != true
+        }
         val reusableByFileId = similarityDao.listReusableDurations(
             settingId = settingId,
             fileIds = uncheckedRows.map { row -> row.fileId }
@@ -2119,12 +2584,14 @@ class SimilaritySettingsRepository(
             }
         )
         if (resolved.isEmpty()) return rows
+        cancellationSignal?.throwIfCanceled()
 
         val updatedRows = linkedMapOf<Long, SimilarityClusterMemberFileRow>()
         val updatedFileIds = mutableListOf<Long>()
         val acceptedDurations = mutableListOf<SimilarityDurationFeatureEntity>()
         val updatedAtMillis = System.currentTimeMillis()
         database.runInTransaction {
+            cancellationSignal?.throwIfCanceled()
             resolved.forEach { pending ->
                 val row = pending.row
                 val durationMillis = pending.value
@@ -2448,6 +2915,10 @@ private fun SimilarityClusterMemberFileRow.toClusterMember(): SimilarityClusterM
 private const val SIMILARITY_MAINTENANCE_BATCH_SIZE = 200
 private const val SIMILARITY_FILTER_RESOLUTION_BATCH_SIZE = 500
 private const val SIMILARITY_FILTER_MEMBER_BATCH_SIZE = 500
+private fun sqlPlaceholders(count: Int): String {
+    return List(count) { "?" }.joinToString(separator = ",")
+}
+
 private const val SIMILARITY_DB_BIND_CHUNK_SIZE = 500
 private const val SIMILARITY_CLEAR_BATCH_SIZE = 100
 private const val SIMILARITY_CLUSTER_REPLACE_MAX_ATTEMPTS = 2
