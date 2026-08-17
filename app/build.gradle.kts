@@ -1,8 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.legacy.kapt)
     alias(libs.plugins.kotlin.compose)
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
 }
 
 android {
@@ -36,9 +35,6 @@ android {
     }
     kotlin {
         jvmToolchain(21)
-    }
-    kotlinOptions {
-        jvmTarget = "11"
     }
     buildFeatures {
         compose = true

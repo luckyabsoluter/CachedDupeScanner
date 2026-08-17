@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Changed
+
+- Android builds now use AGP's built-in Kotlin support and current DSL instead of deprecated compatibility modes.
+
 ### Fixed
 
 - Replaced or hidden Files, Results, Reports, Trash, and Similarity list requests now stop in-flight database and metadata work, including active SQLite list queries, while Files reliably loads its initial cached page after clear and refresh state is applied.
