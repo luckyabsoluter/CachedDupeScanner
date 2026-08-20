@@ -4,6 +4,15 @@ import android.content.Context
 import android.os.OperationCanceledException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import opensource.cached_dupe_scanner.cache.CacheDatabase
 import opensource.cached_dupe_scanner.cache.CachedFileEntity
 import opensource.cached_dupe_scanner.cache.DuplicateGroupEntity
@@ -46,6 +55,64 @@ class UiListRoomCancellationTest {
 
             assertTrue(failure is OperationCanceledException)
         } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun cancellingActiveListLoadStopsCreatedRoomCursorAndWorker() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val controller = UiListLoadController()
+        val cursorCreated = CountDownLatch(1)
+        val workerStopped = CountDownLatch(1)
+        val roomCancellationObserved = AtomicBoolean(false)
+        val forceWorkerStop = AtomicBoolean(false)
+
+        try {
+            val job = controller.replace(scope) {
+                try {
+                    runInterruptibleUiListLoad { cancellation ->
+                        database.readRoomQueryWithCancellation(
+                            sql = "SELECT 1",
+                            cancellationSignal = cancellation.frameworkQueryCancellationSignal
+                        ) { cursor ->
+                            cursorCreated.countDown()
+                            while (!cancellation.queryCancellationSignal.isCanceled && !forceWorkerStop.get()) {
+                                try {
+                                    Thread.sleep(10)
+                                } catch (_: InterruptedException) {
+                                    Thread.interrupted()
+                                }
+                            }
+                            try {
+                                cursor.moveToFirst()
+                            } catch (cancelledQuery: OperationCanceledException) {
+                                roomCancellationObserved.set(true)
+                                throw cancelledQuery
+                            }
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    // Expected after the active Room cursor receives its cancellation signal.
+                } finally {
+                    workerStopped.countDown()
+                }
+            }
+
+            assertTrue(cursorCreated.await(5, TimeUnit.SECONDS))
+            controller.cancel()
+
+            assertTrue(workerStopped.await(5, TimeUnit.SECONDS))
+            job.join()
+            assertTrue(job.isCancelled)
+            assertTrue(roomCancellationObserved.get())
+        } finally {
+            forceWorkerStop.set(true)
+            scope.cancel()
             database.close()
         }
     }

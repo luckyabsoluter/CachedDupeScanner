@@ -106,27 +106,31 @@ class UiListLoadControllerTest {
     }
 
     @Test
-    fun cancelSignalsDatabaseQueryEvenWhenBlockingWorkIgnoresThreadInterrupt() = runBlocking {
+    fun cancelStopsDatabaseQueryWorkerEvenWhenBlockingWorkIgnoresThreadInterrupt() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val controller = UiListLoadController()
         val queryEntered = CountDownLatch(1)
         val queryCancellationReceived = CountDownLatch(1)
-        val releaseQuery = CountDownLatch(1)
+        val queryStopped = CountDownLatch(1)
+        val queryCancellationObserved = AtomicBoolean(false)
+        val forceQueryStop = AtomicBoolean(false)
 
         try {
             val job = controller.replace(scope) {
                 runInterruptibleUiListLoad { cancellation ->
                     cancellation.queryCancellationSignal.setOnCancelListener {
+                        queryCancellationObserved.set(true)
                         queryCancellationReceived.countDown()
                     }
                     queryEntered.countDown()
-                    while (releaseQuery.count > 0L) {
+                    while (!queryCancellationObserved.get() && !forceQueryStop.get()) {
                         try {
-                            releaseQuery.await(100, TimeUnit.MILLISECONDS)
+                            Thread.sleep(10)
                         } catch (_: InterruptedException) {
                             Thread.interrupted()
                         }
                     }
+                    queryStopped.countDown()
                 }
             }
 
@@ -134,12 +138,11 @@ class UiListLoadControllerTest {
             controller.cancel()
 
             assertTrue(queryCancellationReceived.await(5, TimeUnit.SECONDS))
-            assertFalse(controller.hasActiveLoad)
-
-            releaseQuery.countDown()
+            assertTrue(queryStopped.await(5, TimeUnit.SECONDS))
             job.join()
+            assertFalse(controller.hasActiveLoad)
         } finally {
-            releaseQuery.countDown()
+            forceQueryStop.set(true)
             scope.cancel()
         }
     }

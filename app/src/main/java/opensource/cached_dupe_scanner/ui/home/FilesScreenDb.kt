@@ -141,6 +141,7 @@ fun FilesScreenDb(
     val isLoading = remember { mutableStateOf(false) }
     val loadController = remember { UiListLoadController() }
     val handledClearVersion = rememberSaveable { mutableStateOf(0) }
+    val pendingListRefresh = remember { mutableStateOf(false) }
     val resumeCancelledLoad = remember { mutableStateOf(false) }
     val resumeCancelledReset = remember { mutableStateOf(false) }
     val activeLoadIsReset = remember { mutableStateOf(false) }
@@ -164,6 +165,7 @@ fun FilesScreenDb(
     fun filtersActive(): Boolean = appliedFilter.value.hasActiveRules(FILE_FILTER_TARGETS)
 
     fun resetAndLoad() {
+        pendingListRefresh.value = false
         resumeCancelledLoad.value = false
         resumeCancelledReset.value = false
         activeLoadIsReset.value = true
@@ -294,6 +296,13 @@ fun FilesScreenDb(
     }
 
     fun resumeListLoading() {
+        if (pendingListRefresh.value) {
+            pendingListRefresh.value = false
+            resumeCancelledLoad.value = false
+            resumeCancelledReset.value = false
+            resetAndLoad()
+            return
+        }
         if (!resumeCancelledLoad.value) return
         val resumeReset = resumeCancelledReset.value
         resumeCancelledLoad.value = false
@@ -320,7 +329,12 @@ fun FilesScreenDb(
             filteredSourceLoadedCount.value = 0
             handledClearVersion.value = clearVersion
         }
-        resetAndLoad()
+        if (filterScreenOpen.value) {
+            pendingListRefresh.value = true
+            pauseListLoading()
+        } else {
+            resetAndLoad()
+        }
     }
 
     LaunchedEffect(Unit) {
