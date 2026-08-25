@@ -1,12 +1,14 @@
 package opensource.cached_dupe_scanner.ui.home
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.os.OperationCanceledException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.SQLiteMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -60,34 +63,44 @@ class UiListRoomCancellationTest {
     }
 
     @Test
-    fun cancellingActiveListLoadStopsCreatedRoomCursorAndWorker() = runBlocking {
+    @SQLiteMode(SQLiteMode.Mode.NATIVE)
+    fun cancellingActiveListLoadInterruptsRunningRoomQueryAndStopsWorker() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, CacheDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val controller = UiListLoadController()
-        val cursorCreated = CountDownLatch(1)
+        val queryEntered = CountDownLatch(1)
+        val releaseQuery = CountDownLatch(1)
         val workerStopped = CountDownLatch(1)
         val roomCancellationObserved = AtomicBoolean(false)
-        val forceWorkerStop = AtomicBoolean(false)
+        val frameworkSignal = AtomicReference<android.os.CancellationSignal?>()
+
+        frameworkSQLiteDatabase(database).setCustomScalarFunction(
+            BLOCKING_QUERY_FUNCTION
+        ) { value ->
+            queryEntered.countDown()
+            while (releaseQuery.count > 0L) {
+                try {
+                    releaseQuery.await(100, TimeUnit.MILLISECONDS)
+                } catch (_: InterruptedException) {
+                    Thread.interrupted()
+                }
+            }
+            value
+        }
 
         try {
             val job = controller.replace(scope) {
                 try {
                     runInterruptibleUiListLoad { cancellation ->
+                        val querySignal = cancellation.frameworkQueryCancellationSignal
+                        frameworkSignal.set(querySignal)
                         database.readRoomQueryWithCancellation(
-                            sql = "SELECT 1",
-                            cancellationSignal = cancellation.frameworkQueryCancellationSignal
+                            sql = "SELECT $BLOCKING_QUERY_FUNCTION('running')",
+                            cancellationSignal = querySignal
                         ) { cursor ->
-                            cursorCreated.countDown()
-                            while (!cancellation.queryCancellationSignal.isCanceled && !forceWorkerStop.get()) {
-                                try {
-                                    Thread.sleep(10)
-                                } catch (_: InterruptedException) {
-                                    Thread.interrupted()
-                                }
-                            }
                             try {
                                 cursor.moveToFirst()
                             } catch (cancelledQuery: OperationCanceledException) {
@@ -103,15 +116,17 @@ class UiListRoomCancellationTest {
                 }
             }
 
-            assertTrue(cursorCreated.await(5, TimeUnit.SECONDS))
+            assertTrue(queryEntered.await(5, TimeUnit.SECONDS))
             controller.cancel()
+            assertTrue(awaitFrameworkCancellation(frameworkSignal.get()))
+            releaseQuery.countDown()
 
             assertTrue(workerStopped.await(5, TimeUnit.SECONDS))
             job.join()
             assertTrue(job.isCancelled)
             assertTrue(roomCancellationObserved.get())
         } finally {
-            forceWorkerStop.set(true)
+            releaseQuery.countDown()
             scope.cancel()
             database.close()
         }
@@ -242,5 +257,25 @@ class UiListRoomCancellationTest {
         } finally {
             database.close()
         }
+    }
+
+    private fun frameworkSQLiteDatabase(database: CacheDatabase): SQLiteDatabase {
+        val supportDatabase = database.openHelper.writableDatabase
+        val delegateField = supportDatabase.javaClass.getDeclaredField("delegate")
+        delegateField.isAccessible = true
+        return delegateField.get(supportDatabase) as SQLiteDatabase
+    }
+
+    private fun awaitFrameworkCancellation(signal: android.os.CancellationSignal?): Boolean {
+        val currentSignal = signal ?: return false
+        val deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (!currentSignal.isCanceled && System.nanoTime() < deadlineNanos) {
+            Thread.sleep(1)
+        }
+        return currentSignal.isCanceled
+    }
+
+    private companion object {
+        const val BLOCKING_QUERY_FUNCTION = "wait_for_list_query_release"
     }
 }
