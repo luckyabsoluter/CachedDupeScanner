@@ -13,6 +13,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Fixed
 
 - Replaced or hidden Files, Results, Reports, Trash, and Similarity list requests now stop database and metadata work, including SQLite list queries that have already begun executing, while Files defers refreshes during filter editing and reliably loads its cached page after clear and refresh state is applied.
+- Lazy-list scrollbar thumbs now stay under the current touch point and account for measured variable row heights, preventing video timeline previews from displacing the thumb during a drag.
 
 ## [1.6.0] - 2026-07-27
 

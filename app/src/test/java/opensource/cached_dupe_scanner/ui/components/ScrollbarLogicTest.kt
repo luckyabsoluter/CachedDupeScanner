@@ -33,6 +33,45 @@ class ScrollbarLogicTest {
     }
 
     @Test
+    fun currentDragPointerOverridesReestimatedLazyThumbPosition() {
+        val offset = displayedLazyThumbOffsetPx(
+            estimatedThumbOffsetPx = 80f,
+            dragPointerY = 250f,
+            thumbHeightPx = 60f,
+            maxThumbOffsetPx = 340f
+        )
+
+        assertEquals(220f, offset, 0.001f)
+    }
+
+    @Test
+    fun estimateLazyListScrollTargetUsesKnownVariableItemSizes() {
+        val knownItemSizesPxByIndex = listOf(0 to 300)
+
+        val target = estimateLazyListScrollTarget(
+            targetThumbOffsetPx = 50f,
+            maxThumbOffsetPx = 100f,
+            maxScrollPx = 1_000f,
+            typicalItemSizePx = 100f,
+            totalItems = 10,
+            knownItemSizesPxByIndex = knownItemSizesPxByIndex
+        )
+
+        assertEquals(3, target.index)
+        assertEquals(0, target.scrollOffsetPx)
+        assertEquals(
+            500f,
+            estimateLazyListScrollOffsetPx(
+                firstVisibleItemIndex = target.index,
+                firstVisibleItemScrollOffsetPx = target.scrollOffsetPx,
+                typicalItemSizePx = 100f,
+                knownItemSizesPxByIndex = knownItemSizesPxByIndex
+            ),
+            0.001f
+        )
+    }
+
+    @Test
     fun estimateLazyListScrollTargetMapsThumbOffsetToListPosition() {
         val target = estimateLazyListScrollTarget(
             targetThumbOffsetPx = 50f,
